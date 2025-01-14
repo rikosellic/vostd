@@ -1,0 +1,38 @@
+From 58d7192b6ff47e6ac9e869dcba2256249e194d9d Mon Sep 17 00:00:00 2001
+From: Hao Chen <hao.chen@certik.com>
+Date: Wed, 6 Nov 2024 09:25:18 +0800
+Subject: [PATCH] patches for asterinas projects
+
+---
+ source/rust_verify/src/attributes.rs | 3 +++
+ tools/vargo/src/main.rs              | 2 +-
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/source/rust_verify/src/attributes.rs b/source/rust_verify/src/attributes.rs
+index dfb019b4..8b4db5ad 100644
+--- a/source/rust_verify/src/attributes.rs
++++ b/source/rust_verify/src/attributes.rs
+@@ -1108,4 +1108,7 @@ pub const RUSTC_ATTRS_OK_TO_IGNORE: &[&str] = &[
+     "rustc_insignificant_dtor",
+     // Boxes
+     "rustc_box",
++    // Support for separate definition of struct type and member methods
++    "rustc_has_incoherent_inherent_impls",
++    "rustc_allow_incoherent_impl",
+ ];
+diff --git a/tools/vargo/src/main.rs b/tools/vargo/src/main.rs
+index a4591121..4ca7972d 100644
+--- a/tools/vargo/src/main.rs
++++ b/tools/vargo/src/main.rs
+@@ -479,7 +479,7 @@ fn run() -> Result<(), String> {
+             return Err(format!("rustup failed"));
+         }
+         let active_toolchain_re = Regex::new(
+-            r"^(([A-Za-z0-9.-]+)-(?:aarch64|x86_64)-[A-Za-z0-9]+-[A-Za-z0-9-]+) \(overridden by '(.*)'\)"
++            r"^(([A-Za-z0-9.-]+)-(?:aarch64|x86_64)-[A-Za-z0-9]+-[A-Za-z0-9-]+) \((?:overridden|environment override) by '?(.*)'?\)"
+         )
+         .unwrap();
+         let stdout = std::str::from_utf8(&output.stdout)
+-- 
+2.45.2
+

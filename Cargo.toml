@@ -1,0 +1,14 @@
+[workspace]
+members = [
+#    "basic",
+    "vstd_extra",
+    "aster_common",
+    "fvt10-pt-cursor-navigation",
+    "fvt11-pt-cursor-guards",
+]
+exclude = [
+    "xtask",
+    "tools/verus",
+    "tools/verus-analyzer",
+]
+resolver = "2"
