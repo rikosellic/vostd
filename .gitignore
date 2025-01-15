@@ -1,0 +1,4 @@
+Cargo.lock
+target/
+.verus-log/
+.vscode/settings.json
