@@ -738,6 +738,7 @@ fn exec_bootstrap(args: &BootstrapArgs) -> Result<(), DynError> {
   let verus_repo = "https://github.com/verus-lang/verus.git";
   let verus_dir = Path::new("tools").join("verus");
 
+  // Not needed because we have included the Verus source code
   /*if args.restart && verus_dir.exists() {
       std::fs::remove_dir_all(&verus_dir)?;
   }
@@ -778,10 +779,11 @@ fn exec_bootstrap(args: &BootstrapArgs) -> Result<(), DynError> {
   }
 
   let verus_path = Path::new("..").join("patches").join("verus-fixes.patch");
-  if !is_patch_applied(&verus_dir, &verus_path) {
+  // Not needed because we have manually modified the Verus source code
+  /*if !is_patch_applied(&verus_dir, &verus_path) {
     println!("Apply the Verus patch");
     apply_patch(&verus_dir, &verus_path);
-  }
+  }*/
 
   println!("Start to build the Verus compiler");
   #[cfg(target_os = "windows")]
