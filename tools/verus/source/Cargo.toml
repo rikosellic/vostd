@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = [
+  "air",
+  "builtin",
+  "builtin_macros",
+  "vir",
+  "vir_macros",
+  "rust_verify",
+  "verus",
+  "rust_verify_test",
+  "rust_verify_test_macros",
+  "state_machines_macros",
+  "verusdoc",
+  "vstd_build",
+  "tools/internals_interface",
+  "tools/line_count",
+  "tools/qi-graph",
+]
+exclude = [
+  "vstd",
+]
+
+# do not modify the following two lines
+[workspace.metadata.vargo]
+tag = "workspace"
