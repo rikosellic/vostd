@@ -738,7 +738,7 @@ fn exec_bootstrap(args: &BootstrapArgs) -> Result<(), DynError> {
   let verus_repo = "https://github.com/verus-lang/verus.git";
   let verus_dir = Path::new("tools").join("verus");
 
-  if args.restart && verus_dir.exists() {
+  /*if args.restart && verus_dir.exists() {
       std::fs::remove_dir_all(&verus_dir)?;
   }
 
@@ -749,7 +749,7 @@ fn exec_bootstrap(args: &BootstrapArgs) -> Result<(), DynError> {
       eprintln!("Failed to clone the Verus repository. Please try to manually clone it to {}", verus_dir.display());
       std::process::exit(1);
     }
-  }
+  }*/
 
   #[cfg(target_os = "windows")]
   {
