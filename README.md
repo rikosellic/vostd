@@ -4,9 +4,15 @@
 
 The ``tools/verus`` directory contains the Verus repository at tag
 ``release/rolling/0.2024.10.25.601e1e7``, which is guaranteed to be compatible with
-the rest of the development. You can build verus with:
+the rest of the development.
+
+For VsCode users, you can build verus with:
 ```bash
 cargo xtask bootstrap
+```
+otherwise, you can build it with:
+```bash
+cargo xtask bootstrap --no-vscode-extension
 ```
 
 Then, run ``make`` to build the common libraries and both verification targets.
@@ -32,6 +38,4 @@ as well as the path into that tree that the cursor currently points to, and the 
 end of the path. The functions themselves, and their verification, are found in ``src/page_table/cursor/mod.rs``.
 
 Target ``fvt11-pt-guards`` extends the previous target's specification with a system of locks. Take a look at
-``src/page_table/cursor/mod.rs`` and note that the proofs are much more complex, requiring multiple assertions and
-lemmas. Several proof steps have been replaced by ``admit()``. Can you fill in the holes? Useful
-lemmas can be found in ``src/page_table/cursor/moded.rs``
+``src/page_table/cursor/mod.rs`` and note that the proofs are much more complex, requiring multiple assertions and lemmas.
