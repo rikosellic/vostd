@@ -159,7 +159,7 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
             model.inv(s),
             s.page_table.inv(),
             old(self).relate(s, *model),
-            // Hole 1: another precondition is missing here. (Hint: it relates to the one below.)
+            s.page_table.get_node(model.path).is_some(),
             node.relate(s.page_table.get_node(model.path).unwrap()@.children[0].unwrap().value),
             s.page_table.get_node(model.path).unwrap()@.children[0].unwrap().value.is_locked,
         ensures
@@ -181,8 +181,6 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
         assert(nodes[NR_LEVELS() - self.level + 1] ==
             s.page_table.get_node(model.path).unwrap()@.children[0].unwrap().value) by
             { s.page_table.tree@.seek_trace_next(model.path@, 0);
-	      // The fact that this doesn't solve the goal is related to hole #1
-	      admit()
 	    };
 
         self.level = self.level - 1;
@@ -205,8 +203,9 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
             forall |i:int| 0 <= i <= model.pop_level_spec().path.len() ==>
             s.page_table.get_nodes(model.pop_level_spec().path)[i] == s.page_table.get_nodes(model.path)[i]
     {
-	// Hole #2: complete the lemma
-	admit();
+        let n = model.pop_level_spec().path.len() as int;
+        model.lemma_pop_level_spec_prepends(s);
+        s.page_table.tree@.trace_up_to(model.path@, model.pop_level_spec().path@, n);
     }
 
     /// Goes up a level.
@@ -240,10 +239,7 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
 
         assert(old_nodes.len() == NR_LEVELS() - self.level + 1) by { s.page_table.get_nodes_len(model.path) };
         assert(model.pop_level_spec().path.len() == NR_LEVELS() - self.level - 1) by { model.lemma_pop_level_spec_len() };
-        assert(nodes.len() == old_nodes.len() - 1) by
-	{ // Hole #3
-	    admit()
-	};
+        assert(nodes.len() == old_nodes.len() - 1) by { s.page_table.get_nodes_len(model.pop_level_spec().path) };
 
         assert(forall |i:int| NR_LEVELS() - self.guard_level - 1 <= i <= NR_LEVELS() - self.level - 1 ==>
             nodes[i] == old_nodes[i]) by { self.lemma_pop_level_nodes_match(s, model) };

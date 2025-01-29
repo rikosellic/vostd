@@ -674,7 +674,8 @@ fn build_vscode_extension(args: &BootstrapArgs) -> Result<(), DynError> {
     println!("Start to clone the Verus Analyzer repository to {}", verus_analyzer_dir.display());
     let res = Repository::clone(verus_analyzer_repo, &verus_analyzer_dir);
     if res.is_err() {
-      eprintln!("Failed to clone the Verus Analyzer repository. Please try to manually clone it to {}", verus_analyzer_dir.display());
+      eprintln!("Failed to clone the Verus Analyzer repository. Please try to manually clone it to {} and run
+      `cargo xtask bootstrap` again", verus_analyzer_dir.display());
       std::process::exit(1);
     }
   }  
