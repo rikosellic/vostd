@@ -9,6 +9,7 @@ use std::{
 };
 use memoize::memoize;
 use git2::Repository;
+#[cfg(not(target_os = "windows"))]
 use std::os::unix::fs::PermissionsExt;
 
 fn locate_from_path<P>(binary: &P) -> Option<PathBuf>

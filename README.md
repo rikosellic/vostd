@@ -2,9 +2,27 @@
 
 ## Building the Proof Development
 
-The ``tools/verus`` directory contains the Verus repository at tag
-``release/rolling/0.2024.10.25.601e1e7``, which is guaranteed to be compatible with
-the rest of the development.
+#### Install Rust
+
+If you have not installed Rust yet, follow the [official instructions](https://www.rust-lang.org/tools/install).
+
+#### Install LLVM
+
+##### On Windows
+
+Download the [LLVM binary installer](https://github.com/llvm/llvm-project/releases). During installation, please check **"Add LLVM to the system PATH"**. Or you may create an environment variable named `LLVM_OBJDUMP` and set it to point to `llvm-objdump.exe`.
+
+##### On Unix/Linux
+
+Run
+
+```
+sudo apt install llvm
+```
+
+#### Build Verus
+
+The ``tools/verus`` directory contains the Verus repository at tag  ``release/rolling/0.2024.10.25.601e1e7``, which is guaranteed to be compatible with the rest of the development.
 
 For VsCode users, you can build verus with:
 ```bash
@@ -14,6 +32,8 @@ otherwise, you can build it with:
 ```bash
 cargo xtask bootstrap --no-vscode-extension
 ```
+
+#### Build Verification Targets 
 
 Then, run ``make`` to build the common libraries and both verification targets.
 Make simply runs:
