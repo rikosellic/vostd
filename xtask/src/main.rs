@@ -9,6 +9,7 @@ use std::{
 };
 use memoize::memoize;
 use git2::Repository;
+use std::os::unix::fs::PermissionsExt;
 
 fn locate_from_path<P>(binary: &P) -> Option<PathBuf>
 where
@@ -770,6 +771,9 @@ fn exec_bootstrap(args: &BootstrapArgs) -> Result<(), DynError> {
     let z3_path = Path::new("tools").join("verus").join("source").join("z3");
     if !z3_path.exists() {
       println!("Start to download the Z3 solver");
+      let get_z3_script_path = Path::new("tools").join("verus").join("source").join("tools").join("get-z3.sh");
+      let permissions = fs::Permissions::from_mode(0o755);
+      fs::set_permissions(&get_z3_script_path, permissions).expect("Failed to set execute permission for get-z3.sh");
       Command::new("bash")
         .current_dir(Path::new("tools").join("verus").join("source"))
         .arg("-c")
