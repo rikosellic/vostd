@@ -10,21 +10,22 @@ If you have not installed Rust yet, follow the [official instructions](https://w
 
 ##### On Windows
 
-Download the [LLVM binary installer](https://github.com/llvm/llvm-project/releases). During installation, please check **"Add LLVM to the system PATH"**. Or you may create an environment variable named `LLVM_OBJDUMP` and set it to point to `llvm-objdump.exe`.
+Download the [LLVM binary installer](https://github.com/llvm/llvm-project/releases). Then create an environment variable named `LLVM_OBJDUMP` and set it to point to `llvm-objdump.exe`.
 
-##### On Unix/Linux
+##### On Debian/Ubuntu
 
 Run
 
 ```
-sudo apt install llvm
+sudo apt update
+sudo apt install build-essential unzip pkg-config libssl-dev llvm
 ```
 
 #### Build Verus
 
 The ``tools/verus`` directory contains the Verus repository at tag  ``release/rolling/0.2024.10.25.601e1e7``, which is guaranteed to be compatible with the rest of the development.
 
-For VsCode users, you can build verus with:
+For VsCode users, you can build verus with the verus-analyzer:
 ```bash
 cargo xtask bootstrap
 ```
