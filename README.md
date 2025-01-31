@@ -21,6 +21,23 @@ sudo apt update
 sudo apt install build-essential unzip pkg-config libssl-dev llvm
 ```
 
+##### On Mac OS
+
+Obtain the `binutils` package if you don't already have it. It comes bundled with `xcode`, but you can also obtain it through an external source such as homebrew:
+```
+brew install binutils
+```
+
+Make sure that the `llvm-objdump` binary is in your path, e.g. if installed via `xcode`:
+```
+export PATH=$PATH:/Library/Developer/CommandLineTools/usr/bin/
+```
+
+Or via homebrew:
+```
+export PATH=$PATH:/usr/local/opt/binutils/bin/
+```
+
 #### Build Verus
 
 The ``tools/verus`` directory contains the Verus repository at tag  ``release/rolling/0.2024.10.25.601e1e7``, which is guaranteed to be compatible with the rest of the development.
