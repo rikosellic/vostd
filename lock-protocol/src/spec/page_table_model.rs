@@ -12,7 +12,8 @@ type Level = nat;
 
 type NodeId = nat;
 
-pub const CONST_MAX_NODE_ID: u64 = ;
+pub const CONST_MAX_NODE_ID: u64 = 512;
+pub const CONST_PAGE_NUM: u64 = 512;
 
 pub open spec fn MAX_NODE_ID_SPEC() -> nat {
     CONST_MAX_NODE_ID as nat
@@ -40,7 +41,7 @@ pub struct PageModel {
 impl PageModel {
 
     pub open spec fn inv(&self) -> bool {
-        self.ptes.len() == 512
+        self.ptes.len() == CONST_PAGE_NUM
     }
 
 }
@@ -52,7 +53,7 @@ pub enum PageTableNodeModel {
 
 impl PageTableNodeModel {
     
-    pub open spec fn paddr_spec(&self) -> Paddr {
+    pub open spec fn paddr_spec(&self) -> &Paddr {
         match self {
             Self::PageTablePage(pa, _) => pa,
             Self::Frame(pa, _) => pa,
@@ -60,7 +61,7 @@ impl PageTableNodeModel {
     }
 
     #[verifier::when_used_as_spec(paddr_spec)]
-    pub fn paddr(&self) -> (res: Paddr)
+    pub fn paddr(&self) -> (res: &Paddr)
         ensures
             res == self.paddr_spec(),
     {
@@ -70,7 +71,7 @@ impl PageTableNodeModel {
         }
     }
 
-    pub open spec fn level_spec(&self) -> Level {
+    pub open spec fn level_spec(&self) -> &Level {
         match self {
             Self::PageTablePage(_, level) => level,
             Self::Frame(_, level) => level,
@@ -78,7 +79,7 @@ impl PageTableNodeModel {
     }
 
     #[verifier::when_used_as_spec(level_spec)]
-    pub fn level(&self) -> (res: Level)
+    pub fn level(&self) -> (res: &Level)
         ensures
             res == self.level_spec(),
     {
@@ -92,8 +93,10 @@ impl PageTableNodeModel {
 
 pub mod Utils {
 
+use super::*;
+
 pub open spec fn valid_level(level: Level) -> bool {
-    1 <= level <= 4,
+    1 <= level <= 4
 }
 
 pub open spec fn valid_nid(nid: NodeId) -> bool {
@@ -109,7 +112,7 @@ pub open spec fn va_level_to_nid(va: Vaddr, level: Level) -> NodeId
         valid_level(level),
 { /* TODO */ }
 
-pub open spec fn nid_to_va_level(nid: NodeId) -> (va: Vaddr, level: Level) 
+pub open spec fn nid_to_va_level(nid: NodeId) -> (Vaddr, Level) 
     recommends
         valid_nid(nid),
 { /* TODO */ }
@@ -166,7 +169,7 @@ pub fn inv_root(&self) -> bool {
 
 #[invariant]
 pub fn inv_nid_valid(&self) -> bool {
-    forall |nid: NodeId| self.nodes.contains_key(nid) ==> valid_nid(nid)
+    forall |nid: NodeId| self.nodes.contains_key(nid) ==> Utils::valid_nid(nid)
 }
 
 #[invariant]
@@ -184,7 +187,7 @@ pub fn inv_tree(&self) -> bool {
 #[invariant]
 pub fn inv_level_adjacent(&self) -> bool {
     forall |x: NodeId, y: NodeId| 
-        self.nodes.contains_key(x) && self.nodes.contains_key(y) && is_child(x, y) ==> {
+        self.nodes.contains_key(x) && self.nodes.contains_key(y) && Utils::is_child(x, y) ==> {
             self.nodes[x].level() == self.nodes[y].level() + 1
         }
 }
@@ -194,9 +197,9 @@ pub fn inv_node_map_to_page(&self) -> bool {
     &&& forall |nid: NodeId| self.nodes.contains_key(nid) ==>
         self.pages.contains_key(self.nodes[nid].paddr())
     &&& forall |x: NodeId, y: NodeId| 
-        self.nodes.contains_key(x) && self.nodes.contains_key(y) && is_child(x, y) ==> {
-            &&& self.pages[self.nodes[nid].paddr()].ptes[Utils::get_pte_idx(x, y)].is_Some()
-            &&& self.pages[self.nodes[nid].paddr()].ptes[Utils::get_pte_idx(x, y)].get_Some_0().pa == self.nodes[y].paddr()
+        self.nodes.contains_key(x) && self.nodes.contains_key(y) && Utils::is_child(x, y) ==> {
+            &&& self.pages[self.nodes[x].paddr()].ptes[Utils::get_pte_idx(x, y)].is_Some()
+            &&& self.pages[self.nodes[x].paddr()].ptes[Utils::get_pte_idx(x, y)].get_Some_0().pa == self.nodes[y].paddr()
         }
 }
 
