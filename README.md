@@ -46,8 +46,6 @@ export PATH=$PATH:/usr/local/opt/binutils/bin/
 
 #### Build Verus
 
-The ``tools/verus`` directory contains the Verus repository at tag  ``release/rolling/0.2024.10.25.601e1e7``, which is guaranteed to be compatible with the rest of the development.
-
 For VsCode users, you can build verus with the verus-analyzer:
 ```bash
 cargo xtask bootstrap
@@ -56,6 +54,8 @@ otherwise, you can build it with:
 ```bash
 cargo xtask bootstrap --no-vscode-extension
 ```
+
+`Verus` and `verus-analyzer` should be automatically cloned and built in the `tools` directory. If download fails, please clone these two repos manually at `tools/verus` and `tools/verus-analyzer`, then run `cargo xtask bootstrap` again.
 
 #### Build Verification Targets 
 
