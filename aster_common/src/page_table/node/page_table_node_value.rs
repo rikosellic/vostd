@@ -56,7 +56,7 @@ impl TreeNodeValue for PageTableNodeValue {
         }
     }
 
-    proof fn default_preserves_inv() 
+    proof fn default_preserves_inv()
         ensures
             #[trigger]
             Self::default().inv(),

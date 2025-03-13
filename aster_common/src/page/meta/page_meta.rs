@@ -3,7 +3,6 @@ use vstd::prelude::*;
 use super::super::Page;
 use super::PageUsage;
 
-
 verus! {
 
 #[allow(non_snake_case)]
@@ -26,8 +25,7 @@ pub trait PageMeta: Sync + Sized {
 
 }
 
-
-verus!{
+verus! {
 
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -53,7 +51,7 @@ impl PageMeta for FrameMeta {
     #[inline(always)]
     #[verifier::when_used_as_spec(USAGE_spec)]
     fn USAGE() -> (res: PageUsage)
-            ensures res == Self::USAGE_spec() 
+            ensures res == Self::USAGE_spec()
     {
         PageUsage::Frame
     }
@@ -74,7 +72,6 @@ impl PageMeta for FrameMeta {
 }
 
 }
-
 
 verus! {
 
@@ -135,7 +132,7 @@ extern fn drop_tree(_page: &mut Page<PageTablePageMeta>)
         _page == drop_tree_spec(*old(_page));
 
 impl PageMeta for PageTablePageMeta {
-    
+
         #[verifier::inline]
         open spec fn USAGE_spec() -> PageUsage {
             PageUsage::PageTable
@@ -144,19 +141,19 @@ impl PageMeta for PageTablePageMeta {
         proof fn used() {
             assert(PageUsage::PageTable != PageUsage::Unused);
         }
-    
+
         #[inline(always)]
         #[verifier::when_used_as_spec(USAGE_spec)]
         fn USAGE() -> (res: PageUsage)
-                ensures res == Self::USAGE_spec() 
+                ensures res == Self::USAGE_spec()
         {
             PageUsage::PageTable
         }
-    
+
         closed spec fn on_drop_spec(_page: Page<Self>) -> (res: Page<Self>) {
             drop_tree_spec(_page)
         }
-    
+
         fn on_drop(_page: &mut Page<Self>)
             ensures
                 _page == Self::on_drop_spec(*old(_page))
@@ -218,7 +215,6 @@ impl PageTablePageMeta {
 
 }
 
-
 verus! {
 
 
@@ -240,7 +236,7 @@ impl PageMeta for MetaPageMeta {
     #[inline(always)]
     #[verifier::when_used_as_spec(USAGE_spec)]
     fn USAGE() -> (res: PageUsage)
-            ensures res == Self::USAGE_spec() 
+            ensures res == Self::USAGE_spec()
     {
         PageUsage::Meta
     }
@@ -259,8 +255,7 @@ impl PageMeta for MetaPageMeta {
 
 }
 
-
-verus!{
+verus! {
 
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -280,7 +275,7 @@ impl PageMeta for KernelMeta {
     #[inline(always)]
     #[verifier::when_used_as_spec(USAGE_spec)]
     fn USAGE() -> (res: PageUsage)
-            ensures res == Self::USAGE_spec() 
+            ensures res == Self::USAGE_spec()
     {
         PageUsage::Kernel
     }

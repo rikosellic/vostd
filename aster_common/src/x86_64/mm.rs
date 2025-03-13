@@ -2,8 +2,7 @@ use vstd::prelude::*;
 use vstd_extra::prelude::*;
 use crate::mm::Vaddr;
 use core::ops::Range;
-use crate::prelude::{Paddr,CachePolicy};
-
+use crate::prelude::{Paddr, CachePolicy};
 
 extern_const!(
 /// Page size.
@@ -38,8 +37,7 @@ pub KERNEL_VADDR_RANGE
     [KERNEL_VADDR_RANGE_SPEC, CONST_KERNEL_VADDR_RANGE] : Range<Vaddr> = 
     0xffff_8000_0000_0000_usize..0xffff_ffff_ffff_0000_usize);
 
-
-verus!{
+verus! {
 
 /// Activates the given level 4 page table.
 /// The cache policy of the root page table node is controlled by `root_pt_cache`.

@@ -18,7 +18,6 @@ pub struct PageTable<M: PageTableMode,>
 
 }
 
-
 verus! {
 
 #[verifier::inline]

@@ -7,7 +7,7 @@ use vstd_extra::ghost_tree;
 use vstd_extra::prelude::TreePath;
 use crate::prelude::*;
 
-verus!{
+verus! {
 
 pub tracked struct PageTableTreePathModel {
     pub tracked inner: ghost_tree::TreePath<CONST_NR_ENTRIES>,

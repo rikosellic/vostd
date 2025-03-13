@@ -11,7 +11,7 @@ extern_const!(
 /// The shortest supported address width is 39 bits. And the literal
 /// values are written for 48 bits address width. Adjust the values
 /// by arithmetic left shift.
-pub ADDR_WIDTH_SHIFT [ADDR_WIDTH_SHIFT_SPEC, CONST_ADDR_WIDTH_SHIFT]: 
+pub ADDR_WIDTH_SHIFT [ADDR_WIDTH_SHIFT_SPEC, CONST_ADDR_WIDTH_SHIFT]:
     isize = /* PagingConsts::ADDRESS_WIDTH() */ 48 - 48
 );
 
@@ -48,11 +48,10 @@ pub LINEAR_MAPPING_VADDR_RANGE [LINEAR_MAPPING_VADDR_RANGE_SPEC, CONST_LINEAR_MA
     Range<Vaddr> = CONST_LINEAR_MAPPING_BASE_VADDR..CONST_VMALLOC_BASE_VADDR
 );
 
-
 verus! {
 
 #[verifier::inline]
-pub open spec fn paddr_to_vaddr_spec(pa: Paddr) -> usize 
+pub open spec fn paddr_to_vaddr_spec(pa: Paddr) -> usize
     recommends
         pa < VMALLOC_BASE_VADDR() - LINEAR_MAPPING_BASE_VADDR(),
 {
@@ -156,5 +155,5 @@ pub broadcast proof fn lemma_meta_frame_vaddr_properties(meta: Vaddr)
         lemma_mod_0_add(pa as int, LINEAR_MAPPING_BASE_VADDR() as int, PAGE_SIZE() as int);
     };
 }
- 
+
 }

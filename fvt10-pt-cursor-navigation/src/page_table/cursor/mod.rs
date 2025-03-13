@@ -54,11 +54,11 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
             self.barrier_va.start < self.barrier_va.end,
     {
         let barrier_lv = NR_LEVELS() - self.guard_level;
-        let locked_path = 
+        let locked_path =
             model.tree@.get_path(model.locked_subtree@);
-        let barrier_start_path = 
+        let barrier_start_path =
             PageTableTreePathModel::from_va(self.barrier_va.start);
-        let barrier_end_path = 
+        let barrier_end_path =
             PageTableTreePathModel::from_va((self.barrier_va.end - 1) as usize);
         barrier_lv == model.locked_subtree@.level &&
         {forall |i: int| 0 <= i < barrier_lv ==>
@@ -71,7 +71,7 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn relate(self, model: ConcreteCursor) -> bool 
+    pub open spec fn relate(self, model: ConcreteCursor) -> bool
         recommends
             model.inv(),
     {
@@ -202,10 +202,10 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
 //            assert((*model@).path.inner == ConcreteCursor::inc_pop_aligned_rec(old_tree));
 
         }
-        
+
         self.va = next_va;
 
-//        assert(self.va == initial_model.move_forward_spec().path.vaddr());        
+//        assert(self.va == initial_model.move_forward_spec().path.vaddr());
     }
 
 }

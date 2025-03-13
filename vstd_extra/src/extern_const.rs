@@ -1,11 +1,9 @@
 ///! This module provides a macro to define a constant that can be used when
 ///! crossing crates.
-
 #[macro_export]
 macro_rules! extern_const {
     ($(#[$doc:meta])* $_vis:vis $name:ident [ $name_spec:ident, $name_const:ident ] : $_ty:ty = $value:expr) => {
-
-    verus! {
+        verus! {
         #[doc = concat!("The constant `", stringify!($name), "`.")]
         $(#[$doc])*
         $_vis const $name_const: $_ty = $value;

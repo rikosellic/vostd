@@ -30,6 +30,7 @@ pub trait PageTableMode: Debug {
     /// Check if the given range is covered by the valid virtual address range.
     #[inline(always)]
     #[verifier::when_used_as_spec(covers_spec)]
+    #[verifier::external_body]
     fn covers(r: &Range<Vaddr>) -> (res: bool)
         ensures res == Self::covers_spec(r)
     {

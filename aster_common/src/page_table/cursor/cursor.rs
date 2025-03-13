@@ -5,7 +5,7 @@ use core::ops::Range;
 
 use crate::prelude::*;
 
-verus!{
+verus! {
 
 #[rustc_has_incoherent_inherent_impls]
 pub struct Cursor<'a, M: PageTableMode>

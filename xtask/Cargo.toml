@@ -6,9 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cargo-platform = "=0.1.8"
-cargo_metadata = "=0.19.0"
 clap = {version = "*", features = ["derive"]}
+cargo_metadata = "*"
 memoize = "*"
 git2 = { version = "*" }
 cargo_toml = { version = "*" }

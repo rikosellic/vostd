@@ -9,21 +9,43 @@ use vstd_extra::prelude::*;
 use crate::page_prop::PageFlags;
 use super::page_table_flags::PageTableFlags;
 
-decl_bms_const!(PAGE_FLAG_MAPPING, PAGE_FLAG_MAPPING_SPEC, u8, usize, 4, [
-    (PageFlags::R().value(), PageTableFlags::PRESENT()),
-    (PageFlags::W().value(), PageTableFlags::WRITABLE()),
-    (PageFlags::ACCESSED().value(), PageTableFlags::ACCESSED()),
-    (PageFlags::DIRTY().value(), PageTableFlags::DIRTY())
-]);
+decl_bms_const!(
+    PAGE_FLAG_MAPPING,
+    PAGE_FLAG_MAPPING_SPEC,
+    u8,
+    usize,
+    4,
+    [
+        (PageFlags::R().value(), PageTableFlags::PRESENT()),
+        (PageFlags::W().value(), PageTableFlags::WRITABLE()),
+        (PageFlags::ACCESSED().value(), PageTableFlags::ACCESSED()),
+        (PageFlags::DIRTY().value(), PageTableFlags::DIRTY())
+    ]
+);
 
-decl_bms_const!(PAGE_PRIV_MAPPING, PAGE_PRIV_MAPPING_SPEC, u8, usize, 2, [
-    (PrivilegedPageFlags::USER().value(), PageTableFlags::USER()),
-    (PrivilegedPageFlags::GLOBAL().value(), PageTableFlags::GLOBAL())
-]);
+decl_bms_const!(
+    PAGE_PRIV_MAPPING,
+    PAGE_PRIV_MAPPING_SPEC,
+    u8,
+    usize,
+    2,
+    [
+        (PrivilegedPageFlags::USER().value(), PageTableFlags::USER()),
+        (
+            PrivilegedPageFlags::GLOBAL().value(),
+            PageTableFlags::GLOBAL()
+        )
+    ]
+);
 
-decl_bms_const!(PAGE_INVERTED_FLAG_MAPPING, PAGE_INVERTED_FLAG_MAPPING_SPEC, u8, usize, 1, [
-    (PageFlags::X().value(), PageTableFlags::NO_EXECUTE())
-]);
+decl_bms_const!(
+    PAGE_INVERTED_FLAG_MAPPING,
+    PAGE_INVERTED_FLAG_MAPPING_SPEC,
+    u8,
+    usize,
+    1,
+    [(PageFlags::X().value(), PageTableFlags::NO_EXECUTE())]
+);
 
 verus! {
 
@@ -35,8 +57,8 @@ global layout PageTableEntry is size == 8, align == 8;
 
 extern_const!(
 /// Masks of the physical address.
-pub PHYS_ADDR_MASK 
-    [PHYS_ADDR_MASK_SPEC, CONST_PHYS_ADDR_MASK]: usize = 
+pub PHYS_ADDR_MASK
+    [PHYS_ADDR_MASK_SPEC, CONST_PHYS_ADDR_MASK]: usize =
     0xffff_ffff_ffff_f000);
 
 impl Clone for PageTableEntry {
@@ -157,7 +179,7 @@ impl PageTableEntry {
         ensures res == Self::format_property_spec(entry)
     {
         let flags = entry.map_backward(&PAGE_FLAG_MAPPING)
-                  | entry.map_invert_backward(&PAGE_INVERTED_FLAG_MAPPING);    
+                  | entry.map_invert_backward(&PAGE_INVERTED_FLAG_MAPPING);
         let priv_flags: u8 = entry.map_backward(&PAGE_PRIV_MAPPING);
         let cache = Self::format_cache(entry);
         PageProperty {
@@ -204,7 +226,7 @@ impl PageTableEntryTrait for PageTableEntry {
     #[inline(always)]
     #[verifier::when_used_as_spec(default_spec)]
     fn default() -> (res: Self)
-        ensures res == Self::default_spec() 
+        ensures res == Self::default_spec()
     {
         Self(0)
     }

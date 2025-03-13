@@ -10,4 +10,4 @@ pub struct VmSpace {
     pt: PageTable<UserMode>,
 }
 
-}
+} // verus!

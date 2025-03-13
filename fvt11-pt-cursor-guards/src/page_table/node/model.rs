@@ -20,22 +20,22 @@ pub const PAGE_SIZE: usize = 4096;
 pub const BASE_PAGE_SIZE: usize = 4096;
 
 #[allow(non_snake_case)]
-pub proof fn correctness_PAGE_SIZE() 
+pub proof fn correctness_PAGE_SIZE()
     ensures PAGE_SIZE == mm::PAGE_SIZE(),
 { }
 
 #[allow(non_snake_case)]
-pub proof fn correctness_NR_ENTRIES() 
+pub proof fn correctness_NR_ENTRIES()
     ensures NR_ENTRIES == PAGE_SIZE / PagingConsts::PTE_SIZE(),
 { }
 
 #[allow(non_snake_case)]
-pub proof fn correctness_NR_LEVELS() 
+pub proof fn correctness_NR_LEVELS()
     ensures NR_LEVELS == mm::NR_LEVELS(),
 { }
 
 #[allow(non_snake_case)]
-pub proof fn correctness_BASE_PAGE_SIZE() 
+pub proof fn correctness_BASE_PAGE_SIZE()
     ensures BASE_PAGE_SIZE == x86_64::PagingConsts::BASE_PAGE_SIZE(),
 { }
 
@@ -103,7 +103,7 @@ impl PageTableNodeValue {
 
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub proof fn tracked_write_pte(tracked &mut self, 
+    pub proof fn tracked_write_pte(tracked &mut self,
         tracked arr_ptr: ArrayPtr<PageTableEntry, NR_ENTRIES>,
         tracked index: usize, tracked entry: PageTableEntry)
         requires
@@ -128,7 +128,7 @@ impl PageTableNodeValue {
     }
 
     #[rustc_allow_incoherent_impl]
-    pub fn drop(Tracked(value): Tracked<Self>, 
+    pub fn drop(Tracked(value): Tracked<Self>,
         ptr: ArrayPtr<PageTableEntry, NR_ENTRIES>)
         requires
             value.inv(),
@@ -188,7 +188,7 @@ pub fn pt_node_write_pte(Tracked(node): Tracked<&mut PageTableNodeModel>,
     PageTableNodeValue::write_pte(Tracked(&mut node.inner.value), arr_ptr, index, entry);
 }
 
-pub fn pt_node_free(Tracked(node): Tracked<PageTableNodeModel>, 
+pub fn pt_node_free(Tracked(node): Tracked<PageTableNodeModel>,
     ptr: ArrayPtr<PageTableEntry, NR_ENTRIES>)
     requires
         node@.inv(),

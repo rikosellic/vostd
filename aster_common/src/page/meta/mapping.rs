@@ -11,8 +11,8 @@ verus! {
 
 extern_const!(
 /// Kernel virtual address range for storing the page frame metadata.
-pub FRAME_METADATA_RANGE 
-    [FRAME_METADATA_RANGE_SPEC, CONST_FRAME_METADATA_RANGE]: Range<Vaddr> 
+pub FRAME_METADATA_RANGE
+    [FRAME_METADATA_RANGE_SPEC, CONST_FRAME_METADATA_RANGE]: Range<Vaddr>
     = 0xffff_fe00_0000_0000..0xffff_ff00_0000_0000
 );
 
@@ -22,7 +22,7 @@ pub META_SLOT_SIZE [META_SLOT_SIZE_SPEC, CONST_META_SLOT_SIZE]: usize = 16
 );
 
 #[allow(non_snake_case)]
-pub broadcast proof fn lemma_FRAME_METADATA_RANGE_is_page_aligned() 
+pub broadcast proof fn lemma_FRAME_METADATA_RANGE_is_page_aligned()
     ensures
         #[trigger]
         FRAME_METADATA_RANGE().start % PAGE_SIZE() == 0,
@@ -42,7 +42,7 @@ verus! {
 
 global layout MetaSlot is size == 16, align == 16;
 
-pub broadcast proof fn lemma_meta_slot_size() 
+pub broadcast proof fn lemma_meta_slot_size()
     ensures
         #[trigger]
         size_of::<MetaSlot>() == META_SLOT_SIZE(),
@@ -70,7 +70,7 @@ pub open spec fn index_to_page_spec(index: int) -> int {
 
 pub proof fn page_to_index(paddr: Paddr) -> (res: int)
     requires
-        paddr as int % PAGE_SIZE() as int == 0, 
+        paddr as int % PAGE_SIZE() as int == 0,
     ensures
         res == page_to_index_spec(paddr as int)
 {
@@ -84,10 +84,10 @@ verus! {
 #[inline(always)]
 #[verifier::when_used_as_spec(page_to_meta_spec)]
 pub fn page_to_meta(paddr: Paddr) -> (res: Vaddr)
-    requires 
+    requires
         paddr % PAGE_SIZE() == 0,
         paddr < MAX_PADDR()
-    ensures 
+    ensures
         res == page_to_meta_spec(paddr),
         res % META_SLOT_SIZE() == 0,
 {
@@ -99,10 +99,10 @@ pub fn page_to_meta(paddr: Paddr) -> (res: Vaddr)
 #[inline(always)]
 #[verifier::when_used_as_spec(meta_to_page_spec)]
 pub fn meta_to_page(vaddr: Vaddr) -> (res: Paddr)
-    requires 
+    requires
         FRAME_METADATA_RANGE().start <= vaddr && vaddr < FRAME_METADATA_RANGE().end,
         vaddr % META_SLOT_SIZE() == 0,
-    ensures 
+    ensures
         res == meta_to_page_spec(vaddr),
 {
     let base = FRAME_METADATA_RANGE().start;

@@ -32,7 +32,7 @@ impl DynPage {
     }
 
     #[verifier::inline]
-    pub open spec fn paddr_spec(&self) -> Paddr 
+    pub open spec fn paddr_spec(&self) -> Paddr
         recommends self.inv_ptr()
     {
         let addr = self.ptr.addr();
@@ -43,7 +43,7 @@ impl DynPage {
     #[inline(always)]
     pub fn paddr(&self) -> (res: Paddr)
         requires self.inv_ptr()
-        ensures 
+        ensures
             res == self.paddr_spec(),
             res % PAGE_SIZE() == 0,
     {

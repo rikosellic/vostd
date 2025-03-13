@@ -1,5 +1,5 @@
-pub mod meta;
 pub mod dyn_page;
+pub mod meta;
 pub mod model;
 
 pub use meta::*;
@@ -48,7 +48,7 @@ impl <M: PageMeta> Page<M> {
         meta_to_page(self.ptr.addr())
     }
 
-    pub fn meta_pt<'a>(&'a self, 
+    pub fn meta_pt<'a>(&'a self,
         Tracked(p_slot): Tracked<&'a simple_pptr::PointsTo<MetaSlot>>,
         Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>)
         -> (res: &'a PageTablePageMeta)
@@ -67,7 +67,7 @@ impl <M: PageMeta> Page<M> {
         slot.borrow_pt(Tracked(p_inner))
     }
 
-    pub fn meta_frame<'a>(&'a self, 
+    pub fn meta_frame<'a>(&'a self,
         Tracked(p_slot): Tracked<&'a simple_pptr::PointsTo<MetaSlot>>,
         Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>)
         -> (res: &'a FrameMeta)
