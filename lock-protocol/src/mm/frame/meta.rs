@@ -7,7 +7,7 @@ verus! {
     pub trait AnyFrameMeta {}
 
     // TODO: MetaSlot
-    pub(in crate::mm) struct MetaSlot {}
+    pub struct MetaSlot {}
 
     /// The error type for getting the frame from a physical address.
     #[derive(Debug)]
