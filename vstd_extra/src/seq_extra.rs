@@ -6,10 +6,10 @@ verus! {
 
 broadcast use group_seq_axioms, group_seq_lib_default;
 
-
 #[verifier::external_body]
 pub proof fn seq_tracked_empty<T>() -> (tracked res: Seq<T>)
-    ensures res == Seq::<T>::empty(),
+    ensures
+        res == Seq::<T>::empty(),
 {
     unimplemented!();
 }

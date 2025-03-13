@@ -5,7 +5,9 @@ use core::ops::Deref;
 verus! {
 
 pub closed spec fn ex_manually_drop_new_spec<V>(value: V) -> ManuallyDrop<V>;
+
 pub closed spec fn ex_manually_drop_into_inner_spec<V>(slot: ManuallyDrop<V>) -> V;
+
 pub closed spec fn ex_manually_drop_deref_spec<V: ?Sized>(slot: &ManuallyDrop<V>) -> &V;
 
 #[verifier::external_fn_specification]
@@ -28,22 +30,25 @@ pub fn ex_manually_drop_deref<V: ?Sized>(slot: &ManuallyDrop<V>) -> &V {
 
 pub broadcast proof fn ex_manually_drop_value_properties<V: Sized>(value: V)
     ensures
-        #[trigger]
-        ManuallyDrop::into_inner(ManuallyDrop::new(value)) == value,
+        #[trigger] ManuallyDrop::into_inner(ManuallyDrop::new(value)) == value,
         ManuallyDrop::new(value).deref() == &value,
-        forall |other: V| value == other ==> ManuallyDrop::new(value) == ManuallyDrop::new(other),
-{ admit(); }
+        forall|other: V| value == other ==> ManuallyDrop::new(value) == ManuallyDrop::new(other),
+{
+    admit();
+}
 
 pub broadcast proof fn ex_manually_drop_ref_properties<V: Sized>(r: &V)
     ensures
-        #[trigger]
-        ManuallyDrop::new(*r).deref() == r,
-{ admit(); }
+        #[trigger] ManuallyDrop::new(*r).deref() == r,
+{
+    admit();
+}
 
 pub broadcast proof fn ex_manually_drop_properties<V: Sized>(slot: ManuallyDrop<V>)
     ensures
-        #[trigger]
-        ManuallyDrop::new(*slot.deref()) == slot,
-{ admit(); }
-
+        #[trigger] ManuallyDrop::new(*slot.deref()) == slot,
+{
+    admit();
 }
+
+} // verus!

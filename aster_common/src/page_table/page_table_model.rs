@@ -4,7 +4,7 @@ use vstd_extra::ghost_tree;
 
 use crate::prelude::*;
 
-verus!{
+verus! {
 
     pub tracked struct Mapping {
         pub tracked pa: usize,
@@ -120,4 +120,3 @@ verus!{
         }
     }
 }
-

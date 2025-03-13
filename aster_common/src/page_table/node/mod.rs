@@ -1,8 +1,8 @@
+pub mod child;
+pub mod entry;
 pub mod page_table_node;
 pub mod page_table_node_value;
 pub mod raw_page_table_node;
-pub mod child;
-pub mod entry;
 
 #[allow(unused_imports)]
 pub use page_table_node::*;

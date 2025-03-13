@@ -34,7 +34,7 @@ impl PageTableNode {
         self.page.paddr()
     }
 
-    pub fn meta<'a>(&'a self, 
+    pub fn meta<'a>(&'a self,
         Tracked(p_slot): Tracked<&'a simple_pptr::PointsTo<MetaSlot>>,
         Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>
     ) -> (res: &PageTablePageMeta)
@@ -54,7 +54,7 @@ impl PageTableNode {
         Tracked(p_slot): Tracked<&simple_pptr::PointsTo<MetaSlot>>,
         Tracked(p_inner): Tracked<&cell::PointsTo<MetaSlotInner>>,
         Tracked(pt_inner): Tracked<&cell::PointsTo<PageTablePageMetaInner>>
-    ) -> (res: PagingLevel) 
+    ) -> (res: PagingLevel)
     requires
             self.inv(),
             p_slot.pptr() == self.page.ptr,
@@ -76,7 +76,7 @@ impl PageTableNode {
         Tracked(p_slot): Tracked<&simple_pptr::PointsTo<MetaSlot>>,
         Tracked(p_inner): Tracked<&cell::PointsTo<MetaSlotInner>>,
         Tracked(pt_inner): Tracked<&cell::PointsTo<PageTablePageMetaInner>>
-    ) -> (res: MapTrackingStatus) 
+    ) -> (res: MapTrackingStatus)
     requires
             self.inv(),
             p_slot.pptr() == self.page.ptr,

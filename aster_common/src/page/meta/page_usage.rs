@@ -59,7 +59,7 @@ impl PageUsage {
             _ => PageState::Typed,
         }
     }
-    
+
     #[verifier::when_used_as_spec(as_state_spec)]
     pub fn as_state(&self) -> (res: PageState)
         ensures

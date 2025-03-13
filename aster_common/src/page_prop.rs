@@ -18,7 +18,7 @@ global layout PageProperty is size == 3, align == 1;
 
 verus! {
 
-pub broadcast proof fn lemma_page_property_equal_correctness(a: PageProperty, 
+pub broadcast proof fn lemma_page_property_equal_correctness(a: PageProperty,
     b: PageProperty)
     requires #[trigger] a.flags == #[trigger] b.flags,
         a.cache == b.cache,
@@ -36,7 +36,7 @@ pub broadcast proof fn lemma_page_property_equal_soundness(a: PageProperty, b: P
 
 }
 
-verus!{
+verus! {
 
 impl PageProperty {
 
@@ -325,7 +325,6 @@ impl PageFlags {
 }
 
 }
-
 
 verus! {
 

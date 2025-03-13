@@ -5,7 +5,7 @@ use core::marker::PhantomData;
 use crate::prelude::{PageTableEntry, PagingConsts, PagingLevel};
 use crate::prelude::Paddr;
 
-verus!{
+verus! {
 
 #[rustc_has_incoherent_inherent_impls]
 #[derive(Debug)]

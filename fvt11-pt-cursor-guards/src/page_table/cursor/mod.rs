@@ -62,11 +62,11 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
             self.barrier_va.start < self.barrier_va.end,
     {
         let barrier_lv = NR_LEVELS() - self.guard_level;
-        let locked_path = 
+        let locked_path =
             s.page_table.tree@.get_path(model.locked_subtree@);
-        let barrier_start_path = 
+        let barrier_start_path =
             PageTableTreePathModel::from_va(self.barrier_va.start);
-        let barrier_end_path = 
+        let barrier_end_path =
             PageTableTreePathModel::from_va((self.barrier_va.end - 1) as usize);
         barrier_lv == model.locked_subtree@.level &&
         {forall |i: int| 0 <= i < barrier_lv ==>
@@ -89,7 +89,7 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
         (forall |i: int| 0 < i < self.level ==>
             self.guards[to_index(i)].is_none()) &&
         (forall |i: int| self.level <= i <= self.guard_level ==>
-            self.guards[to_index(i)].is_some() && 
+            self.guards[to_index(i)].is_some() &&
             self.guards[to_index(i)].unwrap().relate(nodes[NR_LEVELS() - i]) &&
             nodes[NR_LEVELS() - i].is_locked) &&
         (forall |i: int| self.guard_level < i <= NR_LEVELS() ==>
@@ -97,7 +97,7 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn relate(self, s: AbstractState, model: ConcreteCursor) -> bool 
+    pub open spec fn relate(self, s: AbstractState, model: ConcreteCursor) -> bool
         recommends
             model.inv(s),
     {
@@ -181,7 +181,7 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
         assert(nodes[NR_LEVELS() - self.level + 1] ==
             s.page_table.get_node(model.path).unwrap()@.children[0].unwrap().value) by
             { s.page_table.tree@.seek_trace_next(model.path@, 0);
-	    };
+        };
 
         self.level = self.level - 1;
         self.guards.set((self.level - 1) as usize, Some(node));
@@ -294,7 +294,7 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
 
             model = Tracked(&model@.pop_level_spec());
         }
-        
+
         self.va = next_va;
     }
 

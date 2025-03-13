@@ -1,12 +1,12 @@
-pub mod page_table_mode;
-pub mod page_table_entry_trait;
-pub mod paging_consts_trait;
+pub mod cursor;
 pub mod node;
 pub mod page_table;
-pub mod cursor;
-pub mod tree_model;
-pub mod path_model;
+pub mod page_table_entry_trait;
+pub mod page_table_mode;
 pub mod page_table_model;
+pub mod paging_consts_trait;
+pub mod path_model;
+pub mod tree_model;
 
 pub use page_table_mode::*;
 pub use page_table_entry_trait::*;

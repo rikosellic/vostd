@@ -8,28 +8,33 @@ pub struct BitMapping<T, U> {
     pub dst: U,
 }
 
-}
-
+} // verus!
 verus! {
 
 pub trait MapForwardTrait<Dst>: Sized {
-
     spec fn map_forward_spec(self, bm: &[BitMapping<Self, Dst>]) -> Dst;
 
     #[verifier::when_used_as_spec(map_forward_spec)]
     fn map_forward(self, bm: &[BitMapping<Self, Dst>]) -> (res: Dst)
-        ensures res == self.map_forward_spec(bm);
+        ensures
+            res == self.map_forward_spec(bm),
+    ;
 
-    broadcast proof fn lemma_equal_map_froward(x: Self, y: Self, 
-        bm1: &[BitMapping<Self, Dst>], bm2: &[BitMapping<Self, Dst>])
+    broadcast proof fn lemma_equal_map_froward(
+        x: Self,
+        y: Self,
+        bm1: &[BitMapping<Self, Dst>],
+        bm2: &[BitMapping<Self, Dst>],
+    )
         requires
             x == y,
             bm1 == bm2,
         ensures
-            #[trigger] x.map_forward_spec(bm1) == #[trigger] y.map_forward_spec(bm2);
-}
+            #[trigger] x.map_forward_spec(bm1) == #[trigger] y.map_forward_spec(bm2),
+    ;
 }
 
+} // verus!
 macro_rules! impl_map_forward {
     ($src:ty, $dst:ty) => {
         verus! {
@@ -57,7 +62,7 @@ macro_rules! impl_map_forward {
                 })
             }
 
-            proof fn lemma_equal_map_froward(x: Self, y: Self, 
+            proof fn lemma_equal_map_froward(x: Self, y: Self,
                 bm1: &[BitMapping<Self, $dst>], bm2: &[BitMapping<Self, $dst>])
             { }
         }
@@ -66,28 +71,35 @@ macro_rules! impl_map_forward {
 }
 
 verus! {
-pub trait MapInvertForwardTrait<Dst>: Sized {
 
+pub trait MapInvertForwardTrait<Dst>: Sized {
     spec fn map_invert_forward_spec(self, bm: &[BitMapping<Self, Dst>]) -> Dst;
 
     #[verifier::when_used_as_spec(map_invert_forward_spec)]
     fn map_invert_forward(self, bm: &[BitMapping<Self, Dst>]) -> (res: Dst)
-        ensures res == self.map_invert_forward_spec(bm);
+        ensures
+            res == self.map_invert_forward_spec(bm),
+    ;
 
-    broadcast proof fn lemma_equal_map_invert_froward(x: Self, y: Self,
-        bm1: &[BitMapping<Self, Dst>], bm2: &[BitMapping<Self, Dst>])
+    broadcast proof fn lemma_equal_map_invert_froward(
+        x: Self,
+        y: Self,
+        bm1: &[BitMapping<Self, Dst>],
+        bm2: &[BitMapping<Self, Dst>],
+    )
         requires
             x == y,
             bm1 == bm2,
         ensures
-            #[trigger] x.map_invert_forward(bm1) == #[trigger] y.map_invert_forward(bm2);
-}
+            #[trigger] x.map_invert_forward(bm1) == #[trigger] y.map_invert_forward(bm2),
+    ;
 }
 
+} // verus!
 macro_rules! impl_map_invert_forward {
     ($src:ty, $dst:ty) => {
         verus! {
-        impl MapInvertForwardTrait<$dst> for $src {            
+        impl MapInvertForwardTrait<$dst> for $src {
             open spec fn map_invert_forward_spec(self, bm: &[BitMapping<Self, $dst>]) -> $dst {
                 let inv_src = !self;
                 bm@.fold_left(0 as $dst, |acc: $dst, m: BitMapping<Self, $dst>| {
@@ -123,23 +135,31 @@ macro_rules! impl_map_invert_forward {
 }
 
 verus! {
+
 pub trait MapBackward<Src>: Sized {
     spec fn map_backward_spec(self, bm: &[BitMapping<Src, Self>]) -> Src;
 
     #[verifier::when_used_as_spec(map_backward_spec)]
     fn map_backward(self, bm: &[BitMapping<Src, Self>]) -> (res: Src)
-        ensures res == self.map_backward_spec(bm);
+        ensures
+            res == self.map_backward_spec(bm),
+    ;
 
-    broadcast proof fn lemma_equal_map_backward(x: Self, y: Self,
-        bm1: &[BitMapping<Src, Self>], bm2: &[BitMapping<Src, Self>])
+    broadcast proof fn lemma_equal_map_backward(
+        x: Self,
+        y: Self,
+        bm1: &[BitMapping<Src, Self>],
+        bm2: &[BitMapping<Src, Self>],
+    )
         requires
             x == y,
             bm1 == bm2,
         ensures
-            #[trigger] x.map_backward(bm1) == #[trigger] y.map_backward(bm2);
-}
+            #[trigger] x.map_backward(bm1) == #[trigger] y.map_backward(bm2),
+    ;
 }
 
+} // verus!
 macro_rules! impl_map_backward {
     ($src:ty, $dst:ty) => {
         verus! {
@@ -177,31 +197,37 @@ macro_rules! impl_map_backward {
     };
 }
 
-verus!{
+verus! {
 
 pub trait MapInvertBackward<Src>: Sized {
-
     spec fn map_invert_backward_spec(self, bm: &[BitMapping<Src, Self>]) -> Src;
 
     #[verifier::when_used_as_spec(map_invert_backward_spec)]
     fn map_invert_backward(self, bm: &[BitMapping<Src, Self>]) -> (res: Src)
-        ensures res == self.map_invert_backward_spec(bm);
+        ensures
+            res == self.map_invert_backward_spec(bm),
+    ;
 
-    broadcast proof fn lemma_equal_map_invert_backward(x: Self, y: Self,
-        bm1: &[BitMapping<Src, Self>], bm2: &[BitMapping<Src, Self>])
+    broadcast proof fn lemma_equal_map_invert_backward(
+        x: Self,
+        y: Self,
+        bm1: &[BitMapping<Src, Self>],
+        bm2: &[BitMapping<Src, Self>],
+    )
         requires
             x == y,
             bm1 == bm2,
         ensures
-            #[trigger] x.map_invert_backward(bm1) == #[trigger] y.map_invert_backward(bm2);
-}
+            #[trigger] x.map_invert_backward(bm1) == #[trigger] y.map_invert_backward(bm2),
+    ;
 }
 
+} // verus!
 macro_rules! impl_map_invert_backward {
     ($src:ty, $dst:ty) => {
         verus! {
         impl MapInvertBackward<$src> for $dst {
-            
+
             open spec fn map_invert_backward_spec(self, bm: &[BitMapping<$src, Self>]) -> $src {
                 let inv_src = !self;
                 bm@.fold_left(0 as $src, |acc: $src, m: BitMapping<$src, Self>| {
@@ -260,9 +286,8 @@ impl_map_operations!(u64, usize);
 
 verus! {
 
-}
 
-
+} // verus!
 #[macro_export]
 macro_rules! bm {
     ($src: expr, $dst: expr) => {
@@ -300,7 +325,7 @@ pub use bms_as;
 #[macro_export]
 macro_rules! decl_bms_const {
     ($name:ident, $spec_name:ident, $type1:ty, $type2:ty, $len:expr, [$($flags:expr),* $(,)?]) => {
-    verus! {
+        verus! {
         pub spec const $spec_name: [BitMapping<$type1, $type2>; $len] = bms![
             $($flags),*
         ];

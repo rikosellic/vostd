@@ -2,22 +2,12 @@ use vstd::prelude::*;
 
 use vstd_extra::prelude::{TreePath};
 use aster_common::prelude::{
-    AbstractState,
-    PageTableNode,
-    PageTableModel,
-    PageTableTreePathModel,
-    PageTableTreeModel,
-    PageTableNodeModel,
-    pte_index,
-    page_size_at_level,
+    AbstractState, PageTableNode, PageTableModel, PageTableTreePathModel, PageTableTreeModel,
+    PageTableNodeModel, pte_index, page_size_at_level,
 };
 
 use super::super::{
-    node::model::{
-    NR_ENTRIES,
-    NR_LEVELS,
-    PAGE_SIZE,
-    }
+    node::model::{NR_ENTRIES, NR_LEVELS, PAGE_SIZE},
 };
 
 verus! {

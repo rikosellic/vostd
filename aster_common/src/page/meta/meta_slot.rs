@@ -11,7 +11,6 @@ use core::ops::Deref;
 #[allow(unused_imports)]
 use vstd_extra::manually_drop::*;
 
-
 verus! {
 
 #[repr(C)]
@@ -61,7 +60,7 @@ impl MetaSlotInner {
     }
 
     #[verifier::external_body]
-    pub fn borrow_pt(&self) 
+    pub fn borrow_pt(&self)
         -> (res: &PageTablePageMeta)
         ensures
             res == self.borrow_pt_spec(),
@@ -77,7 +76,7 @@ impl MetaSlotInner {
     }
 
     #[verifier::external_body]
-    pub fn borrow_frame(&self) 
+    pub fn borrow_frame(&self)
         -> (res: &FrameMeta)
         ensures
             res == self.borrow_frame_spec(),
@@ -98,8 +97,8 @@ impl MetaSlot {
         &get_union_field::<MetaSlotInner, ManuallyDrop<PageTablePageMeta>>(inner_perm.value(), "_pt").deref()
     }
 
-    pub fn borrow_pt<'a>(&'a self, 
-        inner_perm: Tracked<&'a PointsTo<MetaSlotInner>>) 
+    pub fn borrow_pt<'a>(&'a self,
+        inner_perm: Tracked<&'a PointsTo<MetaSlotInner>>)
         -> (res: &'a PageTablePageMeta)
         requires
             //self.wf(),
@@ -122,8 +121,8 @@ impl MetaSlot {
         &get_union_field::<MetaSlotInner, ManuallyDrop<FrameMeta>>(inner_perm.value(), "_frame").deref()
     }
 
-    pub fn borrow_frame<'a>(&'a self, 
-        Tracked(inner_perm): Tracked<&'a PointsTo<MetaSlotInner>>) 
+    pub fn borrow_frame<'a>(&'a self,
+        Tracked(inner_perm): Tracked<&'a PointsTo<MetaSlotInner>>)
         -> (res: &'a FrameMeta)
         requires
             //self.wf(),

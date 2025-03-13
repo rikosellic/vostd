@@ -112,7 +112,7 @@ pub proof fn invariants_implies_model(&self, model: &MetaSlotModel)
 }
 }
 
-verus!{
+verus! {
 
 //
 // # Primitives for MetaSlot
@@ -145,7 +145,7 @@ pub fn concrete_from_paddr(paddr: Paddr) -> (res: &'static Self)
 /// MetaSlot is statically bind to a physical address. In this case, we need to
 /// provide the hypothesis that a concrete MetaSlot derived from `paddr` is
 /// indeed attached to that physical address.
-/// 
+///
 #[rustc_allow_incoherent_impl]
 #[verifier::external_body]
 pub proof fn axiom_concrete_from_paddr_id(paddr: Paddr)
@@ -160,7 +160,7 @@ pub proof fn axiom_concrete_from_paddr_id(paddr: Paddr)
 #[verifier::external_body]
 #[verifier::when_used_as_spec(model_from_paddr_spec)]
 pub fn model_from_paddr(paddr: Paddr) -> (res: Tracked<MetaSlotModel>)
-    requires 
+    requires
         paddr % PAGE_SIZE() == 0,
         paddr < MAX_PADDR(),
     ensures
@@ -185,7 +185,7 @@ pub proof fn axiom_model_from_paddr_address(paddr: Paddr)
 
 #[rustc_allow_incoherent_impl]
 #[verifier::external_body]
-pub proof fn axiom_relate_model_same_paddr(paddr: Paddr, 
+pub proof fn axiom_relate_model_same_paddr(paddr: Paddr,
     slot: &'static MetaSlot, model: &MetaSlotModel)
     requires
         paddr % PAGE_SIZE() == 0,
@@ -207,9 +207,9 @@ pub proof fn axiom_meta_slot_model_singleton(a: &MetaSlotModel, b: &MetaSlotMode
 { }
 
 #[rustc_allow_incoherent_impl]
-pub fn from_paddr(paddr: Paddr) 
+pub fn from_paddr(paddr: Paddr)
     -> (res: (&'static Self, Tracked<MetaSlotModel>))
-    requires 
+    requires
         paddr % PAGE_SIZE() == 0,
         paddr < MAX_PADDR(),
     ensures
@@ -237,4 +237,3 @@ pub fn as_meta_slot_ptr(&self) -> (res: Vaddr)
 }
 
 }
-

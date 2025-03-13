@@ -33,7 +33,7 @@ pub enum PageUsePermission {
 }
 }
 
-verus!{
+verus! {
 pub tracked enum SpecificPagePerm{
     PT(PageTablePageMetaModel),
     NoPerm,
@@ -44,7 +44,7 @@ pub tracked struct PagePerm {
     pub tracked ptr_perm: simple_pptr::PointsTo<MetaSlot>,
     pub tracked ref_count_perm: PermissionU32,
     pub tracked inner_perm: Option<cell::PointsTo<MetaSlotInner>>,
-    pub tracked specific_perm: SpecificPagePerm, 
+    pub tracked specific_perm: SpecificPagePerm,
 }
 
 
@@ -59,11 +59,11 @@ pub tracked struct PageModel {
 }
 }
 
-verus!{
+verus! {
 
 impl PageOwner {
 
-pub open spec fn as_usage_spec(&self) -> PageUsage 
+pub open spec fn as_usage_spec(&self) -> PageUsage
 {
     match self {
         PageOwner::Kernel { .. } => PageUsage::Kernel,
@@ -87,26 +87,26 @@ pub fn as_usage(&self) -> PageUsage
 }
 
 }
-}    
+}
 
-verus!{
+verus! {
 
 impl PagePerm {
 
 pub open spec fn invariants(self) -> bool
 {
     &&& self.ptr_perm.is_init() ==>
-        { 
+        {
             &&& self.ptr_perm.value().wf()
             &&& self.ref_count_perm.is_for(self.ptr_perm.value().ref_count)
         }
-    
+
     &&& self.ptr_perm.is_init() && self.inner_perm.is_some() && self.get_inner_perm().is_init() ==>
-    {   
-        &&& self.ptr_perm.value()._inner.id() == self.get_inner_perm().id()   
+    {
+        &&& self.ptr_perm.value()._inner.id() == self.get_inner_perm().id()
         &&& match self.specific_perm {
             SpecificPagePerm::PT(perm) => {
-                &&& is_variant(self.get_inner_perm().value(),"_pt") 
+                &&& is_variant(self.get_inner_perm().value(),"_pt")
                 &&& perm.relate(self.ptr_perm.value().borrow_pt_spec(&self.get_inner_perm()))
             }
             SpecificPagePerm::NoPerm => {
@@ -121,7 +121,7 @@ pub open spec fn get_inner_perm(self) -> cell::PointsTo<MetaSlotInner>
     recommends
         self.inner_perm.is_some(),
 {
-    self.inner_perm.unwrap() 
+    self.inner_perm.unwrap()
 }
 
 #[verifier::inline]
@@ -193,7 +193,7 @@ pub open spec fn match_usage(self, usage:PageUsage) -> bool
         SpecificPagePerm::PT(perm) => usage is PageTable && perm.inner.is_init(),
         SpecificPagePerm::NoPerm => ! (usage is PageTable),
     }
-} 
+}
 
 #[verifier::inline]
 pub open spec fn get_pagetable_model(self) -> PageTablePageMetaModel
@@ -264,10 +264,10 @@ pub proof fn tracked_unwrap_pagetable_model(tracked self) -> (tracked res: PageT
 }
 
 }
-    
+
 }
 
-verus!{
+verus! {
 
 impl PageModel {
     pub open spec fn field_invariants(&self) -> bool {
@@ -302,7 +302,7 @@ impl PageModel {
     pub open spec fn owners_invariants(self) -> bool{
         &&& forall | owner: PageOwner | #[trigger]self.owners.contains(owner) ==> owner.as_usage() == self.usage
     }
-    
+
     pub open spec fn invariants(&self) -> bool {
         &&& self.field_invariants()
         &&& self.state_invariants()
@@ -399,8 +399,7 @@ impl PageModel {
 }
 } // verus!
 
-
-verus!{
+verus! {
 
 impl<M: PageMeta> Page<M> {
 
@@ -432,20 +431,20 @@ pub proof fn lemma_relate_same_meta_slot_relate_model(&self, model: PageModel,
 }
 }
 
-verus!{
+verus! {
 impl<M: PageMeta> Page<M> {
-    
+
 #[rustc_allow_incoherent_impl]
 pub proof fn lemma_inv_ptr_implies_has_valid_paddr(&self)
 ensures
     self.inv_ptr() ==> self.has_valid_paddr()
 {
     if self.inv_ptr()
-    { lemma_meta_to_page_soundness(self.ptr.addr() as Vaddr); } 
+    { lemma_meta_to_page_soundness(self.ptr.addr() as Vaddr); }
 }
 
 #[rustc_allow_incoherent_impl]
-pub proof fn lemma_relate_model_has_valid_index_implies_inv_ptr(&self, model: PageModel) 
+pub proof fn lemma_relate_model_has_valid_index_implies_inv_ptr(&self, model: PageModel)
     requires
         self.relate_model(model),
         model.has_valid_index(),
@@ -476,9 +475,9 @@ pub proof fn lemma_has_valid_paddr_implies_get_page_has_valid_index(&self, s: Ab
 }
 
 }
-}//verus!
+} //verus!
 
-verus!{
+verus! {
 
 impl<M: PageMeta> Page<M> {
 

@@ -3,8 +3,8 @@ use vstd::simple_pptr;
 use vstd::cell;
 
 use crate::prelude::{
-    PageTableEntry, PageTableEntryTrait, PageTableNode,
-    MetaSlot, MetaSlotInner, PageTablePageMetaInner
+    PageTableEntry, PageTableEntryTrait, PageTableNode, MetaSlot, MetaSlotInner,
+    PageTablePageMetaInner,
 };
 
 verus! {
@@ -37,11 +37,11 @@ impl <'a> Entry<'a> {
         Self { pte, idx, node }
     }
 
-    pub fn is_node(&self, 
+    pub fn is_node(&self,
         Tracked(p_slot): Tracked<&simple_pptr::PointsTo<MetaSlot>>,
         Tracked(p_inner): Tracked<&cell::PointsTo<MetaSlotInner>>,
         Tracked(pt_inner): Tracked<&cell::PointsTo<PageTablePageMetaInner>>
-    ) -> bool 
+    ) -> bool
         requires
             self.node.inv(),
             p_slot.pptr() == self.node.page.ptr,

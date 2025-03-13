@@ -10,7 +10,7 @@ verus! {
 pub trait PagingConstsTrait: Debug + Sync {
 
     spec fn BASE_PAGE_SIZE_spec() -> usize;
-    
+
     proof fn lemma_BASE_PAGE_SIZE_properties()
         ensures
             0 < Self::BASE_PAGE_SIZE_spec(),
@@ -21,7 +21,7 @@ pub trait PagingConstsTrait: Debug + Sync {
     #[inline(always)]
     #[verifier::when_used_as_spec(BASE_PAGE_SIZE_spec)]
     fn BASE_PAGE_SIZE() -> (res: usize)
-        ensures 
+        ensures
             res == Self::BASE_PAGE_SIZE_spec(),
             0 < res,
             is_power_2(res as int),;
@@ -36,7 +36,7 @@ pub trait PagingConstsTrait: Debug + Sync {
     #[inline(always)]
     #[verifier::when_used_as_spec(NR_LEVELS_spec)]
     fn NR_LEVELS() -> (res: PagingLevel)
-        ensures 
+        ensures
             res == NR_LEVELS(),
             res == Self::NR_LEVELS_spec(),
             res > 0,
@@ -57,7 +57,7 @@ pub trait PagingConstsTrait: Debug + Sync {
     #[inline(always)]
     #[verifier::when_used_as_spec(PTE_SIZE_spec)]
     fn PTE_SIZE() -> (res: usize)
-        ensures 
+        ensures
             res == Self::PTE_SIZE_spec(),
             is_power_2(res as int),
             0 < res <= Self::BASE_PAGE_SIZE(),

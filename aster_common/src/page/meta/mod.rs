@@ -1,8 +1,8 @@
+pub mod mapping;
 pub mod meta_slot;
+pub mod meta_slot_model;
 pub mod page_meta;
 pub mod page_usage;
-pub mod mapping;
-pub mod meta_slot_model;
 
 pub use meta_slot::*;
 pub use page_meta::*;

@@ -7,7 +7,7 @@ use vstd_extra::ghost_tree;
 use vstd_extra::prelude::Node;
 use crate::prelude::*;
 
-verus!{
+verus! {
 
 pub tracked struct PageTableNodeModel {
     pub tracked inner: ghost_tree::Node<PageTableNodeValue, CONST_NR_ENTRIES, CONST_NR_LEVELS>,
@@ -15,7 +15,7 @@ pub tracked struct PageTableNodeModel {
 
 impl View for PageTableNodeModel {
     type V = ghost_tree::Node<PageTableNodeValue, CONST_NR_ENTRIES, CONST_NR_LEVELS>;
-    
+
     open spec fn view(&self) -> Self::V {
         self.inner
     }
@@ -53,7 +53,7 @@ pub tracked struct PageTableTreeModel {
 
 impl View for PageTableTreeModel {
     type V = ghost_tree::Tree<PageTableNodeValue, CONST_NR_ENTRIES, CONST_NR_LEVELS>;
-    
+
     open spec fn view(&self) -> Self::V {
         self.inner
     }
