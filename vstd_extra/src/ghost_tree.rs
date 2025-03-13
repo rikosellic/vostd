@@ -1418,7 +1418,7 @@ impl<T: TreeNodeValue, const N: usize, const L: usize> Tree<T, N, L> {
         requires
             path.len() == 0,
         ensures
-            #[trigger]self.trace(path) == seq![self.root.value],
+            #[trigger] self.trace(path) == seq![self.root.value],
     {
     }
 
@@ -1437,7 +1437,7 @@ impl<T: TreeNodeValue, const N: usize, const L: usize> Tree<T, N, L> {
 
     pub broadcast proof fn trace_no_longer_than_path(self, path: TreePath<N>)
         ensures
-            #[trigger]self.trace(path).len() <= path.len(),
+            #[trigger] self.trace(path).len() <= path.len(),
     {
         admit()
     }

@@ -3,6 +3,8 @@ members = [
 #    "basic",
     "vstd_extra",
     "aster_common",
+    "fvt1-mem-region-init",
+    "fvt5-lifecycle-safety",
     "fvt10-pt-cursor-navigation",
     "fvt11-pt-cursor-guards",
 ]

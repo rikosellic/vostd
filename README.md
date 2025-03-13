@@ -59,12 +59,13 @@ cargo xtask bootstrap --no-vscode-extension
 
 #### Build Verification Targets 
 
-Then, run ``make`` to build the common libraries and both verification targets.
+Then, run ``make`` to build the common libraries and all verification targets.
 Make simply runs:
 
 ```bash
 cargo xtask compile --targets vstd_extra
 cargo xtask compile --targets aster_common
+cargo xtask verify --targets fvt5-lifecycle-safety
 cargo xtask verify --targets fvt10-pt-cursor-navigation
 cargo xtask verify --targets fvt11-pt-cursor-guards
 ```
@@ -74,11 +75,13 @@ with ``make fvt10`` or ``make fvt11``
 
 ## The verification targets
 
-Currently, this repository contains two verification targets. 
+Currently, this repository contains four verification targets.
 
-Target ``fvt10-pt-cursor-navigation``
-verifies the behavior of the cursor methods ``push_level``, ``pop_level``, and ``move_forward``.
-The specification for these functions are defined in ``src/page_table/cursor/model.rs``, along with
+Target `fvt1-mem-region-init` verifies the correctness of memory region initialization. An abstract `MemRegionModel` is defined in `src/model.rs` and tracked in `MemoryRegion` methods to verify the implementation correctly refines the specification.
+
+Target `fvt5-lifecycle-safety` verifies the lifecycle of `Page` and other relating structs. The specifications of page methods are defined in `src/page/specs.rs` and their proofs can be found in `src/page/mod.rs`. The page methods are extended with ghost `PageOwner`s to track their ownership and prove the correctness of the reference counting mechanism.
+
+Target ``fvt10-pt-cursor-navigation`` verifies the behavior of the cursor methods ``push_level``, ``pop_level``, and ``move_forward``. The specification for these functions are defined in ``src/page_table/cursor/model.rs``, along with
 the ``ConcreteCursor`` type that contains an abstract instance of a page table, represented as a tree,
 as well as the path into that tree that the cursor currently points to, and the subtree found at the
 end of the path. The functions themselves, and their verification, are found in ``src/page_table/cursor/mod.rs``.
