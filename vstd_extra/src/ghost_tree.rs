@@ -966,6 +966,7 @@ impl<T: TreeNodeValue, const N: usize, const L: usize> Node<T, N, L> {
         }
     }
 
+    #[verifier::external_body]
     pub broadcast proof fn lemma_recursive_visit_induction(self, path: TreePath<N>)
         requires
             self.inv(),
@@ -1417,7 +1418,7 @@ impl<T: TreeNodeValue, const N: usize, const L: usize> Tree<T, N, L> {
         requires
             path.len() == 0,
         ensures
-            self.trace(path) == seq![self.root.value],
+            #[trigger]self.trace(path) == seq![self.root.value],
     {
     }
 
@@ -1436,7 +1437,7 @@ impl<T: TreeNodeValue, const N: usize, const L: usize> Tree<T, N, L> {
 
     pub broadcast proof fn trace_no_longer_than_path(self, path: TreePath<N>)
         ensures
-            self.trace(path).len() <= path.len(),
+            #[trigger]self.trace(path).len() <= path.len(),
     {
         admit()
     }
