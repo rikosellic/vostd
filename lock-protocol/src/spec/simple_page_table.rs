@@ -34,32 +34,29 @@ PageTable {
     fields {
         #[sharding(map)]
         pub pages: Map<Paddr, PageTableEntry>,
+
+        #[sharding(set)]
+        pub right_to_use_addr: Set<Paddr>,
     }
 
     init!{
         initialize() {
-            init pages = Map::new(|p: Paddr| 0 <= p <= NR_ENTRIES, |p: Paddr| PageTableEntry {
-                pa: p,
-                flags: PteFlag,
-
-                level: 0,
-                children: 0,
-                children_index: 0,
-            });
+            init pages = Map::empty();
+            init right_to_use_addr = Set::full();
         }
     }
 
     transition! {
         // create a child at the first index of the target node
         new_at(addr: Paddr, node: PageTableEntry) {
-            remove pages -= [ addr => let old_node ];
+            remove right_to_use_addr -= set { addr };
             add pages += [addr => node];
         }
     }
 
     #[inductive(new_at)]
     fn tr_new_at_invariant(pre: Self, post: Self, addr: Paddr, node: PageTableEntry) {
-            // assert(!pre.pages.contains_key(addr)); // failed, why?
+            assert(!pre.pages.contains_key(addr));
             assert(post.pages.contains_key(addr));
             assert(post.pages[addr] == node);
     }
@@ -70,6 +67,16 @@ PageTable {
     #[invariant]
     pub spec fn page_wf(self) -> bool {
         true
+    }
+
+    
+    #[invariant]
+    pub closed spec fn right_to_use_addr_complement(&self) -> bool {
+        forall |addr: Paddr| 
+            #![trigger self.right_to_use_addr.contains(addr)]
+            #![trigger self.pages.dom().contains(addr)]
+            self.right_to_use_addr.contains(addr)
+              <==> !self.pages.dom().contains(addr)
     }
 
     pub open spec fn pages(&self) -> Map<Paddr, PageTableEntry> {
@@ -91,7 +98,7 @@ fn alloc_page_table_entries() -> (res: HashMapWithView<usize, Tracked<(PPtr<Page
             (#[trigger] res@[i])@.1@.pptr() == res@[i]@.0
             && res@[i]@.1@.mem_contents() == MemContents::<PageTableEntry>::Uninit
             && res@[i]@.0.addr() + core::mem::size_of::<PageTableEntry>() == res@[((i + 1) as usize)]@.0.addr() // pointers are adjacent
-            // && res[i].0.addr() == 0x1000 // points to the hardware page table
+            && res@[i]@.0.addr() == 0x1000 // points to the hardware page table
 {
     unimplemented!()
 }
@@ -107,15 +114,43 @@ fn get_from_index(index: usize, map: &HashMapWithView<usize, Tracked<(PPtr<PageT
     unimplemented!()
 }
 
+struct_with_invariants!{
+    pub struct MockPageTable {
+        pub mem: HashMapWithView<usize, Tracked<(PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>>,
+        pub pages: Tracked<MapToken<usize, PageTableEntry, PageTable::pages>>,
+        pub instance: Tracked<PageTable::Instance>,
+    }
+
+    spec fn wf(&self) -> bool {
+        predicate {
+            self.pages@.instance_id() == self.instance@.id()
+            &&
+            forall|i:usize| 0 <= i < 1000 ==>
+                (#[trigger] self.mem@[i])@.1@.pptr() == self.mem@[i]@.0
+                && if(self.mem@[i]@.1@.mem_contents().is_init()) {
+                    self.mem@[i]@.1@.mem_contents().value() == self.pages@[self.mem@[i]@.0.addr()]
+                } else {
+                    true
+                }
+                && self.mem@[i]@.0.addr() + core::mem::size_of::<PageTableEntry>() == self.mem@[((i + 1) as usize)]@.0.addr() // pointers are adjacent
+        }
+    }
+}
+
 fn main() {
-    let tracked (Tracked(instance), Tracked(pages)) = PageTable::Instance::initialize();
+    let tracked (Tracked(instance), Tracked(pages_token), Tracked(right_to_use_addr)) = PageTable::Instance::initialize();
+    let addrs:Tracked<PageTable::right_to_use_addr> = Tracked::assume_new();
 
-    let mut mem = alloc_page_table_entries();
+    let mut fake = MockPageTable {
+        mem: alloc_page_table_entries(),
+        pages: Tracked(pages_token),
+        instance: Tracked(instance.clone()),
+    };
 
-    let (p_root, Tracked(mut pt_root)) = get_from_index(0, &mem);
+    let (p_root, Tracked(mut pt_root)) = get_from_index(0, &fake.mem);
     assert(pt_root.pptr() == p_root);
     assert(pt_root.mem_contents() == MemContents::<PageTableEntry>::Uninit);
-    // assert(root.addr() + size_of::<PageTableEntry>() == mem@[1]@.0.addr());
+    assert(p_root.addr() + core::mem::size_of::<PageTableEntry>() == fake.mem@[1]@.0.addr());
 
     let pte1 = PageTableEntry {
         pa: p_root.addr(),
@@ -126,12 +161,16 @@ fn main() {
     };
 
     proof{
-        // instance.new_at(p_root.addr(), pte1, pages.into_map().index(p_root.addr()));
+        assert(pages_token.dom().len() == 0);
+        assert(fake.pages@.dom().len() == 0);
+        assert(!fake.pages@.dom().contains(p_root.addr()));
+        // fake.pages@.insert(PageTable::pages {});
+        instance.new_at(p_root.addr(), pte1, addrs@);
     }
 
     p_root.write(Tracked(&mut pt_root), pte1);
 
-    let (p_pte2, Tracked(mut pt_pte2)) = get_from_index(1, &mem);
+    let (p_pte2, Tracked(mut pt_pte2)) = get_from_index(1, &fake.mem);
     let pte2 = PageTableEntry {
         pa: p_root.addr() + core::mem::size_of::<PageTableEntry>(),
         flags: PteFlag,
