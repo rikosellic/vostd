@@ -2,3 +2,4 @@ target/
 .verus-log/
 .vscode/settings.json
 .idea/
+test

@@ -7,15 +7,15 @@ use vstd::prelude::*;
 
 #[allow(unused_imports)]
 use child::*;
-use crate::meta::AnyFrameMeta;
-use crate::untyped::UFrame;
-use crate::PageTableEntryTrait;
-use crate::PageTableEntry;
-use crate::PagingConstsTrait;
-use crate::PagingConsts;
+use crate::mm::meta::AnyFrameMeta;
+use crate::mm::untyped::UFrame;
+use crate::mm::PageTableEntryTrait;
+use crate::mm::PageTableEntry;
+use crate::mm::PagingConstsTrait;
+use crate::mm::PagingConsts;
 
 use crate::mm::frame::Frame;
-use crate::PagingLevel;
+use crate::mm::PagingLevel;
 
 verus! {
 

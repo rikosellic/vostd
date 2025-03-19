@@ -1,9 +1,9 @@
 use vstd::prelude::*;
 
-use crate::PageTableEntryTrait;
-use crate::PageTableEntry;
-use crate::PagingConstsTrait;
-use crate::PagingConsts;
+use crate::mm::PageTableEntryTrait;
+use crate::mm::PageTableEntry;
+use crate::mm::PagingConstsTrait;
+use crate::mm::PagingConsts;
 
 use super::PageTableNode;
 

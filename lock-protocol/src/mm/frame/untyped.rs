@@ -1,6 +1,6 @@
 use vstd::prelude::*;
 
-use crate::{meta::AnyFrameMeta, Frame};
+use crate::mm::{meta::AnyFrameMeta, Frame};
 
 verus! {
 

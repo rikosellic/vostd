@@ -9,9 +9,9 @@ use meta::MetaSlot;
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
-use crate::Paddr;
-use crate::PagingLevel;
-use crate::PAGE_SIZE;
+use crate::mm::Paddr;
+use crate::mm::PagingLevel;
+use crate::mm::PAGE_SIZE;
 
 verus! {
 
