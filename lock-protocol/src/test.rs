@@ -11,7 +11,7 @@ pub struct PageTableEntry {
 
     pub level: usize, // this should not be here, just for testing
     pub children: Paddr, // this should not be here, just for testing
-    pub children_index: usize, // this should not be here, just for testing
+    // pub children_index: usize, // this should not be here, just for testing
 }
 
 fn main() {
