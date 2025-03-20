@@ -16,4 +16,18 @@ pub struct PageTableEntry {
 
 fn main() {
     println!("size of PageTableEntry: {}", core::mem::size_of::<PageTableEntry>());
+
+    use std::collections::HashMap;
+
+    let map = HashMap::from([
+        ("a", 1),
+        ("b", 2),
+        ("c", 3),
+    ]);
+
+    for key in map.keys() {
+        println!("{key}");
+    }
+    let keys = map.keys();
+    println!("{:?}", keys);
 }

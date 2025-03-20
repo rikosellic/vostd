@@ -164,12 +164,14 @@ struct_with_invariants!{
 }
 
 fn main() {
+    broadcast use vstd::std_specs::hash::group_hash_axioms;
+    broadcast use vstd::hash_map::group_hash_map_axioms;
     assert(SIZEOF_PAGETABLEENTRY == core::mem::size_of::<PageTableEntry>());
 
     let tracked (Tracked(instance), Tracked(pages_token), Tracked(unused_addrs)) = PageTable::Instance::initialize();
     let tracked mut unused_addrs = unused_addrs.into_map();
 
-    let fake = MockPageTable {
+    let mut fake = MockPageTable {
         mem: alloc_page_table_entries(),
         pages: Tracked(pages_token),
         instance: Tracked(instance.clone()),
@@ -191,9 +193,10 @@ fn main() {
             }
             && fake.mem@[0]@.0.addr() == 0 // points to the hardware page table
             && fake.mem@.dom().contains(0)
-            );
+    );
     assert(fake.mem@.dom().contains(0 as usize));
     assert(fake.mem@.dom().contains(0));
+    assert(fake.mem@.dom().contains(1));
 
     let (p_root, Tracked(mut pt_root)) = get_from_index(1, &fake.mem);
     assert(pt_root.pptr() == p_root);
@@ -211,17 +214,25 @@ fn main() {
     assert(unused_addrs.dom().contains(p_root.addr()));
     let tracked used_addr = unused_addrs.tracked_remove(p_root.addr());
 
+    let tracked mut inserted_page: Tracked<PageTable::pages>;
     proof{
-        assert(pages_token.dom().len() == 1);
         assert(fake.pages@.dom().len() == 1);
         assert(!fake.pages@.dom().contains(p_root.addr()));
-        let tracked inserted_page = instance.new_at(p_root.addr(), pte1, used_addr);
-        // fake.pages@.into_map().insert(p_root.addr(), inserted_page_token);
-        assert(fake.wf());
-        // fake.pages@[0] = inserted_page_token;
+        inserted_page = Tracked(instance.new_at(p_root.addr(), pte1, used_addr));
+        // fake.pages@.insert(inserted_page@);
     }
 
+    assert(fake.wf());
     p_root.write(Tracked(&mut pt_root), pte1);
+    assert(fake.mem.len() == NR_ENTRIES);
+    assert(fake.mem@.dom().contains(1));
+    assert(fake.mem@.contains_key(1));
+    fake.mem.remove(&1);
+    assert(fake.mem.len() == NR_ENTRIES - 1);
+    fake.mem.insert(p_root.addr(), Tracked((p_root, Tracked(pt_root))));
+    
+    // assert(fake.mem.len() == NR_ENTRIES);
+    assert(fake.wf());
 
     // let (p_pte2, Tracked(mut pt_pte2)) = get_from_index(1, &fake.mem);
     // let pte2 = PageTableEntry {
@@ -273,6 +284,9 @@ fn alloc_page_table_entries() -> (res: HashMapWithView<usize, Tracked<(PPtr<Page
         forall |i:usize| 0 <= i < NR_ENTRIES ==> {
             res@.dom().contains(i)
         },
+        forall |i:usize| 0 <= i < NR_ENTRIES ==> {
+            res@.contains_key(i)
+        },
         forall |i:usize| 0 < i < NR_ENTRIES ==> {
             (#[trigger] res@[i])@.1@.pptr() == res@[i]@.0
         },
@@ -293,8 +307,8 @@ fn get_from_index(index: usize, map: &HashMapWithView<usize, Tracked<(PPtr<PageT
     requires
         0 <= index < NR_ENTRIES,
         map@.dom().contains(index),
-        map@.len() == NR_ENTRIES,
-        map@.dom().len() == NR_ENTRIES,
+        // map@.len() == NR_ENTRIES,
+        // map@.dom().len() == NR_ENTRIES,
         forall |i:usize| 0 <= i < NR_ENTRIES ==> {
             map@.dom().contains(i)
         },
