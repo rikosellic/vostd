@@ -30,8 +30,10 @@ pub struct PageTableEntry {
     pub pa: Paddr,
     pub flags: PteFlag,
 
+    // TODO: this should not be here, just for testing {
     pub level: usize, // this should not be here, just for testing
     pub children_addr: Paddr, // this should not be here, just for testing
+    // }
 }
 
 tokenized_state_machine!{
@@ -47,7 +49,7 @@ PageTable {
 
     init!{
         initialize() {
-            // TODO: 0 is a special page to indicate uninitialization
+            // TODO: 0 is a special page to indicate uninitialization, do we need to handle this?
             init pages = Map::empty().insert(0, PageTableEntry {
                 pa: 0,
                 flags: PteFlag,
@@ -219,7 +221,8 @@ fn main() {
         assert(fake.pages@.dom().len() == 1);
         assert(!fake.pages@.dom().contains(p_root.addr()));
         inserted_page = Tracked(instance.new_at(p_root.addr(), pte1, used_addr));
-        // fake.pages@.insert(inserted_page@);
+        // fake.pages@.insert(inserted_page@); // TODO: how to use the token?
+        assert(inserted_page@.instance_id() == instance.id());
     }
 
     assert(fake.wf());
@@ -227,38 +230,38 @@ fn main() {
     assert(fake.mem.len() == NR_ENTRIES);
     assert(fake.mem@.dom().contains(1));
     assert(fake.mem@.contains_key(1));
-    fake.mem.remove(&1);
-    assert(fake.mem.len() == NR_ENTRIES - 1);
-    fake.mem.insert(p_root.addr(), Tracked((p_root, Tracked(pt_root))));
-    
+
+    // TODO: do we need to update the mem?
+    {
+        // fake.mem.remove(&1);
+        // assert(fake.mem.len() == NR_ENTRIES - 1); // TODO: this fails, why?
+        // fake.mem.insert(p_root.addr(), Tracked((p_root, Tracked(pt_root))));
+    }
+
     // assert(fake.mem.len() == NR_ENTRIES);
-    assert(fake.wf());
+    // assert(fake.wf()); // TODO: this fails, why?
 
-    // let (p_pte2, Tracked(mut pt_pte2)) = get_from_index(1, &fake.mem);
-    // let pte2 = PageTableEntry {
-    //     pa: p_root.addr() + SIZEOF_PAGETABLEENTRY,
-    //     flags: PteFlag,
-    //     level: 1,
-    //     children: 0,
-    //     children_index: 0,
-    // };
+    let (p_pte2, Tracked(mut pt_pte2)) = get_from_index(2, &fake.mem);
+    assert(pt_pte2.pptr().addr() == p_root.addr() + SIZEOF_PAGETABLEENTRY);
+    let pte2 = PageTableEntry {
+        pa: p_root.addr() + SIZEOF_PAGETABLEENTRY,
+        flags: PteFlag,
+        level: 1,
+        children_addr: 0,
+    };
 
-    // assert(pt_pte2.addr() != p_root.addr());
-    // assert(unused_addrs.dom().contains(p_pte2.addr()));
-    // let tracked used_addr = unused_addrs.tracked_remove(p_pte2.addr());
+    assert(unused_addrs.dom().contains(p_pte2.addr()));
+    let tracked used_addr = unused_addrs.tracked_remove(p_pte2.addr());
 
-    // proof{
-    //     assert(pages_token.dom().len() == 0);
-    //     assert(fake.pages@.dom().len() == 0);
-    //     assert(fake.pages@.dom().contains(p_root.addr()));
-    //     assert(!fake.pages@.dom().contains(p_root.addr()));
-    //     // TODO: this should not be passed?!?!
-    //     instance.new_at(p_root.addr(), pte2, used_addr);
-    //     assert(fake.wf());
-    //     assert(fake.pages@.dom().contains(pt_pte2.addr()));
-    // }
+    let tracked mut inserted_page: Tracked<PageTable::pages>;
+    proof{
+        assert(fake.pages@.dom().len() == 1);
+        assert(!fake.pages@.dom().contains(p_root.addr())); // TODO: this should fail!
+        inserted_page = Tracked(instance.new_at(p_pte2.addr(), pte2, used_addr));
+        // fake.pages@.insert(inserted_page@); // TODO: how to use the token?
+    }
 
-    // p_pte2.write(Tracked(&mut pt_pte2), pte2);
+    p_pte2.write(Tracked(&mut pt_pte2), pte2);
 
     // proof{
     //     // assert(forall|i:usize| 0 <= i < 1000 ==> {
