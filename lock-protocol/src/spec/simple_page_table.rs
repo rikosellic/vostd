@@ -73,6 +73,8 @@ PageTable {
             remove unused_addrs -= set { addr };
             update pages = pre.pages.insert(addr, newPTE);
         }
+
+        // TODO: set child relationship
     }
 
     #[inductive(new_at)]
@@ -273,6 +275,7 @@ fn main() {
 
 }
 
+// TODO: implement this
 #[verifier::external_body]
 fn alloc_page_table_entries() -> (res: HashMap<usize, Tracked<(PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>>)
     ensures
@@ -301,6 +304,7 @@ fn alloc_page_table_entries() -> (res: HashMap<usize, Tracked<(PPtr<PageTableEnt
     unimplemented!()
 }
 
+// TODO: implement this
 #[verifier::external_body]
 fn get_from_index(index: usize, map: &HashMap<usize, Tracked<(PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>>) -> (res: (PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>))
     requires
@@ -329,5 +333,10 @@ fn get_from_index(index: usize, map: &HashMap<usize, Tracked<(PPtr<PageTableEntr
 
 pub open spec fn index_to_addr(index: usize) -> usize {
     (PHYSICAL_BASE_ADDRESS + (index - 1) * SIZEOF_PAGETABLEENTRY) as usize
+}
+
+// TODO: can we eliminate division
+pub open spec fn addr_to_index(addr: usize) -> usize {
+    ((addr - PHYSICAL_BASE_ADDRESS) / SIZEOF_PAGETABLEENTRY as int + 1) as usize
 }
 } // verus!
