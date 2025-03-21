@@ -22,6 +22,7 @@ verus! {
                 //     map@.contains_key(j)
                 // }
         {
+            broadcast use vstd::std_specs::hash::group_hash_axioms;
             map.insert(i, 0);
             // assert(map@.len() == i + 1);
             assert(map@.contains_key(i));

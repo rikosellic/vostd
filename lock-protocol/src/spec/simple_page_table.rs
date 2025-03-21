@@ -3,6 +3,7 @@ use builtin::*;
 use builtin_macros::*;
 
 use std::intrinsics::size_of;
+use std::collections::HashMap;
 
 use state_machines_macros::*;
 use vstd::prelude::*;
@@ -22,6 +23,8 @@ verus! {
 pub const SIZEOF_PAGETABLEENTRY: usize = 24;
 global layout PageTableEntry is size == 24, align == 8; // TODO: is this true?
 
+pub const PHYSICAL_BASE_ADDRESS: usize = 0x1000;
+
 #[derive(Clone, Copy)]
 pub struct PteFlag;
 
@@ -40,7 +43,7 @@ tokenized_state_machine!{
 PageTable {
 
     fields {
-        #[sharding(map)]
+        #[sharding(variable)]
         pub pages: Map<Paddr, PageTableEntry>,
 
         #[sharding(set)]
@@ -49,7 +52,8 @@ PageTable {
 
     init!{
         initialize() {
-            // TODO: 0 is a special page to indicate uninitialization, do we need to handle this?
+            // TODO: 0 is a special page to indicate uninitialization
+            //       maybe we need an uninitialized flag
             init pages = Map::empty().insert(0, PageTableEntry {
                 pa: 0,
                 flags: PteFlag,
@@ -67,7 +71,7 @@ PageTable {
             require addr == newPTE.pa;
             require newPTE.children_addr == 0;
             remove unused_addrs -= set { addr };
-            add pages += [addr => newPTE];
+            update pages = pre.pages.insert(addr, newPTE);
         }
     }
 
@@ -131,21 +135,13 @@ PageTable {
                     self.pages[parent].children_addr == 0 || self.pages[parent].children_addr != addr
     }
 
-    pub open spec fn pages(&self) -> Map<Paddr, PageTableEntry> {
-        self.pages
-    }
-
-    pub open spec fn len(&self) -> nat {
-        self.pages.len()
-    }
-
 }
 } // tokenized_state_machine
 
 struct_with_invariants!{
     pub struct MockPageTable {
-        pub mem: HashMapWithView<usize, Tracked<(PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>>,
-        pub pages: Tracked<MapToken<usize, PageTableEntry, PageTable::pages>>,
+        pub mem: HashMap<usize, Tracked<(PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>>,
+        pub pages: Tracked<PageTable::pages>,
         pub instance: Tracked<PageTable::Instance>,
     }
 
@@ -155,9 +151,11 @@ struct_with_invariants!{
             &&
             self.mem.len() == NR_ENTRIES
             &&
-            forall |i: usize| 0 <= i < NR_ENTRIES ==>
-                if (self.pages@.dom().contains(i)) {
-                    #[trigger] self.pages@[i].pa == self.mem@[i]@.0.addr()
+            forall |i: usize, j: usize| 0 < i < NR_ENTRIES && j == index_to_addr(i) ==>
+                if (self.mem@[i]@.1@.mem_contents() != MemContents::<PageTableEntry>::Uninit) {
+                    self.pages@.value().contains_key(j)
+                    &&
+                    #[trigger] self.pages@.value()[j].pa == #[trigger] self.mem@[i]@.0.addr()
                 } else {
                     true
                 }
@@ -202,7 +200,7 @@ fn main() {
 
     let (p_root, Tracked(mut pt_root)) = get_from_index(1, &fake.mem);
     assert(pt_root.pptr() == p_root);
-    // assert(pt_root.mem_contents() == MemContents::<PageTableEntry>::Uninit);
+    assert(pt_root.mem_contents() == MemContents::<PageTableEntry>::Uninit);
     assert(p_root.addr() + SIZEOF_PAGETABLEENTRY == fake.mem@[2]@.0.addr());
 
     let pte1 = PageTableEntry {
@@ -210,7 +208,6 @@ fn main() {
         flags: PteFlag,
         level: 0,
         children_addr: 0,
-        // children_index: 0,
     };
 
     assert(unused_addrs.dom().contains(p_root.addr()));
@@ -218,11 +215,10 @@ fn main() {
 
     let tracked mut inserted_page: Tracked<PageTable::pages>;
     proof{
-        assert(fake.pages@.dom().len() == 1);
-        assert(!fake.pages@.dom().contains(p_root.addr()));
-        inserted_page = Tracked(instance.new_at(p_root.addr(), pte1, used_addr));
-        // fake.pages@.insert(inserted_page@); // TODO: how to use the token?
-        assert(inserted_page@.instance_id() == instance.id());
+        assert(fake.pages@.value().dom().len() == 1);
+        assert(!fake.pages@.value().dom().contains(p_root.addr()));
+        instance.new_at(p_root.addr(), pte1, fake.pages.borrow_mut(), used_addr);
+        assert(fake.pages@.value().contains_key(p_root.addr()));
     }
 
     assert(fake.wf());
@@ -231,20 +227,18 @@ fn main() {
     assert(fake.mem@.dom().contains(1));
     assert(fake.mem@.contains_key(1));
 
-    // TODO: do we need to update the mem?
-    {
-        // fake.mem.remove(&1);
-        // assert(fake.mem.len() == NR_ENTRIES - 1); // TODO: this fails, why?
-        // fake.mem.insert(p_root.addr(), Tracked((p_root, Tracked(pt_root))));
-    }
+    // broadcast use vstd::std_specs::hash::group_hash_axioms;
+    fake.mem.remove(&1);
+    assert(fake.mem.len() == NR_ENTRIES - 1);
+    fake.mem.insert(1, Tracked((p_root, Tracked(pt_root))));
+    assert(fake.mem.len() == NR_ENTRIES);
 
-    // assert(fake.mem.len() == NR_ENTRIES);
-    // assert(fake.wf()); // TODO: this fails, why?
+    assert(fake.wf());
 
     let (p_pte2, Tracked(mut pt_pte2)) = get_from_index(2, &fake.mem);
     assert(pt_pte2.pptr().addr() == p_root.addr() + SIZEOF_PAGETABLEENTRY);
     let pte2 = PageTableEntry {
-        pa: p_root.addr() + SIZEOF_PAGETABLEENTRY,
+        pa: p_pte2.addr(),
         flags: PteFlag,
         level: 1,
         children_addr: 0,
@@ -255,13 +249,14 @@ fn main() {
 
     let tracked mut inserted_page: Tracked<PageTable::pages>;
     proof{
-        assert(fake.pages@.dom().len() == 1);
-        assert(!fake.pages@.dom().contains(p_root.addr())); // TODO: this should fail!
-        inserted_page = Tracked(instance.new_at(p_pte2.addr(), pte2, used_addr));
-        // fake.pages@.insert(inserted_page@); // TODO: how to use the token?
+        assert(fake.pages@.value().dom().len() == 2);
+        assert(fake.pages@.value().dom().contains(p_root.addr()));
+        assert(!fake.pages@.value().dom().contains(p_pte2.addr()));
+        instance.new_at(p_pte2.addr(), pte2, fake.pages.borrow_mut(), used_addr);
     }
 
     p_pte2.write(Tracked(&mut pt_pte2), pte2);
+    assert(fake.wf());
 
     // proof{
     //     // assert(forall|i:usize| 0 <= i < 1000 ==> {
@@ -279,7 +274,7 @@ fn main() {
 }
 
 #[verifier::external_body]
-fn alloc_page_table_entries() -> (res: HashMapWithView<usize, Tracked<(PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>>)
+fn alloc_page_table_entries() -> (res: HashMap<usize, Tracked<(PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>>)
     ensures
         res@.dom().len() == NR_ENTRIES,
         res@.len() == NR_ENTRIES,
@@ -300,13 +295,14 @@ fn alloc_page_table_entries() -> (res: HashMapWithView<usize, Tracked<(PPtr<Page
             && (#[trigger] res@[i])@.0.addr() + SIZEOF_PAGETABLEENTRY == (#[trigger] res@[j])@.0.addr() // pointers are adjacent
         },
         res@[0]@.0.addr() == 0, // points to the hardware page table
-        res@[1]@.0.addr() == 0x100, // points to the hardware page table
+        res@[1]@.0.addr() == PHYSICAL_BASE_ADDRESS, // points to the hardware page table
+        res@.dom().finite(),
 {
     unimplemented!()
 }
 
 #[verifier::external_body]
-fn get_from_index(index: usize, map: &HashMapWithView<usize, Tracked<(PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>>) -> (res: (PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>))
+fn get_from_index(index: usize, map: &HashMap<usize, Tracked<(PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>>) -> (res: (PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>))
     requires
         0 <= index < NR_ENTRIES,
         map@.dom().contains(index),
@@ -329,5 +325,9 @@ fn get_from_index(index: usize, map: &HashMapWithView<usize, Tracked<(PPtr<PageT
         res.1 == map@[index]@.1
 {
     unimplemented!()
+}
+
+pub open spec fn index_to_addr(index: usize) -> usize {
+    (PHYSICAL_BASE_ADDRESS + (index - 1) * SIZEOF_PAGETABLEENTRY) as usize
 }
 } // verus!
