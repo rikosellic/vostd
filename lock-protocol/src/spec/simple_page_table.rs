@@ -21,7 +21,7 @@ use crate::mm::NR_ENTRIES;
 verus! {
 
 pub const SIZEOF_PAGETABLEENTRY: usize = 24;
-global layout PageTableEntry is size == 24, align == 8; // TODO: is this true?
+global layout PageTableEntry is size == 24, align == 8;
 
 #[derive(Clone, Copy)]
 pub struct PteFlag;
@@ -63,7 +63,7 @@ PageTable {
     }
 
     transition! {
-        // create a child at the first index of the target node
+        // create a pte at a given address
         new_at(addr: Paddr, newPTE: PageTableEntry) {
             require addr != 0;
             require addr == newPTE.pa;
@@ -228,7 +228,6 @@ pub fn main() {
     assert(fake.mem@.dom().contains(1));
     assert(fake.mem@.contains_key(1));
 
-    // broadcast use vstd::std_specs::hash::group_hash_axioms;
     fake.mem.remove(&1);
     assert(fake.mem.len() == NR_ENTRIES - 1);
     fake.mem.insert(1, (p_root, Tracked(pt_root)));
@@ -259,25 +258,11 @@ pub fn main() {
 
     p_pte2.write(Tracked(&mut pt_pte2), pte2);
     assert(fake.wf());
-
-    // proof{
-    //     // assert(forall|i:usize| 0 <= i < 1000 ==> {
-    //     //     let (p, Tracked(mut pt)) = get_from_index(i, &mem);
-    //     //     if (p.borrow(Tracked(&mut pt)).children != 0)
-    //     //     {
-    //     //         let (p2, Tracked(mut pt2)) = get_from_index(p.borrow(Tracked(&mut pt)).children_index, &mem);
-    //     //         p.borrow(Tracked(&mut pt)).children == p2.borrow(Tracked(&mut pt2)).pa
-    //     //     } else {
-    //     //         true
-    //     //     }}
-    //     // );
-    // }
     
-        print_mem(fake.mem);
+    print_mem(fake.mem);
 
 }
 
-// TODO: implement this
 #[verifier::external_body]
 fn alloc_page_table_entries() -> (res: HashMap<usize, (PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>)
     ensures
@@ -299,7 +284,7 @@ fn alloc_page_table_entries() -> (res: HashMap<usize, (PPtr<PageTableEntry>, Tra
         forall |i:usize, j:usize| 0 < i < j < NR_ENTRIES && i == j - 1 ==> {
             && (#[trigger] res@[i]).0.addr() + SIZEOF_PAGETABLEENTRY == (#[trigger] res@[j]).0.addr() // pointers are adjacent
         },
-        res@[0].0.addr() == 0, // points to the hardware page table
+        res@[0].0.addr() == 0,
         res@[1].0.addr() == PHYSICAL_BASE_ADDRESS_SPEC(), // points to the hardware page table
         res@.dom().finite(),
 {
@@ -318,23 +303,17 @@ fn alloc_page_table_entries() -> (res: HashMap<usize, (PPtr<PageTableEntry>, Tra
     map
 }
 
-// TODO: implement this
 #[verifier::external_body]
 fn get_from_index(index: usize, map: &HashMap<usize, (PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>) -> (res: (PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>))
     requires
         0 <= index < NR_ENTRIES,
         map@.dom().contains(index),
-        // map@.len() == NR_ENTRIES,
-        // map@.dom().len() == NR_ENTRIES,
         forall |i:usize| 0 <= i < NR_ENTRIES ==> {
             map@.dom().contains(i)
         },
         forall |i:usize| 0 < i < NR_ENTRIES ==> {
             (#[trigger] map@[i]).1@.pptr() == map@[i].0
         }
-            // && map@[i]@.1@.mem_contents() == MemContents::<PageTableEntry>::Uninit
-            // && map@[i]@.0.addr() + SIZEOF_PAGETABLEENTRY == map@[((i + 1) as usize)]@.0.addr() // pointers are adjacent
-            // && map@[i]@.0.addr() == 0x1000 // points to the hardware page table
     ensures
         res.0.addr() != 0,
         res.1@.pptr() == res.0,
@@ -355,7 +334,6 @@ pub open spec fn addr_to_index(addr: usize) -> usize {
     ((addr - PHYSICAL_BASE_ADDRESS_SPEC()) / SIZEOF_PAGETABLEENTRY as int + 1) as usize
 }
 
-#[allow(non_snake_case)]
 pub open spec fn PHYSICAL_BASE_ADDRESS_SPEC() -> usize {
     0x1000
 }
@@ -368,7 +346,6 @@ ensures
     res == PHYSICAL_BASE_ADDRESS_SPEC()
 {
     unsafe{
-        // alloc memory from libc malloc and return the base address
         let layout = Layout::new::<[PageTableEntry; 4096]>();
         let mut ptr = alloc(layout);
         ptr as *mut u8 as usize
@@ -376,7 +353,6 @@ ensures
 }
 
 #[verifier::external_body]
-// Define the print_mem function to print the memory map
 fn print_mem(mem: HashMap<usize, (PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>) {
     // print 1
     let (p, Tracked(pt)) = mem.get(&1).unwrap();
