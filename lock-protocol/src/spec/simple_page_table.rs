@@ -23,8 +23,6 @@ verus! {
 pub const SIZEOF_PAGETABLEENTRY: usize = 24;
 global layout PageTableEntry is size == 24, align == 8; // TODO: is this true?
 
-pub const PHYSICAL_BASE_ADDRESS: usize = 0x1000;
-
 #[derive(Clone, Copy)]
 pub struct PteFlag;
 
@@ -142,7 +140,7 @@ PageTable {
 
 struct_with_invariants!{
     pub struct MockPageTable {
-        pub mem: HashMap<usize, Tracked<(PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>>,
+        pub mem: HashMap<usize, (PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>,
         pub pages: Tracked<PageTable::pages>,
         pub instance: Tracked<PageTable::Instance>,
     }
@@ -154,10 +152,10 @@ struct_with_invariants!{
             self.mem.len() == NR_ENTRIES
             &&
             forall |i: usize, j: usize| 0 < i < NR_ENTRIES && j == index_to_addr(i) ==>
-                if (self.mem@[i]@.1@.mem_contents() != MemContents::<PageTableEntry>::Uninit) {
+                if (self.mem@[i].1@.mem_contents() != MemContents::<PageTableEntry>::Uninit) {
                     self.pages@.value().contains_key(j)
                     &&
-                    #[trigger] self.pages@.value()[j].pa == #[trigger] self.mem@[i]@.0.addr()
+                    #[trigger] self.pages@.value()[j].pa == #[trigger] self.mem@[i].0.addr()
                 } else {
                     true
                 }
@@ -165,7 +163,7 @@ struct_with_invariants!{
     }
 }
 
-fn main() {
+pub fn main() {
     broadcast use vstd::std_specs::hash::group_hash_axioms;
     broadcast use vstd::hash_map::group_hash_map_axioms;
     assert(SIZEOF_PAGETABLEENTRY == core::mem::size_of::<PageTableEntry>());
@@ -184,16 +182,16 @@ fn main() {
     assert(
             forall |i:usize| 0 < i < NR_ENTRIES ==> {
                 fake.mem@.dom().contains(i)
-                && (#[trigger] fake.mem@[i])@.1@.pptr() == fake.mem@[i]@.0
-                && (#[trigger] fake.mem@[i])@.1@.mem_contents() == MemContents::<PageTableEntry>::Uninit
+                && (#[trigger] fake.mem@[i]).1@.pptr() == fake.mem@[i].0
+                && (#[trigger] fake.mem@[i]).1@.mem_contents() == MemContents::<PageTableEntry>::Uninit
             }
             &&
             forall |i:usize, j: usize| 0 < i < j < NR_ENTRIES && i == j - 1 ==> {
                 fake.mem@.dom().contains(i)
                 && fake.mem@.dom().contains(j)
-                && (#[trigger] fake.mem@[i])@.0.addr() + SIZEOF_PAGETABLEENTRY == (#[trigger] fake.mem@[j])@.0.addr() // pointers are adjacent
+                && (#[trigger] fake.mem@[i]).0.addr() + SIZEOF_PAGETABLEENTRY == (#[trigger] fake.mem@[j]).0.addr() // pointers are adjacent
             }
-            && fake.mem@[0]@.0.addr() == 0 // points to the hardware page table
+            && fake.mem@[0].0.addr() == 0 // points to the hardware page table
             && fake.mem@.dom().contains(0)
     );
     assert(fake.mem@.dom().contains(0 as usize));
@@ -201,9 +199,10 @@ fn main() {
     assert(fake.mem@.dom().contains(1));
 
     let (p_root, Tracked(mut pt_root)) = get_from_index(1, &fake.mem);
+
     assert(pt_root.pptr() == p_root);
     assert(pt_root.mem_contents() == MemContents::<PageTableEntry>::Uninit);
-    assert(p_root.addr() + SIZEOF_PAGETABLEENTRY == fake.mem@[2]@.0.addr());
+    assert(p_root.addr() + SIZEOF_PAGETABLEENTRY == fake.mem@[2].0.addr());
 
     let pte1 = PageTableEntry {
         pa: p_root.addr(),
@@ -232,12 +231,13 @@ fn main() {
     // broadcast use vstd::std_specs::hash::group_hash_axioms;
     fake.mem.remove(&1);
     assert(fake.mem.len() == NR_ENTRIES - 1);
-    fake.mem.insert(1, Tracked((p_root, Tracked(pt_root))));
+    fake.mem.insert(1, (p_root, Tracked(pt_root)));
     assert(fake.mem.len() == NR_ENTRIES);
 
     assert(fake.wf());
 
     let (p_pte2, Tracked(mut pt_pte2)) = get_from_index(2, &fake.mem);
+
     assert(pt_pte2.pptr().addr() == p_root.addr() + SIZEOF_PAGETABLEENTRY);
     let pte2 = PageTableEntry {
         pa: p_pte2.addr(),
@@ -272,12 +272,14 @@ fn main() {
     //     //     }}
     //     // );
     // }
+    
+        print_mem(fake.mem);
 
 }
 
 // TODO: implement this
 #[verifier::external_body]
-fn alloc_page_table_entries() -> (res: HashMap<usize, Tracked<(PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>>)
+fn alloc_page_table_entries() -> (res: HashMap<usize, (PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>)
     ensures
         res@.dom().len() == NR_ENTRIES,
         res@.len() == NR_ENTRIES,
@@ -289,24 +291,35 @@ fn alloc_page_table_entries() -> (res: HashMap<usize, Tracked<(PPtr<PageTableEnt
             res@.contains_key(i)
         },
         forall |i:usize| 0 < i < NR_ENTRIES ==> {
-            (#[trigger] res@[i])@.1@.pptr() == res@[i]@.0
+            (#[trigger] res@[i]).1@.pptr() == res@[i].0
         },
         forall |i:usize| 0 < i < NR_ENTRIES ==> {
-            #[trigger] res@[i]@.1@.mem_contents() == MemContents::<PageTableEntry>::Uninit
+            #[trigger] res@[i].1@.mem_contents() == MemContents::<PageTableEntry>::Uninit
         },
         forall |i:usize, j:usize| 0 < i < j < NR_ENTRIES && i == j - 1 ==> {
-            && (#[trigger] res@[i])@.0.addr() + SIZEOF_PAGETABLEENTRY == (#[trigger] res@[j])@.0.addr() // pointers are adjacent
+            && (#[trigger] res@[i]).0.addr() + SIZEOF_PAGETABLEENTRY == (#[trigger] res@[j]).0.addr() // pointers are adjacent
         },
-        res@[0]@.0.addr() == 0, // points to the hardware page table
-        res@[1]@.0.addr() == PHYSICAL_BASE_ADDRESS, // points to the hardware page table
+        res@[0].0.addr() == 0, // points to the hardware page table
+        res@[1].0.addr() == PHYSICAL_BASE_ADDRESS_SPEC(), // points to the hardware page table
         res@.dom().finite(),
 {
-    unimplemented!()
+    let mut map = HashMap::<usize, (PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>::new();
+    map.insert(0, (PPtr::from_addr(0), Tracked::assume_new()));
+    for i in 1..NR_ENTRIES {
+        map.insert(
+            i,
+            (
+                PPtr::from_addr(PHYSICAL_BASE_ADDRESS() + i * SIZEOF_PAGETABLEENTRY),
+                Tracked::assume_new()
+            )
+        );
+    }
+    map
 }
 
 // TODO: implement this
 #[verifier::external_body]
-fn get_from_index(index: usize, map: &HashMap<usize, Tracked<(PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>>) -> (res: (PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>))
+fn get_from_index(index: usize, map: &HashMap<usize, (PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>) -> (res: (PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>))
     requires
         0 <= index < NR_ENTRIES,
         map@.dom().contains(index),
@@ -316,7 +329,7 @@ fn get_from_index(index: usize, map: &HashMap<usize, Tracked<(PPtr<PageTableEntr
             map@.dom().contains(i)
         },
         forall |i:usize| 0 < i < NR_ENTRIES ==> {
-            (#[trigger] map@[i]@).1@.pptr() == map@[i]@.0
+            (#[trigger] map@[i]).1@.pptr() == map@[i].0
         }
             // && map@[i]@.1@.mem_contents() == MemContents::<PageTableEntry>::Uninit
             // && map@[i]@.0.addr() + SIZEOF_PAGETABLEENTRY == map@[((i + 1) as usize)]@.0.addr() // pointers are adjacent
@@ -325,18 +338,54 @@ fn get_from_index(index: usize, map: &HashMap<usize, Tracked<(PPtr<PageTableEntr
         res.0.addr() != 0,
         res.1@.pptr() == res.0,
         // NOTE: this is not true! && res.0.addr() == map@[index]@.0.addr()
-        res.0 == map@[index]@.0,
-        res.1 == map@[index]@.1
+        res.0 == map@[index].0,
+        res.1 == map@[index].1
 {
-    unimplemented!()
+    let (p, Tracked(pt)) = map.get(&index).unwrap();
+    (*p, Tracked::assume_new())
 }
 
 pub open spec fn index_to_addr(index: usize) -> usize {
-    (PHYSICAL_BASE_ADDRESS + (index - 1) * SIZEOF_PAGETABLEENTRY) as usize
+    (PHYSICAL_BASE_ADDRESS_SPEC() + (index - 1) * SIZEOF_PAGETABLEENTRY) as usize
 }
 
 // TODO: can we eliminate division
 pub open spec fn addr_to_index(addr: usize) -> usize {
-    ((addr - PHYSICAL_BASE_ADDRESS) / SIZEOF_PAGETABLEENTRY as int + 1) as usize
+    ((addr - PHYSICAL_BASE_ADDRESS_SPEC()) / SIZEOF_PAGETABLEENTRY as int + 1) as usize
 }
+
+#[allow(non_snake_case)]
+pub open spec fn PHYSICAL_BASE_ADDRESS_SPEC() -> usize {
+    0x1000
+}
+
+use std::alloc::{alloc, dealloc, Layout};
+
+#[verifier::external_body]
+pub fn PHYSICAL_BASE_ADDRESS() -> (res: usize)
+ensures
+    res == PHYSICAL_BASE_ADDRESS_SPEC()
+{
+    unsafe{
+        // alloc memory from libc malloc and return the base address
+        let layout = Layout::new::<[u8; 4096]>();// n is non-constant value issue E0435 E0425
+        let mut ptr = alloc(layout);
+        ptr as *mut u8 as usize
+    }
+}
+
+#[verifier::external_body]
+// Define the print_mem function to print the memory map
+fn print_mem(mem: HashMap<usize, (PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>) {
+    // print 1
+    let (p, Tracked(pt)) = mem.get(&1).unwrap();
+    let pte = p.read(Tracked(&pt));
+    println!("PTE1: pa: {}, level: {}, children_addr: {}", pte.pa, pte.level, pte.children_addr);
+
+    // print 2
+    let (p, Tracked(pt)) = mem.get(&2).unwrap();
+    let pte = p.read(Tracked(&pt));
+    println!("PTE2: pa: {}, level: {}, children_addr: {}", pte.pa, pte.level, pte.children_addr);
+}
+
 } // verus!

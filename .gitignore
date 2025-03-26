@@ -4,3 +4,5 @@ target/
 .idea/
 test
 lib.*.txt
+lib.exe
+lib.pdb
