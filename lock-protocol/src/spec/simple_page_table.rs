@@ -305,11 +305,12 @@ fn alloc_page_table_entries() -> (res: HashMap<usize, (PPtr<PageTableEntry>, Tra
 {
     let mut map = HashMap::<usize, (PPtr<PageTableEntry>, Tracked<PointsTo<PageTableEntry>>)>::new();
     map.insert(0, (PPtr::from_addr(0), Tracked::assume_new()));
+    let p = PHYSICAL_BASE_ADDRESS();
     for i in 1..NR_ENTRIES {
         map.insert(
             i,
             (
-                PPtr::from_addr(PHYSICAL_BASE_ADDRESS() + i * SIZEOF_PAGETABLEENTRY),
+                PPtr::from_addr(p + i * SIZEOF_PAGETABLEENTRY),
                 Tracked::assume_new()
             )
         );
@@ -368,7 +369,7 @@ ensures
 {
     unsafe{
         // alloc memory from libc malloc and return the base address
-        let layout = Layout::new::<[u8; 4096]>();// n is non-constant value issue E0435 E0425
+        let layout = Layout::new::<[PageTableEntry; 4096]>();
         let mut ptr = alloc(layout);
         ptr as *mut u8 as usize
     }
