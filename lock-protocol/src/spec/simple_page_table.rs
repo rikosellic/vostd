@@ -185,6 +185,15 @@ struct_with_invariants!{
                 } else {
                     true
                 }
+            &&
+            forall |i: usize| 0 < i < NR_ENTRIES ==>
+                if (#[trigger] self.mem@[i].1@.mem_contents() != MemContents::<PageTableEntry>::Uninit) {
+                    self.pages@.value().contains_key(self.mem@[i].0.addr())
+                    &&
+                    self.pages@.value()[self.mem@[i].0.addr()] == self.mem@[i].1@.value()
+                } else {
+                    true
+                }
         }
     }
 }
@@ -293,6 +302,10 @@ pub fn main() {
         assert(fake.pages@.value().contains_key(p_pte2.addr()));
         instance.set_child(p_root.addr(), p_pte2.addr(), fake.pages.borrow_mut());
     }
+    fake.mem.remove(&1);
+    assert(fake.mem.len() == NR_ENTRIES - 1);
+    fake.mem.insert(1, (p_root, Tracked(pt_root)));
+
     assert(fake.wf());
 
     print_mem(fake.mem);
