@@ -46,6 +46,8 @@ PageTable {
 
         #[sharding(set)]
         pub unused_addrs: Set<Paddr>,
+
+        // TODO: clear permission management?
     }
 
     init!{
@@ -69,10 +71,34 @@ PageTable {
             require addr == newPTE.pa;
             require newPTE.children_addr == 0;
             remove unused_addrs -= set { addr };
+
             update pages = pre.pages.insert(addr, newPTE);
         }
+    }
 
-        // TODO: set child relationship
+    transition! {
+        // set child relationship
+        set_child(parent: Paddr, child: Paddr) {
+            require pre.pages.contains_key(parent);
+            require pre.pages.contains_key(child);
+            require pre.pages[parent].children_addr == 0;
+            require pre.pages[parent].pa != pre.pages[child].pa;
+            require pre.pages[parent].pa == parent;
+            require pre.pages[child].level == pre.pages[parent].level + 1;
+            require pre.pages[child].pa == child;
+
+            update pages = pre.pages.insert(parent, PageTableEntry {
+                pa: pre.pages[parent].pa,
+                flags: pre.pages[parent].flags,
+                level: pre.pages[parent].level,
+                children_addr: child,
+            });
+        }
+    }
+
+    #[inductive(set_child)]
+    fn tr_set_child_invariant(pre: Self, post: Self, parent: Paddr,  child: Paddr) {
+        assert(post.pages[parent].children_addr == child);
     }
 
     #[inductive(new_at)]
@@ -198,13 +224,13 @@ pub fn main() {
     assert(fake.mem@.dom().contains(0));
     assert(fake.mem@.dom().contains(1));
 
-    let (p_root, Tracked(mut pt_root)) = get_from_index(1, &fake.mem);
+    let (p_root, Tracked(mut pt_root)) = get_from_index(1, &fake.mem); // TODO: permission violation?
 
     assert(pt_root.pptr() == p_root);
     assert(pt_root.mem_contents() == MemContents::<PageTableEntry>::Uninit);
     assert(p_root.addr() + SIZEOF_PAGETABLEENTRY == fake.mem@[2].0.addr());
 
-    let pte1 = PageTableEntry {
+    let mut pte1 = PageTableEntry {
         pa: p_root.addr(),
         flags: PteFlag,
         level: 0,
@@ -258,7 +284,17 @@ pub fn main() {
 
     p_pte2.write(Tracked(&mut pt_pte2), pte2);
     assert(fake.wf());
-    
+
+    pte1.children_addr = pte2.pa;
+    let (p_root, Tracked(mut pt_root)) = get_from_index(1, &fake.mem); // TODO: permission violation?
+    p_root.write(Tracked(&mut pt_root), pte1);
+    proof{
+        assert(fake.pages@.value().contains_key(p_root.addr()));
+        assert(fake.pages@.value().contains_key(p_pte2.addr()));
+        instance.set_child(p_root.addr(), p_pte2.addr(), fake.pages.borrow_mut());
+    }
+    assert(fake.wf());
+
     print_mem(fake.mem);
 
 }
