@@ -67,9 +67,10 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
 
     /// Gets the physical address of the start of the frame.
     /// TODO: Implement Frame::start_paddr
-    // pub fn start_paddr(&self) -> Paddr {
-    //     self.slot().frame_paddr()
-    // }
+    pub fn start_paddr(&self) -> Paddr {
+        // self.slot().frame_paddr()
+        unimplemented!("Frame::start_paddr")
+    }
 
     /// Gets the paging level of this page.
     ///
@@ -78,7 +79,7 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     ///
     /// Currently, the level is always 1, which means the frame is a regular
     /// page frame.
-    pub const fn level(&self) -> PagingLevel {
+    pub const fn map_level(&self) -> PagingLevel {
         1
     }
 
@@ -91,10 +92,11 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
     /// TODO: Implement Frame::dyn_meta
-    // pub fn dyn_meta(&self) -> &dyn AnyFrameMeta {
-    //     // SAFETY: The metadata is initialized and valid.
-    //     unsafe { &*self.slot().dyn_meta_ptr() }
-    // }
+    pub fn dyn_meta(&self, perm: PointsTo<MetaSlot>) -> &dyn AnyFrameMeta {
+        // SAFETY: The metadata is initialized and valid.
+        // unsafe { &*self.slot(perm).dyn_meta_ptr() }
+        unimplemented!("Frame::dyn_meta")
+    }
 
     /// Gets the reference count of the frame.
     ///
@@ -156,11 +158,12 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     }
 
     // TODO: Implement slot for Frame
-    // fn slot(&self) -> &MetaSlot {
-    //     // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
-    //     // mutably borrowed, so taking an immutable reference to it is safe.
-    //     unsafe { &*self.ptr }
-    // }
+    fn slot(&self, perm: PointsTo<MetaSlot>) -> &MetaSlot {
+        // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
+        // mutably borrowed, so taking an immutable reference to it is safe.
+        // unsafe { &*self.ptr }
+        self.ptr.borrow(Tracked(&perm))
+    }
 }
 
 }
