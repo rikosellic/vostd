@@ -214,25 +214,6 @@ pub fn main() {
 
     assert(fake.wf());
 
-    assert(
-            forall |i:usize| 0 < i < NR_ENTRIES ==> {
-                fake.mem@.dom().contains(i)
-                && (#[trigger] fake.mem@[i]).1@.pptr() == fake.mem@[i].0
-                && (#[trigger] fake.mem@[i]).1@.mem_contents() == MemContents::<PageTableEntry>::Uninit
-            }
-            &&
-            forall |i:usize, j: usize| 0 < i < j < NR_ENTRIES && i == j - 1 ==> {
-                fake.mem@.dom().contains(i)
-                && fake.mem@.dom().contains(j)
-                && (#[trigger] fake.mem@[i]).0.addr() + SIZEOF_PAGETABLEENTRY == (#[trigger] fake.mem@[j]).0.addr() // pointers are adjacent
-            }
-            && fake.mem@[0].0.addr() == 0 // points to the hardware page table
-            && fake.mem@.dom().contains(0)
-    );
-    assert(fake.mem@.dom().contains(0 as usize));
-    assert(fake.mem@.dom().contains(0));
-    assert(fake.mem@.dom().contains(1));
-
     let (p_root, Tracked(mut pt_root)) = get_from_index(1, &fake.mem); // TODO: permission violation?
 
     assert(pt_root.pptr() == p_root);
