@@ -1,15 +1,22 @@
-use std::{any::TypeId, marker::PhantomData, ops::Range};
+mod locking;
 
-use vstd::prelude::verus;
+use std::{any::TypeId, borrow::{Borrow, BorrowMut}, cell::Cell, marker::PhantomData, ops::Range};
+
+use vstd::{pervasive::VecAdditionalExecFns, prelude::verus};
 
 use crate::{
-    helpers::align_ext::AlignExt, mm::{
-        child::Child, entry::Entry, meta::AnyFrameMeta, node::PageTableNode, page_prop::PageProperty, page_size, page_table::zeroed_pt_pool, vm_space::Token, Frame, MapTrackingStatus, Paddr, Vaddr
-    }, task::DisabledPreemptGuard
+    helpers::align_ext::align_down,
+    mm::{
+        child::Child, entry::Entry, meta::AnyFrameMeta, node::PageTableNode,
+        page_prop::PageProperty, page_size, page_table::zeroed_pt_pool, vm_space::Token, Frame,
+        MapTrackingStatus, Paddr, Vaddr,
+    },
+    task::DisabledPreemptGuard,
 };
 
 use super::{
-    node::PageTableLock, pte_index, KernelMode, PageTable, PageTableEntryTrait, PageTableError, PageTableMode, PagingConstsTrait, PagingLevel, UserMode
+    node::PageTableLock, pte_index, KernelMode, PageTable, PageTableEntryTrait, PageTableError,
+    PageTableMode, PagingConstsTrait, PagingLevel, UserMode,
 };
 
 verus! {
@@ -26,7 +33,8 @@ pub struct Cursor<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsT
     ///
     /// The level 1 page table lock guard is at index 0, and the level N page
     /// table lock guard is at index N - 1.
-    path: [Option<PageTableLock<E, C>>; MAX_NR_LEVELS],
+    // path: [Option<PageTableLock<E, C, T>>; MAX_NR_LEVELS],
+    path: Vec<Option<PageTableLock<E, C>>>,
     /// The level of the page table that the cursor currently points to.
     level: PagingLevel,
     /// The top-most level that the cursor is allowed to access.
@@ -49,14 +57,14 @@ pub struct Cursor<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsT
 const MAX_NR_LEVELS: usize = 4;
 
 // #[derive(Clone, Debug)] // TODO: Implement Debug and Clone for PageTableItem
-pub enum PageTableItem {
+pub enum PageTableItem<T: AnyFrameMeta> {
     NotMapped {
         va: Vaddr,
         len: usize,
     },
     Mapped {
         va: Vaddr,
-        page: Frame<dyn AnyFrameMeta>,
+        page: Frame<T>,
         prop: PageProperty,
     },
     MappedUntracked {
@@ -66,7 +74,7 @@ pub enum PageTableItem {
         prop: PageProperty,
     },
     StrayPageTable {
-        pt: Frame<dyn AnyFrameMeta>,
+        pt: Frame<T>,
         va: Vaddr,
         len: usize,
     },
@@ -88,26 +96,26 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
     /// range. Out-of-bound accesses will result in panics or errors as return values,
     /// depending on the access method.
     pub fn new(pt: &'a PageTable<M, E, C>, va: &Range<Vaddr>) -> Result<Self, PageTableError> {
-        if !M::covers(va) || va.is_empty() {
+        if !M::covers(va)
+            // || va.is_empty()
+            || !(va.start < va.end)
+            {
             return Err(PageTableError::InvalidVaddrRange(va.start, va.end));
         }
-        if va.start % C::BASE_PAGE_SIZE != 0 || va.end % C::BASE_PAGE_SIZE != 0 {
+        if va.start % C::BASE_PAGE_SIZE() != 0 || va.end % C::BASE_PAGE_SIZE() != 0 {
             return Err(PageTableError::UnalignedVaddr);
         }
-        const { assert!(C::NR_LEVELS as usize <= MAX_NR_LEVELS) };
+        // const { assert!(C::NR_LEVELS() as usize <= MAX_NR_LEVELS) }; // TODO
         let new_pt_is_tracked = if should_map_as_tracked::<M>(va.start) {
             MapTrackingStatus::Tracked
         } else {
             MapTrackingStatus::Untracked
         };
-        // Ok(locking::lock_range(pt, va, new_pt_is_tracked))
-        
-        // TODO: Implement the new function
-        unimplemented!()
+        Ok(locking::lock_range(pt, va, new_pt_is_tracked))
     }
 
     /// Gets the information of the current slot.
-    pub fn query(&mut self) -> Result<PageTableItem, PageTableError> {
+    pub fn query<T: AnyFrameMeta>(&mut self) -> Result<PageTableItem<T>, PageTableError> {
         if self.va >= self.barrier_va.end {
             return Err(PageTableError::InvalidVaddr(self.va));
         }
@@ -124,7 +132,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
                     continue;
                 }
                 Child::PageTable(_) => {
-                    unreachable!();
+                    // unreachable!();
+                    assert(false);
                 }
                 Child::None => {
                     return Ok(PageTableItem::NotMapped {
@@ -136,7 +145,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
                     return Ok(PageTableItem::Mapped { va, page, prop });
                 }
                 Child::Untracked(pa, plevel, prop) => {
-                    debug_assert_eq!(plevel, level);
+                    // debug_assert_eq!(plevel, level); // TODO: assert
                     return Ok(PageTableItem::MappedUntracked {
                         va,
                         pa,
@@ -161,7 +170,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
     /// page if possible.
     pub(in crate::mm) fn move_forward(&mut self) {
         let page_size = page_size::<C>(self.level);
-        let next_va = self.va.align_down(page_size) + page_size;
+        // let next_va = self.va.align_down(page_size) + page_size;
+        let next_va = align_down(self.va, page_size) + page_size;
         while self.level < self.guard_level && pte_index(next_va, self.level) == 0 {
             self.pop_level();
         }
@@ -175,8 +185,11 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
     ///
     /// This method panics if the address has bad alignment.
     pub fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError> {
-        assert!(va % C::BASE_PAGE_SIZE == 0);
-        if !self.barrier_va.contains(&va) {
+        // assert!(va % C::BASE_PAGE_SIZE() == 0); // TODO
+        // if !self.barrier_va.contains(&va) {
+        //     return Err(PageTableError::InvalidVaddr(va));
+        // }
+        if va >= self.barrier_va.end || va < self.barrier_va.start {
             return Err(PageTableError::InvalidVaddr(va));
         }
 
@@ -196,7 +209,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
                 return Ok(());
             }
 
-            debug_assert!(self.level < self.guard_level);
+            // debug_assert!(self.level < self.guard_level); // TODO
             self.pop_level();
         }
     }
@@ -207,24 +220,34 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
 
     /// Goes up a level.
     fn pop_level(&mut self) {
-        let Some(taken) = self.path[self.level as usize - 1].take() else {
-            panic!("Popping a level without a lock");
-        };
-        let _taken = taken.into_raw_paddr();
-        self.level += 1;
+        // let Some(taken) = self.path[self.level as usize - 1].take() else {
+        //     panic!("Popping a level without a lock");
+        // };
+        let taken = &self.path[self.level as usize - 1];
+        if (taken.is_none()) {
+            // panic!("Popping a level without a lock");
+            assert(false);
+        }
+        // let _taken = taken.unwrap().into_raw_paddr(); // TODO
+        self.level = self.level + 1;
     }
 
     /// Goes down a level to a child page table.
     fn push_level(&mut self, child_pt: PageTableLock<E, C>) {
-        self.level -= 1;
-        debug_assert_eq!(self.level, child_pt.level());
+        self.level = self.level - 1;
+        // debug_assert_eq!(self.level, child_pt.level()); // TODO: assert
 
-        let old = self.path[self.level as usize - 1].replace(child_pt);
-        debug_assert!(old.is_none());
+        // let old = self.path[self.level as usize - 1].replace(child_pt);
+        let old = self.path.set(self.level as usize - 1, Some(child_pt));
+        // debug_assert!(old.is_none()); // TODO
     }
 
-    fn cur_entry(&mut self) -> Entry<'_, E, C> {
-        let node = self.path[self.level as usize - 1].as_mut().unwrap();
+    // fn cur_entry(&mut self) -> Entry<'_, E, C> {
+    fn cur_entry(&self) -> Entry<'_, E, C> {
+        // let node = self.path[self.level as usize - 1].as_mut().unwrap();
+        // node.entry(pte_index::<C>(self.va, self.level))
+
+        let node = self.path[self.level as usize - 1].as_ref().unwrap();
         node.entry(pte_index(self.va, self.level))
     }
 }
@@ -271,7 +294,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
     }
 
     /// Gets the information of the current slot.
-    pub fn query(&mut self) -> Result<PageTableItem, PageTableError> {
+    pub fn query<T: AnyFrameMeta>(&mut self) -> Result<PageTableItem<T>, PageTableError> {
         self.0.query()
     }
 
@@ -290,23 +313,23 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
     ///
     /// The caller should ensure that the virtual range being mapped does
     /// not affect kernel's memory safety.
-    pub unsafe fn map(
+    pub unsafe fn map<T: AnyFrameMeta>(
         &mut self,
-        frame: Frame<dyn AnyFrameMeta>,
+        frame: Frame<T>,
         prop: PageProperty,
-    ) -> Option<Frame<dyn AnyFrameMeta>> {
+    ) -> Option<Frame<T>> {
         let end = self.0.va + frame.size();
-        assert!(end <= self.0.barrier_va.end);
+        // assert!(end <= self.0.barrier_va.end); // TODO
 
         // Go down if not applicable.
         while self.0.level > frame.map_level()
             || self.0.va % page_size::<C>(self.0.level) != 0
             || self.0.va + page_size::<C>(self.0.level) > end
         {
-            debug_assert!(should_map_as_tracked::<M>(self.0.va));
+            // debug_assert!(should_map_as_tracked::<M>(self.0.va)); // TODO
             let cur_level = self.0.level;
             let cur_entry = self.0.cur_entry();
-            match cur_entry.to_ref() {
+            match cur_entry.to_ref::<T>() {
                 Child::PageTableRef(pt) => {
                     // SAFETY: `pt` points to a PT that is attached to a node
                     // in the locked sub-tree, so that it is locked and alive.
@@ -314,7 +337,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
                         .push_level(unsafe { PageTableLock::<E, C>::from_raw_paddr(pt) });
                 }
                 Child::PageTable(_) => {
-                    unreachable!();
+                    // unreachable!();
+                    assert(false);
                 }
                 Child::None => {
                     let preempt_guard = crate::task::disable_preempt();
@@ -326,17 +350,19 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
                     let paddr = pt.into_raw_paddr();
                     // SAFETY: It was forgotten at the above line.
                     let _ = cur_entry
-                        .replace(Child::PageTable(unsafe { PageTableNode::from_raw(paddr) }));
+                        .replace(Child::<E, C, T>::PageTable(unsafe { PageTableNode::from_raw(paddr) }));
                     // SAFETY: `pt` points to a PT that is attached to a node
                     // in the locked sub-tree, so that it is locked and alive.
                     self.0
                         .push_level(unsafe { PageTableLock::from_raw_paddr(paddr) });
                 }
                 Child::Frame(_, _) => {
-                    panic!("Mapping a smaller frame in an already mapped huge page");
+                    // panic!("Mapping a smaller frame in an already mapped huge page");
+                    assert(false);
                 }
                 Child::Untracked(_, _, _) => {
-                    panic!("Mapping a tracked page in an untracked range");
+                    // panic!("Mapping a tracked page in an untracked range");
+                    assert(false);
                 }
                 Child::Token(_) => {
                     let split_child = cur_entry.split_if_huge_token().unwrap();
@@ -345,7 +371,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
             }
             continue;
         }
-        debug_assert_eq!(self.0.level, frame.map_level());
+        // debug_assert_eq!(self.0.level, frame.map_level()); // TODO: assert
 
         // Map the current page.
         let old = self.0.cur_entry().replace(Child::Frame(frame, prop));
@@ -355,21 +381,32 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
             Child::Frame(old_page, _) => Some(old_page),
             Child::None | Child::Token(_) => None,
             Child::PageTable(_) => {
-                todo!("Dropping page table nodes while mapping requires TLB flush")
+                // todo!("Dropping page table nodes while mapping requires TLB flush")
+                assert(false);
+                None
             }
-            Child::Untracked(_, _, _) => panic!("Mapping a tracked page in an untracked range"),
-            Child::PageTableRef(_) => unreachable!(),
+            Child::Untracked(_, _, _) => {
+                // panic!("Mapping a tracked page in an untracked range"),
+                assert(false);
+                None
+            }
+            // Child::PageTableRef(_) => unreachable!(),
+            Child::PageTableRef(_) => {
+                // panic!("Mapping a page in a page table reference")
+                assert(false);
+                None
+            }
         }
     }
 }
 
 
 fn should_map_as_tracked<M: PageTableMode>(va: Vaddr) -> bool {
+    // TODO: Check if the type is `KernelMode` or `UserMode`.
     // (TypeId::of::<M>() == TypeId::of::<KernelMode>()
     //     || TypeId::of::<M>() == TypeId::of::<UserMode>())
-    //     && crate::mm::kspace::should_map_as_tracked(va)
-    (TypeId::of::<M>() == TypeId::of::<KernelMode>()
-        || TypeId::of::<M>() == TypeId::of::<UserMode>())
-        && crate::x86_64::kspace::should_map_as_tracked(va)
+    //     &&
+
+    crate::x86_64::kspace::should_map_as_tracked(va)
 }
 }

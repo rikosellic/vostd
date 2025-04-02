@@ -16,7 +16,8 @@ use crate::mm::PAGE_SIZE;
 verus! {
 
 // #[repr(transparent)] TODO: repr(transparent)
-pub struct Frame<M: AnyFrameMeta + ?Sized> {
+// pub struct Frame<M: AnyFrameMeta + ?Sized> {
+pub struct Frame<M: AnyFrameMeta> {
     pub ptr: PPtr<MetaSlot>,
     pub _marker: PhantomData<M>,
 }
@@ -40,7 +41,7 @@ impl<M: AnyFrameMeta> Frame<M> {
 
     /// Gets the metadata of this page.
     // TODO: Implement Frame::meta
-    #[verifier::external]
+    #[verifier::external_body]
     pub fn meta(&self) -> &M {
         // SAFETY: The type is tracked by the type system.
         // unsafe { &*self.slot().as_meta_ptr::<M>() }
@@ -63,10 +64,12 @@ impl<M: AnyFrameMeta> Frame<M> {
 //     }
 // }
 
-impl<M: AnyFrameMeta + ?Sized> Frame<M> {
+// impl<M: AnyFrameMeta + ?Sized> Frame<M> {
+impl<M: AnyFrameMeta> Frame<M> {
 
     /// Gets the physical address of the start of the frame.
-    /// TODO: Implement Frame::start_paddr
+    // TODO: Implement
+    #[verifier::external_body]
     pub fn start_paddr(&self) -> Paddr {
         // self.slot().frame_paddr()
         unimplemented!("Frame::start_paddr")
@@ -91,8 +94,10 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     /// Gets the dyncamically-typed metadata of this frame.
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
-    /// TODO: Implement Frame::dyn_meta
-    pub fn dyn_meta(&self, perm: PointsTo<MetaSlot>) -> &dyn AnyFrameMeta {
+    // pub fn dyn_meta(&self, perm: PointsTo<MetaSlot>) -> &dyn AnyFrameMeta {
+    // TODO: Implement
+    #[verifier::external_body]
+    pub fn dyn_meta<T: AnyFrameMeta>(&self, perm: PointsTo<MetaSlot>) -> &T {
         // SAFETY: The metadata is initialized and valid.
         // unsafe { &*self.slot(perm).dyn_meta_ptr() }
         unimplemented!("Frame::dyn_meta")
@@ -158,11 +163,12 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     }
 
     // TODO: Implement slot for Frame
-    fn slot(&self, perm: PointsTo<MetaSlot>) -> &MetaSlot {
+
+    fn slot<'a>(&'a self, perm: Tracked<&'a PointsTo<MetaSlot>>) -> &'a MetaSlot {
         // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
         // mutably borrowed, so taking an immutable reference to it is safe.
         // unsafe { &*self.ptr }
-        self.ptr.borrow(Tracked(&perm))
+        self.ptr.borrow(perm)
     }
 }
 

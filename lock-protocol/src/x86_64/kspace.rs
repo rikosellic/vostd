@@ -159,7 +159,7 @@ pub proof fn lemma_mod_0_add(a: int, b: int, m: int)
 
 extern_const!(
     pub TRACKED_MAPPED_PAGES_BASE_VADDR [TRACKED_MAPPED_PAGES_BASE_VADDR_SPEC, CONST_TRACKED_MAPPED_PAGES_BASE_VADDR]:
-        Vaddr = 0xffff_d000_0000_0000 << ADDR_WIDTH_SHIFT()
+        Vaddr = 0xffff_d000_0000_0000 << CONST_ADDR_WIDTH_SHIFT
 );
 extern_const!(
     pub VMALLOC_VADDR_RANGE [VMALLOC_VADDR_RANGE_SPEC, CONST_VMALLOC_VADDR_RANGE]:
@@ -170,6 +170,9 @@ extern_const!(
 ///
 /// About what is tracked mapping, see [`crate::mm::frame::meta::MapTrackingStatus`].
 pub fn should_map_as_tracked(addr: Vaddr) -> bool {
-    !(LINEAR_MAPPING_VADDR_RANGE().contains(&addr) || VMALLOC_VADDR_RANGE().contains(&addr))
+    // !(LINEAR_MAPPING_VADDR_RANGE().contains(&addr) || VMALLOC_VADDR_RANGE().contains(&addr))
+    !(LINEAR_MAPPING_VADDR_RANGE().start <= addr && addr < LINEAR_MAPPING_VADDR_RANGE().end)
+    || !(VMALLOC_VADDR_RANGE().start <= addr && addr < VMALLOC_VADDR_RANGE().end)
 }
+
 }

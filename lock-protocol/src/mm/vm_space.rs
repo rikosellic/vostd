@@ -33,7 +33,15 @@ pub struct Token(usize);
 
 impl Token {
     /// The mask that marks the available bits in a token.
-    const MASK: usize = ((1 << 39) - 1) / PAGE_SIZE;
+    // const MASK: usize = ((1 << 39) - 1) / PAGE_SIZE;
+
+    pub open spec fn MASK_SPEC() -> usize {
+        (((1 << 39) as usize - 1) / PAGE_SIZE as int) as usize
+    }
+
+    pub fn MASK() -> usize {
+        ((1 << 39) - 1) / PAGE_SIZE
+    }
 
     pub(crate) fn into_raw_inner(self) -> usize {
         self.0
@@ -46,7 +54,7 @@ impl Token {
     /// The raw value must be a valid token created by [`Self::into_raw_inner`].
     pub(crate) fn from_raw_inner(raw: usize) -> Self
     requires
-        raw & Self::MASK == 0,
+        raw & Self::MASK_SPEC() == 0,
     {
         Self(raw)
     }
@@ -56,7 +64,7 @@ impl TryFrom<usize> for Token {
     type Error = ();
 
     fn try_from(value: usize) -> core::result::Result<Self, Self::Error> {
-        if value & Self::MASK == 0 || value != 0 {
+        if value & Self::MASK() == 0 || value != 0 {
             Ok(Self(value * PAGE_SIZE))
         } else {
             Err(())

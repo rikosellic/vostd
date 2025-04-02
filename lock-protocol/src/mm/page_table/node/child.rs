@@ -30,6 +30,7 @@ pub(in crate::mm) enum Child<
     // C: PagingConstsTrait = PagingConsts,
     E: PageTableEntryTrait,
     C: PagingConstsTrait,
+    T: AnyFrameMeta
 > {
     /// A owning handle to a raw page table node.
     PageTable(PageTableNode<E, C>),
@@ -37,7 +38,7 @@ pub(in crate::mm) enum Child<
     /// address.
     PageTableRef(Paddr),
     /// A mapped frame.
-    Frame(Frame<dyn AnyFrameMeta>, PageProperty),
+    Frame(Frame<T>, PageProperty),
     /// Mapped frames that are not tracked by handles.
     Untracked(Paddr, PagingLevel, PageProperty),
     Token(Token),
@@ -45,7 +46,7 @@ pub(in crate::mm) enum Child<
 }
 
 // impl Child {
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
+impl<E: PageTableEntryTrait, C: PagingConstsTrait, T: AnyFrameMeta> Child<E, C, T> {
 
     #[verifier::inline]
     pub open spec fn is_none_spec(&self) -> bool {
@@ -67,6 +68,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
     ///
     /// In other words, it checks whether the child can be a child of a node
     /// with the given level and tracking status.
+    // TODO: Fix is_compatible to check the tracking status.
     pub(super) fn is_compatible(
         &self,
         node_level: PagingLevel,
@@ -76,10 +78,12 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
             Child::PageTable(pt) => node_level == pt.level() + 1,
             Child::PageTableRef(_) => false,
             Child::Frame(p, _) => {
-                node_level == p.map_level() && is_tracked == MapTrackingStatus::Tracked
+                node_level == p.map_level() 
+                // && is_tracked == MapTrackingStatus::Tracked
             }
             Child::Untracked(_, level, _) => {
-                node_level == *level && is_tracked == MapTrackingStatus::Untracked
+                node_level == *level 
+                // && is_tracked == MapTrackingStatus::Untracked
             }
             Child::None | Child::Token(_) => true,
         }
@@ -94,6 +98,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
     /// Usually this is for recording the PTE into a page table node. When the
     /// child is needed again by reading the PTE of a page table node, extra
     /// information should be provided using the [`Child::from_pte`] method.
+    // TODO: Implement the conversion to PTE.
+    #[verifier::external_body]
     pub(super) fn into_pte(self) -> E {
         unimplemented!()
     }
@@ -110,6 +116,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
     ///
     /// This method should be only used no more than once for a PTE that has
     /// been converted from a child using the [`Child::into_pte`] method.
+    // TODO: Implement the conversion from PTE.
+    #[verifier::external_body]
     pub(super) unsafe fn from_pte(
         pte: E,
         level: PagingLevel,
@@ -136,6 +144,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
     ///
     /// This method must not be used with a PTE that has been restored to a
     /// child using the [`Child::from_pte`] method.
+    // TODO: Implement the conversion from PTE.
+    #[verifier::external_body]
     pub(super) unsafe fn ref_from_pte(
         pte: &E,
         level: PagingLevel,

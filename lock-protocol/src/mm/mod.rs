@@ -33,13 +33,19 @@ pub const PTE_SIZE: usize = 8;
 
 /// The page size at a given level.
 // TODO: Formalize page_size
-pub(crate) const fn page_size<C: PagingConstsTrait>(level: PagingLevel) -> usize {
+pub const fn page_size<C: PagingConstsTrait>(level: PagingLevel) -> usize {
     // C::BASE_PAGE_SIZE << (nr_subpage_per_huge::<C>().ilog2() as usize * (level as usize - 1))
-    BASE_PAGE_SIZE << (nr_subpage_per_huge::<C>().ilog2() as usize * (level as usize - 1))
+    BASE_PAGE_SIZE << (nr_subpage_per_huge().ilog2() as usize * (level as usize - 1))
+}
+
+pub open spec fn nr_subpage_per_huge_spec() -> usize {
+    // C::BASE_PAGE_SIZE / C::PTE_SIZE
+    BASE_PAGE_SIZE / PTE_SIZE
 }
 
 /// The number of sub pages in a huge page.
-pub(crate) const fn nr_subpage_per_huge<C: PagingConstsTrait>() -> usize {
+#[verifier::when_used_as_spec(nr_subpage_per_huge_spec)]
+pub const fn nr_subpage_per_huge() -> usize {
     // C::BASE_PAGE_SIZE / C::PTE_SIZE
     BASE_PAGE_SIZE / PTE_SIZE
 }

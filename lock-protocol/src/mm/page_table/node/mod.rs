@@ -7,6 +7,7 @@ use std::marker::PhantomData;
 use std::ops::Range;
 
 use entry::Entry;
+use vstd::cell::PCell;
 use vstd::prelude::*;
 
 #[allow(unused_imports)]
@@ -34,6 +35,7 @@ pub(super) type PageTableNode<
     // C: PagingConstsTrait = PagingConsts,
     E: PageTableEntryTrait,
     C: PagingConstsTrait,
+    // T: AnyFrameMeta
 > = Frame<PageTablePageMeta<E, C>>;
 
 /// The metadata of any kinds of page table pages.
@@ -125,8 +127,10 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     ///
     /// Panics if the index is not within the bound of
     /// [`nr_subpage_per_huge<C>`].
-    pub(super) fn entry(&mut self, idx: usize) -> Entry<'_, E, C> {
-        assert!(idx < nr_subpage_per_huge::<C>());
+    // pub(super) fn entry(&mut self, idx: usize) -> Entry<'_, E, C> { // TODO: mut?
+    pub(super) fn entry(&self, idx: usize) -> Entry<'_, E, C> {
+        // assert!(idx < nr_subpage_per_huge::<C>());
+        assert(idx < nr_subpage_per_huge());
         // SAFETY: The index is within the bound.
         unsafe { Entry::new_at(self, idx) }
     }
@@ -149,6 +153,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     /// Allocates a new empty page table node.
     ///
     /// This function returns a locked owning guard.
+    // TODO: Implement alloc for PageTableLock
+    #[verifier::external_body]
     pub(super) fn alloc(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
         // let meta = PageTablePageMeta::new_locked(level, is_tracked);
         // let frame = FrameAllocOptions::new()
@@ -163,21 +169,26 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     }
 
     /// Unlocks the page table node.
-    pub(super) fn unlock(mut self) -> PageTableNode<E, C> {
-        // Release the lock.
-        // SAFETY:
-        //  - The lock stays at the metadata slot so it's pinned.
-        //  - The constructor of the node guard ensures that the lock is held,
-        //    and no preemption is allowed.
-        unsafe { self.meta().lock.unlock() };
+    // TODO: Implement unlock for PageTableLock
+    #[verifier::external_body]
+    pub(super) fn unlock(&mut self) -> PageTableNode<E, C> {
+        // // Release the lock.
+        // // SAFETY:
+        // //  - The lock stays at the metadata slot so it's pinned.
+        // //  - The constructor of the node guard ensures that the lock is held,
+        // //    and no preemption is allowed.
+        // unsafe { self.meta().lock.unlock() };
 
-        self.frame.take().unwrap()
+        // self.frame.take().unwrap()
+        unimplemented!()
     }
 
     /// Converts the guard into a raw physical address.
     ///
     /// It will not release the lock. It may be paired with [`Self::from_raw_paddr`]
     /// to manually manage pointers.
+    // TODO: Implement into_raw_paddr for PageTableLock
+    #[verifier::external_body]
     pub(super) fn into_raw_paddr(self) -> Paddr {
         // let this = ManuallyDrop::new(self);
         // this.paddr()
@@ -197,16 +208,23 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     }
 
     /// Gets the number of valid PTEs in the node.
+    // TODO: Implement nr_children for PageTableLock
+    #[verifier::external_body]
     pub(super) fn nr_children(&self) -> u16 {
         // SAFETY: The lock is held so we have an exclusive access.
-        unsafe { *self.meta().nr_children.get() }
+        // unsafe { *self.meta().nr_children.get() }
+        // self.meta().nr_children.into()
+        unimplemented!()
     }
 
     /// If the page table node is detached from its parent.
-    pub(super) fn astray_mut(&mut self) -> &mut bool {
-        // SAFETY: The lock is held so we have an exclusive access.
-        unsafe { &mut *self.meta().astray.get() }
-    }
+    // TODO: Implement astray for PageTableLock
+    // #[verifier::external_body]
+    // // pub(super) fn astray_mut(&mut self) -> &mut bool {
+    // pub(super) fn astray_mut(&mut self) -> &mut bool {
+    //     // SAFETY: The lock is held so we have an exclusive access.
+    //     unsafe { &mut *self.meta().astray.get() }
+    // }
 
     /// Reads a non-owning PTE at the given index.
     ///
@@ -217,6 +235,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     /// # Safety
     ///
     /// The caller must ensure that the index is within the bound.
+    // TODO: Implement read_pte for PageTableLock
+    #[verifier::external_body]
     unsafe fn read_pte(&self, idx: usize) -> E {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
         // let ptr = paddr_to_vaddr(self.paddr()) as *mut E;
@@ -241,6 +261,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     ///  1. The index must be within the bound;
     ///  2. The PTE must represent a child compatible with this page table node
     ///     (see [`Child::is_compatible`]).
+    // TODO: Implement write_pte for PageTableLock
+    #[verifier::external_body]
     unsafe fn write_pte(&mut self, idx: usize, pte: E) {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
         // let ptr = paddr_to_vaddr(self.paddr()) as *mut E;
@@ -253,23 +275,28 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     }
 
     /// Gets the mutable reference to the number of valid PTEs in the node.
-    fn nr_children_mut(&mut self) -> &mut u16 {
-        // SAFETY: The lock is held so we have an exclusive access.
-        unsafe { &mut *self.meta().nr_children.get() }
-    }
+    // #[verifier::external_body]
+    // fn nr_children_mut(&mut self) -> &mut u16 {
+    //     // SAFETY: The lock is held so we have an exclusive access.
+    //     unsafe { &mut *self.meta().nr_children.get() }
+    // }
 
+    // TODO: Implement
+    #[verifier::external_body]
     fn meta(&self) -> &PageTablePageMeta<E, C> {
-        self.frame.as_ref().unwrap().meta()
+        // self.frame.as_ref().unwrap().meta()
+        unimplemented!()
     }
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for PageTableLock<E, C> {
-    fn drop(&mut self) {
-        if self.frame.is_some() {
-            panic!("Dropping `PageTableLock` instead of `unlock` it")
-        }
-    }
-}
+// TODO: Implement Drop for PageTableLock
+// impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for PageTableLock<E, C> {
+//     fn drop(&mut self) {
+//         if self.frame.is_some() {
+//             panic!("Dropping `PageTableLock` instead of `unlock` it")
+//         }
+//     }
+// }
 
 /// The metadata of any kinds of page table pages.
 /// Make sure the the generic parameters don't effect the memory layout.
@@ -283,14 +310,15 @@ pub(in crate::mm) struct PageTablePageMeta<
 
     /// The number of valid PTEs. It is mutable if the lock is held.
     // TODO: PCell or Cell?
-    pub nr_children: SyncUnsafeCell<u16>,
+    // pub nr_children: SyncUnsafeCell<u16>,
+    pub nr_children: PCell<u16>,
 
     /// If the page table is detached from its parent.
     ///
     /// A page table can be detached from its parent while still being accessed,
     /// since we use a RCU scheme to recycle page tables. If this flag is set,
     /// it means that the parent is recycling the page table.
-    pub astray: SyncUnsafeCell<bool>,
+    pub astray: PCell<bool>,
 
     /// The level of the page table page. A page table page cannot be
     /// referenced by page tables of different levels.
@@ -320,10 +348,15 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTablePageMeta<E, C>
 where
     // [(); C::NR_LEVELS as usize]:,
 {
+    
+    // TODO: Implement
+    #[verifier::external_body]
     pub fn new_locked(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
         Self {
-            nr_children: SyncUnsafeCell::new(0),
-            astray: SyncUnsafeCell::new(false),
+            // nr_children: SyncUnsafeCell::new(0),
+            // astray: SyncUnsafeCell::new(false),
+            nr_children: PCell::new(0u16).0,
+            astray: PCell::new(false).0,
             level,
             lock: spin::queued::LockBody::new_locked(),
             is_tracked,

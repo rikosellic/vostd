@@ -1,8 +1,15 @@
 use std::sync::atomic::Ordering;
 
-use crate::task::DisabledPreemptGuard;
+use vstd::prelude::verus;
 
-use super::{node::{MapTrackingStatus, PageTableLock, PageTableNode, PageTablePageMeta}, PageTableEntryTrait, PagingConstsTrait, PagingLevel};
+use crate::{mm::meta::AnyFrameMeta, task::DisabledPreemptGuard};
+
+use super::{
+    node::{MapTrackingStatus, PageTableLock, PageTableNode, PageTablePageMeta},
+    PageTableEntryTrait, PagingConstsTrait, PagingLevel,
+};
+
+verus! {
 
 const POOL_SIZE: usize = 12; // TODO: fix POOL_SIZE
 
@@ -33,4 +40,6 @@ pub(super) fn alloc<E: PageTableEntryTrait, C: PagingConstsTrait>(
 
     // // SAFETY: The metadata must match the locked frame.
     // unsafe { PageTableLock::from_raw_paddr(frame.into_raw()) }
+}
+
 }

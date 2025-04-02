@@ -9,20 +9,28 @@ use std::{marker::PhantomData, ops::Range};
 
 use crate::helpers::extra_num::lemma_usize_ilog2_to32;
 
-use super::{nr_subpage_per_huge, page_prop::PageProperty, vm_space::Token, Paddr, PagingLevel, Vaddr};
+use super::{
+    meta::AnyFrameMeta, nr_subpage_per_huge, page_prop::PageProperty, vm_space::Token, Paddr,
+    PagingLevel, Vaddr,
+};
 
 verus! {
 
 pub trait PageTableEntryTrait:
-    Clone + Copy + Default + Sized + Send + Sync + 'static
+    Clone + Copy + 
+    // Default + 
+    Sized + Send + Sync + 'static
     // Debug // TODO: Implement Debug for PageTableEntryTrait
     // + Pod + PodOnce // TODO: Implement Pod and PodOnce for PageTableEntryTrait
 {
     /// Create a set of new invalid page table flags that indicates an absent page.
     ///
     /// Note that currently the implementation requires an all zero PTE to be an absent PTE.
+    // TODO: Implement
+    #[verifier::external_body]
     fn new_absent() -> Self {
-        Self::default()
+        // Self::default()
+        unimplemented!()
     }
 
     /// If the flags are present with valid mappings.
@@ -69,6 +77,8 @@ pub trait PageTableEntryTrait:
     fn is_last(&self, level: PagingLevel) -> bool;
 
     /// Converts the PTE into its corresponding `usize` value.
+    // TODO: Implement as_usize and from_usize
+    #[verifier::external_body]
     fn as_usize(self) -> usize {
         // SAFETY: `Self` is `Pod` and has the same memory representation as `usize`.
         // unsafe { transmute_unchecked(self) }
@@ -77,6 +87,8 @@ pub trait PageTableEntryTrait:
     }
 
     /// Converts a usize `pte_raw` into a PTE.
+    // TODO: Implement as_usize and from_usize
+    #[verifier::external_body]
     fn from_usize(pte_raw: usize) -> Self {
         // SAFETY: `Self` is `Pod` and has the same memory representation as `usize`.
         // unsafe { transmute_unchecked(pte_raw) }
@@ -87,19 +99,24 @@ pub trait PageTableEntryTrait:
 
 /// A minimal set of constants that determines the paging system.
 /// This provides an abstraction over most paging modes in common architectures.
-pub(crate) trait PagingConstsTrait:
-    // Clone + Debug + Default + Send + Sync + 'static
-    {
+pub trait PagingConstsTrait:
+// Clone + Debug + Default + Send + Sync + 'static
+{
+
+    spec fn BASE_PAGE_SIZE_SPEC() -> usize;
+
     // /// The smallest page size.
     // /// This is also the page size at level 1 page tables.
-    const BASE_PAGE_SIZE: usize;
+    fn BASE_PAGE_SIZE() -> usize;
+
+    spec fn NR_LEVELS_SPEC() -> PagingLevel;
 
     // /// The number of levels in the page table.
     // /// The numbering of levels goes from deepest node to the root node. For example,
     // /// the level 1 to 5 on AMD64 corresponds to Page Tables, Page Directory Tables,
     // /// Page Directory Pointer Tables, Page-Map Level-4 Table, and Page-Map Level-5
     // /// Table, respectively.
-    const NR_LEVELS: PagingLevel;
+    fn NR_LEVELS() -> PagingLevel;
 
     // /// The highest level that a PTE can be directly used to translate a VA.
     // /// This affects the the largest page size supported by the page table.
@@ -122,8 +139,20 @@ pub struct PagingConsts {}
 
 // TODO: This is for x86, create the arch directory and move this to x86/mod.rs
 impl PagingConstsTrait for PagingConsts {
-    const BASE_PAGE_SIZE: usize = 4096;
-    const NR_LEVELS: PagingLevel = 4;
+
+    open spec fn BASE_PAGE_SIZE_SPEC() -> usize {
+        4096
+    }
+
+    #[verifier::when_used_as_spec(BASE_PAGE_SIZE_SPEC)]
+    fn BASE_PAGE_SIZE() -> usize { 4096 }
+
+    open spec fn NR_LEVELS_SPEC() -> PagingLevel {
+        4
+    }
+
+    #[verifier::when_used_as_spec(NR_LEVELS_SPEC)]
+    fn NR_LEVELS() -> PagingLevel { 4 }
     // const ADDRESS_WIDTH: usize = 48;
     // const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 2;
     // const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
@@ -132,13 +161,16 @@ impl PagingConstsTrait for PagingConsts {
 /// This is a compile-time technique to force the frame developers to distinguish
 /// between the kernel global page table instance, process specific user page table
 /// instance, and device page table instances.
-pub trait PageTableMode: Clone + Debug + 'static {
+pub trait PageTableMode: Clone + Debug
+//  + 'static
+{
     /// The range of virtual addresses that the page table can manage.
-    const VADDR_RANGE: Range<Vaddr>;
+    // const VADDR_RANGE: Range<Vaddr>;
+    fn VADDR_RANGE() -> Range<Vaddr>;
 
     /// Check if the given range is covered by the valid virtual address range.
     fn covers(r: &Range<Vaddr>) -> bool {
-        Self::VADDR_RANGE.start <= r.start && r.end <= Self::VADDR_RANGE.end
+        Self::VADDR_RANGE().start <= r.start && r.end <= Self::VADDR_RANGE().end
     }
 }
 
@@ -146,14 +178,20 @@ pub trait PageTableMode: Clone + Debug + 'static {
 pub struct UserMode {}
 
 impl PageTableMode for UserMode {
-    const VADDR_RANGE: Range<Vaddr> = 0..super::MAX_USERSPACE_VADDR;
+    // const VADDR_RANGE: Range<Vaddr> = 0..super::MAX_USERSPACE_VADDR;
+    fn VADDR_RANGE() -> Range<Vaddr> {
+        0..super::MAX_USERSPACE_VADDR
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct KernelMode {}
 
 impl PageTableMode for KernelMode {
-    const VADDR_RANGE: Range<Vaddr> = super::KERNEL_VADDR_RANGE;
+    // const VADDR_RANGE: Range<Vaddr> = super::KERNEL_VADDR_RANGE;
+    fn VADDR_RANGE() -> Range<Vaddr> {
+        super::KERNEL_VADDR_RANGE
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -172,14 +210,15 @@ pub enum PageTableError {
 // Here are some const values that are determined by the paging constants.
 pub proof fn bits_of_base_page_size()
     ensures
-        PagingConsts::BASE_PAGE_SIZE.ilog2() == 12,
+        PagingConsts::BASE_PAGE_SIZE_SPEC().ilog2() == 12,
 {
     lemma_usize_ilog2_to32();
 }
 
 pub proof fn value_of_nr_subpage_per_huge()
     ensures
-        nr_subpage_per_huge::<PagingConsts>() == 512,
+        // nr_subpage_per_huge::<PagingConsts>() == 512, // TODO
+        nr_subpage_per_huge() == 512,
 { }
 
 pub proof fn bits_of_nr_pte_index()
@@ -193,17 +232,19 @@ pub proof fn bits_of_nr_pte_index()
 #[verifier::inline]
 pub open spec fn nr_pte_index_bits_spec<C: PagingConstsTrait>() -> usize
 {
-    nr_subpage_per_huge::<C>().ilog2() as usize
+    // nr_subpage_per_huge::<C>().ilog2() as usize // TODO
+    nr_subpage_per_huge().ilog2() as usize
 }
 
 /// The number of virtual address bits used to index a PTE in a page.
 #[inline(always)]
 #[verifier::when_used_as_spec(nr_pte_index_bits_spec)]
-const fn nr_pte_index_bits<C: PagingConstsTrait>() -> (res: usize)
+pub const fn nr_pte_index_bits<C: PagingConstsTrait>() -> (res: usize)
 ensures
     res == nr_pte_index_bits_spec::<C>(),
 {
-    nr_subpage_per_huge::<C>().ilog2() as usize
+    // nr_subpage_per_huge::<C>().ilog2() as usize // TODO
+    nr_subpage_per_huge().ilog2() as usize
 }
 
 #[verifier::inline]
@@ -218,14 +259,15 @@ pub fn pte_index_mask() -> (res: usize)
     ensures
         res == pte_index_mask_spec(),
 {
-    nr_subpage_per_huge::<PagingConsts>() - 1
+    // nr_subpage_per_huge::<PagingConsts>() - 1 // TODO
+    nr_subpage_per_huge() - 1
 }
 
 pub open spec fn pte_index_spec(va: Vaddr, level: PagingLevel) -> usize
     recommends
-        0 < level <= PagingConsts::NR_LEVELS,
+        0 < level <= PagingConsts::NR_LEVELS_SPEC(),
 {
-    let base_bits = PagingConsts::BASE_PAGE_SIZE.ilog2();
+    let base_bits = PagingConsts::BASE_PAGE_SIZE_SPEC().ilog2();
     let index_bits = nr_pte_index_bits::<PagingConsts>();
     let shift = base_bits + (level - 1) as u32 * index_bits as u32;
     (va >> shift) & pte_index_mask()
@@ -234,13 +276,13 @@ pub open spec fn pte_index_spec(va: Vaddr, level: PagingLevel) -> usize
 #[verifier::when_used_as_spec(pte_index_spec)]
 /// The index of a VA's PTE in a page table node at the given level.
 // const fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> usize
-const fn pte_index(va: Vaddr, level: PagingLevel) -> (res: usize) // TODO: type?
+pub fn pte_index(va: Vaddr, level: PagingLevel) -> (res: usize) // TODO: type, const
 requires
-    0 < level <= PagingConsts::NR_LEVELS,
+    0 < level <= PagingConsts::NR_LEVELS_SPEC(),
 ensures
     res == pte_index_spec(va, level),
 {
-    let base_bits = PagingConsts::BASE_PAGE_SIZE.ilog2();
+    let base_bits = PagingConsts::BASE_PAGE_SIZE().ilog2();
     assert(base_bits == 12) by {
         bits_of_base_page_size();
     };
