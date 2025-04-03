@@ -9,11 +9,13 @@ use vstd::arithmetic::logarithm::*;
 use vstd::arithmetic::power::pow;
 use vstd::arithmetic::power2::pow2;
 use vstd::bits::*;
+use vstd::layout::is_power_2;
 use vstd::prelude::*;
 pub use page_table::*;
 pub use page_table::node::*;
 pub use frame::*;
 
+use crate::helpers::extra_num::lemma_pow2_is_power2_to64;
 use crate::helpers::math::lemma_page_shl;
 
 verus! {
@@ -60,6 +62,7 @@ requires
 ensures
     res != 0,
     res == page_size_spec::<C>(level),
+    is_power_2(res as int)
 {
     // C::BASE_PAGE_SIZE << (nr_subpage_per_huge::<C>().ilog2() as usize * (level as usize - 1))
     let t = nr_subpage_per_huge().ilog2() as u64;
@@ -91,6 +94,9 @@ ensures
         4 => assert(res == ((BASE_PAGE_SIZE as u64) << 27) as usize),
         _ => assert(false),
     };
+    proof{
+        lemma_pow2_is_power2_to64();
+    }
     res as usize
 }
 

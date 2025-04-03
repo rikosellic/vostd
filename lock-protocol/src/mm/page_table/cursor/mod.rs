@@ -8,7 +8,8 @@ use std::{
     ops::Range,
 };
 
-use vstd::{invariant, pervasive::VecAdditionalExecFns, prelude::*};
+use vstd::{invariant, layout::is_power_2, pervasive::VecAdditionalExecFns, prelude::*};
+use vstd::bits::*;
 
 use crate::{
     helpers::align_ext::align_down,
@@ -17,12 +18,11 @@ use crate::{
         page_prop::PageProperty, page_size, page_table::zeroed_pt_pool, vm_space::Token, Frame,
         MapTrackingStatus, Paddr, Vaddr, MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
-    task::DisabledPreemptGuard,
+    task::DisabledPreemptGuard, x86_64::VMALLOC_VADDR_RANGE,
 };
 
 use super::{
-    node::PageTableLock, pte_index, KernelMode, PageTable, PageTableEntryTrait, PageTableError,
-    PageTableMode, PagingConstsTrait, PagingLevel, UserMode,
+    node::PageTableLock, pte_index, KernelMode, PageTable, PageTableEntryTrait, PageTableError, PageTableMode, PagingConsts, PagingConstsTrait, PagingLevel, UserMode
 };
 
 verus! {
@@ -174,7 +174,10 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
     ///
     /// If reached the end of a page table node, it leads itself up to the next page of the parent
     /// page if possible.
-    pub(in crate::mm) fn move_forward(&mut self) {
+    pub(in crate::mm) fn move_forward(&mut self) 
+    requires
+        old(self).va < MAX_USERSPACE_VADDR,
+    {
         let page_size = page_size::<C>(self.level);
         // let next_va = self.va.align_down(page_size) + page_size;
         let next_va = align_down(self.va, page_size) + page_size;
@@ -190,7 +193,16 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
     /// # Panics
     ///
     /// This method panics if the address has bad alignment.
-    pub fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError> {
+    pub fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError>
+    requires
+        old(self).barrier_va.start < old(self).barrier_va.end,
+        old(self).barrier_va.end < MAX_USERSPACE_VADDR,
+        old(self).va >= old(self).barrier_va.start,
+        old(self).va < old(self).barrier_va.end,
+        old(self).level < PagingConsts::NR_LEVELS_SPEC(),
+        old(self).level > 0,
+        old(self).path.len() > old(self).level as usize,
+    {
         // assert!(va % C::BASE_PAGE_SIZE() == 0); // TODO
         // if !self.barrier_va.contains(&va) {
         //     return Err(PageTableError::InvalidVaddr(va));
@@ -199,11 +211,21 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
             return Err(PageTableError::InvalidVaddr(va));
         }
 
-        loop {
-            let cur_node_start = self.va & !(page_size::<C>(self.level + 1) - 1);
-            let cur_node_end = cur_node_start + page_size::<C>(self.level + 1);
+        loop 
+        invariant
+            0 < self.level < PagingConsts::NR_LEVELS_SPEC() as usize,
+        {
+            let cur_page_size = page_size::<C>(self.level + 1) as u64;
+            let self_va = self.va as u64; // make verus happy
+            let cur_node_start = self_va & !(cur_page_size - 1);
+            assert(is_power_2(cur_page_size as int));
+            let cur_page_size_minus_1 = cur_page_size - 1;
+            assert(cur_node_start < self_va) by {
+                assert(self_va & !cur_page_size_minus_1 <= cur_node_start) by (bit_vector);
+            };
+            let cur_node_end = cur_node_start as usize + page_size::<C>(self.level + 1);
             // If the address is within the current node, we can jump directly.
-            if cur_node_start <= va && va < cur_node_end {
+            if cur_node_start as usize <= va && va < cur_node_end {
                 self.va = va;
                 return Ok(());
             }
@@ -225,7 +247,12 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
     }
 
     /// Goes up a level.
-    fn pop_level(&mut self) {
+    fn pop_level(&mut self)
+    requires
+        old(self).level <= PagingConsts::NR_LEVELS_SPEC() as usize,
+        old(self).level > 1,
+        old(self).path.len() > old(self).level as usize,
+    {
         // let Some(taken) = self.path[self.level as usize - 1].take() else {
         //     panic!("Popping a level without a lock");
         // };
@@ -241,7 +268,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
     /// Goes down a level to a child page table.
     fn push_level(&mut self, child_pt: PageTableLock<E, C>)
     requires
-        old(self).level > 0,
+        old(self).level > 1,
         old(self).path.len() > old(self).level as usize,
     {
         self.level = self.level - 1;
