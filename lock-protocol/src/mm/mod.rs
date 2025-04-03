@@ -37,9 +37,18 @@ pub const PTE_SIZE: usize = 8;
 /// The page size
 // pub const PAGE_SIZE: usize = page_size::<PagingConsts>(1);
 
-pub open spec fn page_size_spec<C: PagingConstsTrait>(level: PagingLevel) -> usize {
+pub open spec fn page_size_spec<C: PagingConstsTrait>(level: PagingLevel) -> usize
+recommends
+    level > 0 && level <= NR_LEVELS,
+{
     // C::BASE_PAGE_SIZE << (nr_subpage_per_huge::<C>().ilog2() as usize * (level as usize - 1))
-    (BASE_PAGE_SIZE * pow2((9 * (level - 1)) as nat)) as usize
+    match level {
+        1 => BASE_PAGE_SIZE,
+        2 => ((BASE_PAGE_SIZE as u64) << 9) as usize,
+        3 => ((BASE_PAGE_SIZE as u64) << 18) as usize,
+        4 => ((BASE_PAGE_SIZE as u64) << 27) as usize,
+        _ => 0,
+    }
 }
 
 /// The page size at a given level.
@@ -65,15 +74,23 @@ ensures
     };
     let l = level as u64 - 1;
     assert(0 <= l < NR_LEVELS);
-    assert (0 <= t * l <= 27);
+    assert(t * l == 0 || t * l == 9 || t * l == 18 || t * l == 27) by {
+        assert(l == 0 || l == 1 || l == 2 || l == 3);
+    };
     let res = (BASE_PAGE_SIZE as u64) << (t * l);
-    assert(res != 0) by {
+    proof {
         lemma_page_shl();
     }
-    assert(res == BASE_PAGE_SIZE * pow2((9 * (level - 1)) as nat)) by {
-        lemma_log_pow(2, (9 * (level - 1)) as nat);
-        lemma_page_shl();
-    }
+    assert(res != 0);
+    match level {
+        1 => assert(res == BASE_PAGE_SIZE) by {
+            assert(t * l == 0);
+        },
+        2 => assert(res == ((BASE_PAGE_SIZE as u64) << 9) as usize),
+        3 => assert(res == ((BASE_PAGE_SIZE as u64) << 18) as usize),
+        4 => assert(res == ((BASE_PAGE_SIZE as u64) << 27) as usize),
+        _ => assert(false),
+    };
     res as usize
 }
 
