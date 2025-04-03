@@ -82,12 +82,30 @@ impl<M: AnyFrameMeta> Frame<M> {
     ///
     /// Currently, the level is always 1, which means the frame is a regular
     /// page frame.
-    pub const fn map_level(&self) -> PagingLevel {
+    #[verifier::when_used_as_spec(map_level_spec)]
+    pub const fn map_level(&self) -> (res: PagingLevel)
+    ensures
+        res == 1,
+        res == self.map_level_spec(),
+    {
+        1
+    }
+
+    pub open spec fn map_level_spec(&self) -> PagingLevel {
         1
     }
 
     /// Gets the size of this page in bytes.
-    pub const fn size(&self) -> usize {
+    #[verifier::when_used_as_spec(size_spec)]
+    pub const fn size(&self) -> (res: usize)
+    ensures
+        res == PAGE_SIZE,
+        res == self.size_spec(),
+    {
+        PAGE_SIZE
+    }
+
+    pub open spec fn size_spec(&self) -> usize {
         PAGE_SIZE
     }
 
@@ -164,7 +182,11 @@ impl<M: AnyFrameMeta> Frame<M> {
 
     // TODO: Implement slot for Frame
 
-    fn slot<'a>(&'a self, perm: Tracked<&'a PointsTo<MetaSlot>>) -> &'a MetaSlot {
+    fn slot<'a>(&'a self, perm: Tracked<&'a PointsTo<MetaSlot>>) -> &'a MetaSlot
+    requires
+        perm@.pptr() == self.ptr,
+        perm@.is_init()
+    {
         // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
         // mutably borrowed, so taking an immutable reference to it is safe.
         // unsafe { &*self.ptr }

@@ -107,7 +107,10 @@ pub trait PagingConstsTrait:
 
     // /// The smallest page size.
     // /// This is also the page size at level 1 page tables.
-    fn BASE_PAGE_SIZE() -> usize;
+    fn BASE_PAGE_SIZE() -> (res: usize)
+    ensures
+        res != 0
+    ;
 
     spec fn NR_LEVELS_SPEC() -> PagingLevel;
 
@@ -145,14 +148,20 @@ impl PagingConstsTrait for PagingConsts {
     }
 
     #[verifier::when_used_as_spec(BASE_PAGE_SIZE_SPEC)]
-    fn BASE_PAGE_SIZE() -> usize { 4096 }
+    fn BASE_PAGE_SIZE() -> (res: usize)
+    ensures
+        res == Self::BASE_PAGE_SIZE_SPEC(),
+    { 4096 }
 
     open spec fn NR_LEVELS_SPEC() -> PagingLevel {
         4
     }
 
     #[verifier::when_used_as_spec(NR_LEVELS_SPEC)]
-    fn NR_LEVELS() -> PagingLevel { 4 }
+    fn NR_LEVELS() -> (res: PagingLevel)
+    ensures
+        res == Self::NR_LEVELS_SPEC(),
+    { 4 }
     // const ADDRESS_WIDTH: usize = 48;
     // const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 2;
     // const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
@@ -161,7 +170,7 @@ impl PagingConstsTrait for PagingConsts {
 /// This is a compile-time technique to force the frame developers to distinguish
 /// between the kernel global page table instance, process specific user page table
 /// instance, and device page table instances.
-pub trait PageTableMode: Clone + Debug
+pub trait PageTableMode: Debug // TODO: Clone?
 //  + 'static
 {
     /// The range of virtual addresses that the page table can manage.
@@ -174,7 +183,7 @@ pub trait PageTableMode: Clone + Debug
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)] // TODO Copy?
 pub struct UserMode {}
 
 impl PageTableMode for UserMode {
@@ -184,7 +193,7 @@ impl PageTableMode for UserMode {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)] // TODO Copy?
 pub struct KernelMode {}
 
 impl PageTableMode for KernelMode {

@@ -8,7 +8,7 @@
 #![feature(sync_unsafe_cell)]
 
 pub mod mm;
-pub mod spec;
+// pub mod spec;
 pub mod prelude;
 pub mod test;
 pub mod task;
@@ -18,5 +18,5 @@ pub mod helpers;
 pub mod sync;
 
 fn main() {
-    spec::simple_page_table::main();
+    // spec::simple_page_table::main();
 }

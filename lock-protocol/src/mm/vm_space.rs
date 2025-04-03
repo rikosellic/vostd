@@ -10,7 +10,10 @@
 //! validity concerns as described in [`super::page_table::cursor`].
 
 use core::{ops::Range, sync::atomic::Ordering};
+use vstd::arithmetic::power::pow;
+use vstd::arithmetic::power2::pow2;
 use vstd::prelude::*;
+use vstd::bits::*;
 
 verus! {
 
@@ -35,12 +38,38 @@ impl Token {
     /// The mask that marks the available bits in a token.
     // const MASK: usize = ((1 << 39) - 1) / PAGE_SIZE;
 
-    pub open spec fn MASK_SPEC() -> usize {
-        (((1 << 39) as usize - 1) / PAGE_SIZE as int) as usize
+    pub open spec fn MASK_SPEC() -> (res: usize)
+    {
+        0x7FFFFFF
     }
 
-    pub fn MASK() -> usize {
-        ((1 << 39) - 1) / PAGE_SIZE
+    #[verifier::when_used_as_spec(MASK_SPEC)]
+    pub fn MASK() -> (res: usize)
+    ensures
+        res == Self::MASK_SPEC(),
+    {
+        broadcast use lemma_u64_pow2_no_overflow;
+        broadcast use lemma_u64_shl_is_mul;
+        let t = ((1 as u64) << 39 as u64);
+        assert (t == pow2(39 as nat)) by {
+            lemma_u64_pow2_no_overflow(39 as nat);
+            lemma_u64_shl_is_mul(1 as u64, 39 as u64);
+        }
+        reveal(pow2);
+        reveal(pow);
+        assert(pow2(39) == 0x8000000000) by (compute_only);
+        assert(0 < t < u64::MAX) by {
+            assert(pow2(39 as nat) == 0x8000000000) by (compute_only);
+        }
+        let res = ((t - 1) / PAGE_SIZE as u64) as usize;
+        assert (res == 0x7FFFFFF) by {
+            assert (res == (t - 1) as u64 / PAGE_SIZE as u64);
+            assert (t - 1 == 0x8000000000 - 1);
+            assert (PAGE_SIZE == 0x1000);
+            assert (0x8000000000 - 1 == 0x7FFFFFFFFF) by (compute_only);
+            assert (0x7FFFFFFFFF as usize / PAGE_SIZE == 0x7FFFFFF) by (compute_only);
+        }
+        res
     }
 
     pub(crate) fn into_raw_inner(self) -> usize {
@@ -63,7 +92,10 @@ impl Token {
 impl TryFrom<usize> for Token {
     type Error = ();
 
-    fn try_from(value: usize) -> core::result::Result<Self, Self::Error> {
+    fn try_from(value: usize) -> core::result::Result<Self, Self::Error>
+    requires
+        0 <= value && value < Self::MASK_SPEC(),
+    {
         if value & Self::MASK() == 0 || value != 0 {
             Ok(Self(value * PAGE_SIZE))
         } else {

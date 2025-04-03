@@ -1,14 +1,20 @@
-pub mod page_table;
 pub mod frame;
 pub(crate) mod page_prop;
+pub mod page_table;
 pub mod vm_space;
 
 use std::ops::Range;
 
+use vstd::arithmetic::logarithm::*;
+use vstd::arithmetic::power::pow;
+use vstd::arithmetic::power2::pow2;
+use vstd::bits::*;
 use vstd::prelude::*;
 pub use page_table::*;
 pub use page_table::node::*;
 pub use frame::*;
+
+use crate::helpers::math::lemma_page_shl;
 
 verus! {
 
@@ -31,11 +37,44 @@ pub const PTE_SIZE: usize = 8;
 /// The page size
 // pub const PAGE_SIZE: usize = page_size::<PagingConsts>(1);
 
+pub open spec fn page_size_spec<C: PagingConstsTrait>(level: PagingLevel) -> usize {
+    // C::BASE_PAGE_SIZE << (nr_subpage_per_huge::<C>().ilog2() as usize * (level as usize - 1))
+    (BASE_PAGE_SIZE * pow2((9 * (level - 1)) as nat)) as usize
+}
+
 /// The page size at a given level.
 // TODO: Formalize page_size
-pub const fn page_size<C: PagingConstsTrait>(level: PagingLevel) -> usize {
+#[verifier::when_used_as_spec(page_size_spec)]
+pub const fn page_size<C: PagingConstsTrait>(level: PagingLevel) -> (res: usize)
+requires
+    level > 0 && level <= NR_LEVELS,
+ensures
+    res != 0,
+    res == page_size_spec::<C>(level),
+{
     // C::BASE_PAGE_SIZE << (nr_subpage_per_huge::<C>().ilog2() as usize * (level as usize - 1))
-    BASE_PAGE_SIZE << (nr_subpage_per_huge().ilog2() as usize * (level as usize - 1))
+    let t = nr_subpage_per_huge().ilog2() as u64;
+    assert(t == 9) by {
+        assert(nr_subpage_per_huge() == 512);
+        assert(log(2, 512) == 9) by {
+            assert(512 == pow(2, 9)) by (compute_only);
+            assert(log(2, 512) == 9) by {
+                lemma_log_pow(2, 9)
+            }
+        }
+    };
+    let l = level as u64 - 1;
+    assert(0 <= l < NR_LEVELS);
+    assert (0 <= t * l <= 27);
+    let res = (BASE_PAGE_SIZE as u64) << (t * l);
+    assert(res != 0) by {
+        lemma_page_shl();
+    }
+    assert(res == BASE_PAGE_SIZE * pow2((9 * (level - 1)) as nat)) by {
+        lemma_log_pow(2, (9 * (level - 1)) as nat);
+        lemma_page_shl();
+    }
+    res as usize
 }
 
 pub open spec fn nr_subpage_per_huge_spec() -> usize {
@@ -45,7 +84,12 @@ pub open spec fn nr_subpage_per_huge_spec() -> usize {
 
 /// The number of sub pages in a huge page.
 #[verifier::when_used_as_spec(nr_subpage_per_huge_spec)]
-pub const fn nr_subpage_per_huge() -> usize {
+pub const fn nr_subpage_per_huge() -> (res: usize)
+ensures
+    res != 0,
+    res == nr_subpage_per_huge_spec(),
+    res == BASE_PAGE_SIZE / PTE_SIZE,
+{
     // C::BASE_PAGE_SIZE / C::PTE_SIZE
     BASE_PAGE_SIZE / PTE_SIZE
 }

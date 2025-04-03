@@ -44,7 +44,11 @@ pub(super) type PageTableNode<
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C>
 {
     /// The level of the page table node.
-    pub(super) fn level(&self) -> PagingLevel {
+    #[verifier::external_body] // TODO
+    pub(super) fn level(&self) -> (res: PagingLevel)
+    ensures
+        0 <= res <= C::NR_LEVELS_SPEC(),
+    {
         self.meta().level
     }
 
@@ -112,12 +116,12 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C>
 /// This should be used as a linear type, i.e, it shouldn't be dropped. The
 /// only way to destruct the type must be [`PageTableLock::unlock`].
 // #[derive(Debug)] // TODO: Debug for PageTableLock
-pub(super) struct PageTableLock<
+pub struct PageTableLock<
     E: PageTableEntryTrait,
     C: PagingConstsTrait,
 > {
     // We need to wrap it in `Option` to perform the linear type check.
-    frame: Option<Frame<PageTablePageMeta<E, C>>>,
+    pub frame: Option<Frame<PageTablePageMeta<E, C>>>,
 }
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
@@ -128,7 +132,10 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     /// Panics if the index is not within the bound of
     /// [`nr_subpage_per_huge<C>`].
     // pub(super) fn entry(&mut self, idx: usize) -> Entry<'_, E, C> { // TODO: mut?
-    pub(super) fn entry(&self, idx: usize) -> Entry<'_, E, C> {
+    pub(super) fn entry(&self, idx: usize) -> Entry<'_, E, C>
+    requires
+        idx < nr_subpage_per_huge(),
+    {
         // assert!(idx < nr_subpage_per_huge::<C>());
         assert(idx < nr_subpage_per_huge());
         // SAFETY: The index is within the bound.
@@ -136,7 +143,10 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     }
 
     /// Gets the physical address of the page table node.
-    pub(super) fn paddr(&self) -> Paddr {
+    pub(super) fn paddr(&self) -> Paddr
+    requires
+        self.frame.is_some(),
+    {
         self.frame.as_ref().unwrap().start_paddr()
     }
 
@@ -301,7 +311,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
 /// The metadata of any kinds of page table pages.
 /// Make sure the the generic parameters don't effect the memory layout.
 // #[derive(Debug)] // TODO: Debug for PageTablePageMeta
-pub(in crate::mm) struct PageTablePageMeta<
+pub struct PageTablePageMeta<
     E: PageTableEntryTrait,
     C: PagingConstsTrait,
 > {
@@ -325,14 +335,14 @@ pub(in crate::mm) struct PageTablePageMeta<
     pub level: PagingLevel,
     /// Whether the pages mapped by the node is tracked.
     pub is_tracked: MapTrackingStatus,
-    _phantom: core::marker::PhantomData<(E, C)>,
+    pub _phantom: core::marker::PhantomData<(E, C)>,
 }
 
 /// Describe if the physical address recorded in this page table refers to a
 /// page tracked by metadata.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
-pub(in crate::mm) enum MapTrackingStatus {
+pub enum MapTrackingStatus {
     /// The page table node cannot contain references to any pages. It can only
     /// contain references to child page table nodes.
     NotApplicable,

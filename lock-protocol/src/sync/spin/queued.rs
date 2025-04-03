@@ -13,7 +13,7 @@ verus! {
 #[repr(C)]
 // TODO: Implement
 #[verifier::external_body]
-pub(crate) struct LockBody {
+pub struct LockBody {
     // val: u32,
     locked: Cell<bool>,
 }

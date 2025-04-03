@@ -68,7 +68,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait, T: AnyFrameMeta> Child<E, C, 
     ///
     /// In other words, it checks whether the child can be a child of a node
     /// with the given level and tracking status.
-    // TODO: Fix is_compatible to check the tracking status.
+    // TODO: Implement is_compatible
+    #[verifier::external_body]
     pub(super) fn is_compatible(
         &self,
         node_level: PagingLevel,
