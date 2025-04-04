@@ -137,7 +137,6 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
         idx < nr_subpage_per_huge(),
     {
         // assert!(idx < nr_subpage_per_huge::<C>());
-        assert(idx < nr_subpage_per_huge());
         // SAFETY: The index is within the bound.
         unsafe { Entry::new_at(self, idx) }
     }

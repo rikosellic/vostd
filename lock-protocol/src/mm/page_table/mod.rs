@@ -7,7 +7,7 @@ use node::*;
 use core::fmt::Debug;
 use std::{marker::PhantomData, ops::Range};
 
-use crate::helpers::extra_num::lemma_usize_ilog2_to32;
+use crate::helpers::{extra_num::lemma_usize_ilog2_to32, math::lemma_u64_and_less_than};
 
 use super::{
     meta::AnyFrameMeta, nr_subpage_per_huge, page_prop::PageProperty, vm_space::Token, Paddr,
@@ -17,8 +17,8 @@ use super::{
 verus! {
 
 pub trait PageTableEntryTrait:
-    Clone + Copy + 
-    // Default + 
+    Clone + Copy +
+    // Default +
     Sized + Send + Sync + 'static
     // Debug // TODO: Implement Debug for PageTableEntryTrait
     // + Pod + PodOnce // TODO: Implement Pod and PodOnce for PageTableEntryTrait
@@ -290,6 +290,7 @@ requires
     0 < level <= PagingConsts::NR_LEVELS_SPEC(),
 ensures
     res == pte_index_spec(va, level),
+    res < nr_subpage_per_huge()
 {
     let base_bits = PagingConsts::BASE_PAGE_SIZE().ilog2();
     assert(base_bits == 12) by {
@@ -301,7 +302,11 @@ ensures
     };
     assert(0 <= (level - 1) * index_bits <= 36);
     let shift = base_bits + (level - 1) as u32 * index_bits as u32;
-    (va >> shift) & pte_index_mask()
+    let res = (va >> shift) as u64 & pte_index_mask() as u64;
+    assert(res <= pte_index_mask()) by {
+        lemma_u64_and_less_than((va >> shift) as u64, pte_index_mask() as u64);
+    };
+    res as usize
 }
 
 pub proof fn pte_index_preserves_order(va1: Vaddr, va2: Vaddr, level: PagingLevel)

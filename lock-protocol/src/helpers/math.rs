@@ -1,3 +1,4 @@
+use vstd::math::max;
 use vstd::prelude::*;
 use vstd::bits::*;
 
@@ -76,6 +77,18 @@ ensures
     assert((4096 as u64) << 25 == 0x2000000000) by (compute_only);
     assert((4096 as u64) << 26 == 0x4000000000) by (compute_only);
     assert((4096 as u64) << 27 == 0x8000000000) by (compute_only);
+}
+
+pub proof fn lemma_u64_and_less_than(a: u64, b: u64)
+ensures
+    a & b <= a,
+    a & b <= b,
+    a & b <= max(a as int, b as int) as u64,
+{
+    assert(a & b <= a) by (bit_vector);
+    assert(a & b <= b) by (bit_vector);
+    let max = max(a as int, b as int) as u64;
+    assert(a & b <= max);
 }
 
 }

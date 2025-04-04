@@ -121,54 +121,55 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
     }
 
     /// Gets the information of the current slot.
-    pub fn query<T: AnyFrameMeta>(&mut self) -> Result<PageTableItem<T>, PageTableError> {
-        if self.va >= self.barrier_va.end {
-            return Err(PageTableError::InvalidVaddr(self.va));
-        }
+    // TODO
+    // pub fn query<T: AnyFrameMeta>(&mut self) -> Result<PageTableItem<T>, PageTableError> {
+    //     if self.va >= self.barrier_va.end {
+    //         return Err(PageTableError::InvalidVaddr(self.va));
+    //     }
 
-        loop {
-            let level = self.level;
-            let va = self.va;
+    //     loop {
+    //         let level = self.level;
+    //         let va = self.va;
 
-            match self.cur_entry().to_ref() {
-                Child::PageTableRef(pt) => {
-                    // SAFETY: `pt` points to a PT that is attached to a node
-                    // in the locked sub-tree, so that it is locked and alive.
-                    self.push_level(unsafe { PageTableLock::<E, C>::from_raw_paddr(pt) });
-                    continue;
-                }
-                Child::PageTable(_) => {
-                    // unreachable!();
-                    // assert(false); // TODO
-                }
-                Child::None => {
-                    return Ok(PageTableItem::NotMapped {
-                        va,
-                        len: page_size::<C>(level),
-                    });
-                }
-                Child::Frame(page, prop) => {
-                    return Ok(PageTableItem::Mapped { va, page, prop });
-                }
-                Child::Untracked(pa, plevel, prop) => {
-                    // debug_assert_eq!(plevel, level); // TODO: assert
-                    return Ok(PageTableItem::MappedUntracked {
-                        va,
-                        pa,
-                        len: page_size::<C>(level),
-                        prop,
-                    });
-                }
-                Child::Token(token) => {
-                    return Ok(PageTableItem::Marked {
-                        va,
-                        len: page_size::<C>(level),
-                        token,
-                    });
-                }
-            }
-        }
-    }
+    //         match self.cur_entry().to_ref() {
+    //             Child::PageTableRef(pt) => {
+    //                 // SAFETY: `pt` points to a PT that is attached to a node
+    //                 // in the locked sub-tree, so that it is locked and alive.
+    //                 self.push_level(unsafe { PageTableLock::<E, C>::from_raw_paddr(pt) });
+    //                 continue;
+    //             }
+    //             Child::PageTable(_) => {
+    //                 // unreachable!();
+    //                 // assert(false); // TODO
+    //             }
+    //             Child::None => {
+    //                 return Ok(PageTableItem::NotMapped {
+    //                     va,
+    //                     len: page_size::<C>(level),
+    //                 });
+    //             }
+    //             Child::Frame(page, prop) => {
+    //                 return Ok(PageTableItem::Mapped { va, page, prop });
+    //             }
+    //             Child::Untracked(pa, plevel, prop) => {
+    //                 // debug_assert_eq!(plevel, level); // TODO: assert
+    //                 return Ok(PageTableItem::MappedUntracked {
+    //                     va,
+    //                     pa,
+    //                     len: page_size::<C>(level),
+    //                     prop,
+    //                 });
+    //             }
+    //             Child::Token(token) => {
+    //                 return Ok(PageTableItem::Marked {
+    //                     va,
+    //                     len: page_size::<C>(level),
+    //                     token,
+    //                 });
+    //             }
+    //         }
+    //     }
+    // }
 
     /// Traverses forward in the current level to the next PTE.
     ///
@@ -178,13 +179,13 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
     requires
         old(self).va < MAX_USERSPACE_VADDR,
     {
-        let page_size = page_size::<C>(self.level);
-        // let next_va = self.va.align_down(page_size) + page_size;
-        let next_va = align_down(self.va, page_size) + page_size;
-        while self.level < self.guard_level && pte_index(next_va, self.level) == 0 {
-            self.pop_level();
-        }
-        self.va = next_va;
+        // let page_size = page_size::<C>(self.level);
+        // // let next_va = self.va.align_down(page_size) + page_size;
+        // let next_va = align_down(self.va, page_size) + page_size;
+        // while self.level < self.guard_level && pte_index(next_va, self.level) == 0 {
+        //     self.pop_level();
+        // }
+        // self.va = next_va;
     }
 
     /// Jumps to the given virtual address.
@@ -193,54 +194,55 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
     /// # Panics
     ///
     /// This method panics if the address has bad alignment.
-    pub fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError>
-    requires
-        old(self).barrier_va.start < old(self).barrier_va.end,
-        old(self).barrier_va.end < MAX_USERSPACE_VADDR,
-        old(self).va >= old(self).barrier_va.start,
-        old(self).va < old(self).barrier_va.end,
-        old(self).level < PagingConsts::NR_LEVELS_SPEC(),
-        old(self).level > 0,
-        old(self).path.len() > old(self).level as usize,
-    {
-        // assert!(va % C::BASE_PAGE_SIZE() == 0); // TODO
-        // if !self.barrier_va.contains(&va) {
-        //     return Err(PageTableError::InvalidVaddr(va));
-        // }
-        if va >= self.barrier_va.end || va < self.barrier_va.start {
-            return Err(PageTableError::InvalidVaddr(va));
-        }
+    // TODO
+    // pub fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError>
+    // requires
+    //     old(self).barrier_va.start < old(self).barrier_va.end,
+    //     old(self).barrier_va.end < MAX_USERSPACE_VADDR,
+    //     old(self).va >= old(self).barrier_va.start,
+    //     old(self).va < old(self).barrier_va.end,
+    //     old(self).level < PagingConsts::NR_LEVELS_SPEC(),
+    //     old(self).level > 0,
+    //     old(self).path.len() > old(self).level as usize,
+    // {
+    //     // assert!(va % C::BASE_PAGE_SIZE() == 0); // TODO
+    //     // if !self.barrier_va.contains(&va) {
+    //     //     return Err(PageTableError::InvalidVaddr(va));
+    //     // }
+    //     if va >= self.barrier_va.end || va < self.barrier_va.start {
+    //         return Err(PageTableError::InvalidVaddr(va));
+    //     }
 
-        loop 
-        invariant
-            0 < self.level < PagingConsts::NR_LEVELS_SPEC() as usize,
-        {
-            let cur_page_size = page_size::<C>(self.level + 1) as u64;
-            let self_va = self.va as u64; // make verus happy
-            let cur_node_start = self_va & !(cur_page_size - 1);
-            assert(is_power_2(cur_page_size as int));
-            let cur_page_size_minus_1 = cur_page_size - 1;
-            assert(cur_node_start < self_va) by {
-                assert(self_va & !cur_page_size_minus_1 <= cur_node_start) by (bit_vector);
-            };
-            let cur_node_end = cur_node_start as usize + page_size::<C>(self.level + 1);
-            // If the address is within the current node, we can jump directly.
-            if cur_node_start as usize <= va && va < cur_node_end {
-                self.va = va;
-                return Ok(());
-            }
+    //     loop 
+    //     invariant
+    //         0 < self.level < PagingConsts::NR_LEVELS_SPEC() as usize,
+    //     {
+    //         let cur_page_size = page_size::<C>(self.level + 1) as u64;
+    //         let self_va = self.va as u64; // make verus happy
+    //         let cur_node_start = self_va & !(cur_page_size - 1);
+    //         assert(is_power_2(cur_page_size as int));
+    //         let cur_page_size_minus_1 = cur_page_size - 1;
+    //         assert(cur_node_start < self_va) by {
+    //             assert(self_va & !cur_page_size_minus_1 <= cur_node_start) by (bit_vector);
+    //         };
+    //         let cur_node_end = cur_node_start as usize + page_size::<C>(self.level + 1);
+    //         // If the address is within the current node, we can jump directly.
+    //         if cur_node_start as usize <= va && va < cur_node_end {
+    //             self.va = va;
+    //             return Ok(());
+    //         }
 
-            // There is a corner case that the cursor is depleted, sitting at the start of the
-            // next node but the next node is not locked because the parent is not locked.
-            if self.va >= self.barrier_va.end && self.level == self.guard_level {
-                self.va = va;
-                return Ok(());
-            }
+    //         // There is a corner case that the cursor is depleted, sitting at the start of the
+    //         // next node but the next node is not locked because the parent is not locked.
+    //         if self.va >= self.barrier_va.end && self.level == self.guard_level {
+    //             self.va = va;
+    //             return Ok(());
+    //         }
 
-            // debug_assert!(self.level < self.guard_level); // TODO
-            self.pop_level();
-        }
-    }
+    //         // debug_assert!(self.level < self.guard_level); // TODO
+    //         self.pop_level();
+    //     }
+    // }
 
     pub fn virt_addr(&self) -> Vaddr {
         self.va
@@ -283,6 +285,9 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
     fn cur_entry(&self) -> Entry<'_, E, C>
     requires
         self.level > 0,
+        self.level <= PagingConsts::NR_LEVELS_SPEC() as usize,
+        self.path.len() > self.level as usize,
+        self.path[self.level as usize - 1].is_some(),
     {
         // let node = self.path[self.level as usize - 1].as_mut().unwrap();
         // node.entry(pte_index::<C>(self.va, self.level))
@@ -324,9 +329,10 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
     ///
     /// This method panics if the address is out of the range where the cursor is required to operate,
     /// or has bad alignment.
-    pub fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError> {
-        self.0.jump(va)
-    }
+    // TODO
+    // pub fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError> {
+    //     self.0.jump(va)
+    // }
 
     /// Gets the current virtual address.
     pub fn virt_addr(&self) -> Vaddr {
@@ -334,9 +340,10 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
     }
 
     /// Gets the information of the current slot.
-    pub fn query<T: AnyFrameMeta>(&mut self) -> Result<PageTableItem<T>, PageTableError> {
-        self.0.query()
-    }
+    // TODO
+    // pub fn query<T: AnyFrameMeta>(&mut self) -> Result<PageTableItem<T>, PageTableError> {
+    //     self.0.query()
+    // }
 
     /// Maps the range starting from the current address to a [`Frame<dyn AnyFrameMeta>`].
     ///
@@ -372,7 +379,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
             || self.0.va % page_size::<C>(self.0.level) != 0
             || self.0.va + page_size::<C>(self.0.level) > end
         invariant
-            self.0.va + page_size::<C>(self.0.level) <= end,
+            // self.0.va + page_size::<C>(self.0.level) <= end,
             self.0.level >= frame.map_level(),
         {
             // debug_assert!(should_map_as_tracked::<M>(self.0.va)); // TODO
@@ -414,8 +421,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
                     // assert(false); // TODO
                 }
                 Child::Token(_) => {
-                    let split_child = cur_entry.split_if_huge_token().unwrap();
-                    self.0.push_level(split_child);
+                    // let split_child = cur_entry.split_if_huge_token().unwrap();
+                    // self.0.push_level(split_child);
                 }
             }
             continue;
