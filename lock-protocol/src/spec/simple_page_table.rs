@@ -41,10 +41,7 @@ pub struct PageTableEntry {
     pub frame_pa: Paddr,
     pub flags: PteFlag,
 
-    // TODO: this should not be here, just for testing {
-    pub level: usize, // this should not be here, just for testing
-    // pub children_addr: Paddr, // this should not be here, just for testing
-    // }
+    pub level: usize, // TODO: should this be here?
 }
 
 #[derive(Clone, Copy)]
@@ -87,7 +84,7 @@ PageTable {
         new_at(addr: Paddr, newFrame: Frame) {
             require addr != 0;
             require addr == newFrame.pa;
-            // require newPTE.children_addr == 0;
+            require forall |i: int| 0 <= i < NR_ENTRIES ==> #[trigger] newFrame.ptes[i].frame_pa == 0;
             remove unused_addrs -= set { addr };
 
             update pages = pre.pages.insert(addr, newFrame);
@@ -131,32 +128,30 @@ PageTable {
     #[inductive(initialize)]
     fn initialize_inductive(post: Self) { }
 
-    // #[invariant]
-    // pub spec fn page_wf(self) -> bool {
-    //     forall |addr: Paddr| 0 <= addr <= usize::MAX ==> {
-    //         if (#[trigger] self.pages.dom().contains(addr)) {
-    //             let node = #[trigger] self.pages[addr];
-    //             node.pa == 0 || {
-    //                 node.pa == addr
-    //                 &&
-    //                 node.pa != node.children_addr
-    //                 &&
-    //                 if (node.children_addr == 0) {
-    //                     true
-    //                 } else if (node.children_addr != 0) {
-    //                     let child = self.pages[node.children_addr];
-    //                     child != node
-    //                     && child.pa == node.children_addr
-    //                     && child.level == node.level + 1
-    //                 } else {
-    //                     false
-    //                 }
-    //             }
-    //         } else {
-    //             self.unused_addrs.contains(addr)
-    //         }
-    //     }
-    // }
+    #[invariant]
+    pub spec fn page_wf(self) -> bool {
+        forall |addr: Paddr| 0 <= addr <= usize::MAX ==> {
+            if (#[trigger] self.pages.dom().contains(addr)) {
+                let node = #[trigger] self.pages[addr];
+                node.pa == 0 || {
+                    node.pa == addr
+                    &&
+                    forall |i: int| 0 <= i < NR_ENTRIES ==> {
+                        let pte = #[trigger] node.ptes[i];
+                        if (pte.frame_pa != 0) {
+                            self.pages.dom().contains(pte.frame_pa)
+                            &&
+                            self.pages[pte.frame_pa].pa == pte.frame_pa
+                        } else {
+                            true
+                        }
+                    }
+                }
+            } else {
+                self.unused_addrs.contains(addr)
+            }
+        }
+    }
 
     #[invariant]
     pub closed spec fn unused_addrs_are_not_in_pages(&self) -> bool {
@@ -167,17 +162,26 @@ PageTable {
               <==> !self.pages.dom().contains(addr)
     }
 
-    // #[invariant]
-    // pub closed spec fn unused_pages_are_not_child_of_pages(&self) -> bool {
-    //     forall |addr: Paddr|
-    //         #![trigger self.unused_addrs.contains(addr)]
-    //         self.unused_addrs.contains(addr) && addr != 0 && !self.pages.dom().contains(addr)
-    //             ==> forall |parent: Paddr|
-    //                 #![trigger self.pages[parent]]
-    //                 #![trigger self.pages.dom().contains(parent)]
-    //                 self.pages.dom().contains(parent) ==>
-    //                 self.pages[parent].children_addr == 0 || self.pages[parent].children_addr != addr
-    // }
+    #[invariant]
+    pub closed spec fn unused_pages_are_not_child_of_pages(&self) -> bool {
+        forall |addr: Paddr|
+            #![trigger self.unused_addrs.contains(addr)]
+            self.unused_addrs.contains(addr) && addr != 0 && !self.pages.dom().contains(addr)
+                ==> forall |parent: Paddr|
+                    #![trigger self.pages[parent]]
+                    #![trigger self.pages.dom().contains(parent)]
+                    self.pages.dom().contains(parent) ==>
+                    forall |i: int| 0 <= i < NR_ENTRIES ==> {
+                        let pte = #[trigger] self.pages[parent].ptes[i];
+                        if (pte.frame_pa != 0) {
+                            pte.frame_pa != addr
+                            &&
+                            !self.unused_addrs.contains(pte.frame_pa)
+                        } else {
+                            true
+                        }
+                    }
+    }
 
 }
 } // tokenized_state_machine
