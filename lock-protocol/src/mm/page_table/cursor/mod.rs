@@ -1,11 +1,7 @@
 mod locking;
 
 use std::{
-    any::TypeId,
-    borrow::{Borrow, BorrowMut},
-    cell::Cell,
-    marker::PhantomData,
-    ops::Range,
+    any::TypeId, borrow::{Borrow, BorrowMut}, cell::Cell, char::MAX, marker::PhantomData, ops::Range
 };
 
 use vstd::{invariant, layout::is_power_2, pervasive::VecAdditionalExecFns, prelude::*};
@@ -272,6 +268,11 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
     requires
         old(self).level > 1,
         old(self).path.len() > old(self).level as usize,
+    ensures
+        self.level == old(self).level - 1,
+        self.path.len() == old(self).path.len(),
+        self.path[self.level as usize - 1].is_some(),
+        old(self).va == self.va,
     {
         self.level = self.level - 1;
         // debug_assert_eq!(self.level, child_pt.level()); // TODO: assert
@@ -369,18 +370,24 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
         0 <= old(self).0.va < MAX_USERSPACE_VADDR,
         old(self).0.va < old(self).0.barrier_va.end,
         old(self).0.va + frame.size() <= old(self).0.barrier_va.end,
-        0 < old(self).0.level <= C::NR_LEVELS_SPEC() as usize,
+        1 < old(self).0.level <= PagingConsts::NR_LEVELS_SPEC() as usize,
+        old(self).0.path.len() > old(self).0.level as usize,
+        old(self).0.path[old(self).0.level as usize - 1].is_some(),
     {
         let end = self.0.va + frame.size();
         // assert!(end <= self.0.barrier_va.end); // TODO
 
         // Go down if not applicable.
         while self.0.level > frame.map_level()
-            || self.0.va % page_size::<C>(self.0.level) != 0
-            || self.0.va + page_size::<C>(self.0.level) > end
+            // || self.0.va % page_size::<C>(self.0.level) != 0 // TODO?
+            // || self.0.va + page_size::<C>(self.0.level) > end // TODO?
         invariant
             // self.0.va + page_size::<C>(self.0.level) <= end,
             self.0.level >= frame.map_level(),
+            1 <= self.0.level <= PagingConsts::NR_LEVELS_SPEC() as usize,
+            self.0.path.len() > self.0.level as usize,
+            self.0.path[self.0.level as usize - 1].is_some(),
+            self.0.va < MAX_USERSPACE_VADDR,
         {
             // debug_assert!(should_map_as_tracked::<M>(self.0.va)); // TODO
             let cur_level = self.0.level;
