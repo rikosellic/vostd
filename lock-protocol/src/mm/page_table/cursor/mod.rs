@@ -1,7 +1,12 @@
 mod locking;
 
 use std::{
-    any::TypeId, borrow::{Borrow, BorrowMut}, cell::Cell, char::MAX, marker::PhantomData, ops::Range
+    any::TypeId,
+    borrow::{Borrow, BorrowMut},
+    cell::Cell,
+    char::MAX,
+    marker::PhantomData,
+    ops::Range,
 };
 
 use vstd::{invariant, layout::is_power_2, pervasive::VecAdditionalExecFns, prelude::*};
@@ -14,11 +19,13 @@ use crate::{
         page_prop::PageProperty, page_size, page_table::zeroed_pt_pool, vm_space::Token, Frame,
         MapTrackingStatus, Paddr, Vaddr, MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
-    task::DisabledPreemptGuard, x86_64::VMALLOC_VADDR_RANGE,
+    task::DisabledPreemptGuard,
+    x86_64::VMALLOC_VADDR_RANGE,
 };
 
 use super::{
-    node::PageTableLock, pte_index, KernelMode, PageTable, PageTableEntryTrait, PageTableError, PageTableMode, PagingConsts, PagingConstsTrait, PagingLevel, UserMode
+    node::PageTableLock, pte_index, KernelMode, PageTable, PageTableEntryTrait, PageTableError,
+    PageTableMode, PagingConsts, PagingConstsTrait, PagingLevel, UserMode,
 };
 
 verus! {
@@ -171,7 +178,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
     ///
     /// If reached the end of a page table node, it leads itself up to the next page of the parent
     /// page if possible.
-    pub(in crate::mm) fn move_forward(&mut self) 
+    pub(in crate::mm) fn move_forward(&mut self)
     requires
         old(self).va < MAX_USERSPACE_VADDR,
     {
@@ -209,7 +216,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
     //         return Err(PageTableError::InvalidVaddr(va));
     //     }
 
-    //     loop 
+    //     loop
     //     invariant
     //         0 < self.level < PagingConsts::NR_LEVELS_SPEC() as usize,
     //     {
