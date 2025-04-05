@@ -56,6 +56,7 @@ pub ghost struct FrameView {
     // pub ptes: [PageTableEntry; 512],
     pub pte_addrs: Seq<Paddr>,
 }
+}
 
 tokenized_state_machine!{
 PageTable {
@@ -131,11 +132,11 @@ PageTable {
     }
 
     #[inductive(set_child)]
-    fn tr_set_child_invariant(pre: Self, post: Self, parent: Paddr, index: usize, child: Paddr, level: usize) {
+    pub fn tr_set_child_invariant(pre: Self, post: Self, parent: Paddr, index: usize, child: Paddr, level: usize) {
     }
 
     #[inductive(new_at)]
-    fn tr_new_at_invariant(pre: Self, post: Self, addr: Paddr, newFrame: FrameView) {
+    pub fn tr_new_at_invariant(pre: Self, post: Self, addr: Paddr, newFrame: FrameView) {
         assert(!pre.frames.contains_key(addr));
         assert(pre.unused_addrs.contains(addr));
         assert(post.frames.contains_key(addr));
@@ -144,7 +145,7 @@ PageTable {
     }
 
     #[inductive(initialize)]
-    fn initialize_inductive(post: Self) { }
+    pub fn initialize_inductive(post: Self) { }
 
     #[invariant]
     pub spec fn page_wf(self) -> bool {
@@ -246,7 +247,8 @@ struct_with_invariants!{
     }
 }
 
-pub fn main() {
+verus! {
+pub fn main_test() {
     broadcast use vstd::std_specs::hash::group_hash_axioms;
     broadcast use vstd::hash_map::group_hash_map_axioms;
     assert(SIZEOF_FRAME == core::mem::size_of::<Frame>());
