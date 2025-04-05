@@ -5,7 +5,7 @@ use crate::mm::{
     page_table::zeroed_pt_pool, vm_space::Token, PageTableEntryTrait, PagingConstsTrait,
 };
 
-use super::{Child, MapTrackingStatus, PageTableLock, PageTableNode};
+use super::{Child, MapTrackingStatus, PageTableLock, PageTableLockTrait, PageTableNode};
 
 verus! {
 /// A view of an entry in a page table node.
@@ -15,7 +15,7 @@ verus! {
 /// This is a static reference to an entry in a node that does not account for
 /// a dynamic reference count to the child. It can be used to create a owned
 /// handle, which is a [`Child`].
-pub(in crate::mm) struct Entry<'a, E: PageTableEntryTrait, C: PagingConstsTrait> {
+pub struct Entry<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E, C>> {
     /// The page table entry.
     ///
     /// We store the page table entry here to optimize the number of reads from
@@ -23,15 +23,16 @@ pub(in crate::mm) struct Entry<'a, E: PageTableEntryTrait, C: PagingConstsTrait>
     /// other CPUs may modify the memory location for accessed/dirty bits. Such
     /// accesses will violate the aliasing rules of Rust and cause undefined
     /// behaviors.
-    pte: E,
+    pub pte: E,
     /// The index of the entry in the node.
-    idx: usize,
+    pub idx: usize,
     /// The node that contains the entry.
     // node: &'a mut PageTableLock<E, C>,
-    node: &'a PageTableLock<E, C>,
+    pub node: &'a PTL,
+    pub phantom: std::marker::PhantomData<(E, C)>,
 }
 
-impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
+impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E, C>> Entry<'a, E, C, PTL> {
     /// Returns if the entry does not map to anything.
     pub(in crate::mm) fn is_none(&self) -> bool {
         !self.pte.is_present() && self.pte.paddr() == 0
@@ -55,7 +56,8 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
     }
 
     /// Gets a reference to the child.
-    pub(in crate::mm) fn to_ref<T: AnyFrameMeta>(&self) -> Child<E, C, T> {
+    pub(in crate::mm) fn to_ref<T: AnyFrameMeta>(&self) -> Child<E, C, T>
+    {
         // SAFETY: The entry structure represents an existent entry with the
         // right node information.
         unsafe { Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked(), false) }
@@ -115,29 +117,33 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
     /// The method panics if the given child is not compatible with the node.
     /// The compatibility is specified by the [`Child::is_compatible`].
     // TODO: Implement replace
-    #[verifier::external_body]
+    // #[verifier::external_body]
     pub(in crate::mm) fn replace<T: AnyFrameMeta>(self, new_child: Child<E, C, T>) -> Child<E, C, T> {
         // // assert!(new_child.is_compatible(self.node.level(), self.node.is_tracked()));
 
-        // // SAFETY: The entry structure represents an existent entry with the
-        // // right node information. The old PTE is overwritten by the new child
-        // // so that it is not used anymore.
-        // let old_child =
-        //     unsafe { Child::from_pte(self.pte, self.node.level(), self.node.is_tracked()) };
+        // SAFETY: The entry structure represents an existent entry with the
+        // right node information. The old PTE is overwritten by the new child
+        // so that it is not used anymore.
+        let old_child =
+            // unsafe { Child::from_pte(self.pte, self.node.level(), self.node.is_tracked()) };
+            unsafe { Child::from_pte(self.pte, self.node.level(), self.node.is_tracked()) };
 
-        // if old_child.is_none() && !new_child.is_none() {
-        //     *self.node.nr_children_mut() += 1;
-        // } else if !old_child.is_none() && new_child.is_none() {
-        //     *self.node.nr_children_mut() -= 1;
-        // }
+        if old_child.is_none() && !new_child.is_none() {
+            // *self.node.nr_children_mut() += 1;
+            self.node.change_children(1);
+        } else if !old_child.is_none() && new_child.is_none() {
+            // *self.node.nr_children_mut() -= 1;
+            self.node.change_children(-1);
+        }
 
-        // // SAFETY:
-        // //  1. The index is within the bounds.
-        // //  2. The new PTE is compatible with the page table node, as asserted above.
+        // SAFETY:
+        //  1. The index is within the bounds.
+        //  2. The new PTE is compatible with the page table node, as asserted above.
         // unsafe { self.node.write_pte(self.idx, new_child.into_pte()) };
+        self.node.write_pte(self.idx, new_child.into_pte());
 
-        // old_child
-        unimplemented!()
+        old_child
+        // unimplemented!()
     }
 
     /// Splits the entry to smaller pages if it maps to a untracked huge page.
@@ -168,9 +174,11 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
             zeroed_pt_pool::alloc::<E, C>(&preempt_guard, level - 1, MapTrackingStatus::Untracked);
         for i in 0..nr_subpage_per_huge() {
             let small_pa = pa + i * page_size::<C>(level - 1);
-            let _ = new_page
-                .entry(i)
-                .replace(Child::<E, C, ()>::Untracked(small_pa, level - 1, prop));
+            // let _ = new_page
+            //     .entry(i)
+            //     .replace(Child::<E, C, ()>::Untracked(small_pa, level - 1, prop));
+            Entry::new_at(&new_page, i)
+                    .replace(Child::<E, C, ()>::Untracked(small_pa, level - 1, prop));
         }
         let pt_paddr = new_page.into_raw_paddr();
         // SAFETY: It was forgotten at the above line.
@@ -202,7 +210,8 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
         let mut new_page =
             zeroed_pt_pool::alloc::<E, C>(&preempt_guard, level - 1, self.node.is_tracked());
         for i in 0..nr_subpage_per_huge() {
-            let _ = new_page.entry(i).replace(Child::<E, C, ()>::Token(token));
+            // let _ = new_page.entry(i).replace(Child::<E, C, ()>::Token(token));
+            Entry::new_at(&new_page, i).replace(Child::<E, C, ()>::Token(token.clone()));
         }
         let pt_paddr = new_page.into_raw_paddr();
         let _ = self.replace(Child::<E, C, ()>::PageTable(unsafe {
@@ -218,10 +227,11 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
     ///
     /// The caller must ensure that the index is within the bounds of the node.
     // pub(super) unsafe fn new_at(node: &'a mut PageTableLock<E, C>, idx: usize) -> Self {
-    pub(super) unsafe fn new_at(node: &'a PageTableLock<E, C>, idx: usize) -> Self {
+    pub fn new_at(node: &'a PTL, idx: usize) -> Self {
         // SAFETY: The index is within the bound.
-        let pte = unsafe { node.read_pte(idx) };
-        Self { pte, idx, node}
+        // let pte = unsafe { node.read_pte(idx) };
+        let pte = node.read_pte(idx);
+        Self { pte, idx, node, phantom: std::marker::PhantomData }
     }
 }
 

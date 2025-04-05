@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 
 use vstd::prelude::verus;
 
-use crate::{mm::meta::AnyFrameMeta, task::DisabledPreemptGuard};
+use crate::{mm::{meta::AnyFrameMeta, PageTableLockTrait}, task::DisabledPreemptGuard};
 
 use super::{
     node::{MapTrackingStatus, PageTableLock, PageTableNode, PageTablePageMeta},

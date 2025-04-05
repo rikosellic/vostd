@@ -30,7 +30,7 @@ use crate::x86_64::paddr_to_vaddr;
 verus! {
 
 // #[derive(Debug)] // TODO: Debug for PageTableNode
-pub(super) type PageTableNode<
+pub type PageTableNode<
     // E: PageTableEntryTrait = PageTableEntry,
     // C: PagingConstsTrait = PagingConsts,
     E: PageTableEntryTrait,
@@ -111,6 +111,50 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C>
     }
 }
 
+// We add PageTableLockTrait to make the verification easier.
+// Originally, it is just a struct that holds a frame.
+// TODO: Can we also change the source code?
+pub trait PageTableLockTrait<
+    E: PageTableEntryTrait,
+    C: PagingConstsTrait,
+> 
+: Sized
+{
+    // fn entry(&self, idx: usize) -> Entry<'_, E, C, Self>
+    // requires
+    //     idx < nr_subpage_per_huge();
+
+    /// Gets the physical address of the page table node.
+    fn paddr(&self) -> Paddr;
+
+    /// Gets the level of the page table node.
+    fn level(&self) -> PagingLevel {
+        self.meta().level
+    }
+
+    /// Gets the tracking status of the page table node.
+    fn is_tracked(&self) -> MapTrackingStatus;
+
+    fn alloc(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self where Self: Sized;
+
+    fn unlock(&mut self) -> PageTableNode<E, C>;
+
+    fn into_raw_paddr(self: Self) -> Paddr where Self: Sized;
+
+    fn from_raw_paddr(paddr: Paddr) -> Self where Self: Sized;
+
+    fn nr_children(&self) -> u16;
+
+    fn read_pte(&self, idx: usize) -> E;
+
+    fn write_pte(&self, idx: usize, pte: E);
+
+    // fn nr_children_mut(&mut self) -> &mut u16;
+    fn change_children(&self, delta: i16);
+
+    fn meta(&self) -> &PageTablePageMeta<E, C>;
+}
+
 /// A owned mutable guard that holds the lock of a page table node.
 ///
 /// This should be used as a linear type, i.e, it shouldn't be dropped. The
@@ -124,7 +168,7 @@ pub struct PageTableLock<
     pub frame: Option<Frame<PageTablePageMeta<E, C>>>,
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for PageTableLock<E, C> {
     /// Borrows an entry in the node at a given index.
     ///
     /// # Panics
@@ -132,30 +176,32 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     /// Panics if the index is not within the bound of
     /// [`nr_subpage_per_huge<C>`].
     // pub(super) fn entry(&mut self, idx: usize) -> Entry<'_, E, C> { // TODO: mut?
-    pub(super) fn entry(&self, idx: usize) -> Entry<'_, E, C>
-    requires
-        idx < nr_subpage_per_huge(),
-    {
-        // assert!(idx < nr_subpage_per_huge::<C>());
-        // SAFETY: The index is within the bound.
-        unsafe { Entry::new_at(self, idx) }
-    }
+    // #[verifier::external_body]
+    // fn entry(&self, idx: usize) -> Entry<'_, E, C, Self>
+    // {
+    //     // assert!(idx < nr_subpage_per_huge::<C>());
+    //     // SAFETY: The index is within the bound.
+    //     // unsafe { Entry::new_at(self, idx) }
+    //     unimplemented!()
+    // }
 
     /// Gets the physical address of the page table node.
-    pub(super) fn paddr(&self) -> Paddr
-    requires
-        self.frame.is_some(),
+    #[verifier::external_body]
+    fn paddr(&self) -> Paddr
     {
-        self.frame.as_ref().unwrap().start_paddr()
+        // assert(self.frame.is_some());
+        // TODO
+        // self.frame.as_ref().unwrap().start_paddr()
+        unimplemented!()
     }
 
     /// Gets the level of the page table node.
-    pub(super) fn level(&self) -> PagingLevel {
+    fn level(&self) -> PagingLevel {
         self.meta().level
     }
 
     /// Gets the tracking status of the page table node.
-    pub(super) fn is_tracked(&self) -> MapTrackingStatus {
+    fn is_tracked(&self) -> MapTrackingStatus {
         self.meta().is_tracked
     }
 
@@ -164,7 +210,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     /// This function returns a locked owning guard.
     // TODO: Implement alloc for PageTableLock
     #[verifier::external_body]
-    pub(super) fn alloc(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
+    fn alloc(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
         // let meta = PageTablePageMeta::new_locked(level, is_tracked);
         // let frame = FrameAllocOptions::new()
         //     .zeroed(true)
@@ -180,7 +226,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     /// Unlocks the page table node.
     // TODO: Implement unlock for PageTableLock
     #[verifier::external_body]
-    pub(super) fn unlock(&mut self) -> PageTableNode<E, C> {
+    fn unlock(&mut self) -> PageTableNode<E, C> {
         // // Release the lock.
         // // SAFETY:
         // //  - The lock stays at the metadata slot so it's pinned.
@@ -198,7 +244,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     /// to manually manage pointers.
     // TODO: Implement into_raw_paddr for PageTableLock
     #[verifier::external_body]
-    pub(super) fn into_raw_paddr(self) -> Paddr {
+    fn into_raw_paddr(self) -> Paddr {
         // let this = ManuallyDrop::new(self);
         // this.paddr()
         unimplemented!()
@@ -211,7 +257,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     /// The caller must ensure that the physical address is valid and points to
     /// a forgotten page table node (see [`Self::into_raw_paddr`]) that is not
     /// yet restored.
-    pub(super) unsafe fn from_raw_paddr(paddr: Paddr) -> Self {
+    fn from_raw_paddr(paddr: Paddr) -> Self {
         let frame = PageTableNode::from_raw(paddr);
         Self { frame: Some(frame) }
     }
@@ -219,7 +265,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     /// Gets the number of valid PTEs in the node.
     // TODO: Implement nr_children for PageTableLock
     #[verifier::external_body]
-    pub(super) fn nr_children(&self) -> u16 {
+    fn nr_children(&self) -> u16 {
         // SAFETY: The lock is held so we have an exclusive access.
         // unsafe { *self.meta().nr_children.get() }
         // self.meta().nr_children.into()
@@ -246,7 +292,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     /// The caller must ensure that the index is within the bound.
     // TODO: Implement read_pte for PageTableLock
     #[verifier::external_body]
-    unsafe fn read_pte(&self, idx: usize) -> E {
+    fn read_pte(&self, idx: usize) -> E {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
         // let ptr = paddr_to_vaddr(self.paddr()) as *mut E;
         // // SAFETY:
@@ -272,7 +318,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     ///     (see [`Child::is_compatible`]).
     // TODO: Implement write_pte for PageTableLock
     #[verifier::external_body]
-    unsafe fn write_pte(&mut self, idx: usize, pte: E) {
+    fn write_pte(&self, idx: usize, pte: E) {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
         // let ptr = paddr_to_vaddr(self.paddr()) as *mut E;
         // // SAFETY:
@@ -287,8 +333,16 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     // #[verifier::external_body]
     // fn nr_children_mut(&mut self) -> &mut u16 {
     //     // SAFETY: The lock is held so we have an exclusive access.
-    //     unsafe { &mut *self.meta().nr_children.get() }
+    //     // unsafe { &mut *self.meta().nr_children.get() }
+
+    //     unimplemented!()
     // }
+    
+    // TODO: Implement
+    #[verifier::external_body]
+    fn change_children(&self, delta: i16) {
+        todo!()
+    }
 
     // TODO: Implement
     #[verifier::external_body]
@@ -357,7 +411,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTablePageMeta<E, C>
 where
     // [(); C::NR_LEVELS as usize]:,
 {
-    
+
     // TODO: Implement
     #[verifier::external_body]
     pub fn new_locked(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {

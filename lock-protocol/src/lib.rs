@@ -10,13 +10,15 @@
 pub mod mm;
 pub mod spec;
 pub mod prelude;
-pub mod test;
+// pub mod test;
 pub mod task;
 pub mod x86_64;
 #[macro_use]
 pub mod helpers;
 pub mod sync;
 
+pub mod exec;
+
 fn main() {
-    spec::simple_page_table::main();
+    spec::simple_page_table::main_test();
 }

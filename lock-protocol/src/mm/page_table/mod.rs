@@ -3,7 +3,7 @@ pub mod node;
 mod zeroed_pt_pool;
 
 use vstd::prelude::*;
-use node::*;
+pub use node::*;
 use core::fmt::Debug;
 use std::{marker::PhantomData, ops::Range};
 
@@ -17,11 +17,12 @@ use super::{
 verus! {
 
 pub trait PageTableEntryTrait:
-    Clone + Copy +
+    // Clone + Copy +
     // Default +
-    Sized + Send + Sync + 'static
+    // Sized + Send + Sync + 'static
     // Debug // TODO: Implement Debug for PageTableEntryTrait
     // + Pod + PodOnce // TODO: Implement Pod and PodOnce for PageTableEntryTrait
+    Sized
 {
     /// Create a set of new invalid page table flags that indicates an absent page.
     ///
@@ -101,6 +102,7 @@ pub trait PageTableEntryTrait:
 /// This provides an abstraction over most paging modes in common architectures.
 pub trait PagingConstsTrait:
 // Clone + Debug + Default + Send + Sync + 'static
+Sized
 {
 
     spec fn BASE_PAGE_SIZE_SPEC() -> usize;

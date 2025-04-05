@@ -165,7 +165,7 @@ impl<M: AnyFrameMeta> Frame<M> {
     /// Also, the caller ensures that the usage of the frame is correct. There's
     /// no checking of the usage in this function.
     /// TODO: Implement Frame::from_raw
-    pub(in crate::mm) unsafe fn from_raw(paddr: Paddr) -> Self {
+    pub(in crate::mm) fn from_raw(paddr: Paddr) -> Self {
         // let vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
         // let ptr = vaddr as *const MetaSlot;
 
@@ -173,15 +173,13 @@ impl<M: AnyFrameMeta> Frame<M> {
         //     ptr,
         //     _marker: PhantomData,
         // }
-        let ptr = PPtr::<MetaSlot>::empty().0;
         Self {
-            ptr,
+            ptr: PPtr::<MetaSlot>::from_addr(paddr),
              _marker: PhantomData
         }
     }
 
     // TODO: Implement slot for Frame
-
     fn slot<'a>(&'a self, perm: Tracked<&'a PointsTo<MetaSlot>>) -> &'a MetaSlot
     requires
         perm@.pptr() == self.ptr,

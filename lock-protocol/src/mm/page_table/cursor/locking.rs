@@ -1,6 +1,5 @@
 use crate::mm::{
-    meta::AnyFrameMeta, MapTrackingStatus, PageTable, PageTableEntryTrait, PageTableMode,
-    PagingConstsTrait, Vaddr,
+    meta::AnyFrameMeta, MapTrackingStatus, PageTable, PageTableEntryTrait, PageTableLockTrait, PageTableMode, PagingConstsTrait, Vaddr
 };
 use std::ops::Range;
 
@@ -14,11 +13,12 @@ pub fn lock_range<
     E: PageTableEntryTrait,
     // C: PagingConstsTrait = PagingConsts,
     C: PagingConstsTrait,
+    PTL: PageTableLockTrait<E, C>,
 >(
     pt: &PageTable<M, E, C>,
     va: &Range<Vaddr>,
     new_pt_is_tracked: MapTrackingStatus,
-) -> Cursor<'a, M, E, C> {
+) -> Cursor<'a, M, E, C, PTL> {
     // Placeholder implementation
     unimplemented!()
 }
