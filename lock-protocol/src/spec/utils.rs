@@ -118,6 +118,13 @@ pub open spec fn valid_nid(nid: NodeId) -> bool {
 
 pub open spec fn root_id() -> NodeId { 0 }
 
+pub proof fn lemma_root_id()
+    ensures
+        Self::valid_nid(Self::root_id()),
+{
+    Self::lemma_tree_size_spec();
+}
+
 pub open spec fn nid_to_trace_rec(nid: NodeId, cur_level: Level, cur_rt: NodeId) -> Seq<nat>
     decreases cur_level,
 {
@@ -698,10 +705,34 @@ pub proof fn lemma_get_offset(nid: NodeId) -> (offset: nat)
         nid != Self::root_id(),
     ensures
         offset == Self::get_offset(nid),
-        0 <= offset < 512,
+        valid_pte_offset(offset),
 {
     let trace = Self::lemma_nid_to_trace(nid);
     trace.last()
+}
+
+pub open spec fn get_child(nid: NodeId, offset: nat) -> NodeId
+    recommends
+        Self::valid_nid(nid),
+        Self::nid_to_dep(nid) < 3,
+        valid_pte_offset(offset),
+{
+    let level = Self::dep_to_level(Self::nid_to_dep(nid));
+    let sz = Self::tree_size_spec(level - 2);
+    nid + offset * sz + 1
+}
+
+pub proof fn lemma_get_child(nid: NodeId, offset: nat)
+    requires
+        Self::valid_nid(nid),
+        Self::nid_to_dep(nid) < 3,
+        valid_pte_offset(offset),
+    ensures
+        Self::valid_nid(Self::get_child(nid, offset)),
+        nid == Self::get_parent(Self::get_child(nid, offset)),
+        offset == Self::get_offset(Self::get_child(nid, offset)),
+{
+    admit();
 }
 
 }

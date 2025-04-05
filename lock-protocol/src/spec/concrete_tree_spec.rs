@@ -70,7 +70,11 @@ init!{
         init cpu_num = cpu_num;
         init nodes = Map::new(
             |nid| NodeHelper::valid_nid(nid),
-            |nid| NodeState::Empty,
+            |nid| if nid == NodeHelper::root_id() { 
+                NodeState::Free 
+            } else { 
+                NodeState::Empty 
+            },
         );
         init cursors = Map::new(
             |cpu| valid_cpu(cpu_num, cpu),

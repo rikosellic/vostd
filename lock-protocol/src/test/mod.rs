@@ -4,3 +4,4 @@ pub mod struct_test;
 pub mod subrange;
 pub mod math_test;
 pub mod tsm_test;
+pub mod token_usage;

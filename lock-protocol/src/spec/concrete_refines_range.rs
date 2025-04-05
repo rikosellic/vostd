@@ -64,7 +64,7 @@ pub proof fn init_refines_init(post: StateC) {
             };
             let slots = Map::new(
                 |i| valid_pos(NodeHelper::total_size(), i),
-                |i| SlotState::Empty,
+                |i| if i == 0 { SlotState::Free } else { SlotState::Empty },
             );
             assert(interp(post).slots =~= slots);
             let ranges = Map::new(

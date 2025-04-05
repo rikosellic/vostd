@@ -66,7 +66,7 @@ init!{
         init size = size;
         init slots = Map::new(
             |i| valid_pos(size, i),
-            |i| SlotState::Empty,
+            |i| if i == 0 { SlotState::Free } else { SlotState::Empty },
         );
         init ranges = Map::new(
             |cpu| valid_cpu(cpu_num, cpu),

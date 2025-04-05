@@ -28,6 +28,10 @@ pub open spec fn pos_in_range(l: nat, r: nat, p: nat) -> bool {
     l <= p < r
 }
 
+pub open spec fn valid_pte_offset(offset: nat) -> bool {
+    0 <= offset < 512
+}
+
 }
 
 verus!{
