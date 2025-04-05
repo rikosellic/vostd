@@ -28,11 +28,7 @@ pub trait PageTableEntryTrait:
     ///
     /// Note that currently the implementation requires an all zero PTE to be an absent PTE.
     // TODO: Implement
-    #[verifier::external_body]
-    fn new_absent() -> Self {
-        // Self::default()
-        unimplemented!()
-    }
+    fn new_absent() -> Self;
 
     /// If the flags are present with valid mappings.
     ///
@@ -79,23 +75,11 @@ pub trait PageTableEntryTrait:
 
     /// Converts the PTE into its corresponding `usize` value.
     // TODO: Implement as_usize and from_usize
-    #[verifier::external_body]
-    fn as_usize(self) -> usize {
-        // SAFETY: `Self` is `Pod` and has the same memory representation as `usize`.
-        // unsafe { transmute_unchecked(self) }
-        // TODO: Implement this function
-        unimplemented!()
-    }
+    fn as_usize(self) -> usize;
 
     /// Converts a usize `pte_raw` into a PTE.
     // TODO: Implement as_usize and from_usize
-    #[verifier::external_body]
-    fn from_usize(pte_raw: usize) -> Self {
-        // SAFETY: `Self` is `Pod` and has the same memory representation as `usize`.
-        // unsafe { transmute_unchecked(pte_raw) }
-        // TODO: Implement this function
-        unimplemented!()
-    }
+    fn from_usize(pte_raw: usize) -> Self;
 }
 
 /// A minimal set of constants that determines the paging system.

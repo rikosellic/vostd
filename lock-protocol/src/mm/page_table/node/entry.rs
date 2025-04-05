@@ -156,7 +156,7 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
     /// `None`.
     // TODO: Implement split_if_untracked_huge
     #[verifier::external_body]
-    pub(in crate::mm) fn split_if_untracked_huge(self) -> Option<PageTableLock<E, C>> {
+    pub(in crate::mm) fn split_if_untracked_huge(self) -> Option<PTL> {
         let level = self.node.level();
 
         if !(self.pte.is_last(level)
@@ -171,7 +171,7 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
 
         let preempt_guard = crate::task::disable_preempt();
         let mut new_page =
-            zeroed_pt_pool::alloc::<E, C>(&preempt_guard, level - 1, MapTrackingStatus::Untracked);
+            zeroed_pt_pool::alloc::<E, C, PTL>(&preempt_guard, level - 1, MapTrackingStatus::Untracked);
         for i in 0..nr_subpage_per_huge() {
             let small_pa = pa + i * page_size::<C>(level - 1);
             // let _ = new_page
@@ -187,7 +187,7 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
         }));
         // SAFETY: `pt_paddr` points to a PT that is attached to the node,
         // so that it is locked and alive.
-        Some(unsafe { PageTableLock::from_raw_paddr(pt_paddr) })
+        Some(unsafe { PTL::from_raw_paddr(pt_paddr) })
     }
 
     /// Splits the entry into a child that is marked with a same token.
@@ -196,7 +196,7 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
     /// it is in the last level.
     // TODO: Implement split_if_untracked_huge
     #[verifier::external_body]
-    pub(in crate::mm) fn split_if_huge_token(self) -> Option<PageTableLock<E, C>> {
+    pub(in crate::mm) fn split_if_huge_token(self) -> Option<PTL> {
         let level = self.node.level();
 
         if !(!self.pte.is_present() && level > 1 && self.pte.paddr() != 0) {
@@ -208,7 +208,7 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
 
         let preempt_guard = crate::task::disable_preempt();
         let mut new_page =
-            zeroed_pt_pool::alloc::<E, C>(&preempt_guard, level - 1, self.node.is_tracked());
+            zeroed_pt_pool::alloc::<E, C, PTL>(&preempt_guard, level - 1, self.node.is_tracked());
         for i in 0..nr_subpage_per_huge() {
             // let _ = new_page.entry(i).replace(Child::<E, C, ()>::Token(token));
             Entry::new_at(&new_page, i).replace(Child::<E, C, ()>::Token(token.clone()));
@@ -218,7 +218,7 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
             PageTableNode::from_raw(pt_paddr)
         }));
 
-        Some(unsafe { PageTableLock::from_raw_paddr(pt_paddr) })
+        Some(unsafe { PTL::from_raw_paddr(pt_paddr) })
     }
 
     /// Create a new entry at the node.

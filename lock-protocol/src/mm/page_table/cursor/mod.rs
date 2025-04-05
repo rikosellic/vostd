@@ -429,7 +429,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                 }
                 Child::None => {
                     let preempt_guard = crate::task::disable_preempt();
-                    let pt = zeroed_pt_pool::alloc::<E, C>(
+                    let pt = zeroed_pt_pool::alloc::<E, C, PTL>(
                         &preempt_guard,
                         cur_level - 1,
                         MapTrackingStatus::Tracked,
@@ -438,7 +438,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                     // SAFETY: It was forgotten at the above line.
                     let _ = cur_entry
                         .replace(Child::<E, C, T>::PageTable(
-                            unsafe { PageTableNode::from_raw(paddr) }
+                            // unsafe { PageTableNode::from_raw(paddr) }
+                            PageTableNode::from_raw(paddr)
                         ));
                     // SAFETY: `pt` points to a PT that is attached to a node
                     // in the locked sub-tree, so that it is locked and alive.

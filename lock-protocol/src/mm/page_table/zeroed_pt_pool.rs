@@ -14,11 +14,11 @@ verus! {
 const POOL_SIZE: usize = 12; // TODO: fix POOL_SIZE
 
 // TODO: zeroed_pt_pool::alloc() is not implemented yet.
-pub(super) fn alloc<E: PageTableEntryTrait, C: PagingConstsTrait>(
+pub(super) fn alloc<E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E, C>>(
     preempt_guard: &DisabledPreemptGuard,
     level: PagingLevel,
     is_tracked: MapTrackingStatus,
-) -> PageTableLock<E, C> {
+) -> PTL {
     // let cpu = preempt_guard.current_cpu();
     // let pool_size = POOL_SIZE.get_on_cpu(cpu);
 
@@ -26,7 +26,7 @@ pub(super) fn alloc<E: PageTableEntryTrait, C: PagingConstsTrait>(
     // let size = pool_size.load(Ordering::Relaxed);
 
     // if size == 0 {
-        return PageTableLock::alloc(level, is_tracked);
+        // return PageTableLock::alloc(level, is_tracked);
     // }
     // let irq_guard = crate::trap::disable_local();
     // let pool_deref_guard = ZEROED_PT_POOL.get_with(&irq_guard);
@@ -40,6 +40,8 @@ pub(super) fn alloc<E: PageTableEntryTrait, C: PagingConstsTrait>(
 
     // // SAFETY: The metadata must match the locked frame.
     // unsafe { PageTableLock::from_raw_paddr(frame.into_raw()) }
+
+    PTL::alloc(level, is_tracked)
 }
 
 }

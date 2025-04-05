@@ -99,10 +99,25 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait, T: AnyFrameMeta> Child<E, C, 
     /// Usually this is for recording the PTE into a page table node. When the
     /// child is needed again by reading the PTE of a page table node, extra
     /// information should be provided using the [`Child::from_pte`] method.
-    // TODO: Implement the conversion to PTE.
-    #[verifier::external_body]
     pub(super) fn into_pte(self) -> E {
-        unimplemented!()
+        match self {
+            Child::PageTable(pt) => {
+                // let pt = ManuallyDrop::new(pt);
+                E::new_pt(pt.start_paddr())
+            }
+            Child::PageTableRef(_) => {
+                // panic!("`PageTableRef` should not be converted to PTE");
+                // TODO
+                E::new_absent()
+            }
+            Child::Frame(page, prop) => {
+                let level = page.map_level();
+                E::new_page(page.into_raw(), level, prop)
+            }
+            Child::Untracked(pa, level, prop) => E::new_page(pa, level, prop),
+            Child::None => E::new_absent(),
+            Child::Token(token) => E::new_token(token),
+        }
     }
 
     /// Converts a PTE back to a child.

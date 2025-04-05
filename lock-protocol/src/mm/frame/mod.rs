@@ -2,6 +2,7 @@ pub mod meta;
 pub mod untyped;
 
 use std::marker::PhantomData;
+use std::mem::ManuallyDrop;
 
 use meta::AnyFrameMeta;
 use meta::GetFrameError;
@@ -18,7 +19,9 @@ verus! {
 // #[repr(transparent)] TODO: repr(transparent)
 // pub struct Frame<M: AnyFrameMeta + ?Sized> {
 pub struct Frame<M: AnyFrameMeta> {
-    pub ptr: PPtr<MetaSlot>,
+    // pub ptr: PPtr<MetaSlot>,
+    // pub ptr: *const MetaSlot,
+    pub ptr: usize, // TODO: MetaSlot is currently ignored
     pub _marker: PhantomData<M>,
 }
 
@@ -31,13 +34,13 @@ impl<M: AnyFrameMeta> Frame<M> {
     /// an error. If wanting to acquire a frame that is already in use, use
     /// [`Frame::from_in_use`] instead.
     // TODO: Implement MetaSlot::get_from_unused
-    pub fn from_unused(paddr: Paddr, metadata: M) -> Result<Self, GetFrameError> {
-        Ok(Self {
-            // ptr: MetaSlot::get_from_unused(paddr, metadata, false)?,
-            ptr: PPtr::<MetaSlot>::empty().0,
-            _marker: PhantomData,
-        })
-    }
+    // pub fn from_unused(paddr: Paddr, metadata: M) -> Result<Self, GetFrameError> {
+    //     Ok(Self {
+    //         ptr: MetaSlot::get_from_unused(paddr, metadata, false)?,
+    //         // ptr: PPtr::<MetaSlot>::empty().0,
+    //         _marker: PhantomData,
+    //     })
+    // }
 
     /// Gets the metadata of this page.
     // TODO: Implement Frame::meta
@@ -71,8 +74,8 @@ impl<M: AnyFrameMeta> Frame<M> {
     // TODO: Implement
     #[verifier::external_body]
     pub fn start_paddr(&self) -> Paddr {
-        // self.slot().frame_paddr()
-        unimplemented!("Frame::start_paddr")
+        // self.slot().frame_paddr() // TODO
+        self.ptr as Paddr
     }
 
     /// Gets the paging level of this page.
@@ -147,10 +150,11 @@ impl<M: AnyFrameMeta> Frame<M> {
     /// restored using [`Frame::from_raw`] later. This is useful when some architectural
     /// data structures need to hold the frame handle such as the page table.
     /// TODO: Implement Frame::into_raw
-    // pub(in crate::mm) fn into_raw(self) -> Paddr {
-    //     let this = ManuallyDrop::new(self);
-    //     this.start_paddr()
-    // }
+    #[verifier::external_body]
+    pub(in crate::mm) fn into_raw(self) -> Paddr {
+        let this = ManuallyDrop::new(self);
+        this.start_paddr()
+    }
 
     /// Restores a forgotten [`Frame`] from a physical address.
     ///
@@ -169,27 +173,28 @@ impl<M: AnyFrameMeta> Frame<M> {
         // let vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
         // let ptr = vaddr as *const MetaSlot;
 
-        // Self {
-        //     ptr,
-        //     _marker: PhantomData,
-        // }
         Self {
-            ptr: PPtr::<MetaSlot>::from_addr(paddr),
-             _marker: PhantomData
+            ptr: paddr,
+            _marker: PhantomData,
         }
+        // Self {
+        //     ptr: PPtr::<MetaSlot>::from_addr(paddr),
+        //      _marker: PhantomData
+        // }
     }
 
     // TODO: Implement slot for Frame
-    fn slot<'a>(&'a self, perm: Tracked<&'a PointsTo<MetaSlot>>) -> &'a MetaSlot
-    requires
-        perm@.pptr() == self.ptr,
-        perm@.is_init()
-    {
-        // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
-        // mutably borrowed, so taking an immutable reference to it is safe.
-        // unsafe { &*self.ptr }
-        self.ptr.borrow(perm)
-    }
+    // fn slot<'a>(&'a self, perm: Tracked<&'a PointsTo<MetaSlot>>) -> &'a MetaSlot
+    // fn slot<'a>(&'a self) -> &'a MetaSlot
+    // // requires
+    // //     perm@.pptr() == self.ptr,
+    // //     perm@.is_init()
+    // {
+    //     // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
+    //     // mutably borrowed, so taking an immutable reference to it is safe.
+    //     // unsafe { &*self.ptr }
+    //     // self.ptr.borrow(perm)
+    // }
 }
 
 }
