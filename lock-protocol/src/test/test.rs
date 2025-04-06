@@ -21,9 +21,18 @@ pub struct Frame {
     pub ptes: [PageTableEntry; 512],
 }
 
+#[derive(Copy, Clone)]
+pub struct SimplePageTableEntry {
+    pub paddr: Paddr,
+    pub frame_pa: Paddr,
+    pub level: usize,
+    // pub prop: PageProperty,
+}
+
 fn main() {
     println!("size of PageTableEntry: {}", core::mem::size_of::<PageTableEntry>());
     println!("size of Frame: {}", core::mem::size_of::<Frame>());
+    println!("size of SimplePageTableEntry: {}", core::mem::size_of::<SimplePageTableEntry>());
 
     use std::collections::HashMap;
 

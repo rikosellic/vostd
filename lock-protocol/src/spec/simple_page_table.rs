@@ -37,42 +37,46 @@ global layout Frame is size == 8192, align == 8;
 pub struct PteFlag;
 
 #[derive(Clone, Copy)]
-pub struct PageTableEntry {
-    pub frame_pa: Paddr,
-    pub flags: PteFlag,
-
-    pub level: usize, // TODO: should this be here?
-}
-
-#[derive(Clone, Copy)]
 pub struct Frame {
     // pub pa: Paddr,
     pub ptes: [PageTableEntry; 512],
     // pub has_ptes: bool,
 }
+#[derive(Clone, Copy)]
+pub struct PageTableEntry {
+    pub frame_pa: Paddr,
+    pub flags: PteFlag,
+    pub level: usize,
+}
+
+pub ghost struct PageTableEntryView {
+    pub frame_pa: int,
+    pub flags: PteFlag,
+    pub level: usize,
+}
 
 pub ghost struct FrameView {
-    pub pa: Paddr,
+    pub pa: int,
     // pub ptes: [PageTableEntry; 512],
-    pub pte_addrs: Seq<Paddr>,
+    pub pte_addrs: Seq<int>,
 }
 }
 
-tokenized_state_machine!{
-PageTable {
+tokenized_state_machine! {
+SimplePageTable {
 
     fields {
         #[sharding(variable)]
-        pub frames: Map<Paddr, FrameView>,
+        pub frames: Map<int, FrameView>,
 
         #[sharding(set)]
-        pub unused_addrs: Set<Paddr>,
+        pub unused_addrs: Set<int>,
 
         #[sharding(variable)]
-        pub ptes: Map<Paddr, PageTableEntry>,
+        pub ptes: Map<int, PageTableEntryView>,
 
         #[sharding(set)]
-        pub unused_pte_addrs: Set<Paddr>,
+        pub unused_pte_addrs: Set<int>,
     }
 
     init!{
@@ -87,13 +91,13 @@ PageTable {
 
     transition! {
         // create a pte at a given address
-        new_at(addr: Paddr, newFrame: FrameView) {
+        new_at(addr: int, newFrame: FrameView) {
             require addr != 0;
             require addr == newFrame.pa;
             // require forall |i: int| 0 <= i < NR_ENTRIES ==> #[trigger] newFrame.ptes[i].frame_pa == 0;
             require newFrame.pte_addrs.len() == 0;
             require forall |i: int| 0 <= i < NR_ENTRIES ==>
-                !#[trigger]pre.ptes.dom().contains((newFrame.pa + i * SIZEOF_PAGETABLEENTRY) as usize);
+                !#[trigger]pre.ptes.dom().contains(newFrame.pa + i * SIZEOF_PAGETABLEENTRY);
             remove unused_addrs -= set { addr };
 
             update frames = pre.frames.insert(addr, newFrame);
@@ -102,27 +106,29 @@ PageTable {
 
     transition! {
         // set child relationship
-        set_child(parent: Paddr, index: usize, child: Paddr, level: usize) {
+        set_child(parent: int, index: usize, child: int, level: usize) {
+            require parent != child;
             require pre.frames.contains_key(parent);
             require pre.frames.contains_key(child);
             require pre.frames[parent].pa != pre.frames[child].pa;
             require pre.frames[parent].pa == parent;
-            // require pre.frames[child].level == pre.frames[parent].level + 1;
+            require pre.frames[child].pte_addrs.len() == 0;
+
             require pre.frames[child].pa == child;
-            let pte_addr = pre.frames[parent].pa + index * SIZEOF_PAGETABLEENTRY;
-            require !pre.frames[parent].pte_addrs.contains(pte_addr as usize);
-            require !pre.ptes.dom().contains(pte_addr as usize);
+            let pte_addr = parent + index * SIZEOF_PAGETABLEENTRY;
+            require !pre.frames[parent].pte_addrs.contains(pte_addr);
+            require !pre.ptes.dom().contains(pte_addr);
 
             update frames = pre.frames.insert(parent, FrameView {
                 pa: pre.frames[parent].pa,
-                pte_addrs: pre.frames[parent].pte_addrs.push(pte_addr as Paddr),
+                pte_addrs: pre.frames[parent].pte_addrs.push(pte_addr),
             });
 
-            remove unused_pte_addrs -= set { pte_addr as Paddr };
+            remove unused_pte_addrs -= set { pte_addr };
 
             update ptes = pre.ptes.insert(
-                pte_addr as usize,
-                PageTableEntry {
+                pte_addr,
+                PageTableEntryView {
                     frame_pa: child,
                     flags: PteFlag,
                     level: level,
@@ -132,11 +138,19 @@ PageTable {
     }
 
     #[inductive(set_child)]
-    pub fn tr_set_child_invariant(pre: Self, post: Self, parent: Paddr, index: usize, child: Paddr, level: usize) {
+    pub fn tr_set_child_invariant(pre: Self, post: Self, parent: int, index: usize, child: int, level: usize) {
+        assert(pre.frames.contains_key(parent));
+        assert(pre.frames.contains_key(child));
+        assert(pre.frames[parent].pa != pre.frames[child].pa);
+        assert(pre.frames[parent].pa == parent);
+        assert(pre.frames[child].pa == child);
+        assert(pre.unused_pte_addrs.contains(parent + index * SIZEOF_PAGETABLEENTRY));
+
+        assert(post.ptes.dom().contains(parent + index * SIZEOF_PAGETABLEENTRY));
     }
 
     #[inductive(new_at)]
-    pub fn tr_new_at_invariant(pre: Self, post: Self, addr: Paddr, newFrame: FrameView) {
+    pub fn tr_new_at_invariant(pre: Self, post: Self, addr: int, newFrame: FrameView) {
         assert(!pre.frames.contains_key(addr));
         assert(pre.unused_addrs.contains(addr));
         assert(post.frames.contains_key(addr));
@@ -149,7 +163,7 @@ PageTable {
 
     #[invariant]
     pub spec fn page_wf(self) -> bool {
-        forall |addr: Paddr| 0 <= addr <= usize::MAX ==> {
+        forall |addr: int| 0 <= addr <= usize::MAX ==> {
             if (#[trigger] self.frames.dom().contains(addr)) {
                 let node = #[trigger] self.frames[addr];
                 node.pa == addr
@@ -160,12 +174,33 @@ PageTable {
                 {
                     let pte_addr = node.pte_addrs[i];
                     if (self.ptes.dom().contains(pte_addr)) {
+
                         let pte = self.ptes[pte_addr];
                         self.frames.dom().contains(pte.frame_pa)
                         &&
                         self.frames[pte.frame_pa].pa == pte.frame_pa
+
+                        // // TODO: child level relation
+                        // &&
+                        // if (self.frames.dom().contains(pte.frame_pa)) {
+                        //     let child = self.frames[pte.frame_pa];
+                        //     forall |j: int|
+                        //     #![trigger child.pte_addrs[j]]
+                        //     0 <= j < child.pte_addrs.len() ==>
+                        //     {
+                        //         let child_pte_addr = child.pte_addrs[j];
+                        //         if (self.ptes.dom().contains(child_pte_addr)) {
+                        //             self.ptes[child_pte_addr].level == pte.level + 1
+                        //         } else {
+                        //             false
+                        //         }
+                        //     }
+                        // } else {
+                        //     true
+                        // }
+
                     } else {
-                        true
+                        false
                     }
                 }
             } else {
@@ -176,48 +211,47 @@ PageTable {
 
     #[invariant]
     pub closed spec fn unused_addrs_are_not_in_frames(&self) -> bool {
-        forall |addr: Paddr|
+        forall |addr: int|
             #![trigger self.unused_addrs.contains(addr)]
             #![trigger self.frames.dom().contains(addr)]
             self.unused_addrs.contains(addr)
               <==> !self.frames.dom().contains(addr)
         &&
-        forall |addr: Paddr|
+        forall |addr: int|
             #![trigger self.ptes.dom().contains(addr)]
             #![trigger self.unused_pte_addrs.contains(addr)]
             self.unused_pte_addrs.contains(addr)
               <==> !self.ptes.dom().contains(addr)
     }
 
+    // TODO: is this invariant correct?
     // #[invariant]
     // pub closed spec fn unused_frames_are_not_child_of_frames(&self) -> bool {
-    //     forall |addr: Paddr|
+    //     forall |addr: int|
     //         #![trigger self.unused_addrs.contains(addr)]
-    //         self.unused_addrs.contains(addr) && addr != 0 && !self.frames.dom().contains(addr)
-    //             ==> forall |parent: Paddr|
+    //         self.unused_addrs.contains(addr)
+    //             ==> forall |parent: int|
     //                 #![trigger self.frames[parent]]
     //                 #![trigger self.frames.dom().contains(parent)]
     //                 self.frames.dom().contains(parent) ==>
-    //                 forall |i: int| 0 <= i < NR_ENTRIES ==> {
-    //                     let pte = #[trigger] self.frames[parent].ptes[i];
-    //                     if (pte.frame_pa != 0) {
-    //                         pte.frame_pa != addr
-    //                         &&
-    //                         !self.unused_addrs.contains(pte.frame_pa)
-    //                     } else {
-    //                         true
-    //                     }
+    //                 self.frames[parent].pa != addr
+    //                 &&
+    //                 forall |i: int|
+    //                 #![trigger self.frames[parent].pte_addrs[i]]
+    //                 0 <= i < self.frames[parent].pte_addrs.len() ==> {
+    //                     let pte_addr = self.frames[parent].pte_addrs[i];
+    //                     pte_addr != addr
     //                 }
     // }
 
 }
 } // tokenized_state_machine
 
-struct_with_invariants!{
+struct_with_invariants! {
     pub struct MockPageTable {
         pub mem: HashMap<usize, (PPtr<Frame>, Tracked<PointsTo<Frame>>)>,
-        pub frames: Tracked<PageTable::frames>,
-        pub instance: Tracked<PageTable::Instance>,
+        pub frames: Tracked<SimplePageTable::frames>,
+        pub instance: Tracked<SimplePageTable::Instance>,
     }
 
     pub open spec fn wf(&self) -> bool {
@@ -228,9 +262,9 @@ struct_with_invariants!{
             &&
             forall |i: usize, j: usize| 0 < i < NR_ENTRIES && j == index_to_addr(i) ==>
                 if (self.mem@[i].1@.mem_contents() != MemContents::<Frame>::Uninit) {
-                    self.frames@.value().contains_key(j)
+                    self.frames@.value().contains_key(j as int)
                     &&
-                    #[trigger] self.frames@.value()[j].pa == #[trigger] self.mem@[i].0.addr()
+                    #[trigger] self.frames@.value()[j as int].pa == #[trigger] self.mem@[i].0.addr()
                 } else {
                     true
                 }
@@ -259,7 +293,7 @@ pub fn main_test() {
         Tracked(unused_addrs),
         Tracked(mut pte_token),
         Tracked(unused_pte_addrs),
-    ) = PageTable::Instance::initialize();
+    ) = SimplePageTable::Instance::initialize();
     let tracked mut unused_addrs = unused_addrs.into_map();
     let tracked mut unused_pte_addrs = unused_pte_addrs.into_map();
 
@@ -286,21 +320,21 @@ pub fn main_test() {
         }; NR_ENTRIES],
     };
 
-    assert(unused_addrs.dom().contains(p_root.addr()));
-    let tracked used_addr = unused_addrs.tracked_remove(p_root.addr());
+    assert(unused_addrs.dom().contains(p_root.addr() as int));
+    let tracked used_addr = unused_addrs.tracked_remove(p_root.addr() as int);
 
     proof{
         assert(fake.frames@.value().dom().len() == 0);
-        assert(!fake.frames@.value().dom().contains(p_root.addr()));
+        assert(!fake.frames@.value().dom().contains(p_root.addr() as int));
 
         // instance.new_at(p_root.addr(), f1, fake.frames.borrow_mut(), used_addr);
-        instance.new_at(p_root.addr(), FrameView {
-            pa: p_root.addr(),
+        instance.new_at(p_root.addr() as int, FrameView {
+            pa: p_root.addr() as int,
             // has_ptes: false,
             pte_addrs: Seq::empty(),
         }, fake.frames.borrow_mut(), used_addr, &pte_token);
 
-        assert(fake.frames@.value().contains_key(p_root.addr()));
+        assert(fake.frames@.value().contains_key(p_root.addr() as int));
     }
 
     assert(fake.wf());
@@ -328,17 +362,17 @@ pub fn main_test() {
         }; NR_ENTRIES],
     };
 
-    assert(unused_addrs.dom().contains(p_f2.addr()));
-    let tracked used_addr = unused_addrs.tracked_remove(p_f2.addr());
+    assert(unused_addrs.dom().contains(p_f2.addr() as int));
+    let tracked used_addr = unused_addrs.tracked_remove(p_f2.addr() as int);
 
     proof{
         assert(fake.frames@.value().dom().len() == 1);
-        assert(fake.frames@.value().dom().contains(p_root.addr()));
-        assert(!fake.frames@.value().dom().contains(p_f2.addr()));
+        assert(fake.frames@.value().dom().contains(p_root.addr() as int));
+        assert(!fake.frames@.value().dom().contains(p_f2.addr() as int));
 
         // instance.new_at(p_f2.addr(), f2, fake.frames.borrow_mut(), used_addr);
-        instance.new_at(p_f2.addr(), FrameView{
-            pa: p_f2.addr(),
+        instance.new_at(p_f2.addr() as int, FrameView{
+            pa: p_f2.addr() as int,
             // has_ptes: false,
             pte_addrs: Seq::empty(),
         }, fake.frames.borrow_mut(), used_addr, &pte_token);
@@ -367,20 +401,14 @@ pub fn main_test() {
     };
     let pte_addr = p_root.addr() + index * SIZEOF_PAGETABLEENTRY;
 
-    let tracked pte_addr = unused_pte_addrs.tracked_remove(pte_addr as usize);
+    let tracked pte_addr = unused_pte_addrs.tracked_remove(pte_addr as int);
 
     let (p_root, Tracked(mut pt_root)) = get_from_index(1, &fake.mem); // TODO: permission violation?
     p_root.write(Tracked(&mut pt_root), f1);
     proof{
-        assert(fake.frames@.value().contains_key(p_root.addr()));
-        assert(fake.frames@.value().contains_key(p_f2.addr()));
-        // set_child(parent: Paddr, index: usize, child: Paddr, level: usize)
-        // provide the arguments: provide the arguments: `(
-        //         /* usize */, /* usize */, /* usize */, /* usize */,
-        //         /* &mut spec::simple_page_table::PageTable::frames */,
-        //         /* &mut spec::simple_page_table::PageTable::ptes */,
-        //         /* spec::simple_page_table::PageTable::unused_pte_addrs */)`
-        instance.set_child(p_root.addr(), index, p_f2.addr(), level, fake.frames.borrow_mut(),
+        assert(fake.frames@.value().contains_key(p_root.addr() as int));
+        assert(fake.frames@.value().contains_key(p_f2.addr() as int));
+        instance.set_child(p_root.addr() as int, index, p_f2.addr() as int, level, fake.frames.borrow_mut(),
                                 &mut pte_token, pte_addr);
     }
     fake.mem.remove(&1);
@@ -485,6 +513,7 @@ ensures
 
 #[verifier::external_body]
 fn print_mem(mem: HashMap<usize, (PPtr<Frame>, Tracked<PointsTo<Frame>>)>) {
+    println!("spec::simple_page_table::main_test start.");
     // print 1
     let (p, Tracked(mut pt)) = mem.get(&1).unwrap();
     let frame = p.read(Tracked(&mut pt));
@@ -507,6 +536,9 @@ fn print_mem(mem: HashMap<usize, (PPtr<Frame>, Tracked<PointsTo<Frame>>)>) {
     let (p, Tracked(mut pt)) = mem.get(&p2_index).unwrap();
     let frame = p.read(Tracked(&mut pt));
     println!("Frame2: pa: {}", p.addr());
+
+    println!("spec::simple_page_table::main_test end.");
+    println!();
 }
 
 } // verus!

@@ -56,7 +56,7 @@ pub struct Cursor<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsT
     pub barrier_va: Range<Vaddr>,
     /// This also make all the operation in the `Cursor::new` performed in a
     /// RCU read-side critical section.
-    #[expect(dead_code)]
+    // #[expect(dead_code)]
     pub preempt_guard: DisabledPreemptGuard,
     // _phantom: PhantomData<&'a PageTable<M, E, C>>,
     pub _phantom: PhantomData<&'a PageTable<M, E, C>>,
@@ -282,7 +282,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
     ensures
         self.level == old(self).level - 1,
         self.path.len() == old(self).path.len(),
-        self.path[self.level as usize - 1].is_some(),
+        self.path[old(self).level as usize - 2].is_some(),
         old(self).va == self.va,
         old(self).barrier_va == self.barrier_va,
         old(self).path.len() == self.path.len(),
@@ -390,6 +390,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         old(self).0.path[old(self).0.level as usize - 1].is_some(),
     ensures
         self.0.path.len() == old(self).0.path.len(),
+        // forall |i: int| 0 <= i < self.0.path.len() ==> self.0.path[i].is_some(),
     {
         let end = self.0.va + frame.size();
         // assert!(end <= self.0.barrier_va.end); // TODO
