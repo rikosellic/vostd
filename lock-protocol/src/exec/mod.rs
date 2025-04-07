@@ -7,12 +7,12 @@ use crate::mm::entry::Entry;
 use crate::mm::page_prop::{PageFlags, PageProperty, PrivilegedPageFlags};
 use crate::mm::page_table::PageTableNode;
 
-use crate::mm::{Paddr, NR_ENTRIES};
+use crate::mm::{pte_index, Paddr, NR_ENTRIES};
 use crate::{
     mm::{
         cursor::{Cursor, CursorMut},
         meta::{AnyFrameMeta, MetaSlot},
-        page_prop, Frame, PageTableEntryTrait, PageTableLock, PageTableLockTrait,
+        page_prop, Frame, PageTableEntryTrait, PageTableLockTrait,
         PageTablePageMeta, PagingConsts, PagingConstsTrait, UserMode, Vaddr, MAX_USERSPACE_VADDR,
         NR_LEVELS, PAGE_SIZE,
     },
@@ -33,7 +33,7 @@ global layout SimpleFrame is size == 12288, align == 8;
 // Maybe it should be replaced with the actual implementation, e.g., x86_64.
 #[derive(Copy, Clone)]
 pub struct SimplePageTableEntry {
-    pub paddr: u64,
+    pub pte_addr: u64,
     pub frame_pa: u64,
     pub level: u8,
     // pub prop: PageProperty,
@@ -51,9 +51,8 @@ impl PageTableEntryTrait for SimplePageTableEntry {
         unimplemented!()
     }
 
-    #[verifier::external_body]
     fn paddr(&self) -> usize {
-        unimplemented!()
+        self.frame_pa as usize
     }
 
     #[verifier::external_body]
@@ -109,6 +108,10 @@ impl PageTableEntryTrait for SimplePageTableEntry {
         assert(0 <= pte_raw < PHYSICAL_BASE_ADDRESS_SPEC() + SIZEOF_PAGETABLEENTRY * NR_ENTRIES) by { admit(); } // TODO
         assert((pte_raw - PHYSICAL_BASE_ADDRESS_SPEC()) % SIZEOF_PAGETABLEENTRY as int == 0) by { admit(); } // TODO
         get_pte_from_addr(pte_raw)
+    }
+    
+    open spec fn paddr_spec(&self) -> Paddr {
+        self.frame_pa as Paddr
     }
 }
 
@@ -190,6 +193,10 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
     fn is_tracked(&self) -> crate::mm::MapTrackingStatus {
         todo!()
     }
+    
+    open spec fn paddr_spec(&self) -> Paddr {
+        self.paddr as Paddr
+    }
 
 }
 
@@ -235,7 +242,7 @@ requires
 {
     let tracked (
         Tracked(instance),
-        Tracked(frames_token),
+        Tracked(mut frames_token),
         Tracked(unused_addrs),
         Tracked(mut pte_token),
         Tracked(unused_pte_addrs),
@@ -256,6 +263,7 @@ requires
             _phantom: std::marker::PhantomData,
         }
     };
+    assert(cursor.0.level == 4);
 
     page_table_entries();
 
@@ -263,7 +271,7 @@ requires
     p.write(Tracked(&mut pt), SimpleFrame {
         ptes: {
             let mut ptes = [SimplePageTableEntry {
-                paddr: 0,
+                pte_addr: 0,
                 frame_pa: 0,
                 level: 0,
             }; NR_ENTRIES];
@@ -271,8 +279,8 @@ requires
                 assert((PHYSICAL_BASE_ADDRESS_SPEC() as u64 + i as u64 * SIZEOF_PAGETABLEENTRY as u64) < usize::MAX as u64) by { admit(); } // TODO
                 assert((PHYSICAL_BASE_ADDRESS_SPEC() as u64 + i as u64 * SIZEOF_FRAME as u64) < usize::MAX) by { admit(); } // TODO
                 ptes[i] = SimplePageTableEntry {
-                    paddr: PHYSICAL_BASE_ADDRESS() as u64 + i as u64 * SIZEOF_PAGETABLEENTRY as u64,
-                    frame_pa: 0,
+                    pte_addr: PHYSICAL_BASE_ADDRESS() as u64 + i as u64 * SIZEOF_PAGETABLEENTRY as u64,
+                    frame_pa: PHYSICAL_BASE_ADDRESS() as u64,
                     level: 4,
                 };
             }
@@ -290,13 +298,24 @@ requires
         }
     )); // root
 
-    assert(cursor.0.path.len() == NR_LEVELS as usize);
     assert(cursor.0.path[cursor.0.level as usize - 1].is_some());
 
-    cursor.map::<SimpleFrameMeta>(frame, page_prop);
+    cursor.map::<SimpleFrameMeta>(frame, page_prop,
+        Tracked(instance),
+        Tracked(frames_token),
+        Tracked(unused_addrs),
+        Tracked(pte_token),
+        Tracked(unused_pte_addrs));
 
     assert(cursor.0.path.len() == NR_LEVELS as usize);
-    // assert(forall |i: usize| 0 <= i < NR_LEVELS as usize ==> cursor.0.path[i as int].is_some()); // TODO
+    assert(forall |i: usize| 1 < i <= NR_LEVELS as usize ==> #[trigger] cursor.0.path[i as int - 1].is_some());
+
+    let level4_index = pte_index(va, NR_LEVELS as u8);
+    let level4_frame_addr = PHYSICAL_BASE_ADDRESS();
+    let level4_pte = get_pte_from_addr(level4_frame_addr + level4_index * SIZEOF_PAGETABLEENTRY);
+
+    let level3_frame_addr = cursor.0.path[(NR_LEVELS as usize) - 2].as_ref().unwrap().paddr() as usize;
+    assert(level4_pte.frame_pa == level3_frame_addr as u64);
 }
 
 pub fn main_test() {
@@ -336,8 +355,7 @@ fn page_table_entries() ->
         forall |i:usize, j:usize| 0 <= i < j < NR_ENTRIES && i == j - 1 ==> {
             && (#[trigger] res@[i]).0.addr() + SIZEOF_FRAME == (#[trigger] res@[j]).0.addr() // pointers are adjacent
         },
-        res@[0].0.addr() == 0,
-        res@[1].0.addr() == PHYSICAL_BASE_ADDRESS_SPEC(), // points to the hardware page table
+        res@[0].0.addr() == PHYSICAL_BASE_ADDRESS_SPEC(), // points to the hardware page table
         res@.dom().finite(),
 {
     let mut map =
@@ -384,8 +402,18 @@ fn get_frame_from_index(index: usize,
     (*p, Tracked::assume_new())
 }
 
+pub open spec fn get_pte_from_addr_spec(addr: usize) -> (res: SimplePageTableEntry)
+{
+    SimplePageTableEntry {
+        pte_addr: addr as u64,
+        frame_pa: addr as u64,
+        level: 4,
+    }
+}
+
 #[verifier::external_body]
-fn get_pte_from_addr(addr: usize) -> (res: SimplePageTableEntry)
+#[verifier::when_used_as_spec(get_pte_from_addr_spec)]
+pub fn get_pte_from_addr(addr: usize) -> (res: SimplePageTableEntry)
     requires
         0 <= addr < PHYSICAL_BASE_ADDRESS_SPEC() + SIZEOF_FRAME * NR_ENTRIES,
         (addr - PHYSICAL_BASE_ADDRESS_SPEC()) % SIZEOF_PAGETABLEENTRY as int == 0,
@@ -434,6 +462,7 @@ pub open spec fn PHYSICAL_BASE_ADDRESS_SPEC() -> usize {
 use std::alloc::{alloc, dealloc, Layout};
 
 #[verifier::external_body]
+#[verifier::when_used_as_spec(PHYSICAL_BASE_ADDRESS_SPEC)]
 pub fn PHYSICAL_BASE_ADDRESS() -> (res: usize)
 ensures
     res == PHYSICAL_BASE_ADDRESS_SPEC()
@@ -445,7 +474,7 @@ ensures
             let mut ptr = alloc(layout);
             MAP.set(Mutex::new(ptr as *mut u8 as usize)).unwrap();
         }
-        
+
         let mut guard = MAP.get().unwrap().lock().unwrap();
         let res: usize = *guard;
         println!("PHYSICAL_BASE_ADDRESS: {:#x}", res);

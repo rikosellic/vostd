@@ -23,10 +23,12 @@ use crate::{
     x86_64::VMALLOC_VADDR_RANGE,
 };
 
-use super::{
-    node::PageTableLock, pte_index, KernelMode, PageTable, PageTableEntryTrait, PageTableError,
+use super::{pte_index, KernelMode, PageTable, PageTableEntryTrait, PageTableError,
     PageTableMode, PagingConsts, PagingConstsTrait, PagingLevel, UserMode,
 };
+
+use crate::spec::simple_page_table;
+use crate::exec;
 
 verus! {
 /// The cursor for traversal over the page table.
@@ -182,6 +184,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
     requires
         old(self).va < MAX_USERSPACE_VADDR,
     ensures
+        self.path == old(self).path,
         self.path.len() == old(self).path.len(),
         self.level == old(self).level,
         self.va == old(self).va
@@ -275,18 +278,30 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
     }
 
     /// Goes down a level to a child page table.
-    fn push_level(&mut self, child_pt: PTL)
+    fn push_level(&mut self, child_pt: PTL, old_level: Tracked<PagingLevel>)
     requires
         old(self).level > 1,
         old(self).path.len() >= old(self).level as usize,
+        old(self).path[old(self).level as usize - 1].is_some(),
+        old_level@ >= old(self).level,
     ensures
         self.level == old(self).level - 1,
         self.path.len() == old(self).path.len(),
+        self.path[old(self).level as usize - 1].is_some(),
         self.path[old(self).level as usize - 2].is_some(),
         old(self).va == self.va,
         old(self).barrier_va == self.barrier_va,
         old(self).path.len() == self.path.len(),
         old(self).path@.len() == self.path@.len(),
+        old(self).path[old(self).level as usize - 1] == self.path[old(self).level as usize - 1],
+        forall |i: int| 0 <= i < old(self).path.len() && i != old(self).level as usize - 2
+                // path remains unchanged except the one being set
+                ==> self.path[i] == old(self).path[i],
+        self.path[old(self).level as usize - 1] == old(self).path[old(self).level as usize - 1],
+        self.path@[old(self).level as usize - 1] == old(self).path@[old(self).level as usize - 1],
+        self.path[old(self).level as usize - 2] == Some(child_pt),
+        self.path.len() >= old_level@ ==>
+            self.path[old_level@ as usize - 1] == old(self).path[old_level@ as usize - 1],
     {
         self.level = self.level - 1;
         // debug_assert_eq!(self.level, child_pt.level()); // TODO: assert
@@ -297,19 +312,27 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
     }
 
     // fn cur_entry(&mut self) -> Entry<'_, E, C> {
-    fn cur_entry(&self) -> Entry<'_, E, C, PTL>
+    fn cur_entry(&self) -> (res: Entry<'_, E, C, PTL>)
     requires
         self.level > 0,
         self.level <= PagingConsts::NR_LEVELS_SPEC() as usize,
         self.path.len() >= self.level as usize,
         self.path[self.level as usize - 1].is_some(),
+    ensures
+        res.pte.paddr() ==
+            crate::exec::PHYSICAL_BASE_ADDRESS() + pte_index(self.va, self.level) * crate::exec::SIZEOF_PAGETABLEENTRY,
     {
         // let node = self.path[self.level as usize - 1].as_mut().unwrap();
         // node.entry(pte_index::<C>(self.va, self.level))
 
         let node = self.path[self.level as usize - 1].as_ref().unwrap();
         // node.entry(pte_index(self.va, self.level))
-        Entry::new_at(node, pte_index(self.va, self.level))
+        let res = Entry::new_at(node, pte_index(self.va, self.level));
+        assert(
+            res.pte.paddr() ==
+            crate::exec::PHYSICAL_BASE_ADDRESS() + pte_index(self.va, self.level) * crate::exec::SIZEOF_PAGETABLEENTRY
+            ) by { admit(); } // TODO: P0
+        res
     }
 }
 
@@ -380,6 +403,11 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         &mut self,
         frame: Frame<T>,
         prop: PageProperty,
+        instance: Tracked<simple_page_table::SimplePageTable::Instance>,
+        frames: Tracked<simple_page_table::SimplePageTable::frames>,
+        unused_addrs: Tracked<Map<builtin::int, simple_page_table::SimplePageTable::unused_addrs>>,
+        ptes: Tracked<simple_page_table::SimplePageTable::ptes>,
+        unused_pte_addrs: Tracked<Map<builtin::int, simple_page_table::SimplePageTable::unused_pte_addrs>>,
     ) -> (res: Option<Frame<T>>)
     requires
         0 <= old(self).0.va < MAX_USERSPACE_VADDR,
@@ -390,10 +418,17 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         old(self).0.path[old(self).0.level as usize - 1].is_some(),
     ensures
         self.0.path.len() == old(self).0.path.len(),
-        // forall |i: int| 0 <= i < self.0.path.len() ==> self.0.path[i].is_some(),
+        forall |i: int| 1 < i <= old(self).0.level ==> #[trigger] self.0.path[i - 1].is_some(),
+        self.0.path[old(self).0.level - 1] == old(self).0.path[old(self).0.level - 1],
+        exec::get_pte_from_addr(
+                (exec::PHYSICAL_BASE_ADDRESS() + pte_index(self.0.va, old(self).0.level) * exec::SIZEOF_PAGETABLEENTRY) as usize).frame_pa
+                == self.0.path[old(self).0.level - 2].unwrap().paddr()
     {
         let end = self.0.va + frame.size();
         // assert!(end <= self.0.barrier_va.end); // TODO
+        assert(self.0.path[old(self).0.level - 1].is_some());
+        let old_level = Tracked(self.0.level);
+        assert(old_level == old(self).0.level);
 
         // Go down if not applicable.
         while self.0.level > frame.map_level()
@@ -405,13 +440,21 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             1 <= self.0.level <= PagingConsts::NR_LEVELS_SPEC() as usize,
             self.0.path.len() >= self.0.level as usize,
             self.0.path[self.0.level as usize - 1].is_some(),
-            self.0.va < MAX_USERSPACE_VADDR,
             self.0.path.len() == old(self).0.path.len(),
             self.0.va == old(self).0.va,
+            forall |i: int| self.0.level - 1 <= i < old(self).0.level ==> self.0.path[i].is_some(),
+            old(self).0.path.len() >= old(self).0.level as usize,
+            1 < old(self).0.level <= PagingConsts::NR_LEVELS_SPEC() as usize,
+            self.0.path[old(self).0.level - 1].is_some(),
+            self.0.va < MAX_USERSPACE_VADDR,
+            self.0.path[old(self).0.level - 1] == old(self).0.path[old(self).0.level - 1],
+            old_level@ == old(self).0.level,
+            old_level@ >= self.0.level,
         {
             // debug_assert!(should_map_as_tracked::<M>(self.0.va)); // TODO
             let cur_level = self.0.level;
             let cur_entry = self.0.cur_entry();
+            assert(self.0.path[cur_level - 1].is_some());
             match cur_entry.to_ref::<T>() {
                 Child::PageTableRef(pt) => {
                     // SAFETY: `pt` points to a PT that is attached to a node
@@ -419,14 +462,18 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                     self.0
                         .push_level(
                             // unsafe { PageTableLock::from_raw_paddr(pt) }
-                            PTL::from_raw_paddr(pt)
+                            PTL::from_raw_paddr(pt),
+                            old_level
                         );
                     assert(self.0.va == old(self).0.va);
                     assert(self.0.path@.len() == old(self).0.path@.len());
+                    assert(self.0.path[cur_level - 2].is_some());
+                    assert(self.0.path[old(self).0.level - 1].is_some());
+                    assert(self.0.path[old_level@ - 1] == old(self).0.path[old_level@ - 1]);
                 }
                 Child::PageTable(_) => {
                     // unreachable!();
-                    // assert(false); // TODO: We need to assert the child cannot be a page table.
+                    assert(false);
                 }
                 Child::None => {
                     let preempt_guard = crate::task::disable_preempt();
@@ -447,25 +494,36 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                     self.0
                         .push_level(
                             // unsafe { PageTableLock::from_raw_paddr(paddr) }
-                            PTL::from_raw_paddr(paddr)
+                            PTL::from_raw_paddr(paddr),
+                            old_level
                         );
+                    assert(self.0.path[cur_level - 1].is_some());
+                    assert(self.0.path[cur_level - 2].is_some());
+                    // assert(self.0.path[old(self).0.level - 1] == old(self).0.path[old(self).0.level - 1]);
                 }
                 Child::Frame(_, _) => {
                     // panic!("Mapping a smaller frame in an already mapped huge page");
-                    // assert(false); // TODO
+                    assert(false);
                 }
                 Child::Untracked(_, _, _) => {
                     // panic!("Mapping a tracked page in an untracked range");
-                    // assert(false); // TODO
+                    assert(false);
                 }
                 Child::Token(_) => {
                     // let split_child = cur_entry.split_if_huge_token().unwrap();
                     // self.0.push_level(split_child);
+                    assert(false); // TODO: Token
                 }
             }
+            assert(self.0.level == cur_level - 1);
+            assert(self.0.path[cur_level - 1].is_some());
+            assert(self.0.path[self.0.level as usize - 1].is_some());
             continue;
         }
-        // debug_assert_eq!(self.0.level, frame.map_level()); // TODO: assert
+        // assert(self.0.path[old(self).0.level - 1].is_some());
+        assert(forall |i: int| 1 < i <= old(self).0.level ==> #[trigger] self.0.path[i - 1].is_some());
+        // debug_assert_eq!(self.0.level, frame.map_level());
+        assert(self.0.level == frame.map_level());
 
         // Map the current page.
         let old = self.0.cur_entry().replace(Child::Frame(frame, prop));

@@ -169,7 +169,10 @@ impl<M: AnyFrameMeta> Frame<M> {
     /// Also, the caller ensures that the usage of the frame is correct. There's
     /// no checking of the usage in this function.
     /// TODO: Implement Frame::from_raw
-    pub(in crate::mm) fn from_raw(paddr: Paddr) -> Self {
+    pub(in crate::mm) fn from_raw(paddr: Paddr) -> (res: Self)
+    ensures
+        res.ptr == paddr,
+    {
         // let vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
         // let ptr = vaddr as *const MetaSlot;
 

@@ -1,11 +1,11 @@
-use vstd::prelude::verus;
+use vstd::prelude::*;
 
 use crate::mm::{
     meta::AnyFrameMeta, nr_subpage_per_huge, page_prop::PageProperty, page_size,
     page_table::zeroed_pt_pool, vm_space::Token, PageTableEntryTrait, PagingConstsTrait,
 };
 
-use super::{Child, MapTrackingStatus, PageTableLock, PageTableLockTrait, PageTableNode};
+use super::{Child, MapTrackingStatus, PageTableLockTrait, PageTableNode};
 
 verus! {
 /// A view of an entry in a page table node.
@@ -56,11 +56,24 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
     }
 
     /// Gets a reference to the child.
-    pub(in crate::mm) fn to_ref<T: AnyFrameMeta>(&self) -> Child<E, C, T>
+    pub(in crate::mm) fn to_ref<T: AnyFrameMeta>(&self) -> (res: Child<E, C, T>)
+    ensures
+        match res {
+            Child::None => true,
+            Child::PageTableRef(_) => true,
+            _ => false,
+        }
     {
         // SAFETY: The entry structure represents an existent entry with the
         // right node information.
-        unsafe { Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked(), false) }
+        // unsafe { Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked(), false) }
+        let c = Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked(), false);
+        assert(match c {
+            Child::None => true,
+            Child::PageTableRef(_) => true,
+            _ => false,
+        }) by { admit(); }; // TODO
+        c
     }
 
     /// Operates on the mapping properties of the entry.
@@ -118,7 +131,8 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
     /// The compatibility is specified by the [`Child::is_compatible`].
     // TODO: Implement replace
     // #[verifier::external_body]
-    pub(in crate::mm) fn replace<T: AnyFrameMeta>(self, new_child: Child<E, C, T>) -> Child<E, C, T> {
+    pub(in crate::mm) fn replace<T: AnyFrameMeta>(self, new_child: Child<E, C, T>) -> (res: Child<E, C, T>)
+    {
         // // assert!(new_child.is_compatible(self.node.level(), self.node.is_tracked()));
 
         // SAFETY: The entry structure represents an existent entry with the
@@ -227,10 +241,16 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
     ///
     /// The caller must ensure that the index is within the bounds of the node.
     // pub(super) unsafe fn new_at(node: &'a mut PageTableLock<E, C>, idx: usize) -> Self {
-    pub fn new_at(node: &'a PTL, idx: usize) -> Self {
+    pub fn new_at(node: &'a PTL, idx: usize) -> (res: Self)
+    requires
+        idx < nr_subpage_per_huge(),
+    ensures
+        res.pte.paddr() < usize::MAX,
+    {
         // SAFETY: The index is within the bound.
         // let pte = unsafe { node.read_pte(idx) };
         let pte = node.read_pte(idx);
+        assert (pte.paddr() < usize::MAX) by { admit(); }; // TODO
         Self { pte, idx, node, phantom: std::marker::PhantomData }
     }
 }

@@ -167,7 +167,16 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait, T: AnyFrameMeta> Child<E, C, 
         level: PagingLevel,
         is_tracked: MapTrackingStatus,
         clone_raw: bool,
-    ) -> Self
+    ) -> (res: Self)
+    ensures
+        match res {
+            Child::PageTable(pt) => pt.ptr == pte.paddr(),
+            Child::PageTableRef(paddr) => paddr == pte.paddr(),
+            Child::Frame(_, _) => true,
+            Child::Untracked(_, _, _) => true,
+            Child::None => true,
+            Child::Token(_) => true,
+        }
     {
         if !pte.is_present() {
             let paddr = pte.paddr();
@@ -188,7 +197,11 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait, T: AnyFrameMeta> Child<E, C, 
                 // unsafe { inc_frame_ref_count(paddr) }; // TODO
                 // SAFETY: The physical address points to a valid page table node
                 // at the given level.
-                let pt = unsafe { PageTableNode::from_raw(paddr) };
+                // let pt = unsafe { PageTableNode::from_raw(paddr) };
+                let pt = PageTableNode::from_raw(paddr);
+                assert(pt.ptr == paddr);
+                assert(paddr == pte.paddr());
+                assert(pt.ptr == pte.paddr());
                 // debug_assert_eq!(pt.level(), level - 1);
                 return Child::PageTable(pt);
             } else {

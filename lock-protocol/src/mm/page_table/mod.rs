@@ -52,7 +52,11 @@ pub trait PageTableEntryTrait:
     ///  - the physical address of the next level page table;
     ///  - the physical address of the page it maps to;
     ///  - the value of the token.
-    fn paddr(&self) -> Paddr;
+    #[verifier::when_used_as_spec(paddr_spec)]
+    fn paddr(&self) -> (res: Paddr)
+    ensures res == self.paddr_spec();
+
+    spec fn paddr_spec(&self) -> Paddr;
 
     fn prop(&self) -> PageProperty;
 

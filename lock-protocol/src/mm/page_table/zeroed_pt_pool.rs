@@ -5,7 +5,7 @@ use vstd::prelude::verus;
 use crate::{mm::{meta::AnyFrameMeta, PageTableLockTrait}, task::DisabledPreemptGuard};
 
 use super::{
-    node::{MapTrackingStatus, PageTableLock, PageTableNode, PageTablePageMeta},
+    node::{MapTrackingStatus, PageTableNode, PageTablePageMeta},
     PageTableEntryTrait, PagingConstsTrait, PagingLevel,
 };
 
