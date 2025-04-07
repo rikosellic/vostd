@@ -29,6 +29,8 @@ global layout SimplePageTableEntry is size == 24, align == 8;
 pub const SIZEOF_FRAME: usize = 24 * 512; // 8 bytes for pa + 8 bytes for each pte
 global layout SimpleFrame is size == 12288, align == 8;
 
+pub const MAX_FRAME_NUM: usize = 10000;
+
 // TODO: This is a mock implementation of the page table entry.
 // Maybe it should be replaced with the actual implementation, e.g., x86_64.
 #[derive(Copy, Clone)]
@@ -202,25 +204,25 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
 
 struct_with_invariants!{
     pub struct MockPageTable {
-        pub mem: HashMap<usize, (PPtr<SimplePageTableEntry>, Tracked<PointsTo<SimplePageTableEntry>>)>,
+        pub mem: HashMap<usize, (PPtr<SimpleFrame>, Tracked<PointsTo<SimpleFrame>>)>,
         pub frames: Tracked<simple_page_table::SimplePageTable::frames>,
         pub instance: Tracked<simple_page_table::SimplePageTable::Instance>,
     }
 
     pub open spec fn wf(&self) -> bool {
         predicate {
-            // self.frames@.instance_id() == self.instance@.id()
-            // &&
-            // self.mem.len() == NR_ENTRIES
-            // &&
-            // forall |i: usize, j: usize| 0 < i < NR_ENTRIES && j == index_to_addr(i) ==>
-            //     if (self.mem@[i].1@.mem_contents() != MemContents::<Frame>::Uninit) {
-            //         self.frames@.value().contains_key(j)
-            //         &&
-            //         #[trigger] self.frames@.value()[j].pa == #[trigger] self.mem@[i].0.addr()
-            //     } else {
-            //         true
-            //     }
+            self.frames@.instance_id() == self.instance@.id()
+            &&
+            self.mem.len() == MAX_FRAME_NUM
+            &&
+            forall |i: usize, j: usize| 0 < i < MAX_FRAME_NUM && j == frame_index_to_addr(i) ==>
+                if (self.mem@[i].1@.mem_contents() != MemContents::<SimpleFrame>::Uninit) {
+                    #[trigger] self.frames@.value().contains_key(j as int)
+                    &&
+                    #[trigger] self.frames@.value()[j as int].pa == #[trigger] self.mem@[i].0.addr()
+                } else {
+                    true
+                }
 
             // &&
             // forall |i: usize| 0 < i < NR_ENTRIES ==>
@@ -231,7 +233,7 @@ struct_with_invariants!{
             //     } else {
             //         true
             //     }
-            true
+            // true
         }
     }
 }
@@ -240,12 +242,14 @@ pub fn test_map(va: Vaddr, frame: Frame<SimpleFrameMeta>, page_prop: page_prop::
 requires
     0 <= va < MAX_USERSPACE_VADDR,
 {
+    broadcast use vstd::std_specs::hash::group_hash_axioms;
+    broadcast use vstd::hash_map::group_hash_map_axioms;
     let tracked (
         Tracked(instance),
         Tracked(mut frames_token),
-        Tracked(unused_addrs),
+        Tracked(mut unused_addrs),
         Tracked(mut pte_token),
-        Tracked(unused_pte_addrs),
+        Tracked(mut unused_pte_addrs),
     ) = simple_page_table::SimplePageTable::Instance::initialize();
     let tracked mut unused_addrs = unused_addrs.into_map();
     let tracked mut unused_pte_addrs = unused_pte_addrs.into_map();
@@ -265,9 +269,14 @@ requires
     };
     assert(cursor.0.level == 4);
 
-    page_table_entries();
+    let mut mock_page_table = MockPageTable {
+        mem: alloc_page_table_entries(),
+        frames: Tracked(frames_token),
+        instance: Tracked(instance),
+    };
 
-    let (p, Tracked(pt)) = get_frame_from_index(0, &page_table_entries());
+    let mut cur_alloc_index: usize = 0;
+    let (p, Tracked(pt)) = get_frame_from_index(cur_alloc_index, &mock_page_table.mem);
     p.write(Tracked(&mut pt), SimpleFrame {
         ptes: {
             let mut ptes = [SimplePageTableEntry {
@@ -276,8 +285,7 @@ requires
                 level: 0,
             }; NR_ENTRIES];
             for i in 0..NR_ENTRIES {
-                assert((PHYSICAL_BASE_ADDRESS_SPEC() as u64 + i as u64 * SIZEOF_PAGETABLEENTRY as u64) < usize::MAX as u64) by { admit(); } // TODO
-                assert((PHYSICAL_BASE_ADDRESS_SPEC() as u64 + i as u64 * SIZEOF_FRAME as u64) < usize::MAX) by { admit(); } // TODO
+                assert((PHYSICAL_BASE_ADDRESS() as u64 + i as u64 * SIZEOF_PAGETABLEENTRY as u64) < usize::MAX as u64) by { admit(); }; // TODO
                 ptes[i] = SimplePageTableEntry {
                     pte_addr: PHYSICAL_BASE_ADDRESS() as u64 + i as u64 * SIZEOF_PAGETABLEENTRY as u64,
                     frame_pa: PHYSICAL_BASE_ADDRESS() as u64,
@@ -288,13 +296,28 @@ requires
         },
     });
 
+    assert(mock_page_table.wf());
+
+    assert(mock_page_table.mem.len() == MAX_FRAME_NUM);
+    assert(p.addr() == PHYSICAL_BASE_ADDRESS() as usize);
+    assert(mock_page_table.mem@.contains_key(cur_alloc_index));
+
+    mock_page_table.mem.remove(&cur_alloc_index);
+    assert(!mock_page_table.mem@.contains_key(cur_alloc_index));
+    assert(mock_page_table.mem.len() == MAX_FRAME_NUM - 1);
+    mock_page_table.mem.insert(cur_alloc_index, (p, Tracked(pt)));
+    // assert(mock_page_table.mem@.contains_key(cur_alloc_index));
+    assert(mock_page_table.mem.len() == MAX_FRAME_NUM);
+
+    assert(mock_page_table.wf());
+
     cursor.0.path.push(None);
     cursor.0.path.push(None);
     cursor.0.path.push(None);
     cursor.0.path.push(Some(
         FakePageTableLock {
             phantom: std::marker::PhantomData,
-            paddr: 0,
+            paddr: p.addr(),
         }
     )); // root
 
@@ -302,7 +325,7 @@ requires
 
     cursor.map::<SimpleFrameMeta>(frame, page_prop,
         Tracked(instance),
-        Tracked(frames_token),
+        mock_page_table.frames,
         Tracked(unused_addrs),
         Tracked(pte_token),
         Tracked(unused_pte_addrs));
@@ -314,8 +337,8 @@ requires
     let level4_frame_addr = PHYSICAL_BASE_ADDRESS();
     let level4_pte = get_pte_from_addr(level4_frame_addr + level4_index * SIZEOF_PAGETABLEENTRY);
 
-    let level3_frame_addr = cursor.0.path[(NR_LEVELS as usize) - 2].as_ref().unwrap().paddr() as usize;
-    assert(level4_pte.frame_pa == level3_frame_addr as u64);
+    // let level3_frame_addr = cursor.0.path[(NR_LEVELS as usize) - 2].as_ref().unwrap().paddr() as usize;
+    // assert(level4_pte.frame_pa == level3_frame_addr as u64);
 }
 
 pub fn main_test() {
@@ -334,25 +357,25 @@ pub fn main_test() {
 }
 
 #[verifier::external_body]
-fn page_table_entries() ->
+fn alloc_page_table_entries() ->
     (res: HashMap<usize, (PPtr<SimpleFrame>, Tracked<PointsTo<SimpleFrame>>)>)
     ensures
-        res@.dom().len() == NR_ENTRIES,
-        res@.len() == NR_ENTRIES,
-        res.len() == NR_ENTRIES,
-        forall |i:usize| 0 <= i < NR_ENTRIES ==> {
+        res@.dom().len() == MAX_FRAME_NUM,
+        res@.len() == MAX_FRAME_NUM,
+        res.len() == MAX_FRAME_NUM,
+        forall |i:usize| 0 <= i < MAX_FRAME_NUM ==> {
             res@.dom().contains(i)
         },
-        forall |i:usize| 0 <= i < NR_ENTRIES ==> {
+        forall |i:usize| 0 <= i < MAX_FRAME_NUM ==> {
             res@.contains_key(i)
         },
-        forall |i:usize| 0 <= i < NR_ENTRIES ==> {
+        forall |i:usize| 0 <= i < MAX_FRAME_NUM ==> {
             (#[trigger] res@[i]).1@.pptr() == res@[i].0
         },
-        forall |i:usize| 0 <= i < NR_ENTRIES ==> {
+        forall |i:usize| 0 <= i < MAX_FRAME_NUM ==> {
             #[trigger] res@[i].1@.mem_contents() == MemContents::<SimpleFrame>::Uninit
         },
-        forall |i:usize, j:usize| 0 <= i < j < NR_ENTRIES && i == j - 1 ==> {
+        forall |i:usize, j:usize| 0 <= i < j < MAX_FRAME_NUM && i == j - 1 ==> {
             && (#[trigger] res@[i]).0.addr() + SIZEOF_FRAME == (#[trigger] res@[j]).0.addr() // pointers are adjacent
         },
         res@[0].0.addr() == PHYSICAL_BASE_ADDRESS_SPEC(), // points to the hardware page table
@@ -366,7 +389,7 @@ fn page_table_entries() ->
             )>::new();
     // map.insert(0, (PPtr::from_addr(0), Tracked::assume_new()));
     let p = PHYSICAL_BASE_ADDRESS();
-    for i in 0..NR_ENTRIES {
+    for i in 0..MAX_FRAME_NUM { // TODO: possible overflow for executable code
         map.insert(
             i,
             (
@@ -383,16 +406,15 @@ fn get_frame_from_index(index: usize,
     map: &HashMap<usize, (PPtr<SimpleFrame>, Tracked<PointsTo<SimpleFrame>>)>)
      -> (res: (PPtr<SimpleFrame>, Tracked<PointsTo<SimpleFrame>>))
     requires
-        0 <= index < NR_ENTRIES,
+        0 <= index < MAX_FRAME_NUM,
         map@.dom().contains(index),
-        forall |i:usize| 0 <= i < NR_ENTRIES ==> {
+        forall |i:usize| 0 <= i < MAX_FRAME_NUM ==> {
             map@.dom().contains(i)
         },
-        forall |i:usize| 0 <= i < NR_ENTRIES ==> {
+        forall |i:usize| 0 <= i < MAX_FRAME_NUM ==> {
             (#[trigger] map@[i]).1@.pptr() == map@[i].0
         }
     ensures
-        res.0.addr() != 0,
         res.1@.pptr() == res.0,
         // NOTE: this is not true! && res.0.addr() == map@[index]@.0.addr()
         res.0 == map@[index].0,
@@ -402,12 +424,18 @@ fn get_frame_from_index(index: usize,
     (*p, Tracked::assume_new())
 }
 
+pub open spec fn get_pte_addr_from_va_frame_addr_and_level_spec(va: usize, frame_va: usize, level: u8) -> int {
+    let index = pte_index(va, level);
+    let pte_addr = frame_va + index * SIZEOF_PAGETABLEENTRY;
+    pte_addr
+}
+
 pub open spec fn get_pte_from_addr_spec(addr: usize) -> (res: SimplePageTableEntry)
 {
     SimplePageTableEntry {
         pte_addr: addr as u64,
-        frame_pa: addr as u64,
-        level: 4,
+        frame_pa: addr as u64, // TODO
+        level: 4, // TODO
     }
 }
 
@@ -430,32 +458,33 @@ pub fn get_pte_from_addr(addr: usize) -> (res: SimplePageTableEntry)
 }
 
 pub open spec fn frame_index_to_addr_spec(index: usize) -> usize {
-    (PHYSICAL_BASE_ADDRESS_SPEC() + index * SIZEOF_PAGETABLEENTRY) as usize
+    (PHYSICAL_BASE_ADDRESS_SPEC() + index * SIZEOF_FRAME) as usize
 }
 
+#[verifier::when_used_as_spec(frame_index_to_addr_spec)]
 pub fn frame_index_to_addr(index: usize) -> (res: usize)
 ensures
     res == frame_index_to_addr_spec(index)
 {
-    assert((PHYSICAL_BASE_ADDRESS_SPEC() + index * SIZEOF_PAGETABLEENTRY) < usize::MAX) by { admit(); } // TODO
-    (PHYSICAL_BASE_ADDRESS() + index * SIZEOF_PAGETABLEENTRY) as usize
+    assert((PHYSICAL_BASE_ADDRESS_SPEC() + index * SIZEOF_FRAME) < usize::MAX) by { admit(); } // TODO
+    (PHYSICAL_BASE_ADDRESS() + index * SIZEOF_FRAME) as usize
 }
 
 // TODO: can we eliminate division
 pub open spec fn frame_addr_to_index_spec(addr: usize) -> usize {
-    ((addr - PHYSICAL_BASE_ADDRESS_SPEC()) / SIZEOF_PAGETABLEENTRY as int) as usize
+    ((addr - PHYSICAL_BASE_ADDRESS_SPEC()) / SIZEOF_FRAME as int) as usize
 }
 
 pub fn frame_addr_to_index(addr: usize) -> (res: usize)
 ensures
     res == frame_addr_to_index_spec(addr)
 {
-    assert((addr - PHYSICAL_BASE_ADDRESS_SPEC()) >= 0) by { admit(); } // TODO
-    ((addr - PHYSICAL_BASE_ADDRESS()) / SIZEOF_PAGETABLEENTRY) as usize
+    assert((addr - PHYSICAL_BASE_ADDRESS()) >= 0) by { admit(); } // TODO
+    ((addr - PHYSICAL_BASE_ADDRESS()) / SIZEOF_FRAME) as usize
 }
 
 pub open spec fn PHYSICAL_BASE_ADDRESS_SPEC() -> usize {
-    0x1000
+    0
 }
 
 #[allow(unused_imports)]

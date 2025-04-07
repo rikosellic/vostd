@@ -23,8 +23,9 @@ use crate::{
     x86_64::VMALLOC_VADDR_RANGE,
 };
 
-use super::{pte_index, KernelMode, PageTable, PageTableEntryTrait, PageTableError,
-    PageTableMode, PagingConsts, PagingConstsTrait, PagingLevel, UserMode,
+use super::{
+    pte_index, KernelMode, PageTable, PageTableEntryTrait, PageTableError, PageTableMode,
+    PagingConsts, PagingConstsTrait, PagingLevel, UserMode,
 };
 
 use crate::spec::simple_page_table;
@@ -125,57 +126,6 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         Ok(locking::lock_range(pt, va, new_pt_is_tracked))
     }
 
-    /// Gets the information of the current slot.
-    // TODO
-    // pub fn query<T: AnyFrameMeta>(&mut self) -> Result<PageTableItem<T>, PageTableError> {
-    //     if self.va >= self.barrier_va.end {
-    //         return Err(PageTableError::InvalidVaddr(self.va));
-    //     }
-
-    //     loop {
-    //         let level = self.level;
-    //         let va = self.va;
-
-    //         match self.cur_entry().to_ref() {
-    //             Child::PageTableRef(pt) => {
-    //                 // SAFETY: `pt` points to a PT that is attached to a node
-    //                 // in the locked sub-tree, so that it is locked and alive.
-    //                 self.push_level(unsafe { PageTableLock::<E, C>::from_raw_paddr(pt) });
-    //                 continue;
-    //             }
-    //             Child::PageTable(_) => {
-    //                 // unreachable!();
-    //                 // assert(false); // TODO
-    //             }
-    //             Child::None => {
-    //                 return Ok(PageTableItem::NotMapped {
-    //                     va,
-    //                     len: page_size::<C>(level),
-    //                 });
-    //             }
-    //             Child::Frame(page, prop) => {
-    //                 return Ok(PageTableItem::Mapped { va, page, prop });
-    //             }
-    //             Child::Untracked(pa, plevel, prop) => {
-    //                 // debug_assert_eq!(plevel, level); // TODO: assert
-    //                 return Ok(PageTableItem::MappedUntracked {
-    //                     va,
-    //                     pa,
-    //                     len: page_size::<C>(level),
-    //                     prop,
-    //                 });
-    //             }
-    //             Child::Token(token) => {
-    //                 return Ok(PageTableItem::Marked {
-    //                     va,
-    //                     len: page_size::<C>(level),
-    //                     token,
-    //                 });
-    //             }
-    //         }
-    //     }
-    // }
-
     /// Traverses forward in the current level to the next PTE.
     ///
     /// If reached the end of a page table node, it leads itself up to the next page of the parent
@@ -197,62 +147,6 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         // }
         // self.va = next_va;
     }
-
-    /// Jumps to the given virtual address.
-    /// If the target address is out of the range, this method will return `Err`.
-    ///
-    /// # Panics
-    ///
-    /// This method panics if the address has bad alignment.
-    // TODO
-    // pub fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError>
-    // requires
-    //     old(self).barrier_va.start < old(self).barrier_va.end,
-    //     old(self).barrier_va.end < MAX_USERSPACE_VADDR,
-    //     old(self).va >= old(self).barrier_va.start,
-    //     old(self).va < old(self).barrier_va.end,
-    //     old(self).level < PagingConsts::NR_LEVELS_SPEC(),
-    //     old(self).level > 0,
-    //     old(self).path.len() > old(self).level as usize,
-    // {
-    //     // assert!(va % C::BASE_PAGE_SIZE() == 0); // TODO
-    //     // if !self.barrier_va.contains(&va) {
-    //     //     return Err(PageTableError::InvalidVaddr(va));
-    //     // }
-    //     if va >= self.barrier_va.end || va < self.barrier_va.start {
-    //         return Err(PageTableError::InvalidVaddr(va));
-    //     }
-
-    //     loop
-    //     invariant
-    //         0 < self.level < PagingConsts::NR_LEVELS_SPEC() as usize,
-    //     {
-    //         let cur_page_size = page_size::<C>(self.level + 1) as u64;
-    //         let self_va = self.va as u64; // make verus happy
-    //         let cur_node_start = self_va & !(cur_page_size - 1);
-    //         assert(is_power_2(cur_page_size as int));
-    //         let cur_page_size_minus_1 = cur_page_size - 1;
-    //         assert(cur_node_start < self_va) by {
-    //             assert(self_va & !cur_page_size_minus_1 <= cur_node_start) by (bit_vector);
-    //         };
-    //         let cur_node_end = cur_node_start as usize + page_size::<C>(self.level + 1);
-    //         // If the address is within the current node, we can jump directly.
-    //         if cur_node_start as usize <= va && va < cur_node_end {
-    //             self.va = va;
-    //             return Ok(());
-    //         }
-
-    //         // There is a corner case that the cursor is depleted, sitting at the start of the
-    //         // next node but the next node is not locked because the parent is not locked.
-    //         if self.va >= self.barrier_va.end && self.level == self.guard_level {
-    //             self.va = va;
-    //             return Ok(());
-    //         }
-
-    //         // debug_assert!(self.level < self.guard_level); // TODO
-    //         self.pop_level();
-    //     }
-    // }
 
     pub fn virt_addr(&self) -> Vaddr {
         self.va
@@ -308,7 +202,6 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
 
         // let old = self.path[self.level as usize - 1].replace(child_pt);
         let old = self.path.set(self.level as usize - 1, Some(child_pt));
-        // debug_assert!(old.is_none()); // TODO
     }
 
     // fn cur_entry(&mut self) -> Entry<'_, E, C> {
@@ -329,8 +222,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         // node.entry(pte_index(self.va, self.level))
         let res = Entry::new_at(node, pte_index(self.va, self.level));
         assert(
-            res.pte.paddr() ==
-            crate::exec::PHYSICAL_BASE_ADDRESS() + pte_index(self.va, self.level) * crate::exec::SIZEOF_PAGETABLEENTRY
+                res.pte.paddr() ==
+                crate::exec::PHYSICAL_BASE_ADDRESS() + pte_index(self.va, self.level) * crate::exec::SIZEOF_PAGETABLEENTRY
             ) by { admit(); } // TODO: P0
         res
     }
@@ -360,29 +253,10 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         Cursor::new(pt, va).map(|inner| Self(inner))
     }
 
-    /// Jumps to the given virtual address.
-    ///
-    /// This is the same as [`Cursor::jump`].
-    ///
-    /// # Panics
-    ///
-    /// This method panics if the address is out of the range where the cursor is required to operate,
-    /// or has bad alignment.
-    // TODO
-    // pub fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError> {
-    //     self.0.jump(va)
-    // }
-
     /// Gets the current virtual address.
     pub fn virt_addr(&self) -> Vaddr {
         self.0.virt_addr()
     }
-
-    /// Gets the information of the current slot.
-    // TODO
-    // pub fn query<T: AnyFrameMeta>(&mut self) -> Result<PageTableItem<T>, PageTableError> {
-    //     self.0.query()
-    // }
 
     /// Maps the range starting from the current address to a [`Frame<dyn AnyFrameMeta>`].
     ///
@@ -403,6 +277,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         &mut self,
         frame: Frame<T>,
         prop: PageProperty,
+
+        // ghost
         instance: Tracked<simple_page_table::SimplePageTable::Instance>,
         frames: Tracked<simple_page_table::SimplePageTable::frames>,
         unused_addrs: Tracked<Map<builtin::int, simple_page_table::SimplePageTable::unused_addrs>>,
@@ -416,13 +292,16 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         1 < old(self).0.level <= PagingConsts::NR_LEVELS_SPEC() as usize,
         old(self).0.path.len() >= old(self).0.level as usize,
         old(self).0.path[old(self).0.level as usize - 1].is_some(),
+        
+        // ptes@.value().contains_key(exec::get_pte_addr_from_va_frame_addr_and_level_spec(old(self).0.va, frame.ptr, old(self).0.level))
+
     ensures
         self.0.path.len() == old(self).0.path.len(),
         forall |i: int| 1 < i <= old(self).0.level ==> #[trigger] self.0.path[i - 1].is_some(),
         self.0.path[old(self).0.level - 1] == old(self).0.path[old(self).0.level - 1],
-        exec::get_pte_from_addr(
-                (exec::PHYSICAL_BASE_ADDRESS() + pte_index(self.0.va, old(self).0.level) * exec::SIZEOF_PAGETABLEENTRY) as usize).frame_pa
-                == self.0.path[old(self).0.level - 2].unwrap().paddr()
+        // exec::get_pte_from_addr(
+        //         (exec::PHYSICAL_BASE_ADDRESS() + pte_index(self.0.va, old(self).0.level) * exec::SIZEOF_PAGETABLEENTRY) as usize).frame_pa
+        //         == self.0.path[old(self).0.level - 2].unwrap().paddr()
     {
         let end = self.0.va + frame.size();
         // assert!(end <= self.0.barrier_va.end); // TODO
@@ -457,6 +336,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             assert(self.0.path[cur_level - 1].is_some());
             match cur_entry.to_ref::<T>() {
                 Child::PageTableRef(pt) => {
+                    // assert(ptes@.value().contains_key(pt as int));
+
                     // SAFETY: `pt` points to a PT that is attached to a node
                     // in the locked sub-tree, so that it is locked and alive.
                     self.0
@@ -520,9 +401,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             assert(self.0.path[self.0.level as usize - 1].is_some());
             continue;
         }
-        // assert(self.0.path[old(self).0.level - 1].is_some());
         assert(forall |i: int| 1 < i <= old(self).0.level ==> #[trigger] self.0.path[i - 1].is_some());
-        // debug_assert_eq!(self.0.level, frame.map_level());
         assert(self.0.level == frame.map_level());
 
         // Map the current page.

@@ -113,6 +113,10 @@ SimplePageTable {
             require pre.frames[parent].pa != pre.frames[child].pa;
             require pre.frames[parent].pa == parent;
             require pre.frames[child].pte_addrs.len() == 0;
+            require forall |i: int| 0 <= i < Paddr::MAX ==>
+                #[trigger] pre.ptes.contains_key(i) && #[trigger] pre.ptes[i].frame_pa == parent ==> pre.ptes[i].level == level + 1;
+            require forall |i: int| 0 <= i < Paddr::MAX ==>
+                #[trigger] pre.ptes.contains_key(i) ==> #[trigger] pre.ptes[i].frame_pa != child;
 
             require pre.frames[child].pa == child;
             let pte_addr = parent + index * SIZEOF_PAGETABLEENTRY;
@@ -173,7 +177,7 @@ SimplePageTable {
                 0 <= i < node.pte_addrs.len() ==>
                 {
                     let pte_addr = node.pte_addrs[i];
-                    if (self.ptes.dom().contains(pte_addr)) {
+                    if (self.ptes.dom().contains(pte_addr)) { // pte_addr is a valid pte address
 
                         let pte = self.ptes[pte_addr];
                         self.frames.dom().contains(pte.frame_pa)
@@ -310,6 +314,7 @@ pub fn main_test() {
     assert(pt_root.pptr() == p_root);
     assert(pt_root.mem_contents() == MemContents::<Frame>::Uninit);
     assert(p_root.addr() + SIZEOF_FRAME == fake.mem@[2].0.addr());
+    assert(p_root.addr() == PHYSICAL_BASE_ADDRESS() + SIZEOF_FRAME as int);
 
     let mut f1 = Frame {
         // pa: p_root.addr(),
@@ -322,6 +327,19 @@ pub fn main_test() {
 
     assert(unused_addrs.dom().contains(p_root.addr() as int));
     let tracked used_addr = unused_addrs.tracked_remove(p_root.addr() as int);
+
+    assert(fake.wf());
+    p_root.write(Tracked(&mut pt_root), f1);
+    assert(fake.mem.len() == NR_ENTRIES);
+    assert(fake.mem@.dom().contains(1));
+    assert(fake.mem@.contains_key(1));
+
+    fake.mem.remove(&1);
+    assert(fake.mem.len() == NR_ENTRIES - 1);
+    fake.mem.insert(1, (p_root, Tracked(pt_root)));
+    assert(fake.mem.len() == NR_ENTRIES);
+
+    // assert(!fake.wf()); // it seems we cannot assert the structure is not wf when it is not
 
     proof{
         assert(fake.frames@.value().dom().len() == 0);
@@ -336,17 +354,8 @@ pub fn main_test() {
 
         assert(fake.frames@.value().contains_key(p_root.addr() as int));
     }
-
-    assert(fake.wf());
-    p_root.write(Tracked(&mut pt_root), f1);
-    assert(fake.mem.len() == NR_ENTRIES);
-    assert(fake.mem@.dom().contains(1));
-    assert(fake.mem@.contains_key(1));
-
-    fake.mem.remove(&1);
-    assert(fake.mem.len() == NR_ENTRIES - 1);
-    fake.mem.insert(1, (p_root, Tracked(pt_root)));
-    assert(fake.mem.len() == NR_ENTRIES);
+    assert(fake.frames@.value().contains_key(p_root.addr() as int));
+    assert(p_root.addr() == fake.frames@.value()[p_root.addr() as int].pa);
 
     assert(fake.wf());
 
@@ -442,14 +451,13 @@ fn alloc_page_table_entries() -> (res: HashMap<usize, (PPtr<Frame>, Tracked<Poin
         forall |i:usize, j:usize| 0 <= i < j < NR_ENTRIES && i == j - 1 ==> {
             && (#[trigger] res@[i]).0.addr() + SIZEOF_FRAME == (#[trigger] res@[j]).0.addr() // pointers are adjacent
         },
-        res@[0].0.addr() == 0,
-        res@[1].0.addr() == PHYSICAL_BASE_ADDRESS_SPEC(), // points to the hardware page table
+        res@[0].0.addr() == PHYSICAL_BASE_ADDRESS_SPEC(),
         res@.dom().finite(),
 {
     let mut map = HashMap::<usize, (PPtr<Frame>, Tracked<PointsTo<Frame>>)>::new();
     // map.insert(0, (PPtr::from_addr(0), Tracked::assume_new()));
     let p = PHYSICAL_BASE_ADDRESS();
-    for i in 0..NR_ENTRIES {
+    for i in 0..Paddr::MAX {
         map.insert(
             i,
             (
@@ -473,7 +481,7 @@ fn get_from_index(index: usize, map: &HashMap<usize, (PPtr<Frame>, Tracked<Point
             (#[trigger] map@[i]).1@.pptr() == map@[i].0
         }
     ensures
-        res.0.addr() != 0,
+        // res.0.addr() != 0,
         res.1@.pptr() == res.0,
         // NOTE: this is not true! && res.0.addr() == map@[index]@.0.addr()
         res.0 == map@[index].0,
@@ -484,12 +492,12 @@ fn get_from_index(index: usize, map: &HashMap<usize, (PPtr<Frame>, Tracked<Point
 }
 
 pub open spec fn index_to_addr(index: usize) -> usize {
-    (PHYSICAL_BASE_ADDRESS_SPEC() + (index - 1) * SIZEOF_PAGETABLEENTRY) as usize
+    (PHYSICAL_BASE_ADDRESS_SPEC() + index * SIZEOF_FRAME) as usize
 }
 
 // TODO: can we eliminate division
 pub open spec fn addr_to_index(addr: usize) -> usize {
-    ((addr - PHYSICAL_BASE_ADDRESS_SPEC()) / SIZEOF_PAGETABLEENTRY as int + 1) as usize
+    ((addr - PHYSICAL_BASE_ADDRESS_SPEC()) / SIZEOF_FRAME as int) as usize
 }
 
 pub open spec fn PHYSICAL_BASE_ADDRESS_SPEC() -> usize {
@@ -500,6 +508,7 @@ pub open spec fn PHYSICAL_BASE_ADDRESS_SPEC() -> usize {
 use std::alloc::{alloc, dealloc, Layout};
 
 #[verifier::external_body]
+#[verifier::when_used_as_spec(PHYSICAL_BASE_ADDRESS_SPEC)]
 pub fn PHYSICAL_BASE_ADDRESS() -> (res: usize)
 ensures
     res == PHYSICAL_BASE_ADDRESS_SPEC()
