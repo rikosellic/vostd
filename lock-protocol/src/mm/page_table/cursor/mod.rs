@@ -284,6 +284,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         unused_addrs: Tracked<SetToken<builtin::int, simple_page_table::SimplePageTable::unused_addrs>>,
         mut ptes_token: Tracked<simple_page_table::SimplePageTable::ptes>,
         unused_pte_addrs: Tracked<SetToken<builtin::int, simple_page_table::SimplePageTable::unused_pte_addrs>>,
+
+        // non ghost
         mock_page_table: &mut exec::MockPageTable,
     ) -> (res: Option<Frame<T>>)
     requires
@@ -357,9 +359,6 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             let cur_entry: Entry<'_, E, C, PTL>;
             let res = self.0.cur_entry(mock_page_table, ptes_token); // TODO: why we cannot copy frames and ptes_token?
             cur_entry = res.0;
-            // assert(mock_page_table.frames == res.1);
-            // assert(ptes_token == res.2);
-            // mock_page_table.frames = res.1;
             ptes_token = res.1;
             assert(self.0.path[cur_level - 1].is_some());
             match cur_entry.to_ref::<T>() {

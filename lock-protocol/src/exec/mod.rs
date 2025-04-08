@@ -322,7 +322,7 @@ requires
         instance.new_at(p.addr() as int, simple_page_table::FrameView {
             pa: p.addr() as int,
             // has_ptes: false,
-            pte_addrs: Seq::empty(),
+            pte_addrs: Set::empty(),
         }, mock_page_table.frames.borrow_mut(), used_addr, &pte_token);
     }
 
