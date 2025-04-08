@@ -7,6 +7,8 @@ use crate::mm::{
 
 use super::{Child, MapTrackingStatus, PageTableLockTrait, PageTableNode};
 
+use crate::exec::SIZEOF_PAGETABLEENTRY;
+
 verus! {
 /// A view of an entry in a page table node.
 ///

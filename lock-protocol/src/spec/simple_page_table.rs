@@ -92,7 +92,6 @@ SimplePageTable {
     transition! {
         // create a pte at a given address
         new_at(addr: int, newFrame: FrameView) {
-            require addr != 0;
             require addr == newFrame.pa;
             // require forall |i: int| 0 <= i < NR_ENTRIES ==> #[trigger] newFrame.ptes[i].frame_pa == 0;
             require newFrame.pte_addrs.len() == 0;

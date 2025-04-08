@@ -27,6 +27,8 @@ use crate::sync::spin;
 // TODO: Use a generic style?
 use crate::x86_64::paddr_to_vaddr;
 
+use crate::exec::SIZEOF_PAGETABLEENTRY;
+
 verus! {
 
 // #[derive(Debug)] // TODO: Debug for PageTableNode
@@ -118,7 +120,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C>
 pub trait PageTableLockTrait<
     E: PageTableEntryTrait,
     C: PagingConstsTrait,
-> 
+>
 : Sized
 {
     // fn entry(&self, idx: usize) -> Entry<'_, E, C, Self>
@@ -151,7 +153,7 @@ pub trait PageTableLockTrait<
 
     fn nr_children(&self) -> u16;
 
-    fn read_pte(&self, idx: usize) -> E;
+    fn read_pte(&self, idx: usize) -> (res: E);
 
     fn write_pte(&self, idx: usize, pte: E);
 
@@ -343,7 +345,7 @@ pub trait PageTableLockTrait<
 
 //     //     unimplemented!()
 //     // }
-    
+
 //     // TODO: Implement
 //     #[verifier::external_body]
 //     fn change_children(&self, delta: i16) {
