@@ -264,7 +264,7 @@ struct_with_invariants! {
             &&
             self.mem.len() == NR_ENTRIES
             &&
-            forall |i: usize, j: usize| 0 < i < NR_ENTRIES && j == index_to_addr(i) ==>
+            forall |i: usize, j: usize| 0 <= i < NR_ENTRIES && j == index_to_addr(i) ==>
                 if (self.mem@[i].1@.mem_contents() != MemContents::<Frame>::Uninit) {
                     self.frames@.value().contains_key(j as int)
                     &&
