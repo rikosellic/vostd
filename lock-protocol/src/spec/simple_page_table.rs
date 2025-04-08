@@ -285,15 +285,7 @@ struct_with_invariants! {
                 } else {
                     true
                 }
-            // &&
-            // forall |i: usize| 0 < i < NR_ENTRIES ==>
-            //     if (#[trigger] self.mem@[i].1@.mem_contents() != MemContents::<Frame>::Uninit) {
-            //         self.frames@.value().contains_key(self.mem@[i].0.addr())
-            //         &&
-            //         self.frames@.value()[self.mem@[i].0.addr()] == self.mem@[i].1@.value()
-            //     } else {
-            //         true
-            //     }
+            // TODO: More wf specs
         }
     }
 }

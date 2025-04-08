@@ -210,6 +210,7 @@ struct_with_invariants!{
     pub struct MockPageTable {
         pub mem: HashMap<usize, (PPtr<SimpleFrame>, Tracked<PointsTo<SimpleFrame>>)>, // mem is indexed by index!
         pub frames: Tracked<simple_page_table::SimplePageTable::frames>, // frame is indexed by paddr!
+        pub ptes: Tracked<simple_page_table::SimplePageTable::ptes>,
         pub instance: Tracked<simple_page_table::SimplePageTable::Instance>,
     }
 
@@ -227,17 +228,7 @@ struct_with_invariants!{
                 } else {
                     true
                 }
-
-            // &&
-            // forall |i: usize| 0 < i < NR_ENTRIES ==>
-            //     if (#[trigger] self.mem@[i].1@.mem_contents() != MemContents::<Frame>::Uninit) {
-            //         self.frames@.value().contains_key(self.mem@[i].0.addr())
-            //         &&
-            //         self.frames@.value()[self.mem@[i].0.addr()] == self.mem@[i].1@.value()
-            //     } else {
-            //         true
-            //     }
-            // true
+            // TODO: More wf specs
         }
     }
 }
@@ -274,6 +265,7 @@ requires
     let mut mock_page_table = MockPageTable {
         mem: alloc_page_table_entries(),
         frames: Tracked(frames_token),
+        ptes: Tracked(pte_token),
         instance: Tracked(instance),
     };
 
@@ -307,10 +299,8 @@ requires
     assert(mock_page_table.mem@.contains_key(cur_alloc_index));
 
     mock_page_table.mem.remove(&cur_alloc_index);
-    assert(!mock_page_table.mem@.contains_key(cur_alloc_index));
     assert(mock_page_table.mem.len() == MAX_FRAME_NUM - 1);
     mock_page_table.mem.insert(cur_alloc_index, (p, Tracked(pt)));
-    // assert(mock_page_table.mem@.contains_key(cur_alloc_index));
     assert(mock_page_table.mem.len() == MAX_FRAME_NUM);
 
     assert(mock_page_table.mem@[cur_alloc_index].1@.mem_contents() != MemContents::<SimpleFrame>::Uninit);
@@ -321,10 +311,10 @@ requires
         
         instance.new_at(p.addr() as int, simple_page_table::FrameView {
             pa: p.addr() as int,
-            // has_ptes: false,
             pte_addrs: Set::empty(),
-        }, mock_page_table.frames.borrow_mut(), used_addr, &pte_token);
+        }, mock_page_table.frames.borrow_mut(), used_addr, mock_page_table.ptes.borrow_mut());
     }
+    assert(mock_page_table.wf());
 
     cursor.0.path.push(None);
     cursor.0.path.push(None);
@@ -341,16 +331,15 @@ requires
     cursor.map::<SimpleFrameMeta>(frame, page_prop,
         Tracked(instance),
         Tracked(unused_addrs),
-        Tracked(pte_token),
         Tracked(unused_pte_addrs),
         &mut mock_page_table);
 
-    // assert(cursor.0.path.len() == NR_LEVELS as usize);
-    // assert(forall |i: usize| 1 < i <= NR_LEVELS as usize ==> #[trigger] cursor.0.path[i as int - 1].is_some());
+    assert(cursor.0.path.len() == NR_LEVELS as usize);
+    assert(forall |i: usize| 1 < i <= NR_LEVELS as usize ==> #[trigger] cursor.0.path[i as int - 1].is_some());
 
-    // let level4_index = pte_index(va, NR_LEVELS as u8);
-    // let level4_frame_addr = PHYSICAL_BASE_ADDRESS();
-    // let level4_pte = get_pte_from_addr(level4_frame_addr + level4_index * SIZEOF_PAGETABLEENTRY);
+    let level4_index = pte_index(va, NR_LEVELS as u8);
+    let level4_frame_addr = PHYSICAL_BASE_ADDRESS();
+    let level4_pte = get_pte_from_addr(level4_frame_addr + level4_index * SIZEOF_PAGETABLEENTRY);
 
     // let level3_frame_addr = cursor.0.path[(NR_LEVELS as usize) - 2].as_ref().unwrap().paddr() as usize;
     // assert(level4_pte.frame_pa == level3_frame_addr as u64);

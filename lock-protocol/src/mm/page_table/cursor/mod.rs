@@ -206,19 +206,14 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
     }
 
     // fn cur_entry(&mut self) -> Entry<'_, E, C> {
-    fn cur_entry(&self, mock_page_table: &exec::MockPageTable,
-                        ptes: Tracked<simple_page_table::SimplePageTable::ptes>)
-                            -> (res: (Entry<'_, E, C, PTL>, Tracked<simple_page_table::SimplePageTable::ptes>))
+    fn cur_entry(&self, mock_page_table: &exec::MockPageTable)
+                            -> (res: Entry<'_, E, C, PTL>)
     requires
         self.level > 0,
         self.level <= PagingConsts::NR_LEVELS_SPEC() as usize,
         self.path.len() >= self.level as usize,
         self.path[self.level as usize - 1].is_some(),
         // mock_page_table.frames@.value().contains_key(self.path[self.level as usize - 1].unwrap().paddr() as int),
-    ensures
-        // res.1 == frames,
-        res.1 == ptes,
-        // mock_page_table.frames@.instance_id() == 
     {
         // let node = self.path[self.level as usize - 1].as_mut().unwrap();
         // node.entry(pte_index::<C>(self.va, self.level))
@@ -226,7 +221,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         let cur_node = self.path[self.level as usize - 1].as_ref().unwrap(); // current node
         // node.entry(pte_index(self.va, self.level))
         let res = Entry::new_at(cur_node, pte_index(self.va, self.level));
-        (res, ptes)
+        res
     }
 }
 
@@ -282,7 +277,6 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         // ghost
         instance: Tracked<simple_page_table::SimplePageTable::Instance>,
         unused_addrs: Tracked<SetToken<builtin::int, simple_page_table::SimplePageTable::unused_addrs>>,
-        mut ptes_token: Tracked<simple_page_table::SimplePageTable::ptes>,
         unused_pte_addrs: Tracked<SetToken<builtin::int, simple_page_table::SimplePageTable::unused_pte_addrs>>,
 
         // non ghost
@@ -297,7 +291,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         old(self).0.path.len() == PagingConsts::NR_LEVELS_SPEC() as usize,
         old(self).0.path[old(self).0.level as usize - 1].is_some(),
         instance@.id() == old(mock_page_table).frames@.instance_id(),
-        instance@.id() == ptes_token@.instance_id(),
+        instance@.id() == old(mock_page_table).ptes@.instance_id(),
         instance@.id() == unused_addrs@.instance_id(),
         instance@.id() == unused_pte_addrs@.instance_id(),
 
@@ -351,15 +345,12 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             old_level@ == old(self).0.level,
             old_level@ >= self.0.level,
             mock_page_table.frames@.instance_id() == instance@.id(),
-            ptes_token@.instance_id() == instance@.id(),
+            mock_page_table.ptes@.instance_id() == instance@.id(),
             // mock_page_table.frames@.value().contains_key(self.0.path[self.0.level as usize - 1].unwrap().paddr() as int),
         {
             // debug_assert!(should_map_as_tracked::<M>(self.0.va)); // TODO
             let cur_level = self.0.level;
-            let cur_entry: Entry<'_, E, C, PTL>;
-            let res = self.0.cur_entry(mock_page_table, ptes_token); // TODO: why we cannot copy frames and ptes_token?
-            cur_entry = res.0;
-            ptes_token = res.1;
+            let cur_entry = self.0.cur_entry(mock_page_table);
             assert(self.0.path[cur_level - 1].is_some());
             match cur_entry.to_ref::<T>() {
                 Child::PageTableRef(pt) => {
@@ -432,7 +423,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         assert(self.0.level == frame.map_level());
 
         // Map the current page.
-        let old = self.0.cur_entry(mock_page_table, ptes_token).0.replace(Child::Frame(frame, prop));
+        let old = self.0.cur_entry(mock_page_table).replace(Child::Frame(frame, prop));
         self.0.move_forward();
 
         match old {
