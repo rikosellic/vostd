@@ -214,13 +214,16 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         self.path.len() >= self.level as usize,
         self.path[self.level as usize - 1].is_some(),
         // mock_page_table.frames@.value().contains_key(self.path[self.level as usize - 1].unwrap().paddr() as int),
+    ensures
+        res.pte.pte_paddr() == self.path[self.level as usize - 1].unwrap().paddr() as usize +
+                                pte_index(self.va, self.level) * exec::SIZEOF_PAGETABLEENTRY,
     {
         // let node = self.path[self.level as usize - 1].as_mut().unwrap();
         // node.entry(pte_index::<C>(self.va, self.level))
 
         let cur_node = self.path[self.level as usize - 1].as_ref().unwrap(); // current node
         // node.entry(pte_index(self.va, self.level))
-        let res = Entry::new_at(cur_node, pte_index(self.va, self.level));
+        let res = Entry::new_at(cur_node, pte_index(self.va, self.level), mock_page_table);
         res
     }
 }
@@ -302,7 +305,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                 old(self).0.path[j].is_some() &&
                 exec::get_pte_from_addr(
                     (#[trigger] old(self).0.path[j].unwrap().paddr() +
-                        pte_index(old(self).0.va, (j - 1) as u8) * exec::SIZEOF_PAGETABLEENTRY) as usize).paddr()
+                        pte_index(old(self).0.va, (j - 1) as u8) * exec::SIZEOF_PAGETABLEENTRY) as usize,
+                        old(mock_page_table)).frame_paddr()
                     == old(self).0.path[i].unwrap().paddr(),
 
         // path valid
@@ -348,11 +352,12 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             mock_page_table.ptes@.instance_id() == instance@.id(),
             // mock_page_table.frames@.value().contains_key(self.0.path[self.0.level as usize - 1].unwrap().paddr() as int),
         {
+            exec::print_num(self.0.level as usize);
             // debug_assert!(should_map_as_tracked::<M>(self.0.va)); // TODO
             let cur_level = self.0.level;
             let cur_entry = self.0.cur_entry(mock_page_table);
             assert(self.0.path[cur_level - 1].is_some());
-            match cur_entry.to_ref::<T>() {
+            match cur_entry.to_ref::<T>(mock_page_table) {
                 Child::PageTableRef(pt) => {
                     // assert(ptes@.value().contains_key(pt as int));
 

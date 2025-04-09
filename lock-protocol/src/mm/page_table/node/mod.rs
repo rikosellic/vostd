@@ -27,7 +27,7 @@ use crate::sync::spin;
 // TODO: Use a generic style?
 use crate::x86_64::paddr_to_vaddr;
 
-use crate::exec::SIZEOF_PAGETABLEENTRY;
+use crate::exec;
 
 verus! {
 
@@ -153,7 +153,9 @@ pub trait PageTableLockTrait<
 
     fn nr_children(&self) -> u16;
 
-    fn read_pte(&self, idx: usize) -> (res: E);
+    fn read_pte(&self, idx: usize, mpt: &exec::MockPageTable) -> (res: E)
+    ensures
+        res.pte_paddr() == self.paddr() + idx * exec::SIZEOF_PAGETABLEENTRY;
 
     fn write_pte(&self, idx: usize, pte: E);
 

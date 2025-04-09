@@ -12,14 +12,15 @@ use crate::{
     mm::{
         cursor::{Cursor, CursorMut},
         meta::{AnyFrameMeta, MetaSlot},
-        page_prop, Frame, PageTableEntryTrait, PageTableLockTrait,
-        PageTablePageMeta, PagingConsts, PagingConstsTrait, UserMode, Vaddr, MAX_USERSPACE_VADDR,
-        NR_LEVELS, PAGE_SIZE,
+        page_prop, Frame, PageTableEntryTrait, PageTableLockTrait, PageTablePageMeta, PagingConsts,
+        PagingConstsTrait, UserMode, Vaddr, MAX_USERSPACE_VADDR, NR_LEVELS, PAGE_SIZE,
     },
     spec::simple_page_table,
     task::{disable_preempt, DisabledPreemptGuard},
 };
 use vstd::simple_pptr::*;
+
+use crate::exec;
 
 verus! {
 
@@ -45,19 +46,24 @@ pub struct SimplePageTableEntry {
 pub struct SimpleFrame {
     // TODO: Is this correct?
     pub ptes: [SimplePageTableEntry; NR_ENTRIES],
+    // pub ptes: Vec<SimplePageTableEntry>,
 }
 
 impl PageTableEntryTrait for SimplePageTableEntry {
-    #[verifier::external_body]
+
     fn is_present(&self) -> bool {
-        unimplemented!()
+        self.frame_pa != 0
     }
 
-    fn paddr(&self) -> (res: usize)
+    fn frame_paddr(&self) -> (res: usize)
     ensures
-        res == self.paddr_spec()
+        res == self.frame_paddr_spec()
     {
         self.frame_pa as usize
+    }
+
+    open spec fn frame_paddr_spec(&self) -> Paddr {
+        self.frame_pa as Paddr
     }
 
     #[verifier::external_body]
@@ -109,14 +115,19 @@ impl PageTableEntryTrait for SimplePageTableEntry {
         std::unimplemented!()
     }
 
-    fn from_usize(pte_raw: usize) -> Self {
+    fn from_usize(pte_raw: usize, mpt: &MockPageTable) -> Self {
         assert(0 <= pte_raw < PHYSICAL_BASE_ADDRESS_SPEC() + SIZEOF_PAGETABLEENTRY * NR_ENTRIES) by { admit(); } // TODO
         assert((pte_raw - PHYSICAL_BASE_ADDRESS_SPEC()) % SIZEOF_PAGETABLEENTRY as int == 0) by { admit(); } // TODO
-        get_pte_from_addr(pte_raw)
+        get_pte_from_addr(pte_raw, mpt)
     }
-    
-    open spec fn paddr_spec(&self) -> Paddr {
-        self.frame_pa as Paddr
+
+    fn pte_paddr(&self) -> (res: Paddr)
+    ensures res == self.pte_addr_spec() {
+        self.pte_addr as Paddr
+    }
+
+    open spec fn pte_addr_spec(&self) -> Paddr {
+        self.pte_addr as Paddr
     }
 }
 
@@ -169,10 +180,10 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
         todo!()
     }
 
-    fn read_pte(&self, idx: usize) -> (res: E)
+    fn read_pte(&self, idx: usize, mpt: &exec::MockPageTable) -> (res: E)
     {
         assert(self.paddr + idx * SIZEOF_PAGETABLEENTRY < usize::MAX) by { admit(); } // TODO
-        E::from_usize(self.paddr + idx * SIZEOF_PAGETABLEENTRY)
+        E::from_usize(self.paddr + idx * SIZEOF_PAGETABLEENTRY, mpt)
     }
 
     #[verifier::external_body]
@@ -199,7 +210,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
     fn is_tracked(&self) -> crate::mm::MapTrackingStatus {
         todo!()
     }
-    
+
     open spec fn paddr_spec(&self) -> Paddr {
         self.paddr as Paddr
     }
@@ -221,14 +232,14 @@ struct_with_invariants!{
             self.mem.len() == MAX_FRAME_NUM
             &&
             forall |i: usize, j: usize| 0 <= i < MAX_FRAME_NUM && j == frame_index_to_addr(i) ==>
-                if (self.mem@[i].1@.mem_contents() != MemContents::<SimpleFrame>::Uninit) {
+                self.mem@[i].1@.mem_contents() != MemContents::<SimpleFrame>::Uninit ==>
                     #[trigger] self.frames@.value().contains_key(j as int)
                     &&
                     #[trigger] self.frames@.value()[j as int].pa == #[trigger] self.mem@[i].0.addr()
-                } else {
-                    true
-                }
-            // TODO: More wf specs
+                    &&
+                    forall |k: int| 0 <= k < NR_ENTRIES ==>
+                        (#[trigger] self.mem@[i].1@.mem_contents().value().ptes[k]).frame_pa != 0 ==>
+                            self.ptes@.value().contains_key(self.mem@[i].1@.mem_contents().value().ptes[k].pte_addr as int)
         }
     }
 }
@@ -282,7 +293,7 @@ requires
                 assert((PHYSICAL_BASE_ADDRESS() as u64 + i as u64 * SIZEOF_PAGETABLEENTRY as u64) < usize::MAX as u64) by { admit(); }; // TODO
                 ptes[i] = SimplePageTableEntry {
                     pte_addr: PHYSICAL_BASE_ADDRESS() as u64 + i as u64 * SIZEOF_PAGETABLEENTRY as u64,
-                    frame_pa: PHYSICAL_BASE_ADDRESS() as u64,
+                    frame_pa: 0,
                     level: 4,
                 };
             }
@@ -290,7 +301,11 @@ requires
         },
     });
 
+
     assert(pt.mem_contents() != MemContents::<SimpleFrame>::Uninit);
+    assert(pt.value().ptes.len() == NR_ENTRIES);
+    // assert(pt.value().ptes[0].frame_pa == 0); // TODO: don't know why this fails
+    assume(forall |i: int| 0 <= i < NR_ENTRIES ==> (#[trigger] pt.value().ptes[i]).frame_pa == 0);
 
     assert(mock_page_table.wf());
 
@@ -305,10 +320,13 @@ requires
 
     assert(mock_page_table.mem@[cur_alloc_index].1@.mem_contents() != MemContents::<SimpleFrame>::Uninit);
 
+    let (p, Tracked(pt)) = get_frame_from_index(cur_alloc_index, &mock_page_table.mem);
+    assert(pt.mem_contents() != MemContents::<SimpleFrame>::Uninit);
+
     // assert(mock_page_table.wf()); this should fail
     proof{
         let tracked used_addr = unused_addrs.remove(p.addr()as int);
-        
+
         instance.new_at(p.addr() as int, simple_page_table::FrameView {
             pa: p.addr() as int,
             pte_addrs: Set::empty(),
@@ -339,7 +357,7 @@ requires
 
     let level4_index = pte_index(va, NR_LEVELS as u8);
     let level4_frame_addr = PHYSICAL_BASE_ADDRESS();
-    let level4_pte = get_pte_from_addr(level4_frame_addr + level4_index * SIZEOF_PAGETABLEENTRY);
+    let level4_pte = get_pte_from_addr(level4_frame_addr + level4_index * SIZEOF_PAGETABLEENTRY, &mock_page_table);
 
     // let level3_frame_addr = cursor.0.path[(NR_LEVELS as usize) - 2].as_ref().unwrap().paddr() as usize;
     // assert(level4_pte.frame_pa == level3_frame_addr as u64);
@@ -422,10 +440,11 @@ fn get_frame_from_index(index: usize,
         res.1@.pptr() == res.0,
         // NOTE: this is not true! && res.0.addr() == map@[index]@.0.addr()
         res.0 == map@[index].0,
-        res.1 == map@[index].1
+        res.1 == map@[index].1,
+        map@[index].1@.mem_contents() == res.1@.mem_contents(),
 {
     let (p, Tracked(pt)) = map.get(&index).unwrap();
-    (*p, Tracked::assume_new())
+    (*p, Tracked(pt))
 }
 
 pub open spec fn get_pte_addr_from_va_frame_addr_and_level_spec(va: usize, frame_va: usize, level: u8) -> int {
@@ -434,23 +453,33 @@ pub open spec fn get_pte_addr_from_va_frame_addr_and_level_spec(va: usize, frame
     pte_addr
 }
 
-pub open spec fn get_pte_from_addr_spec(addr: usize) -> (res: SimplePageTableEntry)
+pub open spec fn get_pte_from_addr_spec(addr: usize, mpt: &MockPageTable) -> (res: SimplePageTableEntry)
 {
-    SimplePageTableEntry {
-        pte_addr: addr as u64,
-        frame_pa: addr as u64, // TODO
-        level: 4, // TODO
+    if (mpt.ptes@.value().contains_key(addr as int)) {
+        let pte = mpt.ptes@.value()[addr as int];
+        SimplePageTableEntry {
+            pte_addr: addr as u64,
+            frame_pa: pte.frame_pa as u64,
+            level: pte.level as u8,
+        }
+    } else {
+        SimplePageTableEntry {
+            pte_addr: addr as u64,
+            frame_pa: 0,
+            level: 0,
+        }
     }
 }
 
 #[verifier::external_body]
 #[verifier::when_used_as_spec(get_pte_from_addr_spec)]
-pub fn get_pte_from_addr(addr: usize) -> (res: SimplePageTableEntry)
+pub fn get_pte_from_addr(addr: usize, mpt: &MockPageTable) -> (res: SimplePageTableEntry)
     requires
         0 <= addr < PHYSICAL_BASE_ADDRESS_SPEC() + SIZEOF_FRAME * NR_ENTRIES,
         (addr - PHYSICAL_BASE_ADDRESS_SPEC()) % SIZEOF_PAGETABLEENTRY as int == 0,
+        // mpt.wf(),
     ensures
-        res.paddr() == addr as usize,
+        res.pte_paddr() == addr as usize,
 {
     println!("get_pte_from_addr: {:#x}", addr);
     PPtr::<SimplePageTableEntry>::from_addr(addr).read(Tracked::assume_new()) // TODO: permission violation
@@ -511,4 +540,10 @@ ensures
     let res: usize = *guard;
     res
 }
+
+#[verifier::external_body]
+pub fn print_num(num: usize) {
+    println!("print_num: {:#x}", num);
+}
+
 }

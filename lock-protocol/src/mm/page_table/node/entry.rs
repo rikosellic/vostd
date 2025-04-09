@@ -7,7 +7,7 @@ use crate::mm::{
 
 use super::{Child, MapTrackingStatus, PageTableLockTrait, PageTableNode};
 
-use crate::exec::SIZEOF_PAGETABLEENTRY;
+use crate::exec;
 
 verus! {
 /// A view of an entry in a page table node.
@@ -37,12 +37,12 @@ pub struct Entry<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTabl
 impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E, C>> Entry<'a, E, C, PTL> {
     /// Returns if the entry does not map to anything.
     pub(in crate::mm) fn is_none(&self) -> bool {
-        !self.pte.is_present() && self.pte.paddr() == 0
+        !self.pte.is_present() && self.pte.frame_paddr() == 0
     }
 
     /// Returns if the entry is marked with a token.
     pub(in crate::mm) fn is_token(&self) -> bool {
-        !self.pte.is_present() && self.pte.paddr() != 0
+        !self.pte.is_present() && self.pte.frame_paddr() != 0
     }
 
     /// Returns if the entry maps to a page table node.
@@ -58,7 +58,7 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
     }
 
     /// Gets a reference to the child.
-    pub(in crate::mm) fn to_ref<T: AnyFrameMeta>(&self) -> (res: Child<E, C, T>)
+    pub(in crate::mm) fn to_ref<T: AnyFrameMeta>(&self, mpt: &exec::MockPageTable) -> (res: Child<E, C, T>)
     ensures
         match res {
             Child::None => true,
@@ -70,11 +70,6 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
         // right node information.
         // unsafe { Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked(), false) }
         let c = Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked(), false);
-        assert(match c {
-            Child::None => true,
-            Child::PageTableRef(_) => true,
-            _ => false,
-        }) by { admit(); }; // TODO
         c
     }
 
@@ -162,97 +157,22 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
         // unimplemented!()
     }
 
-    /// Splits the entry to smaller pages if it maps to a untracked huge page.
-    ///
-    /// If the entry does map to a untracked huge page, it is split into smaller
-    /// pages mapped by a child page table node. The new child page table node
-    /// is returned.
-    ///
-    /// If the entry does not map to a untracked huge page, the method returns
-    /// `None`.
-    // TODO: Implement split_if_untracked_huge
-    #[verifier::external_body]
-    pub(in crate::mm) fn split_if_untracked_huge(self) -> Option<PTL> {
-        let level = self.node.level();
-
-        if !(self.pte.is_last(level)
-            && level > 1
-            && self.node.is_tracked() == MapTrackingStatus::Untracked)
-        {
-            return None;
-        }
-
-        let pa = self.pte.paddr();
-        let prop = self.pte.prop();
-
-        let preempt_guard = crate::task::disable_preempt();
-        let mut new_page =
-            zeroed_pt_pool::alloc::<E, C, PTL>(&preempt_guard, level - 1, MapTrackingStatus::Untracked);
-        for i in 0..nr_subpage_per_huge() {
-            let small_pa = pa + i * page_size::<C>(level - 1);
-            // let _ = new_page
-            //     .entry(i)
-            //     .replace(Child::<E, C, ()>::Untracked(small_pa, level - 1, prop));
-            Entry::new_at(&new_page, i)
-                    .replace(Child::<E, C, ()>::Untracked(small_pa, level - 1, prop));
-        }
-        let pt_paddr = new_page.into_raw_paddr();
-        // SAFETY: It was forgotten at the above line.
-        let _ = self.replace(Child::<E, C, ()>::PageTable(unsafe {
-            PageTableNode::from_raw(pt_paddr)
-        }));
-        // SAFETY: `pt_paddr` points to a PT that is attached to the node,
-        // so that it is locked and alive.
-        Some(unsafe { PTL::from_raw_paddr(pt_paddr) })
-    }
-
-    /// Splits the entry into a child that is marked with a same token.
-    ///
-    /// This method returns [`None`] if the entry is not marked with a token or
-    /// it is in the last level.
-    // TODO: Implement split_if_untracked_huge
-    #[verifier::external_body]
-    pub(in crate::mm) fn split_if_huge_token(self) -> Option<PTL> {
-        let level = self.node.level();
-
-        if !(!self.pte.is_present() && level > 1 && self.pte.paddr() != 0) {
-            return None;
-        }
-
-        // SAFETY: The physical address was written as a valid token.
-        let token = unsafe { Token::from_raw_inner(self.pte.paddr()) };
-
-        let preempt_guard = crate::task::disable_preempt();
-        let mut new_page =
-            zeroed_pt_pool::alloc::<E, C, PTL>(&preempt_guard, level - 1, self.node.is_tracked());
-        for i in 0..nr_subpage_per_huge() {
-            // let _ = new_page.entry(i).replace(Child::<E, C, ()>::Token(token));
-            Entry::new_at(&new_page, i).replace(Child::<E, C, ()>::Token(token.clone()));
-        }
-        let pt_paddr = new_page.into_raw_paddr();
-        let _ = self.replace(Child::<E, C, ()>::PageTable(unsafe {
-            PageTableNode::from_raw(pt_paddr)
-        }));
-
-        Some(unsafe { PTL::from_raw_paddr(pt_paddr) })
-    }
-
     /// Create a new entry at the node.
     ///
     /// # Safety
     ///
     /// The caller must ensure that the index is within the bounds of the node.
     // pub(super) unsafe fn new_at(node: &'a mut PageTableLock<E, C>, idx: usize) -> Self {
-    pub fn new_at(node: &'a PTL, idx: usize) -> (res: Self)
+    pub fn new_at(node: &'a PTL, idx: usize, mpt: &exec::MockPageTable) -> (res: Self)
     requires
         idx < nr_subpage_per_huge(),
     ensures
-        res.pte.paddr() < usize::MAX,
+        res.pte.pte_paddr() == node.paddr() as usize + idx * exec::SIZEOF_PAGETABLEENTRY,
     {
         // SAFETY: The index is within the bound.
         // let pte = unsafe { node.read_pte(idx) };
-        let pte = node.read_pte(idx);
-        assert (pte.paddr() < usize::MAX) by { admit(); }; // TODO
+        let pte = node.read_pte(idx, mpt);
+        assert (pte.frame_paddr() < usize::MAX) by { admit(); }; // TODO
         Self { pte, idx, node, phantom: std::marker::PhantomData }
     }
 }

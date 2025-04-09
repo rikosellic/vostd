@@ -14,6 +14,8 @@ use super::{
     PagingLevel, Vaddr,
 };
 
+use crate::exec;
+
 verus! {
 
 pub trait PageTableEntryTrait:
@@ -47,16 +49,22 @@ pub trait PageTableEntryTrait:
     /// Create a new PTE with the given token value but don't map to anything.
     fn new_token(token: Token) -> Self;
 
-    /// Get the physical address from the PTE.
+    /// Get the physical address the PTE points to.
     /// The physical address recorded in the PTE is either:
     ///  - the physical address of the next level page table;
     ///  - the physical address of the page it maps to;
     ///  - the value of the token.
-    #[verifier::when_used_as_spec(paddr_spec)]
-    fn paddr(&self) -> (res: Paddr)
-    ensures res == self.paddr_spec();
+    #[verifier::when_used_as_spec(frame_paddr_spec)]
+    fn frame_paddr(&self) -> (res: Paddr)
+    ensures res == self.frame_paddr_spec();
 
-    spec fn paddr_spec(&self) -> Paddr;
+    spec fn frame_paddr_spec(&self) -> Paddr;
+
+    #[verifier::when_used_as_spec(pte_addr_spec)]
+    fn pte_paddr(&self) -> (res: Paddr)
+    ensures res == self.pte_addr_spec();
+
+    spec fn pte_addr_spec(&self) -> Paddr;
 
     fn prop(&self) -> PageProperty;
 
@@ -83,7 +91,9 @@ pub trait PageTableEntryTrait:
 
     /// Converts a usize `pte_raw` into a PTE.
     // TODO: Implement as_usize and from_usize
-    fn from_usize(pte_raw: usize) -> Self;
+    fn from_usize(pte_raw: usize, mpt: &exec::MockPageTable) -> (res: Self)
+    ensures
+        res.pte_paddr() == pte_raw as Paddr,;
 }
 
 /// A minimal set of constants that determines the paging system.
@@ -297,16 +307,6 @@ ensures
         lemma_u64_and_less_than((va >> shift) as u64, pte_index_mask() as u64);
     };
     res as usize
-}
-
-pub proof fn pte_index_preserves_order(va1: Vaddr, va2: Vaddr, level: PagingLevel)
-    requires
-        va1 <= va2
-    ensures
-        pte_index(va1, level) <= pte_index(va2, level)
-{
-    // TODO: Implement this proof
-    admit()
 }
 
 /// A handle to a page table.
