@@ -458,7 +458,7 @@ fn alloc_page_table_entries() -> (res: HashMap<usize, (PPtr<Frame>, Tracked<Poin
     let mut map = HashMap::<usize, (PPtr<Frame>, Tracked<PointsTo<Frame>>)>::new();
     // map.insert(0, (PPtr::from_addr(0), Tracked::assume_new()));
     let p = PHYSICAL_BASE_ADDRESS();
-    for i in 0..Paddr::MAX {
+    for i in 0..NR_ENTRIES {
         map.insert(
             i,
             (
