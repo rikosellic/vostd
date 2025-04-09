@@ -38,7 +38,17 @@ pub trait PageTableEntryTrait:
     /// method should return false. And for PTEs created by [`Self::new_page`]
     /// or [`Self::new_pt`], whatever modified with [`Self::set_prop`] or not,
     /// this method should return true.
-    fn is_present(&self) -> bool;
+    fn is_present(&self, mpt: &exec::MockPageTable) -> (res: bool)
+    requires
+        mpt.wf(),
+        self.pte_paddr() == exec::get_pte_from_addr_spec(self.pte_paddr(), mpt).pte_addr,
+        self.frame_paddr() == exec::get_pte_from_addr_spec(self.pte_paddr(), mpt).frame_pa,
+    ensures
+        // mpt.ptes@.value().contains_key(self.pte_paddr() as int) == res,
+        res ==> mpt.ptes@.value().contains_key(self.pte_paddr() as int) &&
+                mpt.frames@.value().contains_key(self.frame_paddr() as int),
+        !res ==> !mpt.ptes@.value().contains_key(self.pte_paddr() as int),
+    ;
 
     /// Create a new PTE with the given physical address and flags that map to a page.
     fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self;
@@ -93,7 +103,8 @@ pub trait PageTableEntryTrait:
     // TODO: Implement as_usize and from_usize
     fn from_usize(pte_raw: usize, mpt: &exec::MockPageTable) -> (res: Self)
     ensures
-        res.pte_paddr() == pte_raw as Paddr,;
+        res.pte_paddr() == pte_raw as Paddr,
+        res.frame_paddr() == exec::get_pte_from_addr_spec(pte_raw, mpt).frame_pa;
 }
 
 /// A minimal set of constants that determines the paging system.

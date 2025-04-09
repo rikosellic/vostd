@@ -35,41 +35,33 @@ pub struct Entry<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTabl
 }
 
 impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E, C>> Entry<'a, E, C, PTL> {
-    /// Returns if the entry does not map to anything.
-    pub(in crate::mm) fn is_none(&self) -> bool {
-        !self.pte.is_present() && self.pte.frame_paddr() == 0
-    }
 
-    /// Returns if the entry is marked with a token.
-    pub(in crate::mm) fn is_token(&self) -> bool {
-        !self.pte.is_present() && self.pte.frame_paddr() != 0
-    }
-
-    /// Returns if the entry maps to a page table node.
-    pub(in crate::mm) fn is_node(&self) -> bool {
-        self.pte.is_present() && !self.pte.is_last(self.node.level())
-    }
-
-    /// Gets a owned handle to the child.
-    pub(in crate::mm) fn to_owned<T: AnyFrameMeta>(&self) -> Child<E, C, T> {
-        // SAFETY: The entry structure represents an existent entry with the
-        // right node information.
-        unsafe { Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked(), true) }
-    }
 
     /// Gets a reference to the child.
     pub(in crate::mm) fn to_ref<T: AnyFrameMeta>(&self, mpt: &exec::MockPageTable) -> (res: Child<E, C, T>)
+    requires
+        mpt.wf(),
+        self.pte.pte_paddr() == exec::get_pte_from_addr_spec(self.pte.pte_paddr(), mpt).pte_addr,
+        self.pte.frame_paddr() == exec::get_pte_from_addr_spec(self.pte.pte_paddr(), mpt).frame_pa,
     ensures
-        match res {
-            Child::None => true,
-            Child::PageTableRef(_) => true,
-            _ => false,
-        }
+        if (mpt.ptes@.value().contains_key(self.pte.pte_paddr() as int)) {
+            match res {
+                Child::PageTableRef(pt) =>
+                    pt == self.pte.frame_paddr() as usize && mpt.frames@.value().contains_key(pt as int),
+                _ => false,
+            }
+        } else {
+            match res {
+                Child::None => true,
+                _ => false,
+            }
+        },
     {
         // SAFETY: The entry structure represents an existent entry with the
         // right node information.
         // unsafe { Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked(), false) }
-        let c = Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked(), false);
+        let c = Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked(), false,
+                                                    mpt);
         c
     }
 
@@ -168,6 +160,8 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
         idx < nr_subpage_per_huge(),
     ensures
         res.pte.pte_paddr() == node.paddr() as usize + idx * exec::SIZEOF_PAGETABLEENTRY,
+        res.pte.pte_paddr() == exec::get_pte_from_addr_spec(res.pte.pte_paddr(), mpt).pte_addr,
+        res.pte.frame_paddr() == exec::get_pte_from_addr_spec(res.pte.pte_paddr(), mpt).frame_pa,
     {
         // SAFETY: The index is within the bound.
         // let pte = unsafe { node.read_pte(idx) };

@@ -206,7 +206,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
     }
 
     // fn cur_entry(&mut self) -> Entry<'_, E, C> {
-    fn cur_entry(&self, mock_page_table: &exec::MockPageTable)
+    fn cur_entry(&self, mpt: &exec::MockPageTable)
                             -> (res: Entry<'_, E, C, PTL>)
     requires
         self.level > 0,
@@ -217,13 +217,15 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
     ensures
         res.pte.pte_paddr() == self.path[self.level as usize - 1].unwrap().paddr() as usize +
                                 pte_index(self.va, self.level) * exec::SIZEOF_PAGETABLEENTRY,
+        res.pte.pte_paddr() == exec::get_pte_from_addr_spec(res.pte.pte_paddr(), mpt).pte_addr,
+        res.pte.frame_paddr() == exec::get_pte_from_addr_spec(res.pte.pte_paddr(), mpt).frame_pa,
     {
         // let node = self.path[self.level as usize - 1].as_mut().unwrap();
         // node.entry(pte_index::<C>(self.va, self.level))
 
         let cur_node = self.path[self.level as usize - 1].as_ref().unwrap(); // current node
         // node.entry(pte_index(self.va, self.level))
-        let res = Entry::new_at(cur_node, pte_index(self.va, self.level), mock_page_table);
+        let res = Entry::new_at(cur_node, pte_index(self.va, self.level), mpt);
         res
     }
 }
@@ -279,11 +281,11 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
 
         // ghost
         instance: Tracked<simple_page_table::SimplePageTable::Instance>,
-        unused_addrs: Tracked<SetToken<builtin::int, simple_page_table::SimplePageTable::unused_addrs>>,
-        unused_pte_addrs: Tracked<SetToken<builtin::int, simple_page_table::SimplePageTable::unused_pte_addrs>>,
+        tokens: Tracked<exec::Tokens>,
 
         // non ghost
         mock_page_table: &mut exec::MockPageTable,
+        cur_alloc_index: &mut usize,
     ) -> (res: Option<Frame<T>>)
     requires
         0 <= old(self).0.va < MAX_USERSPACE_VADDR,
@@ -295,9 +297,10 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         old(self).0.path[old(self).0.level as usize - 1].is_some(),
         instance@.id() == old(mock_page_table).frames@.instance_id(),
         instance@.id() == old(mock_page_table).ptes@.instance_id(),
-        instance@.id() == unused_addrs@.instance_id(),
-        instance@.id() == unused_pte_addrs@.instance_id(),
+        forall |i| tokens@.unused_addrs.contains_key(i) ==>
+            #[trigger] tokens@.unused_addrs[i].instance_id() == instance@.id(),
 
+        old(mock_page_table).wf(),
         // path valid
         forall |i: int, j: int| 1 <= i < j < old(self).0.path.len() ==>
             0 < (j - 1)  < PagingConsts::NR_LEVELS_SPEC() &&
@@ -309,12 +312,11 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                         old(mock_page_table)).frame_paddr()
                     == old(self).0.path[i].unwrap().paddr(),
 
-        // path valid
         forall |i: int| 1 <= i < old(self).0.path.len() && old(self).0.path[i].is_some() ==>
             old(mock_page_table).frames@.value().contains_key(
                 (#[trigger] old(self).0.path[i].unwrap().paddr() as int)
             ),
-        old(mock_page_table).wf(),
+        *old(cur_alloc_index) < exec::MAX_FRAME_NUM - 4, // we have enough frames
     ensures
         self.0.path.len() == old(self).0.path.len(),
         forall |i: int| 1 < i <= old(self).0.level ==> #[trigger] self.0.path[i - 1].is_some(),
@@ -327,6 +329,11 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         assert(self.0.path[old(self).0.level - 1].is_some());
         let old_level = Tracked(self.0.level);
         assert(old_level == old(self).0.level);
+
+        let tracked exec::Tokens {
+            unused_addrs: mut unused_addrs,
+            unused_pte_addrs: _
+        } = tokens.get(); // TODO: can we just use the tokens inside the loop?
 
         // Go down if not applicable.
         while self.0.level > frame.map_level()
@@ -351,6 +358,10 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             mock_page_table.frames@.instance_id() == instance@.id(),
             mock_page_table.ptes@.instance_id() == instance@.id(),
             // mock_page_table.frames@.value().contains_key(self.0.path[self.0.level as usize - 1].unwrap().paddr() as int),
+            mock_page_table.wf(),
+            *cur_alloc_index < exec::MAX_FRAME_NUM, // we have enough frames
+            forall |i| unused_addrs.contains_key(i) ==>
+                #[trigger] unused_addrs[i].instance_id() == instance@.id(),
         {
             exec::print_num(self.0.level as usize);
             // debug_assert!(should_map_as_tracked::<M>(self.0.va)); // TODO
@@ -359,7 +370,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             assert(self.0.path[cur_level - 1].is_some());
             match cur_entry.to_ref::<T>(mock_page_table) {
                 Child::PageTableRef(pt) => {
-                    // assert(ptes@.value().contains_key(pt as int));
+                    assert(mock_page_table.frames@.value().contains_key(pt as int));
 
                     // SAFETY: `pt` points to a PT that is attached to a node
                     // in the locked sub-tree, so that it is locked and alive.
@@ -380,12 +391,35 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                     assert(false);
                 }
                 Child::None => {
-                    let preempt_guard = crate::task::disable_preempt();
+                    assert(!mock_page_table.ptes@.value().contains_key(cur_entry.pte.pte_paddr() as int));
+                    // assert(!mock_page_table.frames@.value().contains_key(cur_entry.pte.frame_paddr() as int)); // frame_pa is 0
+                    let preempt_guard = crate::task::disable_preempt(); // currently nothing happen
+
+                    let used_addr = (*cur_alloc_index * exec::SIZEOF_FRAME) as usize + exec::PHYSICAL_BASE_ADDRESS();
+                    let ghost mut used_addr_ghost;
+                    let tracked mut used_addr_token;
+                    proof {
+                        used_addr_ghost = used_addr as int;
+                        assume(unused_addrs.contains_key(used_addr_ghost)); // TODO: P0
+                        used_addr_token = unused_addrs.tracked_remove(used_addr_ghost);
+                        assert(used_addr_token.instance_id() == instance@.id());
+
+                        assert(used_addr == (*cur_alloc_index * exec::SIZEOF_FRAME as usize) + exec::PHYSICAL_BASE_ADDRESS());
+                    }
+
                     let pt = zeroed_pt_pool::alloc::<E, C, PTL>(
                         &preempt_guard,
                         cur_level - 1,
                         MapTrackingStatus::Tracked,
+
+                        mock_page_table,
+                        instance.clone(),
+                        *cur_alloc_index,
+                        used_addr,
+                        Tracked(used_addr_token), // TODO: can we pass all the tokens directly?
                     ); // alloc frame here
+                    *cur_alloc_index += 1; // TODO: do it inside the alloc function
+
                     let paddr = pt.into_raw_paddr();
                     // SAFETY: It was forgotten at the above line.
                     let _ = cur_entry
@@ -404,6 +438,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                     assert(self.0.path[cur_level - 1].is_some());
                     assert(self.0.path[cur_level - 2].is_some());
                     // assert(self.0.path[old(self).0.level - 1] == old(self).0.path[old(self).0.level - 1]);
+                    assert(*cur_alloc_index < exec::MAX_FRAME_NUM - 4) by { admit(); }; // TODO: P0
                 }
                 Child::Frame(_, _) => {
                     // panic!("Mapping a smaller frame in an already mapped huge page");

@@ -28,6 +28,7 @@ use crate::sync::spin;
 use crate::x86_64::paddr_to_vaddr;
 
 use crate::exec;
+use crate::spec::simple_page_table;
 
 verus! {
 
@@ -136,14 +137,31 @@ pub trait PageTableLockTrait<
         res == self.paddr_spec();
 
     /// Gets the level of the page table node.
-    fn level(&self) -> PagingLevel {
-        self.meta().level
-    }
+    fn level(&self) -> PagingLevel;
 
     /// Gets the tracking status of the page table node.
     fn is_tracked(&self) -> MapTrackingStatus;
 
-    fn alloc(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self where Self: Sized;
+    fn alloc(level: PagingLevel, is_tracked: MapTrackingStatus,
+            mpt: &mut exec::MockPageTable,
+            instance: Tracked<simple_page_table::SimplePageTable::Instance>,
+            cur_alloc_index: usize,
+            used_addr: usize,
+            used_addr_token: Tracked<simple_page_table::SimplePageTable::unused_addrs>
+    ) -> (res: Self) where Self: Sized
+    requires
+        old(mpt).wf(),
+        old(mpt).ptes@.instance_id() == instance@.id(),
+        old(mpt).frames@.instance_id() == instance@.id(),
+        cur_alloc_index < exec::MAX_FRAME_NUM,
+        used_addr_token@.instance_id() == instance@.id(),
+        used_addr == (cur_alloc_index * exec::SIZEOF_FRAME as usize) + exec::PHYSICAL_BASE_ADDRESS(),
+    ensures
+        res.paddr() == used_addr as usize,
+        mpt.wf(),
+        mpt.ptes@.instance_id() == instance@.id(),
+        mpt.frames@.instance_id() == instance@.id(),
+    ;
 
     fn unlock(&mut self) -> PageTableNode<E, C>;
 
@@ -155,7 +173,9 @@ pub trait PageTableLockTrait<
 
     fn read_pte(&self, idx: usize, mpt: &exec::MockPageTable) -> (res: E)
     ensures
-        res.pte_paddr() == self.paddr() + idx * exec::SIZEOF_PAGETABLEENTRY;
+        res.pte_paddr() == self.paddr() + idx * exec::SIZEOF_PAGETABLEENTRY,
+        res.pte_paddr() == exec::get_pte_from_addr_spec(res.pte_paddr(), mpt).pte_addr,
+        res.frame_paddr() == exec::get_pte_from_addr_spec(res.pte_paddr(), mpt).frame_pa,;
 
     fn write_pte(&self, idx: usize, pte: E);
 

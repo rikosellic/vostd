@@ -16,6 +16,8 @@ use crate::mm::PagingLevel;
 use super::MapTrackingStatus;
 use super::PageTableNode;
 
+use crate::exec;
+
 // use crate::prelude::{RawPageTableNode, PageProperty, Paddr, PagingLevel, DynPage};
 
 verus! {
@@ -168,23 +170,34 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait, T: AnyFrameMeta> Child<E, C, 
         level: PagingLevel,
         is_tracked: MapTrackingStatus,
         clone_raw: bool,
+        mpt: &exec::MockPageTable,
     ) -> (res: Self)
+    requires
+        mpt.wf(),
+        pte.pte_paddr() == exec::get_pte_from_addr_spec(pte.pte_paddr(), mpt).pte_addr,
+        pte.frame_paddr() == exec::get_pte_from_addr_spec(pte.pte_paddr(), mpt).frame_pa,
     ensures
-        if (clone_raw) {
-            match res {
-                Child::None => true,
-                Child::PageTable(_) => true,
-                _ => false,
+        if (mpt.ptes@.value().contains_key(pte.pte_paddr() as int)) {
+            if (clone_raw) {
+                match res {
+                    Child::PageTable(_) => true,
+                    _ => false,
+                }
+            } else {
+                match res {
+                    Child::PageTableRef(pt) => 
+                        pt == pte.frame_paddr() as usize && mpt.frames@.value().contains_key(pt as int),
+                    _ => false,
+                }
             }
         } else {
             match res {
                 Child::None => true,
-                Child::PageTableRef(_) => true,
                 _ => false,
             }
-        }
+        },
     {
-        if !pte.is_present() {
+        if !pte.is_present(mpt) {
             // let paddr = pte.paddr();
             // if paddr == 0 {
             //     return Child::None;
