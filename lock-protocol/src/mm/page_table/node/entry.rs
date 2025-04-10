@@ -77,38 +77,6 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
         prot_op: &mut impl FnMut(&mut PageProperty),
         token_op: &mut impl FnMut(&mut Token),
     ) {
-        // if self.pte.is_present() {
-        //     // Protect a proper mapping.
-        //     let prop = self.pte.prop();
-        //     let mut new_prop = prop;
-        //     prot_op(&mut new_prop);
-
-        //     if prop == new_prop {
-        //         return;
-        //     }
-
-        //     self.pte.set_prop(new_prop);
-        // } else {
-        //     let paddr = self.pte.paddr();
-        //     if paddr == 0 {
-        //         // Not mapped.
-        //         return;
-        //     } else {
-        //         // Protect a token.
-
-        //         // SAFETY: The physical address was written as a valid token.
-        //         let mut token = unsafe { Token::from_raw_inner(paddr) };
-        //         token_op(&mut token);
-        //         self.pte.set_paddr(token.into_raw_inner());
-        //     }
-        // }
-
-        // // SAFETY:
-        // //  1. The index is within the bounds.
-        // //  2. We replace the PTE with a new one, which differs only in
-        // //     `PageProperty`, so it is still compatible with the current
-        // //     page table node.
-        // unsafe { self.node.write_pte(self.idx, self.pte) };
         unimplemented!()
     }
 

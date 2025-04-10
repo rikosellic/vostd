@@ -1,5 +1,4 @@
 pub mod meta;
-pub mod untyped;
 
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
@@ -26,21 +25,6 @@ pub struct Frame<M: AnyFrameMeta> {
 }
 
 impl<M: AnyFrameMeta> Frame<M> {
-    /// Gets a [`Frame`] with a specific usage from a raw, unused page.
-    ///
-    /// The caller should provide the initial metadata of the page.
-    ///
-    /// If the provided frame is not truly unused at the moment, it will return
-    /// an error. If wanting to acquire a frame that is already in use, use
-    /// [`Frame::from_in_use`] instead.
-    // TODO: Implement MetaSlot::get_from_unused
-    // pub fn from_unused(paddr: Paddr, metadata: M) -> Result<Self, GetFrameError> {
-    //     Ok(Self {
-    //         ptr: MetaSlot::get_from_unused(paddr, metadata, false)?,
-    //         // ptr: PPtr::<MetaSlot>::empty().0,
-    //         _marker: PhantomData,
-    //     })
-    // }
 
     /// Gets the metadata of this page.
     // TODO: Implement Frame::meta
@@ -51,21 +35,6 @@ impl<M: AnyFrameMeta> Frame<M> {
         unimplemented!("Frame::meta")
     }
 }
-
-// impl Frame<dyn AnyFrameMeta> {
-//     /// Gets a dynamically typed [`Frame`] from a raw, in-use page.
-//     ///
-//     /// If the provided frame is not in use at the moment, it will return an error.
-//     ///
-//     /// The returned frame will have an extra reference count to the frame.
-//     pub fn from_in_use(paddr: Paddr) -> Result<Self, GetFrameError> {
-//         // Ok(Self {
-//         //     ptr: MetaSlot::get_from_in_use(paddr)?,
-//         //     _marker: PhantomData,
-//         // })
-//         unimplemented!("Frame::from_in_use")
-//     }
-// }
 
 // impl<M: AnyFrameMeta + ?Sized> Frame<M> {
 impl<M: AnyFrameMeta> Frame<M> {
@@ -155,19 +124,6 @@ impl<M: AnyFrameMeta> Frame<M> {
         //      _marker: PhantomData
         // }
     }
-
-    // TODO: Implement slot for Frame
-    // fn slot<'a>(&'a self, perm: Tracked<&'a PointsTo<MetaSlot>>) -> &'a MetaSlot
-    // fn slot<'a>(&'a self) -> &'a MetaSlot
-    // // requires
-    // //     perm@.pptr() == self.ptr,
-    // //     perm@.is_init()
-    // {
-    //     // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
-    //     // mutably borrowed, so taking an immutable reference to it is safe.
-    //     // unsafe { &*self.ptr }
-    //     // self.ptr.borrow(perm)
-    // }
 }
 
 }

@@ -14,7 +14,6 @@ use vstd::prelude::*;
 use child::*;
 use crate::mm::meta::AnyFrameMeta;
 use crate::mm::nr_subpage_per_huge;
-use crate::mm::untyped::UFrame;
 use crate::mm::Paddr;
 use crate::mm::PageTableEntryTrait;
 use crate::mm::PagingConstsTrait;
