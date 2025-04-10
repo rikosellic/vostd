@@ -314,13 +314,18 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             old(mock_page_table).frames@.value().contains_key(
                 (#[trigger] old(self).0.path[i].unwrap().paddr() as int)
             ),
-        *old(cur_alloc_index) < exec::MAX_FRAME_NUM - 4, // we have enough frames
+        *old(cur_alloc_index) < exec::MAX_FRAME_NUM - old(self).0.level, // we have enough frames
     ensures
         self.0.path.len() == old(self).0.path.len(),
         forall |i: int| 1 < i <= old(self).0.level ==> #[trigger] self.0.path[i - 1].is_some(),
         self.0.path[old(self).0.level - 1] == old(self).0.path[old(self).0.level - 1],
         mock_page_table.frames@.instance_id() == instance@.id(),
         mock_page_table.wf(),
+        instance@.id() == old(mock_page_table).frames@.instance_id(),
+        instance@.id() == old(mock_page_table).ptes@.instance_id(),
+        forall |i| tokens@.unused_addrs.contains_key(i) ==>
+            #[trigger] tokens@.unused_addrs[i].instance_id() == instance@.id(),
+        *cur_alloc_index < exec::MAX_FRAME_NUM, // we have enough frames
     {
         let end = self.0.va + frame.size();
         // assert!(end <= self.0.barrier_va.end); // TODO
@@ -332,7 +337,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             unused_addrs: mut unused_addrs,
             unused_pte_addrs: _
         } = tokens.get(); // TODO: can we just use the tokens inside the loop?
-
+        
+        #[verifier::loop_isolation(false)]
         // Go down if not applicable.
         while self.0.level > frame.map_level()
             // || self.0.va % page_size::<C>(self.0.level) != 0 // TODO?
@@ -340,20 +346,12 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         invariant
             // self.0.va + page_size::<C>(self.0.level) <= end,
             self.0.level >= frame.map_level(),
-            1 <= self.0.level <= PagingConsts::NR_LEVELS_SPEC() as usize,
-            self.0.path.len() >= self.0.level as usize,
             self.0.path[self.0.level as usize - 1].is_some(),
             self.0.path.len() == old(self).0.path.len(),
             self.0.va == old(self).0.va,
             forall |i: int| self.0.level - 1 <= i < old(self).0.level ==> self.0.path[i].is_some(),
-            old(self).0.path.len() >= old(self).0.level as usize,
-            1 < old(self).0.level <= PagingConsts::NR_LEVELS_SPEC() as usize,
-            self.0.path[old(self).0.level - 1].is_some(),
-            self.0.va < MAX_USERSPACE_VADDR,
             self.0.path[old(self).0.level - 1] == old(self).0.path[old(self).0.level - 1],
-            old_level@ == old(self).0.level,
             old_level@ >= self.0.level,
-            mock_page_table.frames@.instance_id() == instance@.id(),
             mock_page_table.ptes@.instance_id() == instance@.id(),
             // mock_page_table.frames@.value().contains_key(self.0.path[self.0.level as usize - 1].unwrap().paddr() as int),
             mock_page_table.wf(),
