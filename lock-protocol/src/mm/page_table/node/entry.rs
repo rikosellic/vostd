@@ -2,7 +2,7 @@ use vstd::prelude::*;
 
 use crate::mm::{
     meta::AnyFrameMeta, nr_subpage_per_huge, page_prop::PageProperty, page_size,
-    page_table::zeroed_pt_pool, vm_space::Token, PageTableEntryTrait, PagingConstsTrait,
+    page_table::zeroed_pt_pool, vm_space::Token, PageTableEntryTrait, PagingConstsTrait, PagingLevel,
 };
 
 use super::{Child, MapTrackingStatus, PageTableLockTrait, PageTableNode};
@@ -60,7 +60,9 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
         // SAFETY: The entry structure represents an existent entry with the
         // right node information.
         // unsafe { Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked(), false) }
-        let c = Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked(), false,
+        let c = Child::ref_from_pte(&self.pte, 
+                                // self.node.level(), 
+                                self.node.is_tracked(), false,
                                                     mpt);
         c
     }
@@ -120,7 +122,16 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
     /// The compatibility is specified by the [`Child::is_compatible`].
     // TODO: Implement replace
     // #[verifier::external_body]
-    pub(in crate::mm) fn replace<T: AnyFrameMeta>(self, new_child: Child<E, C, T>) -> (res: Child<E, C, T>)
+    pub(in crate::mm) fn replace<T: AnyFrameMeta>(self, new_child: Child<E, C, T>,
+                                                    mpt: &mut exec::MockPageTable,
+                                                    level: PagingLevel) -> (res: Child<E, C, T>)
+    requires
+        old(mpt).wf(),
+        self.idx < nr_subpage_per_huge(),
+    ensures
+        mpt.wf(),
+        mpt.ptes@.instance_id() == old(mpt).ptes@.instance_id(),
+        mpt.frames@.instance_id() == old(mpt).frames@.instance_id(),
     {
         // // assert!(new_child.is_compatible(self.node.level(), self.node.is_tracked()));
 
@@ -129,7 +140,9 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
         // so that it is not used anymore.
         let old_child =
             // unsafe { Child::from_pte(self.pte, self.node.level(), self.node.is_tracked()) };
-            unsafe { Child::from_pte(self.pte, self.node.level(), self.node.is_tracked()) };
+            Child::from_pte(self.pte, 
+                // self.node.level(), 
+                self.node.is_tracked(), mpt);
 
         if old_child.is_none() && !new_child.is_none() {
             // *self.node.nr_children_mut() += 1;
@@ -143,7 +156,7 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
         //  1. The index is within the bounds.
         //  2. The new PTE is compatible with the page table node, as asserted above.
         // unsafe { self.node.write_pte(self.idx, new_child.into_pte()) };
-        self.node.write_pte(self.idx, new_child.into_pte());
+        self.node.write_pte(self.idx, new_child.into_pte(mpt), mpt, level);
 
         old_child
         // unimplemented!()

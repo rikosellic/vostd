@@ -112,36 +112,6 @@ impl<M: AnyFrameMeta> Frame<M> {
         PAGE_SIZE
     }
 
-    /// Gets the dyncamically-typed metadata of this frame.
-    ///
-    /// If the type is known at compile time, use [`Frame::meta`] instead.
-    // pub fn dyn_meta(&self, perm: PointsTo<MetaSlot>) -> &dyn AnyFrameMeta {
-    // TODO: Implement
-    #[verifier::external_body]
-    pub fn dyn_meta<T: AnyFrameMeta>(&self, perm: PointsTo<MetaSlot>) -> &T {
-        // SAFETY: The metadata is initialized and valid.
-        // unsafe { &*self.slot(perm).dyn_meta_ptr() }
-        unimplemented!("Frame::dyn_meta")
-    }
-
-    /// Gets the reference count of the frame.
-    ///
-    /// It returns the number of all references to the frame, including all the
-    /// existing frame handles ([`Frame`], [`Frame<dyn AnyFrameMeta>`]), and all
-    /// the mappings in the page table that points to the frame.
-    ///
-    /// # Safety
-    ///
-    /// The function is safe to call, but using it requires extra care. The
-    /// reference count can be changed by other threads at any time including
-    /// potentially between calling this method and acting on the result.
-    /// TODO: Implement Frame::reference_count
-    // pub fn reference_count(&self) -> u64 {
-    //     let refcnt = self.slot().ref_count.load(Ordering::Relaxed);
-    //     debug_assert!(refcnt < meta::REF_COUNT_MAX);
-    //     refcnt
-    // }
-
     /// Forgets the handle to the frame.
     ///
     /// This will result in the frame being leaked without calling the custom dropper.

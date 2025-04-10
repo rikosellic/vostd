@@ -16,9 +16,7 @@ use vstd::tokens::SetToken;
 use crate::{
     helpers::align_ext::align_down,
     mm::{
-        child::Child, entry::Entry, frame, meta::AnyFrameMeta, node::PageTableNode,
-        page_prop::PageProperty, page_size, page_table::zeroed_pt_pool, vm_space::Token, Frame,
-        MapTrackingStatus, Paddr, PageTableLockTrait, Vaddr, MAX_USERSPACE_VADDR, PAGE_SIZE,
+        child::Child, entry::Entry, frame, meta::AnyFrameMeta, node::PageTableNode, nr_subpage_per_huge, page_prop::PageProperty, page_size, page_table::zeroed_pt_pool, vm_space::Token, Frame, MapTrackingStatus, Paddr, PageTableLockTrait, Vaddr, MAX_USERSPACE_VADDR, PAGE_SIZE
     },
     task::DisabledPreemptGuard,
     x86_64::VMALLOC_VADDR_RANGE,
@@ -363,7 +361,6 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             forall |i| unused_addrs.contains_key(i) ==>
                 #[trigger] unused_addrs[i].instance_id() == instance@.id(),
         {
-            exec::print_num(self.0.level as usize);
             // debug_assert!(should_map_as_tracked::<M>(self.0.va)); // TODO
             let cur_level = self.0.level;
             let cur_entry = self.0.cur_entry(mock_page_table);
@@ -421,12 +418,14 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                     *cur_alloc_index += 1; // TODO: do it inside the alloc function
 
                     let paddr = pt.into_raw_paddr();
+
+                    assert(cur_entry.idx < nr_subpage_per_huge() as usize) by { admit(); } // TODO
                     // SAFETY: It was forgotten at the above line.
                     let _ = cur_entry
                         .replace(Child::<E, C, T>::PageTable(
                             // unsafe { PageTableNode::from_raw(paddr) }
                             PageTableNode::from_raw(paddr)
-                        )); // alloc pte here
+                        ), mock_page_table, self.0.level); // alloc pte here
                     // SAFETY: `pt` points to a PT that is attached to a node
                     // in the locked sub-tree, so that it is locked and alive.
                     self.0
@@ -462,8 +461,10 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         assert(forall |i: int| 1 < i <= old(self).0.level ==> #[trigger] self.0.path[i - 1].is_some());
         assert(self.0.level == frame.map_level());
 
+        let cur_entry = self.0.cur_entry(mock_page_table);
+        assert(cur_entry.idx < nr_subpage_per_huge() as usize) by { admit(); } // TODO
         // Map the current page.
-        let old = self.0.cur_entry(mock_page_table).replace(Child::Frame(frame, prop));
+        let old = cur_entry.replace(Child::Frame(frame, prop), mock_page_table, self.0.level);
         self.0.move_forward();
 
         match old {

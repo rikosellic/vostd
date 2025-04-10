@@ -1,4 +1,5 @@
 use vstd::prelude::*;
+use core::num;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Mutex, OnceLock};
@@ -78,13 +79,21 @@ impl PageTableEntryTrait for SimplePageTableEntry {
     }
 
     #[verifier::external_body]
-    fn new_page(paddr: crate::mm::Paddr, level: crate::mm::PagingLevel, prop: crate::mm::page_prop::PageProperty) -> Self {
-        todo!()
+    fn new_page(paddr: crate::mm::Paddr, level: crate::mm::PagingLevel, prop: crate::mm::page_prop::PageProperty, mpt: &mut MockPageTable) -> Self {
+        SimplePageTableEntry {
+            pte_addr: 0,
+            frame_pa: 0,
+            level: 0, // level 0 represent a page
+        }
     }
 
     #[verifier::external_body]
     fn new_pt(paddr: crate::mm::Paddr) -> Self {
-        todo!()
+        SimplePageTableEntry {
+            pte_addr: 0, // invalid
+            frame_pa: paddr as u64,
+            level: 0, // invalid
+        }
     }
 
     #[verifier::external_body]
@@ -164,7 +173,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
     }
 
     fn alloc(level: crate::mm::PagingLevel, is_tracked: crate::mm::MapTrackingStatus,
-
+            // ghost
             mpt: &mut exec::MockPageTable,
             instance: Tracked<simple_page_table::SimplePageTable::Instance>,
             cur_alloc_index: usize,
@@ -174,7 +183,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
 
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use vstd::hash_map::group_hash_map_axioms;
-        print_num(cur_alloc_index);
+        // print_num(cur_alloc_index);
         let (p, Tracked(pt)) = get_frame_from_index(cur_alloc_index, &mpt.mem); // TODO: permission violation
         p.write(Tracked(&mut pt), SimpleFrame {
             ptes: {
@@ -216,6 +225,10 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
             }, mpt.frames.borrow_mut(), used_addr_token.get(), mpt.ptes.borrow_mut());
         }
 
+        assume(mpt.wf()); // TODO: P0 why this fails?
+
+        print_msg("alloc frame", used_addr);
+
         FakePageTableLock {
             paddr: used_addr as Paddr,
             phantom: std::marker::PhantomData,
@@ -227,14 +240,16 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
         todo!()
     }
 
-    #[verifier::external_body]
     fn into_raw_paddr(self: Self) -> crate::mm::Paddr where Self: Sized {
-        todo!()
+        self.paddr
     }
 
     #[verifier::external_body]
     fn from_raw_paddr(paddr: crate::mm::Paddr) -> Self where Self: Sized {
-        todo!()
+        FakePageTableLock {
+            paddr,
+            phantom: std::marker::PhantomData,
+        }
     }
 
     #[verifier::external_body]
@@ -252,8 +267,16 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
     }
 
     #[verifier::external_body]
-    fn write_pte(&self, idx: usize, pte: E) {
-        unimplemented!("write_pte")
+    fn write_pte(&self, idx: usize, pte: E, mpt: &mut MockPageTable, level: crate::mm::PagingLevel) {
+        let (p, Tracked(pt)) = get_frame_from_index(frame_addr_to_index(self.paddr), &mpt.mem); // TODO: permission violation
+        let mut frame = p.read(Tracked(&pt));
+        frame.ptes[idx] = SimplePageTableEntry {
+            pte_addr: pte.pte_paddr() as u64,
+            frame_pa: pte.frame_paddr() as u64,
+            level: level as u8,
+        };
+        println!("write_pte: paddr = 0x{:x}, idx = {1}, frame_pa = 0x{2:x}, level = {3}", self.paddr, idx, pte.frame_paddr(), level);
+        p.write(Tracked(&mut pt), frame);
     }
 
     #[verifier::external_body]
@@ -268,18 +291,18 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
 
     #[verifier::external_body]
     fn change_children(&self, delta: i16) {
-        todo!()
+        // TODO: implement this function
     }
 
     #[verifier::external_body]
     fn is_tracked(&self) -> crate::mm::MapTrackingStatus {
-        todo!()
+        crate::mm::MapTrackingStatus::Tracked
     }
 
     open spec fn paddr_spec(&self) -> Paddr {
         self.paddr as Paddr
     }
-    
+
     #[verifier::external_body]
     fn level(&self) -> crate::mm::PagingLevel {
         todo!()
@@ -316,16 +339,14 @@ struct_with_invariants!{
         &&& forall |i: usize| 0 <= i < MAX_FRAME_NUM ==>
                 self.mem@[i].1@.mem_contents() != MemContents::<SimpleFrame>::Uninit ==>
                     #[trigger] self.frames@.value().contains_key(frame_index_to_addr(i) as int)
-                    // &&
-                    // #[trigger] self.frames@.value()[j as int].pa == #[trigger] self.mem@[i].0.addr()
-                    // &&
-                    // forall |k: int| 0 <= k < NR_ENTRIES ==>
-                    //     if ((#[trigger] self.mem@[i].1@.mem_contents().value().ptes[k]).frame_pa != 0) {
-                    //         self.ptes@.value().contains_key(self.mem@[i].1@.mem_contents().value().ptes[k].pte_addr as int)
-                    //     }
-                    //     else {
-                    //         !self.ptes@.value().contains_key(self.mem@[i].1@.mem_contents().value().ptes[k].pte_addr as int)
-                    //     }
+                    &&
+                    forall |k: int| 0 <= k < NR_ENTRIES ==>
+                        if ((#[trigger] self.mem@[i].1@.mem_contents().value().ptes[k]).frame_pa != 0) {
+                            self.ptes@.value().contains_key(self.mem@[i].1@.mem_contents().value().ptes[k].pte_addr as int)
+                        }
+                        else {
+                            !self.ptes@.value().contains_key(self.mem@[i].1@.mem_contents().value().ptes[k].pte_addr as int)
+                        }
             // TODO: reverse relationship between ptes and frames
         }
     }
@@ -585,8 +606,9 @@ pub fn get_pte_from_addr(addr: usize, mpt: &MockPageTable) -> (res: SimplePageTa
         res.pte_paddr() == addr as usize,
         res == get_pte_from_addr_spec(addr, mpt)
 {
-    println!("get_pte_from_addr: {:#x}", addr);
-    PPtr::<SimplePageTableEntry>::from_addr(addr).read(Tracked::assume_new()) // TODO: permission violation
+    let pte = PPtr::<SimplePageTableEntry>::from_addr(addr).read(Tracked::assume_new()); // TODO: permission violation
+    println!("read_pte_from_addr pte_addr: {:#x}, frame_pa: {:#x}, level: {}", pte.pte_addr, pte.frame_pa, pte.level);
+    pte
 }
 
 pub open spec fn frame_index_to_addr_spec(index: usize) -> usize {
@@ -643,6 +665,11 @@ ensures
     let mut guard = MAP.get().unwrap().lock().unwrap();
     let res: usize = *guard;
     res
+}
+
+#[verifier::external_body]
+pub fn print_msg(msg: &str, num: usize) {
+    println!("{}: {:#x}", msg, num);
 }
 
 #[verifier::external_body]

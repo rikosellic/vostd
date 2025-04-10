@@ -51,10 +51,17 @@ pub trait PageTableEntryTrait:
     ;
 
     /// Create a new PTE with the given physical address and flags that map to a page.
-    fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self;
+    fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty, mpt: &mut exec::MockPageTable) -> (res: Self)
+    requires
+        old(mpt).wf(),
+    ensures
+        mpt.wf(),
+        mpt.ptes@.instance_id() == old(mpt).ptes@.instance_id(),
+        mpt.frames@.instance_id() == old(mpt).frames@.instance_id(),
+    ;
 
     /// Create a new PTE that map to a child page table.
-    fn new_pt(paddr: Paddr) -> Self;
+    fn new_pt(paddr: Paddr) -> (res: Self);
 
     /// Create a new PTE with the given token value but don't map to anything.
     fn new_token(token: Token) -> Self;
