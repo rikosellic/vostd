@@ -1,8 +1,8 @@
 use vstd::prelude::*;
 
 use crate::mm::{
-    meta::AnyFrameMeta, nr_subpage_per_huge, page_prop::PageProperty, page_size,
-    page_table::zeroed_pt_pool, vm_space::Token, PageTableEntryTrait, PagingConstsTrait, PagingLevel,
+    meta::AnyFrameMeta, nr_subpage_per_huge, page_prop::PageProperty, page_size, vm_space::Token,
+    PageTableEntryTrait, PagingConstsTrait, PagingLevel,
 };
 
 use super::{Child, MapTrackingStatus, PageTableLockTrait, PageTableNode};
@@ -60,8 +60,8 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
         // SAFETY: The entry structure represents an existent entry with the
         // right node information.
         // unsafe { Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked(), false) }
-        let c = Child::ref_from_pte(&self.pte, 
-                                // self.node.level(), 
+        let c = Child::ref_from_pte(&self.pte,
+                                // self.node.level(),
                                 self.node.is_tracked(), false,
                                                     mpt);
         c
@@ -97,9 +97,8 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
         old(mpt).wf(),
         self.idx < nr_subpage_per_huge(),
     ensures
+        mpt.instance@.id() == old(mpt).instance@.id(),
         mpt.wf(),
-        mpt.ptes@.instance_id() == old(mpt).ptes@.instance_id(),
-        mpt.frames@.instance_id() == old(mpt).frames@.instance_id(),
     {
         // // assert!(new_child.is_compatible(self.node.level(), self.node.is_tracked()));
 
@@ -108,8 +107,8 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
         // so that it is not used anymore.
         let old_child =
             // unsafe { Child::from_pte(self.pte, self.node.level(), self.node.is_tracked()) };
-            Child::from_pte(self.pte, 
-                // self.node.level(), 
+            Child::from_pte(self.pte,
+                // self.node.level(),
                 self.node.is_tracked(), mpt);
 
         if old_child.is_none() && !new_child.is_none() {
@@ -143,6 +142,7 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
         res.pte.pte_paddr() == node.paddr() as usize + idx * exec::SIZEOF_PAGETABLEENTRY,
         res.pte.pte_paddr() == exec::get_pte_from_addr_spec(res.pte.pte_paddr(), mpt).pte_addr,
         res.pte.frame_paddr() == exec::get_pte_from_addr_spec(res.pte.pte_paddr(), mpt).frame_pa,
+        res.idx == idx,
     {
         // SAFETY: The index is within the bound.
         // let pte = unsafe { node.read_pte(idx) };

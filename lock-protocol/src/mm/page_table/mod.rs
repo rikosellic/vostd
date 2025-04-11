@@ -1,6 +1,5 @@
 pub mod cursor;
 pub mod node;
-mod zeroed_pt_pool;
 
 use vstd::prelude::*;
 pub use node::*;

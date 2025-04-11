@@ -12,6 +12,7 @@ use vstd::prelude::*;
 
 #[allow(unused_imports)]
 use child::*;
+use vstd::simple_pptr::MemContents;
 use crate::mm::meta::AnyFrameMeta;
 use crate::mm::nr_subpage_per_huge;
 use crate::mm::Paddr;
@@ -28,6 +29,8 @@ use crate::x86_64::paddr_to_vaddr;
 
 use crate::exec;
 use crate::spec::simple_page_table;
+
+use crate::mm::NR_ENTRIES;
 
 verus! {
 
@@ -69,23 +72,31 @@ pub trait PageTableLockTrait<
 
     fn alloc(level: PagingLevel, is_tracked: MapTrackingStatus,
             mpt: &mut exec::MockPageTable,
-            instance: Tracked<simple_page_table::SimplePageTable::Instance>,
             cur_alloc_index: usize,
             used_addr: usize,
             used_addr_token: Tracked<simple_page_table::SimplePageTable::unused_addrs>
     ) -> (res: Self) where Self: Sized
     requires
+        old(mpt).mem@.contains_key(cur_alloc_index),
+        old(mpt).mem@[cur_alloc_index].1@.mem_contents() == MemContents::<exec::SimpleFrame>::Uninit,
+        forall |i: int| 0 <= i < NR_ENTRIES ==>
+                    ! (#[trigger] old(mpt).ptes@.value().dom().contains(
+                        used_addr + i * exec::SIZEOF_PAGETABLEENTRY)),
+
+        forall |i: int| old(mpt).ptes@.value().contains_key(i) ==>
+            (#[trigger] old(mpt).ptes@.value()[i]).frame_pa != used_addr,
+        forall |i: int| 0 <= i < NR_ENTRIES ==>
+            ! #[trigger] old(mpt).ptes@.value().contains_key(used_addr + i * exec::SIZEOF_PAGETABLEENTRY as int),
+
+        used_addr_token@.element() == used_addr as int,
         old(mpt).wf(),
-        old(mpt).ptes@.instance_id() == instance@.id(),
-        old(mpt).frames@.instance_id() == instance@.id(),
         cur_alloc_index < exec::MAX_FRAME_NUM,
-        used_addr_token@.instance_id() == instance@.id(),
+        used_addr_token@.instance_id() == old(mpt).instance@.id(),
         used_addr == (cur_alloc_index * exec::SIZEOF_FRAME as usize) + exec::PHYSICAL_BASE_ADDRESS(),
     ensures
+        mpt.instance@.id() == old(mpt).instance@.id(),
         res.paddr() == used_addr as usize,
         mpt.wf(),
-        mpt.ptes@.instance_id() == instance@.id(),
-        mpt.frames@.instance_id() == instance@.id(),
     ;
 
     fn unlock(&mut self) -> PageTableNode<E, C>;

@@ -21,13 +21,12 @@ verus! {
 
 type Paddr = usize;
 type Vaddr = usize;
-pub const NR_ENTRIES: usize = 512;
 
-pub const SIZEOF_PAGETABLEENTRY: usize = 16;
-global layout PageTableEntry is size == 16, align == 8;
+use crate::mm::NR_ENTRIES;
 
-pub const SIZEOF_FRAME: usize = 16 * 512; // 8 bytes for pa + 8 bytes for each pte
-global layout Frame is size == 8192, align == 8;
+use crate::exec::SIZEOF_PAGETABLEENTRY;
+
+use crate::exec::SIZEOF_FRAME;
 
 #[derive(Clone, Copy)]
 pub struct PteFlag;
@@ -289,7 +288,6 @@ verus! {
 pub fn main_test() {
     broadcast use vstd::std_specs::hash::group_hash_axioms;
     broadcast use vstd::hash_map::group_hash_map_axioms;
-    assert(SIZEOF_FRAME == core::mem::size_of::<Frame>());
 
     let tracked (
         Tracked(instance),

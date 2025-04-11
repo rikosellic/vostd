@@ -23,6 +23,9 @@ use vstd::simple_pptr::*;
 
 use crate::exec;
 
+mod test_map;
+// mod test_map2;
+
 verus! {
 
 pub const SIZEOF_PAGETABLEENTRY: usize = 24;
@@ -48,6 +51,42 @@ pub struct SimpleFrame {
     // TODO: Is this correct?
     pub ptes: [SimplePageTableEntry; NR_ENTRIES],
     // pub ptes: Vec<SimplePageTableEntry>,
+}
+
+pub fn create_new_frame(frame_addr: Paddr, level: u8) -> (res: SimpleFrame)
+ensures
+    res.ptes.len() == NR_ENTRIES,
+    forall |i: int| 0 <= i < NR_ENTRIES ==>
+        #[trigger] res.ptes[i].pte_addr == frame_addr + i * SIZEOF_PAGETABLEENTRY as u64,
+    forall |i: int| 0 <= i < NR_ENTRIES ==>
+        #[trigger] res.ptes[i].frame_pa == 0,
+    forall |i: int| 0 <= i < NR_ENTRIES ==>
+        #[trigger] res.ptes[i].level == level as u8,
+{
+    let mut ptes = [SimplePageTableEntry {
+        pte_addr: 0,
+        frame_pa: 0,
+        level: 0,
+    }; NR_ENTRIES];
+    for i in 0..NR_ENTRIES {
+        assume(frame_addr + i * SIZEOF_PAGETABLEENTRY < usize::MAX as u64);
+        ptes[i] = SimplePageTableEntry {
+            pte_addr: (frame_addr + i * SIZEOF_PAGETABLEENTRY) as u64,
+            frame_pa: 0,
+            level: level,
+        };
+    }
+
+    let f = SimpleFrame {
+        ptes,
+    };
+
+    // assert(ptes[0].frame_pa == 0); // TODO: don't know why this fails
+    assume(forall |i: int| 0 <= i < NR_ENTRIES ==> (#[trigger] ptes[i]).pte_addr == frame_addr as u64 + i as u64 * SIZEOF_PAGETABLEENTRY as u64);
+    assume(forall |i: int| 0 <= i < NR_ENTRIES ==> (#[trigger] ptes[i]).frame_pa == 0);
+    assume(forall |i: int| 0 <= i < NR_ENTRIES ==> (#[trigger] ptes[i]).level == level);
+
+    f
 }
 
 impl PageTableEntryTrait for SimplePageTableEntry {
@@ -175,7 +214,6 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
     fn alloc(level: crate::mm::PagingLevel, is_tracked: crate::mm::MapTrackingStatus,
             // ghost
             mpt: &mut exec::MockPageTable,
-            instance: Tracked<simple_page_table::SimplePageTable::Instance>,
             cur_alloc_index: usize,
             used_addr: usize,
             used_addr_token: Tracked<simple_page_table::SimplePageTable::unused_addrs>,
@@ -183,26 +221,10 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
 
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use vstd::hash_map::group_hash_map_axioms;
-        // print_num(cur_alloc_index);
+
         let (p, Tracked(pt)) = get_frame_from_index(cur_alloc_index, &mpt.mem); // TODO: permission violation
-        p.write(Tracked(&mut pt), SimpleFrame {
-            ptes: {
-                let mut ptes = [SimplePageTableEntry {
-                    pte_addr: 0,
-                    frame_pa: 0,
-                    level: 0,
-                }; NR_ENTRIES];
-                for i in 0..NR_ENTRIES {
-                    assert((PHYSICAL_BASE_ADDRESS() as u64 + cur_alloc_index as u64 * SIZEOF_FRAME as u64 + i as u64 * SIZEOF_PAGETABLEENTRY as u64) < usize::MAX as u64) by { admit(); }; // TODO
-                    ptes[i] = SimplePageTableEntry {
-                        pte_addr: PHYSICAL_BASE_ADDRESS() as u64 + cur_alloc_index as u64 * SIZEOF_FRAME as u64 + i as u64 * SIZEOF_PAGETABLEENTRY as u64,
-                        frame_pa: 0,
-                        level: level as u8,
-                    };
-                }
-                ptes
-            },
-        });
+        let f = create_new_frame(PHYSICAL_BASE_ADDRESS() + cur_alloc_index * SIZEOF_FRAME, level);
+        p.write(Tracked(&mut pt), f);
 
         assert(p.addr() == used_addr);
 
@@ -213,19 +235,29 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
         assert(mpt.mem@.contains_key(cur_alloc_index));
 
         proof {
-            assert(forall |i: int| 0 <= i < NR_ENTRIES ==>
-                    ! (#[trigger] mpt.ptes@.value().dom().contains(p.addr() + i * simple_page_table::SIZEOF_PAGETABLEENTRY))) by { admit(); } // TODO: P0
-
-            assert(forall |i: int| mpt.ptes@.value().contains_key(i) ==>
-                    (#[trigger] mpt.ptes@.value()[i]).frame_pa != p.addr()) by { admit(); } // TODO: P0
-            assert(used_addr_token@.element() == p.addr() as usize) by { admit(); } // TODO: don't know why it is not true
-            instance.get().new_at(p.addr() as int, simple_page_table::FrameView {
+            mpt.instance.get().new_at(p.addr() as int, simple_page_table::FrameView {
                 pa: p.addr() as int,
                 pte_addrs: Set::empty(),
             }, mpt.frames.borrow_mut(), used_addr_token.get(), mpt.ptes.borrow_mut());
         }
 
-        assume(mpt.wf()); // TODO: P0 why this fails?
+        assert(mpt.wf()) by {
+            // all other frames are not changed
+            assert(
+                forall |i: usize| 0 <= i < MAX_FRAME_NUM && i != cur_alloc_index ==>
+                    mpt.mem@[i].1@.mem_contents() != MemContents::<SimpleFrame>::Uninit ==> {
+                    #[trigger] mpt.frames@.value().contains_key(frame_index_to_addr(i) as int)
+                    &&
+                    forall |k: int| 0 <= k < NR_ENTRIES ==>
+                        if ((#[trigger] mpt.mem@[i].1@.value().ptes[k]).frame_pa != 0) {
+                            mpt.ptes@.value().contains_key(mpt.mem@[i].1@.value().ptes[k].pte_addr as int)
+                        }
+                        else {
+                            !mpt.ptes@.value().contains_key(mpt.mem@[i].1@.mem_contents().value().ptes[k].pte_addr as int)
+                        }
+                    }
+                );
+        }
 
         print_msg("alloc frame", used_addr);
 
@@ -337,16 +369,21 @@ struct_with_invariants!{
             &&& (#[trigger] self.mem@[i].0.addr() == PHYSICAL_BASE_ADDRESS() as usize + i * SIZEOF_FRAME)
         }
         &&& forall |i: usize| 0 <= i < MAX_FRAME_NUM ==>
-                self.mem@[i].1@.mem_contents() != MemContents::<SimpleFrame>::Uninit ==>
+                if (self.mem@[i].1@.mem_contents() != MemContents::<SimpleFrame>::Uninit) {
                     #[trigger] self.frames@.value().contains_key(frame_index_to_addr(i) as int)
                     &&
                     forall |k: int| 0 <= k < NR_ENTRIES ==>
-                        if ((#[trigger] self.mem@[i].1@.mem_contents().value().ptes[k]).frame_pa != 0) {
-                            self.ptes@.value().contains_key(self.mem@[i].1@.mem_contents().value().ptes[k].pte_addr as int)
+                        if (#[trigger] self.mem@[i].1@.value().ptes[k].frame_pa != 0) {
+                            self.ptes@.value().contains_key(self.mem@[i].1@.value().ptes[k].pte_addr as int)
                         }
                         else {
                             !self.ptes@.value().contains_key(self.mem@[i].1@.mem_contents().value().ptes[k].pte_addr as int)
                         }
+                } else {
+                    // TODO: there could be leaking because we continously allocate frames
+                    // !self.frames@.value().contains_key(frame_index_to_addr(i) as int)
+                    true
+                }
             // TODO: reverse relationship between ptes and frames
         }
     }
@@ -355,134 +392,6 @@ struct_with_invariants!{
 pub tracked struct Tokens {
     pub tracked unused_addrs: Map<int, simple_page_table::SimplePageTable::unused_addrs>,
     pub tracked unused_pte_addrs: Map<int, simple_page_table::SimplePageTable::unused_pte_addrs>,
-}
-
-pub fn test_map(va: Vaddr, frame: Frame<SimpleFrameMeta>, page_prop: page_prop::PageProperty)
-requires
-    0 <= va < MAX_USERSPACE_VADDR,
-{
-    broadcast use vstd::std_specs::hash::group_hash_axioms;
-    broadcast use vstd::hash_map::group_hash_map_axioms;
-    let tracked (
-        Tracked(instance),
-        Tracked(frames_token),
-        Tracked(unused_addrs),
-        Tracked(pte_token),
-        Tracked(unused_pte_addrs),
-    ) = simple_page_table::SimplePageTable::Instance::initialize();
-    let tracked tokens = Tokens {
-        unused_addrs: unused_addrs.into_map(),
-        unused_pte_addrs: unused_pte_addrs.into_map(),
-    };
-
-    // TODO: use Cursor::new
-    let mut cursor =
-    CursorMut::<UserMode, SimplePageTableEntry, PagingConsts, FakePageTableLock<SimplePageTableEntry, PagingConsts>> {
-        0: Cursor::<UserMode, SimplePageTableEntry, PagingConsts, FakePageTableLock<SimplePageTableEntry, PagingConsts>> {
-            path: Vec::new(),
-            level: 4,
-            guard_level: NR_LEVELS as u8,
-            va: va,
-            barrier_va: 0..MAX_USERSPACE_VADDR + PAGE_SIZE, // TODO: maybe cursor::new can solve this
-            preempt_guard: disable_preempt(),
-            _phantom: std::marker::PhantomData,
-        }
-    };
-    assert(cursor.0.level == 4);
-
-    let mut mock_page_table = MockPageTable {
-        mem: alloc_page_table_entries(),
-        frames: Tracked(frames_token),
-        ptes: Tracked(pte_token),
-        instance: Tracked(instance.clone()),
-    };
-
-    let mut cur_alloc_index: usize = 0; // TODO: theoretically, this should be atomic
-    let (p, Tracked(pt)) = get_frame_from_index(cur_alloc_index, &mock_page_table.mem); // TODO: permission violation
-    p.write(Tracked(&mut pt), SimpleFrame {
-        ptes: {
-            let mut ptes = [SimplePageTableEntry {
-                pte_addr: 0,
-                frame_pa: 0,
-                level: 0,
-            }; NR_ENTRIES];
-            for i in 0..NR_ENTRIES {
-                assert((PHYSICAL_BASE_ADDRESS() as u64 + i as u64 * SIZEOF_PAGETABLEENTRY as u64) < usize::MAX as u64) by { admit(); }; // TODO
-                ptes[i] = SimplePageTableEntry {
-                    pte_addr: PHYSICAL_BASE_ADDRESS() as u64 + i as u64 * SIZEOF_PAGETABLEENTRY as u64,
-                    frame_pa: 0,
-                    level: 4,
-                };
-            }
-            ptes
-        },
-    });
-
-
-    assert(pt.mem_contents() != MemContents::<SimpleFrame>::Uninit);
-    assert(pt.value().ptes.len() == NR_ENTRIES);
-    // assert(pt.value().ptes[0].frame_pa == 0); // TODO: P0 don't know why this fails
-    assume(forall |i: int| 0 <= i < NR_ENTRIES ==> (#[trigger] pt.value().ptes[i]).pte_addr == PHYSICAL_BASE_ADDRESS() as u64 + i as u64 * SIZEOF_PAGETABLEENTRY as u64);
-    assume(forall |i: int| 0 <= i < NR_ENTRIES ==> (#[trigger] pt.value().ptes[i]).frame_pa == 0);
-    assume(forall |i: int| 0 <= i < NR_ENTRIES ==> (#[trigger] pt.value().ptes[i]).level == 4);
-
-    assert(mock_page_table.wf());
-
-    assert(mock_page_table.mem.len() == MAX_FRAME_NUM);
-    assert(p.addr() == PHYSICAL_BASE_ADDRESS() as usize);
-    assert(mock_page_table.mem@.contains_key(cur_alloc_index));
-
-    mock_page_table.mem.remove(&cur_alloc_index);
-    assert(mock_page_table.mem.len() == MAX_FRAME_NUM - 1);
-    mock_page_table.mem.insert(cur_alloc_index, (p, Tracked(pt)));
-    assert(mock_page_table.mem.len() == MAX_FRAME_NUM);
-
-    assert(mock_page_table.mem@[cur_alloc_index].1@.mem_contents() != MemContents::<SimpleFrame>::Uninit);
-
-    let (p, Tracked(pt)) = get_frame_from_index(cur_alloc_index, &mock_page_table.mem);
-    assert(pt.mem_contents() != MemContents::<SimpleFrame>::Uninit);
-
-    // assert(mock_page_table.wf()); this should fail
-    proof{
-        let tracked used_addr = tokens.unused_addrs.tracked_remove(p.addr()as int);
-
-        instance.new_at(p.addr() as int, simple_page_table::FrameView {
-            pa: p.addr() as int,
-            pte_addrs: Set::empty(),
-        }, mock_page_table.frames.borrow_mut(), used_addr, mock_page_table.ptes.borrow_mut());
-    }
-    assert(mock_page_table.wf());
-
-    cur_alloc_index = cur_alloc_index + 1;
-
-    cursor.0.path.push(None);
-    cursor.0.path.push(None);
-    cursor.0.path.push(None);
-    cursor.0.path.push(Some(
-        FakePageTableLock {
-            phantom: std::marker::PhantomData,
-            paddr: p.addr(),
-        }
-    )); // root
-
-    assert(cursor.0.path[cursor.0.level as usize - 1].is_some());
-
-    cursor.map::<SimpleFrameMeta>(frame, page_prop,
-        Tracked(instance),
-        Tracked(tokens),
-        &mut mock_page_table,
-        &mut cur_alloc_index
-    );
-
-    assert(cursor.0.path.len() == NR_LEVELS as usize);
-    assert(forall |i: usize| 1 < i <= NR_LEVELS as usize ==> #[trigger] cursor.0.path[i as int - 1].is_some());
-
-    let level4_index = pte_index(va, NR_LEVELS as u8);
-    let level4_frame_addr = PHYSICAL_BASE_ADDRESS();
-    let level4_pte = get_pte_from_addr(level4_frame_addr + level4_index * SIZEOF_PAGETABLEENTRY, &mock_page_table);
-
-    // let level3_frame_addr = cursor.0.path[(NR_LEVELS as usize) - 2].as_ref().unwrap().paddr() as usize;
-    // assert(level4_pte.frame_pa == level3_frame_addr as u64);
 }
 
 pub fn main_test() {
@@ -497,7 +406,8 @@ pub fn main_test() {
         priv_flags: PrivilegedPageFlags { bits: 0 },
     };
 
-    test_map(va, frame, page_prop);
+    test_map::test(va, frame, page_prop);
+    // test_map2::test(va, frame, page_prop);
 }
 
 #[verifier::external_body]
