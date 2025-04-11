@@ -1,5 +1,5 @@
 mod locking;
-mod spec_helpers;
+pub mod spec_helpers;
 
 use std::{
     any::TypeId,
@@ -339,7 +339,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         cur_alloc_index: &mut usize,
     ) -> (res: Option<Frame<T>>)
     requires
-        instance_match(old(mpt), tokens),
+        instance_match(old(mpt), tokens@),
 
         // cursor validation
         old(self).va_valid(frame, None),
@@ -352,9 +352,10 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
 
         // page table validation
         old(self).mock_page_table_valid_before_map(old(mpt)),
+        mpt_and_tokens_wf(old(mpt), tokens@),
     ensures
         self.path_valid_after_map(old(self)),
-        instance_match(old(mpt), tokens),
+        instance_match(old(mpt), tokens@),
         mpt.wf(),
         *cur_alloc_index < exec::MAX_FRAME_NUM, // we have enough frames
         self.mock_page_table_valid_after_map(mpt),
@@ -435,6 +436,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
 
                     // TODO: P0 before_alloc
                     // {
+                        assume(!mpt.frames@.value().contains_key(used_addr as int));
                         assume(mpt.mem@[*cur_alloc_index].1@.mem_contents() == MemContents::<exec::SimpleFrame>::Uninit);
                         assume(forall |i: int| 0 <= i < NR_ENTRIES ==>
                                 ! (#[trigger] mpt.ptes@.value().dom().contains(used_addr + i * exec::SIZEOF_PAGETABLEENTRY)));

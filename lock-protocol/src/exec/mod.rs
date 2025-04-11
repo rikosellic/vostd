@@ -120,10 +120,11 @@ impl PageTableEntryTrait for SimplePageTableEntry {
 
     #[verifier::external_body]
     fn new_page(paddr: crate::mm::Paddr, level: crate::mm::PagingLevel, prop: crate::mm::page_prop::PageProperty, mpt: &mut MockPageTable) -> Self {
+        // NOTE: this function currently does not create a actual page table entry
         SimplePageTableEntry {
             pte_addr: 0,
             frame_pa: 0,
-            level: 0, // level 0 represent a page
+            level: 0, // let's use level 0 represent a page
         }
     }
 
@@ -350,9 +351,6 @@ struct_with_invariants!{
         pub frames: Tracked<simple_page_table::SimplePageTable::frames>, // frame is indexed by paddr!
         pub ptes: Tracked<simple_page_table::SimplePageTable::ptes>,
         pub instance: Tracked<simple_page_table::SimplePageTable::Instance>,
-
-        // pub unused_addrs: Tracked<simple_page_table::SimplePageTable::unused_addrs>,
-        // pub unused_pte_addrs: Tracked<simple_page_table::SimplePageTable::unused_pte_addrs>,
     }
 
     pub open spec fn wf(&self) -> bool {
@@ -383,8 +381,7 @@ struct_with_invariants!{
                         }
                 } else {
                     // TODO: there could be leaking because we continously allocate frames
-                    // !self.frames@.value().contains_key(frame_index_to_addr(i) as int)
-                    true
+                    !self.frames@.value().contains_key(frame_index_to_addr(i) as int)
                 }
         &&& forall |i: int| self.frames@.value().contains_key(i) ==>
                 self.mem@[frame_addr_to_index(i as usize)].1@.mem_contents().is_init()
@@ -549,6 +546,11 @@ ensures
 {
     assert((addr - PHYSICAL_BASE_ADDRESS()) >= 0) by { admit(); } // TODO
     ((addr - PHYSICAL_BASE_ADDRESS()) / SIZEOF_FRAME) as usize
+}
+
+pub open spec fn pte_addr_to_index_spec(pte_addr: usize) -> usize {
+    ((pte_addr - ((pte_addr - PHYSICAL_BASE_ADDRESS_SPEC()) / SIZEOF_FRAME as int) * SIZEOF_FRAME) / 
+        SIZEOF_PAGETABLEENTRY as int) as usize
 }
 
 pub open spec fn PHYSICAL_BASE_ADDRESS_SPEC() -> usize {

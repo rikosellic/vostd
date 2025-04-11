@@ -40,11 +40,11 @@ pub open spec fn level_is_greate_than_one(level: PagingLevel) -> bool {
 }
 
 pub open spec fn instance_match(mpt: &exec::MockPageTable,
-                                tokens: Tracked<exec::Tokens>) -> bool {
-    &&& forall |i| tokens@.unused_addrs.contains_key(i) ==>
-            #[trigger] tokens@.unused_addrs[i].instance_id() == mpt.instance@.id()
-    &&& forall |i| tokens@.unused_pte_addrs.contains_key(i) ==>
-            #[trigger] tokens@.unused_pte_addrs[i].instance_id() == mpt.instance@.id()
+                                tokens: exec::Tokens) -> bool {
+    &&& forall |i| tokens.unused_addrs.contains_key(i) ==>
+            #[trigger] tokens.unused_addrs[i].instance_id() == mpt.instance@.id()
+    &&& forall |i| tokens.unused_pte_addrs.contains_key(i) ==>
+            #[trigger] tokens.unused_pte_addrs[i].instance_id() == mpt.instance@.id()
 }
 
 pub open spec fn instance_match_addrs(mpt: &exec::MockPageTable,
@@ -60,6 +60,20 @@ pub open spec fn instance_match_addrs(mpt: &exec::MockPageTable,
 pub open spec fn path_index_at_level(level: PagingLevel) -> int {
     // level - 1
     level - 1
+}
+
+pub open spec fn mpt_and_tokens_wf(
+    mpt: &exec::MockPageTable,
+    tokens: exec::Tokens,
+) -> bool {
+    &&& instance_match(mpt, tokens)
+    &&& forall |i: usize| 0 <= i < exec::MAX_FRAME_NUM && mpt.mem@[i].1@.is_uninit() ==>
+            #[trigger] tokens.unused_addrs.contains_key(exec::frame_index_to_addr(i) as int)
+            && forall |j: usize| 0 <= j < NR_ENTRIES ==>
+                #[trigger] tokens.unused_pte_addrs.contains_key(exec::frame_addr_to_index(i) + j * exec::SIZEOF_PAGETABLEENTRY as int)
+    &&& forall |i: usize| 0 <= i < exec::MAX_FRAME_NUM && #[trigger] mpt.mem@[i].1@.is_init() ==>
+            forall |j: usize| 0 <= j < NR_ENTRIES ==> #[trigger] mpt.mem@[i].1@.value().ptes[j as int].frame_pa == 0 ==>
+                #[trigger] tokens.unused_pte_addrs.contains_key(mpt.mem@[i].1@.value().ptes[j as int].frame_pa as int)
 }
 
 }

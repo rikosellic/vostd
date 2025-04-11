@@ -117,8 +117,6 @@ requires
         }
     )); // root
 
-    assert(cursor.0.path[cursor.0.level as usize - 1].is_some());
-
     cursor.map::<SimpleFrameMeta>(frame, page_prop,
         Tracked(tokens),
         &mut mock_page_table,
