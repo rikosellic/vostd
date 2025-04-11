@@ -138,6 +138,7 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
     pub fn new_at(node: &'a PTL, idx: usize, mpt: &exec::MockPageTable) -> (res: Self)
     requires
         idx < nr_subpage_per_huge(),
+        mpt.wf(),
     ensures
         res.pte.pte_paddr() == node.paddr() as usize + idx * exec::SIZEOF_PAGETABLEENTRY,
         res.pte.pte_paddr() == exec::get_pte_from_addr_spec(res.pte.pte_paddr(), mpt).pte_addr,
@@ -147,7 +148,6 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
         // SAFETY: The index is within the bound.
         // let pte = unsafe { node.read_pte(idx) };
         let pte = node.read_pte(idx, mpt);
-        assert (pte.frame_paddr() < usize::MAX) by { admit(); }; // TODO
         Self { pte, idx, node, phantom: std::marker::PhantomData }
     }
 }

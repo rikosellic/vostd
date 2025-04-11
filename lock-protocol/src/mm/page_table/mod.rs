@@ -40,13 +40,14 @@ pub trait PageTableEntryTrait:
     fn is_present(&self, mpt: &exec::MockPageTable) -> (res: bool)
     requires
         mpt.wf(),
-        self.pte_paddr() == exec::get_pte_from_addr_spec(self.pte_paddr(), mpt).pte_addr,
-        self.frame_paddr() == exec::get_pte_from_addr_spec(self.pte_paddr(), mpt).frame_pa,
+        self.pte_paddr() == exec::get_pte_from_addr(self.pte_paddr(), mpt).pte_addr,
+        self.frame_paddr() == exec::get_pte_from_addr(self.pte_paddr(), mpt).frame_pa,
     ensures
         // mpt.ptes@.value().contains_key(self.pte_paddr() as int) == res,
         res ==> mpt.ptes@.value().contains_key(self.pte_paddr() as int) &&
                 mpt.frames@.value().contains_key(self.frame_paddr() as int),
         !res ==> !mpt.ptes@.value().contains_key(self.pte_paddr() as int),
+        mpt.wf(),
     ;
 
     /// Create a new PTE with the given physical address and flags that map to a page.
@@ -108,6 +109,8 @@ pub trait PageTableEntryTrait:
     /// Converts a usize `pte_raw` into a PTE.
     // TODO: Implement as_usize and from_usize
     fn from_usize(pte_raw: usize, mpt: &exec::MockPageTable) -> (res: Self)
+    requires
+        mpt.wf(),
     ensures
         res.pte_paddr() == pte_raw as Paddr,
         res.frame_paddr() == exec::get_pte_from_addr_spec(pte_raw, mpt).frame_pa;

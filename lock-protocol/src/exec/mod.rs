@@ -92,6 +92,7 @@ ensures
 impl PageTableEntryTrait for SimplePageTableEntry {
 
     fn is_present(&self, mpt: &MockPageTable) -> bool {
+        assert(self.frame_pa == self.frame_paddr());
         assert(self.frame_pa != 0 ==>
                 mpt.ptes@.value().contains_key(self.pte_addr as int));
         assert(self.frame_pa != 0 ==>
@@ -235,6 +236,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
         assert(mpt.mem@.contains_key(cur_alloc_index));
 
         proof {
+            assert(!mpt.frames@.value().contains_key(used_addr as int));
             mpt.instance.get().new_at(p.addr() as int, simple_page_table::FrameView {
                 pa: p.addr() as int,
                 pte_addrs: Set::empty(),
@@ -253,7 +255,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
                             mpt.ptes@.value().contains_key(mpt.mem@[i].1@.value().ptes[k].pte_addr as int)
                         }
                         else {
-                            !mpt.ptes@.value().contains_key(mpt.mem@[i].1@.mem_contents().value().ptes[k].pte_addr as int)
+                            !mpt.ptes@.value().contains_key(
+                                mpt.mem@[i].1@.mem_contents().value().ptes[k].pte_addr as int)
                         }
                     }
                 );
@@ -321,12 +324,10 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
     //     todo!()
     // }
 
-    #[verifier::external_body]
     fn change_children(&self, delta: i16) {
         // TODO: implement this function
     }
 
-    #[verifier::external_body]
     fn is_tracked(&self) -> crate::mm::MapTrackingStatus {
         crate::mm::MapTrackingStatus::Tracked
     }
@@ -337,7 +338,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
 
     #[verifier::external_body]
     fn level(&self) -> crate::mm::PagingLevel {
-        todo!()
+        // TODO: currently we cannot get level from the page table lock because the meta data is not modeled
+        unimplemented!("PageTableLock::level")
     }
 
 }
@@ -369,7 +371,7 @@ struct_with_invariants!{
             &&& (#[trigger] self.mem@[i].0.addr() == PHYSICAL_BASE_ADDRESS() as usize + i * SIZEOF_FRAME)
         }
         &&& forall |i: usize| 0 <= i < MAX_FRAME_NUM ==>
-                if (self.mem@[i].1@.mem_contents() != MemContents::<SimpleFrame>::Uninit) {
+                if (self.mem@[i].1@.mem_contents().is_init()) {
                     #[trigger] self.frames@.value().contains_key(frame_index_to_addr(i) as int)
                     &&
                     forall |k: int| 0 <= k < NR_ENTRIES ==>
@@ -384,7 +386,8 @@ struct_with_invariants!{
                     // !self.frames@.value().contains_key(frame_index_to_addr(i) as int)
                     true
                 }
-            // TODO: reverse relationship between ptes and frames
+        &&& forall |i: int| self.frames@.value().contains_key(i) ==>
+                self.mem@[frame_addr_to_index(i as usize)].1@.mem_contents().is_init()
         }
     }
 }
@@ -511,7 +514,7 @@ pub fn get_pte_from_addr(addr: usize, mpt: &MockPageTable) -> (res: SimplePageTa
     requires
         0 <= addr < PHYSICAL_BASE_ADDRESS_SPEC() + SIZEOF_FRAME * NR_ENTRIES,
         (addr - PHYSICAL_BASE_ADDRESS_SPEC()) % SIZEOF_PAGETABLEENTRY as int == 0,
-        // mpt.wf(),
+        mpt.wf(),
     ensures
         res.pte_paddr() == addr as usize,
         res == get_pte_from_addr_spec(addr, mpt)
@@ -539,6 +542,7 @@ pub open spec fn frame_addr_to_index_spec(addr: usize) -> usize {
     ((addr - PHYSICAL_BASE_ADDRESS_SPEC()) / SIZEOF_FRAME as int) as usize
 }
 
+#[verifier::when_used_as_spec(frame_addr_to_index_spec)]
 pub fn frame_addr_to_index(addr: usize) -> (res: usize)
 ensures
     res == frame_addr_to_index_spec(addr)

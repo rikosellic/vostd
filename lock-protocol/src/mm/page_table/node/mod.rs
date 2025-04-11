@@ -78,11 +78,7 @@ pub trait PageTableLockTrait<
     ) -> (res: Self) where Self: Sized
     requires
         old(mpt).mem@.contains_key(cur_alloc_index),
-        old(mpt).mem@[cur_alloc_index].1@.mem_contents() == MemContents::<exec::SimpleFrame>::Uninit,
-        forall |i: int| 0 <= i < NR_ENTRIES ==>
-                    ! (#[trigger] old(mpt).ptes@.value().dom().contains(
-                        used_addr + i * exec::SIZEOF_PAGETABLEENTRY)),
-
+        old(mpt).mem@[cur_alloc_index].1@.mem_contents().is_uninit(), // this means !mpt.frames@.contains_key(used_addr) because mpt is wf.
         forall |i: int| old(mpt).ptes@.value().contains_key(i) ==>
             (#[trigger] old(mpt).ptes@.value()[i]).frame_pa != used_addr,
         forall |i: int| 0 <= i < NR_ENTRIES ==>
@@ -92,11 +88,21 @@ pub trait PageTableLockTrait<
         old(mpt).wf(),
         cur_alloc_index < exec::MAX_FRAME_NUM,
         used_addr_token@.instance_id() == old(mpt).instance@.id(),
-        used_addr == (cur_alloc_index * exec::SIZEOF_FRAME as usize) + exec::PHYSICAL_BASE_ADDRESS(),
+        used_addr == exec::frame_index_to_addr(cur_alloc_index),
     ensures
         mpt.instance@.id() == old(mpt).instance@.id(),
         res.paddr() == used_addr as usize,
         mpt.wf(),
+        forall |i: int| mpt.ptes@.value().contains_key(i) ==>
+            (#[trigger] mpt.ptes@.value()[i]).frame_pa != used_addr,
+        forall |i: int| 0 <= i < NR_ENTRIES ==>
+            ! #[trigger] mpt.ptes@.value().contains_key(used_addr + i * exec::SIZEOF_PAGETABLEENTRY as int),
+        mpt.frames@.value().contains_key(used_addr as int),
+        mpt.mem@.contains_key(cur_alloc_index),
+        mpt.mem@[cur_alloc_index].1@.mem_contents().is_init(),
+        // all frame_pa of allocated pte are 0
+        forall |i: int| 0 <= i < NR_ENTRIES ==>
+            #[trigger] mpt.mem@[cur_alloc_index].1@.value().ptes[i].frame_pa == 0,
     ;
 
     fn unlock(&mut self) -> PageTableNode<E, C>;
@@ -108,6 +114,9 @@ pub trait PageTableLockTrait<
     fn nr_children(&self) -> u16;
 
     fn read_pte(&self, idx: usize, mpt: &exec::MockPageTable) -> (res: E)
+    requires
+        idx < nr_subpage_per_huge(),
+        mpt.wf(),
     ensures
         res.pte_paddr() == self.paddr() + idx * exec::SIZEOF_PAGETABLEENTRY,
         res.pte_paddr() == exec::get_pte_from_addr_spec(res.pte_paddr(), mpt).pte_addr,

@@ -216,6 +216,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         self.level <= PagingConsts::NR_LEVELS_SPEC() as usize,
         self.path.len() >= self.level as usize,
         self.path[self.level as usize - 1].is_some(),
+        mpt.wf(),
         // mock_page_table.frames@.value().contains_key(self.path[self.level as usize - 1].unwrap().paddr() as int),
     ensures
         res.pte.pte_paddr() == self.path[self.level as usize - 1].unwrap().paddr() as usize +
