@@ -76,4 +76,16 @@ pub open spec fn mpt_and_tokens_wf(
                 #[trigger] tokens.unused_pte_addrs.contains_key(mpt.mem@[i].1@.value().ptes[j as int].frame_pa as int)
 }
 
+pub open spec fn mpt_not_contains_not_allocated_frames(mpt: &exec::MockPageTable, cur_alloc_index: usize) -> bool {
+    &&& forall |i: usize| cur_alloc_index <= i < exec::MAX_FRAME_NUM ==>
+            !mpt.frames@.value().contains_key(#[trigger] exec::frame_index_to_addr(i) as int)
+            && forall |j: usize| 0 <= j < NR_ENTRIES ==>
+                ! #[trigger] mpt.ptes@.value().contains_key(
+                     exec::frame_addr_to_index(i) + j * exec::SIZEOF_PAGETABLEENTRY as int
+                )
+    &&& forall |i: usize| cur_alloc_index <= i < exec::MAX_FRAME_NUM ==>
+            forall |j: int| #[trigger] mpt.ptes@.value().contains_key(j) ==>
+                mpt.ptes@.value()[j].frame_pa != #[trigger] exec::frame_index_to_addr(i) as int
+}
+
 }

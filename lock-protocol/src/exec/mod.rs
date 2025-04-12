@@ -173,11 +173,21 @@ impl PageTableEntryTrait for SimplePageTableEntry {
 
     fn from_usize(pte_raw: usize, mpt: &MockPageTable) -> (res: Self)
     ensures
-        res == get_pte_from_addr_spec(pte_raw, mpt)
+        res == get_pte_from_addr(pte_raw, mpt),
+        res.frame_paddr() == 0 ==> !mpt.ptes@.value().contains_key(pte_raw as int),
+        res.frame_paddr() != 0 ==> mpt.ptes@.value().contains_key(pte_raw as int)
     {
         assert(0 <= pte_raw < PHYSICAL_BASE_ADDRESS_SPEC() + SIZEOF_PAGETABLEENTRY * NR_ENTRIES) by { admit(); } // TODO
         assert((pte_raw - PHYSICAL_BASE_ADDRESS_SPEC()) % SIZEOF_PAGETABLEENTRY as int == 0) by { admit(); } // TODO
-        get_pte_from_addr(pte_raw, mpt)
+        assert(mpt.wf());
+        let res = get_pte_from_addr(pte_raw, mpt);
+        assert(mpt.ptes@.value().contains_key(pte_raw as int) ==> res.frame_pa != 0) by {
+            // NOTE: this seems not true if we do not add the invariant in mpt.wf() @see mpt.wf()
+            // assert(mpt.ptes@.value()[res.pte_addr as int].frame_pa != 0 ==> mpt.ptes@.value()[res.pte_addr as int].frame_pa as u64 != 0);
+        }
+        assert(res.frame_pa == 0 ==> 
+            !mpt.ptes@.value().contains_key(res.pte_addr as int));
+        res
     }
 
     fn pte_paddr(&self) -> (res: Paddr)
@@ -295,8 +305,11 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
 
     fn read_pte(&self, idx: usize, mpt: &exec::MockPageTable) -> (res: E)
     ensures
+        mpt.wf(),
         res.frame_paddr() == get_pte_from_addr_spec((self.paddr + idx * SIZEOF_PAGETABLEENTRY) as usize, mpt).frame_pa,
         res.pte_paddr() == (self.paddr + idx * SIZEOF_PAGETABLEENTRY) as usize,
+        res.frame_paddr() == 0 ==> !mpt.ptes@.value().contains_key(self.paddr + idx * SIZEOF_PAGETABLEENTRY as int),
+        res.frame_paddr() != 0 ==> mpt.ptes@.value().contains_key(self.paddr + idx * SIZEOF_PAGETABLEENTRY as int)
     {
         assert(self.paddr + idx * SIZEOF_PAGETABLEENTRY < usize::MAX) by { admit(); } // TODO
         E::from_usize(self.paddr + idx * SIZEOF_PAGETABLEENTRY, mpt)
@@ -382,9 +395,15 @@ struct_with_invariants!{
                 } else {
                     // TODO: there could be leaking because we continously allocate frames
                     !self.frames@.value().contains_key(frame_index_to_addr(i) as int)
+                    && forall |j: int| 0 <= j < NR_ENTRIES ==>
+                        ! #[trigger] self.ptes@.value().contains_key(frame_index_to_addr(i) as int + j * SIZEOF_PAGETABLEENTRY as int)
                 }
         &&& forall |i: int| self.frames@.value().contains_key(i) ==>
                 self.mem@[frame_addr_to_index(i as usize)].1@.mem_contents().is_init()
+        &&& forall |i: int| self.ptes@.value().contains_key(i) ==> // TODO: why we need this? Isn't it preserved by page_wf?
+                (#[trigger] self.ptes@.value()[i]).frame_pa != 0
+                && self.ptes@.value()[i].frame_pa < u64::MAX
+                && self.ptes@.value()[i].frame_pa as u64 != 0 // TODO: this is so wired
         }
     }
 }
@@ -484,17 +503,15 @@ pub open spec fn get_pte_addr_from_va_frame_addr_and_level_spec(va: usize, frame
     pte_addr
 }
 
-#[verifier::inline]
 pub open spec fn get_pte_from_addr_spec(addr: usize, mpt: &MockPageTable) -> (res: SimplePageTableEntry)
 recommends
     mpt.wf(),
 {
     if (mpt.ptes@.value().contains_key(addr as int)) {
-        let pte = mpt.ptes@.value()[addr as int];
         SimplePageTableEntry {
             pte_addr: addr as u64,
-            frame_pa: pte.frame_pa as u64,
-            level: pte.level as u8,
+            frame_pa: mpt.ptes@.value()[addr as int].frame_pa as u64,
+            level: mpt.ptes@.value()[addr as int].level as u8,
         }
     } else {
         SimplePageTableEntry {
@@ -513,7 +530,6 @@ pub fn get_pte_from_addr(addr: usize, mpt: &MockPageTable) -> (res: SimplePageTa
         (addr - PHYSICAL_BASE_ADDRESS_SPEC()) % SIZEOF_PAGETABLEENTRY as int == 0,
         mpt.wf(),
     ensures
-        res.pte_paddr() == addr as usize,
         res == get_pte_from_addr_spec(addr, mpt)
 {
     let pte = PPtr::<SimplePageTableEntry>::from_addr(addr).read(Tracked::assume_new()); // TODO: permission violation

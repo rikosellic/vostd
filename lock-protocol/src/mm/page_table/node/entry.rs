@@ -144,6 +144,8 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
         res.pte.pte_paddr() == exec::get_pte_from_addr_spec(res.pte.pte_paddr(), mpt).pte_addr,
         res.pte.frame_paddr() == exec::get_pte_from_addr_spec(res.pte.pte_paddr(), mpt).frame_pa,
         res.idx == idx,
+        res.pte.frame_paddr() == 0 ==> !mpt.ptes@.value().contains_key(res.pte.pte_paddr() as int),
+        res.pte.frame_paddr() != 0 ==> mpt.ptes@.value().contains_key(res.pte.pte_paddr() as int),
     {
         // SAFETY: The index is within the bound.
         // let pte = unsafe { node.read_pte(idx) };

@@ -221,10 +221,12 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
     ensures
         res.pte.pte_paddr() == self.path[self.level as usize - 1].unwrap().paddr() as usize +
                                 pte_index(self.va, self.level) * exec::SIZEOF_PAGETABLEENTRY,
-        res.pte.pte_paddr() == exec::get_pte_from_addr_spec(res.pte.pte_paddr(), mpt).pte_addr,
-        res.pte.frame_paddr() == exec::get_pte_from_addr_spec(res.pte.pte_paddr(), mpt).frame_pa,
+        res.pte.pte_paddr() == exec::get_pte_from_addr(res.pte.pte_paddr(), mpt).pte_addr,
+        res.pte.frame_paddr() == exec::get_pte_from_addr(res.pte.pte_paddr(), mpt).frame_pa,
         res.idx == pte_index(self.va, self.level),
         res.idx < nr_subpage_per_huge(),
+        res.pte.frame_paddr() == 0 ==> !mpt.ptes@.value().contains_key(res.pte.pte_paddr() as int),
+        res.pte.frame_paddr() != 0 ==> mpt.ptes@.value().contains_key(res.pte.pte_paddr() as int),
     {
         // let node = self.path[self.level as usize - 1].as_mut().unwrap();
         // node.entry(pte_index::<C>(self.va, self.level))
@@ -353,6 +355,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         // page table validation
         old(self).mock_page_table_valid_before_map(old(mpt)),
         mpt_and_tokens_wf(old(mpt), tokens@),
+        mpt_not_contains_not_allocated_frames(old(mpt), *old(cur_alloc_index)),
     ensures
         self.path_valid_after_map(old(self)),
         instance_match(old(mpt), tokens@),
@@ -388,6 +391,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             instance_match_addrs(mpt, unused_addrs, unused_pte_addrs),
             forall |i: int| path_index_at_level(self.0.level) <= i <= path_index_at_level(old(self).0.level) ==>
                 #[trigger] mpt.frames@.value().contains_key(self.0.path[i].unwrap().paddr() as int),
+            mpt_not_contains_not_allocated_frames(mpt, *cur_alloc_index),
         {
             // debug_assert!(should_map_as_tracked::<M>(self.0.va)); // TODO
             let cur_level = self.0.level;
@@ -395,6 +399,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             match cur_entry.to_ref::<T>(mpt) {
                 Child::PageTableRef(pt) => {
                     assert(mpt.frames@.value().contains_key(pt as int));
+                    assert(cur_entry.pte.frame_paddr() != 0);
 
                     // SAFETY: `pt` points to a PT that is attached to a node
                     // in the locked sub-tree, so that it is locked and alive.
@@ -409,6 +414,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                     assert(self.0.path[cur_level - 2].is_some());
                     assert(self.0.path[old(self).0.level - 1].is_some());
                     assert(self.0.path[old_level@ - 1] == old(self).0.path[old_level@ - 1]);
+
+                    assert(mpt_not_contains_not_allocated_frames(mpt, *cur_alloc_index));
                 }
                 Child::PageTable(_) => {
                     // unreachable!();
@@ -416,9 +423,11 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                 }
                 Child::None => {
                     assert(!mpt.ptes@.value().contains_key(cur_entry.pte.pte_paddr() as int));
+                    assert(cur_entry.pte.frame_paddr() == 0);
+                    assert(mpt_not_contains_not_allocated_frames(mpt, *cur_alloc_index));
                     let preempt_guard = crate::task::disable_preempt(); // currently nothing happen
 
-                    let used_addr = (*cur_alloc_index * exec::SIZEOF_FRAME) as usize + exec::PHYSICAL_BASE_ADDRESS();
+                    let used_addr = exec::frame_index_to_addr(*cur_alloc_index);
                     let ghost mut used_addr_ghost;
                     let tracked mut used_addr_token;
                     proof {
@@ -427,25 +436,24 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                         used_addr_token = unused_addrs.tracked_remove(used_addr_ghost);
                         assert(used_addr_token.instance_id() == mpt.instance@.id());
 
-                        assert(used_addr == (*cur_alloc_index * exec::SIZEOF_FRAME as usize) + exec::PHYSICAL_BASE_ADDRESS());
+                        assert(used_addr == exec::frame_index_to_addr(*cur_alloc_index));
                         assert(used_addr_token.element() == used_addr as int) by {
                             assert(used_addr_ghost == used_addr as int);
                             admit();
                         } // TODO: why?
                     }
 
-                    // TODO: P0 before_alloc
-                    // {
-                        assume(!mpt.frames@.value().contains_key(used_addr as int));
-                        assume(mpt.mem@[*cur_alloc_index].1@.mem_contents() == MemContents::<exec::SimpleFrame>::Uninit);
-                        assume(forall |i: int| 0 <= i < NR_ENTRIES ==>
+                    // before_alloc
+                    {
+                        assert(!mpt.frames@.value().contains_key(used_addr as int));
+                        assert(mpt.mem@[*cur_alloc_index].1@.mem_contents() == MemContents::<exec::SimpleFrame>::Uninit);
+                        assert(forall |i: int| 0 <= i < NR_ENTRIES ==>
                                 ! (#[trigger] mpt.ptes@.value().dom().contains(used_addr + i * exec::SIZEOF_PAGETABLEENTRY)));
-                        
-                        assume(forall |i: int| mpt.ptes@.value().contains_key(i) ==>
-                                (#[trigger] mpt.ptes@.value()[i]).frame_pa != used_addr);
-                        assume(forall |i: int| 0 <= i < NR_ENTRIES ==>
+                        assert(forall |i: int| 0 <= i < NR_ENTRIES ==>
                                 ! #[trigger] mpt.ptes@.value().contains_key(used_addr + i * exec::SIZEOF_PAGETABLEENTRY as int));
-                    // } // TODO: P0
+                        assert(forall |i: int| #[trigger] mpt.ptes@.value().contains_key(i) ==>
+                                (mpt.ptes@.value()[i]).frame_pa != used_addr);
+                    }
                     let pt = PTL::alloc(
                         cur_level - 1,
                         MapTrackingStatus::Tracked,
@@ -474,6 +482,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                             old_level
                         );
                     assert(*cur_alloc_index < exec::MAX_FRAME_NUM - 4) by { admit(); }; // TODO: P0
+
+                    assume(mpt_not_contains_not_allocated_frames(mpt, *cur_alloc_index)); // TODO: P0
                 }
                 Child::Frame(_, _) => {
                     // panic!("Mapping a smaller frame in an already mapped huge page");

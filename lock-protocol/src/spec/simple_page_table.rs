@@ -111,6 +111,8 @@ SimplePageTable {
         // set child relationship
         set_child(parent: int, index: usize, child: int, level: usize) {
             require parent != child;
+            require child != 0;
+            require child as u64 != 0; // TODO: maybe add an axiom
             require pre.frames.contains_key(parent);
             require pre.frames.contains_key(child);
             require pre.frames[parent].pa != pre.frames[child].pa;
@@ -213,7 +215,7 @@ SimplePageTable {
 
     #[invariant]
     pub spec fn page_wf(self) -> bool {
-        forall |addr: int| self.frames.dom().contains(addr) ==> {
+        &&& forall |addr: int| self.frames.dom().contains(addr) ==> {
             let frame = #[trigger] self.frames[addr];
             frame.pa == addr
             &&
@@ -239,6 +241,15 @@ SimplePageTable {
                 }
             }
         }
+        &&& forall |pte_addr: int| 
+            #![trigger self.ptes[pte_addr]]
+            self.ptes.dom().contains(pte_addr) ==> {
+                self.frames.dom().contains(self.ptes[pte_addr].frame_pa)
+                &&
+                self.ptes[pte_addr].frame_pa != 0
+                &&
+                self.ptes[pte_addr].frame_pa as u64 != 0
+            }
     }
 
     #[invariant]

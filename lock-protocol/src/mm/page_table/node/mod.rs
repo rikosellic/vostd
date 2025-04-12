@@ -120,7 +120,10 @@ pub trait PageTableLockTrait<
     ensures
         res.pte_paddr() == self.paddr() + idx * exec::SIZEOF_PAGETABLEENTRY,
         res.pte_paddr() == exec::get_pte_from_addr_spec(res.pte_paddr(), mpt).pte_addr,
-        res.frame_paddr() == exec::get_pte_from_addr_spec(res.pte_paddr(), mpt).frame_pa,;
+        res.frame_paddr() == exec::get_pte_from_addr_spec(res.pte_paddr(), mpt).frame_pa,
+        res.frame_paddr() == 0 ==> !mpt.ptes@.value().contains_key(res.pte_paddr() as int),
+        res.frame_paddr() != 0 ==> mpt.ptes@.value().contains_key(res.pte_paddr() as int),
+    ;
 
     fn write_pte(&self, idx: usize, pte: E, mpt: &mut exec::MockPageTable, level: PagingLevel)
     requires
