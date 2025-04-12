@@ -10,7 +10,10 @@ use std::{
     ops::Range,
 };
 
-use vstd::{invariant, layout::is_power_2, pervasive::VecAdditionalExecFns, prelude::*, raw_ptr::MemContents};
+use vstd::{
+    invariant, layout::is_power_2, pervasive::VecAdditionalExecFns, prelude::*,
+    raw_ptr::MemContents,
+};
 use vstd::bits::*;
 use vstd::tokens::SetToken;
 
@@ -356,6 +359,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         old(self).mock_page_table_valid_before_map(old(mpt)),
         mpt_and_tokens_wf(old(mpt), tokens@),
         mpt_not_contains_not_allocated_frames(old(mpt), *old(cur_alloc_index)),
+        unallocated_frames_are_unused(tokens@.unused_addrs, tokens@.unused_pte_addrs,*old(cur_alloc_index)),
+        tokens_wf(tokens@.unused_addrs, tokens@.unused_pte_addrs),
     ensures
         self.path_valid_after_map(old(self)),
         instance_match(old(mpt), tokens@),
@@ -392,6 +397,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             forall |i: int| path_index_at_level(self.0.level) <= i <= path_index_at_level(old(self).0.level) ==>
                 #[trigger] mpt.frames@.value().contains_key(self.0.path[i].unwrap().paddr() as int),
             mpt_not_contains_not_allocated_frames(mpt, *cur_alloc_index),
+            unallocated_frames_are_unused(unused_addrs, unused_pte_addrs, *cur_alloc_index),
+            tokens_wf(unused_addrs, unused_pte_addrs),
         {
             // debug_assert!(should_map_as_tracked::<M>(self.0.va)); // TODO
             let cur_level = self.0.level;
@@ -425,27 +432,17 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                     assert(!mpt.ptes@.value().contains_key(cur_entry.pte.pte_paddr() as int));
                     assert(cur_entry.pte.frame_paddr() == 0);
                     assert(mpt_not_contains_not_allocated_frames(mpt, *cur_alloc_index));
+
                     let preempt_guard = crate::task::disable_preempt(); // currently nothing happen
 
                     let used_addr = exec::frame_index_to_addr(*cur_alloc_index);
-                    let ghost mut used_addr_ghost;
-                    let tracked mut used_addr_token;
-                    proof {
-                        used_addr_ghost = used_addr as int;
-                        assume(unused_addrs.contains_key(used_addr_ghost)); // TODO: P0
-                        used_addr_token = unused_addrs.tracked_remove(used_addr_ghost);
-                        assert(used_addr_token.instance_id() == mpt.instance@.id());
-
-                        assert(used_addr == exec::frame_index_to_addr(*cur_alloc_index));
-                        assert(used_addr_token.element() == used_addr as int) by {
-                            assert(used_addr_ghost == used_addr as int);
-                            admit();
-                        } // TODO: why?
-                    }
+                    let tracked used_addr_token = unused_addrs.tracked_remove(used_addr as int);
+                    assert(used_addr_token.instance_id() == mpt.instance@.id());
 
                     // before_alloc
                     {
-                        assert(!mpt.frames@.value().contains_key(used_addr as int));
+                        assert(used_addr_token.element() == used_addr as int); // ensured by token_wf
+                        assert(!mpt.frames@.value().contains_key(used_addr as int)); // ensured by unallocated_frames_are_unused
                         assert(mpt.mem@[*cur_alloc_index].1@.mem_contents() == MemContents::<exec::SimpleFrame>::Uninit);
                         assert(forall |i: int| 0 <= i < NR_ENTRIES ==>
                                 ! (#[trigger] mpt.ptes@.value().dom().contains(used_addr + i * exec::SIZEOF_PAGETABLEENTRY)));
@@ -514,6 +511,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         // Map the current page.
         let old_entry = cur_entry.replace(Child::Frame(frame, prop), mpt, self.0.level);
         self.0.move_forward();
+
+        // TODO: P0
         assume(forall |i: int| path_index_at_level(self.0.level) <= i <= path_index_at_level(old(self).0.level) ==>
                 #[trigger] mpt.frames@.value().contains_key(self.0.path[i].unwrap().paddr() as int));
 

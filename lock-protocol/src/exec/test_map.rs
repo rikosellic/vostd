@@ -97,6 +97,7 @@ requires
     // assert(mock_page_table.wf()); this should fail
     proof{
         let tracked used_addr = tokens.unused_addrs.tracked_remove(p.addr()as int);
+        assert(used_addr.element() == p.addr() as int);
 
         instance.new_at(p.addr() as int, simple_page_table::FrameView {
             pa: p.addr() as int,

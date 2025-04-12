@@ -88,4 +88,30 @@ pub open spec fn mpt_not_contains_not_allocated_frames(mpt: &exec::MockPageTable
                 mpt.ptes@.value()[j].frame_pa != #[trigger] exec::frame_index_to_addr(i) as int
 }
 
+pub open spec fn unallocated_frames_are_unused(unused_addrs: Map<int, simple_page_table::SimplePageTable::unused_addrs>,
+                                               unused_pte_addrs: Map<int, simple_page_table::SimplePageTable::unused_pte_addrs>,
+                                               cur_alloc_index: usize) -> bool
+{
+    &&& forall |i: usize| cur_alloc_index <= i < exec::MAX_FRAME_NUM ==>
+            #[trigger] unused_addrs.contains_key(exec::frame_index_to_addr(i) as int)
+    &&& forall |i: usize| cur_alloc_index <= i < exec::MAX_FRAME_NUM ==>
+            forall |j: int| 0 <= j < NR_ENTRIES ==>
+                #[trigger] unused_pte_addrs.contains_key(
+                    #[trigger] exec::frame_addr_to_index(i) + j * exec::SIZEOF_PAGETABLEENTRY as int
+                )
+}
+
+pub open spec fn tokens_wf(unused_addrs: Map<int, simple_page_table::SimplePageTable::unused_addrs>,
+                            unused_pte_addrs: Map<int, simple_page_table::SimplePageTable::unused_pte_addrs>) -> bool
+{
+    &&& forall |key| {
+        unused_addrs.dom().contains(key)
+            ==> #[trigger] unused_addrs[key].element() == key
+    }
+    &&& forall |key| {
+        unused_pte_addrs.dom().contains(key)
+            ==> #[trigger] unused_pte_addrs[key].element() == key
+    }
+}
+
 }

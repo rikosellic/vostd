@@ -77,7 +77,7 @@ SimplePageTable {
     init!{
         initialize() {
             init frames = Map::empty();
-            init unused_addrs = Set::full();
+            init unused_addrs = Set::full(); // TODO: P0 unused_addrs and unused_pte_addrs should be finite
 
             init ptes = Map::empty();
             init unused_pte_addrs = Set::full();
