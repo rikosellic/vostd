@@ -32,6 +32,8 @@ use crate::spec::simple_page_table;
 
 use crate::mm::NR_ENTRIES;
 
+use super::cursor::spec_helpers;
+
 verus! {
 
 // #[derive(Debug)] // TODO: Debug for PageTableNode
@@ -103,13 +105,23 @@ pub trait PageTableLockTrait<
         // all frame_pa of allocated pte are 0
         forall |i: int| 0 <= i < NR_ENTRIES ==>
             #[trigger] mpt.mem@[cur_alloc_index].1@.value().ptes[i].frame_pa == 0,
+
+        // mpt still contains the old frames
+        forall |i| old(mpt).frames@.value().contains_key(i) ==>
+            mpt.frames@.value().contains_key(i),
     ;
 
     fn unlock(&mut self) -> PageTableNode<E, C>;
 
-    fn into_raw_paddr(self: Self) -> Paddr where Self: Sized;
+    fn into_raw_paddr(self: Self) -> (res: Paddr) where Self: Sized
+    ensures
+        res == self.paddr()
+    ;
 
-    fn from_raw_paddr(paddr: Paddr) -> Self where Self: Sized;
+    fn from_raw_paddr(paddr: Paddr) -> (res: Self) where Self: Sized
+    ensures
+        res.paddr() == paddr
+    ;
 
     fn nr_children(&self) -> u16;
 
@@ -133,6 +145,7 @@ pub trait PageTableLockTrait<
         mpt.wf(),
         mpt.ptes@.instance_id() == old(mpt).ptes@.instance_id(),
         mpt.frames@.instance_id() == old(mpt).frames@.instance_id(),
+        spec_helpers::frames_do_not_change(mpt, old(mpt)),
     ;
 
     // fn nr_children_mut(&mut self) -> &mut u16;

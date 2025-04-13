@@ -3,6 +3,7 @@ use std::mem::ManuallyDrop;
 
 use vstd::prelude::*;
 
+use crate::mm::cursor::spec_helpers;
 use crate::mm::meta::AnyFrameMeta;
 use crate::mm::page_prop::PageProperty;
 use crate::mm::vm_space::Token;
@@ -83,6 +84,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait, T: AnyFrameMeta> Child<E, C, 
         mpt.wf(),
         mpt.ptes@.instance_id() == old(mpt).ptes@.instance_id(),
         mpt.frames@.instance_id() == old(mpt).frames@.instance_id(),
+        spec_helpers::frames_do_not_change(mpt, old(mpt)),
     {
         match self {
             Child::PageTable(pt) => {

@@ -203,6 +203,9 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         self.path[old(self).level as usize - 2] == Some(child_pt),
         self.path.len() >= old_level@ ==>
             self.path[old_level@ as usize - 1] == old(self).path[old_level@ as usize - 1],
+        self.path[self.level as usize - 1] == Some(child_pt),
+        self.path[self.level as usize - 1].unwrap().paddr() as int == child_pt.paddr() as int,
+        self.path[path_index_at_level(self.level)].unwrap().paddr() as int == child_pt.paddr() as int,
     {
         self.level = self.level - 1;
         // debug_assert_eq!(self.level, child_pt.level()); // TODO: assert
@@ -423,6 +426,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                     assert(self.0.path[old_level@ - 1] == old(self).0.path[old_level@ - 1]);
 
                     assert(mpt_not_contains_not_allocated_frames(mpt, *cur_alloc_index));
+                    assert(forall |i: int| path_index_at_level(self.0.level) <= i <= path_index_at_level(old_level@) ==>
+                        #[trigger] mpt.frames@.value().contains_key(self.0.path[i].unwrap().paddr() as int));
                 }
                 Child::PageTable(_) => {
                     // unreachable!();
@@ -499,8 +504,6 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             assert(self.0.level == cur_level - 1);
             assert(self.0.path[cur_level - 1].is_some());
             assert(self.0.path[self.0.level as usize - 1].is_some());
-            assume(forall |i: int| path_index_at_level(self.0.level) <= i <= path_index_at_level(old(self).0.level) ==>
-                    #[trigger] mpt.frames@.value().contains_key(self.0.path[i].unwrap().paddr() as int));
             continue;
         }
         assert(forall |i: int| 1 < i <= old(self).0.level ==> #[trigger] self.0.path[i - 1].is_some());

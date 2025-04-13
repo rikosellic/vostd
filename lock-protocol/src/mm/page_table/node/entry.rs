@@ -1,8 +1,7 @@
 use vstd::prelude::*;
 
 use crate::mm::{
-    meta::AnyFrameMeta, nr_subpage_per_huge, page_prop::PageProperty, page_size, vm_space::Token,
-    PageTableEntryTrait, PagingConstsTrait, PagingLevel,
+    cursor::spec_helpers::frames_do_not_change, meta::AnyFrameMeta, nr_subpage_per_huge, page_prop::PageProperty, page_size, vm_space::Token, PageTableEntryTrait, PagingConstsTrait, PagingLevel
 };
 
 use super::{Child, MapTrackingStatus, PageTableLockTrait, PageTableNode};
@@ -99,6 +98,7 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
     ensures
         mpt.instance@.id() == old(mpt).instance@.id(),
         mpt.wf(),
+        frames_do_not_change(mpt, old(mpt)),
     {
         // // assert!(new_child.is_compatible(self.node.level(), self.node.is_tracked()));
 

@@ -1,6 +1,7 @@
 pub mod cursor;
 pub mod node;
 
+use cursor::spec_helpers;
 use vstd::prelude::*;
 pub use node::*;
 use core::fmt::Debug;
@@ -58,6 +59,7 @@ pub trait PageTableEntryTrait:
         mpt.wf(),
         mpt.ptes@.instance_id() == old(mpt).ptes@.instance_id(),
         mpt.frames@.instance_id() == old(mpt).frames@.instance_id(),
+        spec_helpers::frames_do_not_change(mpt, old(mpt)),
     ;
 
     /// Create a new PTE that map to a child page table.

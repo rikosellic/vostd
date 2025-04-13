@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Mutex, OnceLock};
 
+use crate::mm::cursor::spec_helpers;
 use crate::mm::entry::Entry;
 use crate::mm::page_prop::{PageFlags, PageProperty, PrivilegedPageFlags};
 use crate::mm::page_table::PageTableNode;
@@ -316,7 +317,13 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
     }
 
     #[verifier::external_body]
-    fn write_pte(&self, idx: usize, pte: E, mpt: &mut MockPageTable, level: crate::mm::PagingLevel) {
+    fn write_pte(&self, idx: usize, pte: E, mpt: &mut MockPageTable, level: crate::mm::PagingLevel) 
+    ensures
+        mpt.wf(),
+        mpt.ptes@.instance_id() == old(mpt).ptes@.instance_id(),
+        mpt.frames@.instance_id() == old(mpt).frames@.instance_id(),
+        spec_helpers::frames_do_not_change(mpt, old(mpt)),
+    {
         let (p, Tracked(pt)) = get_frame_from_index(frame_addr_to_index(self.paddr), &mpt.mem); // TODO: permission violation
         let mut frame = p.read(Tracked(&pt));
         frame.ptes[idx] = SimplePageTableEntry {

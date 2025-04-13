@@ -114,4 +114,14 @@ pub open spec fn tokens_wf(unused_addrs: Map<int, simple_page_table::SimplePageT
     }
 }
 
+pub open spec fn frames_do_not_change(
+    mpt: &exec::MockPageTable,
+    old_mpt: &exec::MockPageTable,
+) -> bool {
+    &&& forall |i| old_mpt.frames@.value().contains_key(i) ==>
+            #[trigger] mpt.frames@.value().contains_key(i)
+    &&& forall |i| mpt.frames@.value().contains_key(i) ==>
+            #[trigger] old_mpt.frames@.value().contains_key(i)
+}
+
 }
