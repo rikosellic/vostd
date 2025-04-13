@@ -91,6 +91,7 @@ pub trait PageTableLockTrait<
         cur_alloc_index < exec::MAX_FRAME_NUM,
         used_addr_token@.instance_id() == old(mpt).instance@.id(),
         used_addr == exec::frame_index_to_addr(cur_alloc_index),
+        spec_helpers::mpt_not_contains_not_allocated_frames(old(mpt), cur_alloc_index),
     ensures
         mpt.instance@.id() == old(mpt).instance@.id(),
         res.paddr() == used_addr as usize,
@@ -109,6 +110,8 @@ pub trait PageTableLockTrait<
         // mpt still contains the old frames
         forall |i| old(mpt).frames@.value().contains_key(i) ==>
             mpt.frames@.value().contains_key(i),
+
+        spec_helpers::mpt_not_contains_not_allocated_frames(mpt, (cur_alloc_index + 1) as usize),
     ;
 
     fn unlock(&mut self) -> PageTableNode<E, C>;
@@ -137,15 +140,17 @@ pub trait PageTableLockTrait<
         res.frame_paddr() != 0 ==> mpt.ptes@.value().contains_key(res.pte_paddr() as int),
     ;
 
-    fn write_pte(&self, idx: usize, pte: E, mpt: &mut exec::MockPageTable, level: PagingLevel)
+    fn write_pte(&self, idx: usize, pte: E, mpt: &mut exec::MockPageTable, level: PagingLevel, ghost_index: usize)
     requires
         idx < nr_subpage_per_huge(),
         old(mpt).wf(),
+        spec_helpers::mpt_not_contains_not_allocated_frames(old(mpt), ghost_index),
     ensures
         mpt.wf(),
         mpt.ptes@.instance_id() == old(mpt).ptes@.instance_id(),
         mpt.frames@.instance_id() == old(mpt).frames@.instance_id(),
         spec_helpers::frames_do_not_change(mpt, old(mpt)),
+        spec_helpers::mpt_not_contains_not_allocated_frames(mpt, ghost_index),
     ;
 
     // fn nr_children_mut(&mut self) -> &mut u16;

@@ -120,7 +120,8 @@ impl PageTableEntryTrait for SimplePageTableEntry {
     }
 
     #[verifier::external_body]
-    fn new_page(paddr: crate::mm::Paddr, level: crate::mm::PagingLevel, prop: crate::mm::page_prop::PageProperty, mpt: &mut MockPageTable) -> Self {
+    fn new_page(paddr: crate::mm::Paddr, level: crate::mm::PagingLevel, prop: crate::mm::page_prop::PageProperty,
+                mpt: &mut MockPageTable, ghost_index: usize) -> Self {
         // NOTE: this function currently does not create a actual page table entry
         SimplePageTableEntry {
             pte_addr: 0,
@@ -317,7 +318,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
     }
 
     #[verifier::external_body]
-    fn write_pte(&self, idx: usize, pte: E, mpt: &mut MockPageTable, level: crate::mm::PagingLevel) 
+    fn write_pte(&self, idx: usize, pte: E, mpt: &mut MockPageTable, level: crate::mm::PagingLevel, ghost_index: usize) 
     ensures
         mpt.wf(),
         mpt.ptes@.instance_id() == old(mpt).ptes@.instance_id(),

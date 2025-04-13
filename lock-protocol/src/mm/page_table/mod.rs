@@ -52,14 +52,16 @@ pub trait PageTableEntryTrait:
     ;
 
     /// Create a new PTE with the given physical address and flags that map to a page.
-    fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty, mpt: &mut exec::MockPageTable) -> (res: Self)
+    fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty, mpt: &mut exec::MockPageTable, ghost_index: usize) -> (res: Self)
     requires
         old(mpt).wf(),
+        spec_helpers::mpt_not_contains_not_allocated_frames(old(mpt), ghost_index),
     ensures
         mpt.wf(),
         mpt.ptes@.instance_id() == old(mpt).ptes@.instance_id(),
         mpt.frames@.instance_id() == old(mpt).frames@.instance_id(),
         spec_helpers::frames_do_not_change(mpt, old(mpt)),
+        spec_helpers::mpt_not_contains_not_allocated_frames(mpt, ghost_index),
     ;
 
     /// Create a new PTE that map to a child page table.

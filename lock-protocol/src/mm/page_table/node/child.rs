@@ -77,14 +77,16 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait, T: AnyFrameMeta> Child<E, C, 
     /// Usually this is for recording the PTE into a page table node. When the
     /// child is needed again by reading the PTE of a page table node, extra
     /// information should be provided using the [`Child::from_pte`] method.
-    pub(super) fn into_pte(self, mpt: &mut exec::MockPageTable) -> (res: E)
+    pub(super) fn into_pte(self, mpt: &mut exec::MockPageTable, ghost_index: usize) -> (res: E)
     requires
         old(mpt).wf(),
+        spec_helpers::mpt_not_contains_not_allocated_frames(old(mpt), ghost_index), // TODO: can we remove this?
     ensures
         mpt.wf(),
         mpt.ptes@.instance_id() == old(mpt).ptes@.instance_id(),
         mpt.frames@.instance_id() == old(mpt).frames@.instance_id(),
         spec_helpers::frames_do_not_change(mpt, old(mpt)),
+        spec_helpers::mpt_not_contains_not_allocated_frames(mpt, ghost_index), // TODO: can we remove this?
     {
         match self {
             Child::PageTable(pt) => {
@@ -98,9 +100,9 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait, T: AnyFrameMeta> Child<E, C, 
             }
             Child::Frame(page, prop) => {
                 let level = page.map_level();
-                E::new_page(page.into_raw(), level, prop, mpt)
+                E::new_page(page.into_raw(), level, prop, mpt, ghost_index)
             }
-            Child::Untracked(pa, level, prop) => E::new_page(pa, level, prop, mpt),
+            Child::Untracked(pa, level, prop) => E::new_page(pa, level, prop, mpt, ghost_index),
             Child::None => E::new_absent(),
             Child::Token(token) => E::new_token(token),
         }

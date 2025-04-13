@@ -443,7 +443,6 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                     let used_addr = exec::frame_index_to_addr(*cur_alloc_index);
                     let tracked used_addr_token = unused_addrs.tracked_remove(used_addr as int);
                     assert(used_addr_token.instance_id() == mpt.instance@.id());
-
                     // before_alloc
                     {
                         assert(used_addr_token.element() == used_addr as int); // ensured by token_wf
@@ -469,12 +468,13 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
 
                     let paddr = pt.into_raw_paddr();
 
+                    reveal(spec_helpers::frames_do_not_change);
                     // SAFETY: It was forgotten at the above line.
                     let _ = cur_entry
                         .replace(Child::<E, C, T>::PageTable(
                             // unsafe { PageTableNode::from_raw(paddr) }
                             PageTableNode::from_raw(paddr)
-                        ), mpt, self.0.level); // alloc pte here
+                        ), mpt, self.0.level, *cur_alloc_index); // alloc pte here
                     // SAFETY: `pt` points to a PT that is attached to a node
                     // in the locked sub-tree, so that it is locked and alive.
                     self.0
@@ -484,8 +484,6 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                             old_level
                         );
                     assert(*cur_alloc_index < exec::MAX_FRAME_NUM - 4) by { admit(); }; // TODO: P0
-
-                    assume(mpt_not_contains_not_allocated_frames(mpt, *cur_alloc_index)); // TODO: P0
                 }
                 Child::Frame(_, _) => {
                     // panic!("Mapping a smaller frame in an already mapped huge page");
@@ -512,7 +510,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         let cur_entry = self.0.cur_entry(mpt);
         assert(cur_entry.idx < nr_subpage_per_huge() as usize) by { admit(); } // TODO
         // Map the current page.
-        let old_entry = cur_entry.replace(Child::Frame(frame, prop), mpt, self.0.level);
+        let old_entry = cur_entry.replace(Child::Frame(frame, prop), mpt, self.0.level, *cur_alloc_index);
         self.0.move_forward();
 
         // TODO: P0

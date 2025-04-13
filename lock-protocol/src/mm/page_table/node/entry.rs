@@ -1,7 +1,7 @@
 use vstd::prelude::*;
 
 use crate::mm::{
-    cursor::spec_helpers::frames_do_not_change, meta::AnyFrameMeta, nr_subpage_per_huge, page_prop::PageProperty, page_size, vm_space::Token, PageTableEntryTrait, PagingConstsTrait, PagingLevel
+    cursor::spec_helpers::{self, frames_do_not_change}, meta::AnyFrameMeta, nr_subpage_per_huge, page_prop::PageProperty, page_size, vm_space::Token, PageTableEntryTrait, PagingConstsTrait, PagingLevel
 };
 
 use super::{Child, MapTrackingStatus, PageTableLockTrait, PageTableNode};
@@ -91,14 +91,18 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
     // #[verifier::external_body]
     pub(in crate::mm) fn replace<T: AnyFrameMeta>(self, new_child: Child<E, C, T>,
                                                     mpt: &mut exec::MockPageTable,
-                                                    level: PagingLevel) -> (res: Child<E, C, T>)
+                                                    level: PagingLevel,
+                                                    ghost_index: usize, // TODO: make it ghost
+                                                ) -> (res: Child<E, C, T>)
     requires
         old(mpt).wf(),
         self.idx < nr_subpage_per_huge(),
+        spec_helpers::mpt_not_contains_not_allocated_frames(old(mpt), ghost_index),
     ensures
         mpt.instance@.id() == old(mpt).instance@.id(),
         mpt.wf(),
         frames_do_not_change(mpt, old(mpt)),
+        spec_helpers::mpt_not_contains_not_allocated_frames(mpt, ghost_index),
     {
         // // assert!(new_child.is_compatible(self.node.level(), self.node.is_tracked()));
 
@@ -119,11 +123,13 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
             self.node.change_children(-1);
         }
 
+        assert(
+            spec_helpers::mpt_not_contains_not_allocated_frames(mpt, ghost_index));
         // SAFETY:
         //  1. The index is within the bounds.
         //  2. The new PTE is compatible with the page table node, as asserted above.
         // unsafe { self.node.write_pte(self.idx, new_child.into_pte()) };
-        self.node.write_pte(self.idx, new_child.into_pte(mpt), mpt, level);
+        self.node.write_pte(self.idx, new_child.into_pte(mpt, ghost_index), mpt, level, ghost_index);
 
         old_child
         // unimplemented!()
