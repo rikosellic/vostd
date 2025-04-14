@@ -114,7 +114,6 @@ pub open spec fn tokens_wf(unused_addrs: Map<int, simple_page_table::SimplePageT
     }
 }
 
-// TODO: why this cannot be replaced by mpt == old(mpt)
 pub open spec fn frame_keys_do_not_change(
     mpt: &exec::MockPageTable,
     old_mpt: &exec::MockPageTable,
@@ -129,7 +128,6 @@ pub open spec fn frame_keys_do_not_change(
             ! #[trigger] mpt.frames@.value().contains_key(i)
 }
 
-// TODO: why this cannot be replaced by mpt == old(mpt)
 pub open spec fn pte_keys_do_not_change(
     mpt: &exec::MockPageTable,
     old_mpt: &exec::MockPageTable,
