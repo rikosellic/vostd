@@ -109,6 +109,38 @@ pub enum PageTableItem<T: AnyFrameMeta> {
 }
 
 impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E, C>> Cursor<'a, M, E, C, PTL> {
+
+    pub open spec fn mock_page_table_valid_after_map<T: AnyFrameMeta>(&self, mock_page_table: &exec::MockPageTable,
+        frame: &Frame<T>, level: u8, root: int, last_level: u8) -> bool
+    decreases level
+    {
+        &&& level > last_level ==> {
+        &&& mock_page_table.wf()
+        // &&& forall |level: int| frame.map_level() < level <= self.0.level ==>
+        //         mock_page_table.frames@.value().contains_key()
+        &&& mock_page_table.frames@.value().contains_key(root)
+        &&& mock_page_table.ptes@.value().contains_key(root + pte_index(self.va, level) * exec::SIZEOF_PAGETABLEENTRY as int)
+        &&& self.mock_page_table_valid_after_map(mock_page_table, frame, (level - 1) as u8,
+        mock_page_table.ptes@.value()[root + pte_index(self.va, level) * exec::SIZEOF_PAGETABLEENTRY as int].frame_pa, last_level)
+        }
+        &&& level == last_level ==> {
+        &&& mock_page_table.wf()
+        &&& mock_page_table.frames@.value().contains_key(root)
+            &&& last_level == frame.map_level() ==> {
+            &&& mock_page_table.ptes@.value().contains_key(root + pte_index(self.va, level) * exec::SIZEOF_PAGETABLEENTRY as int)
+            &&& mock_page_table.ptes@.value()[root + pte_index(self.va, level) * exec::SIZEOF_PAGETABLEENTRY as int].frame_pa == frame.start_paddr() as int
+            }
+        }
+    }
+
+    pub open spec fn path_matchs_page_table<T: AnyFrameMeta>(&self, mock_page_table: &exec::MockPageTable,
+        frame: &Frame<T>, level: u8, root: int, last_level: u8) -> bool
+    decreases level
+    {
+        // TODO:
+        true
+    }
+
     /// Creates a cursor claiming exclusive access over the given range.
     ///
     /// The cursor created will only be able to query or jump within the given
@@ -179,7 +211,9 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
     }
 
     /// Goes down a level to a child page table.
-    fn push_level(&mut self, child_pt: PTL, old_level: Tracked<PagingLevel>)
+    fn push_level<T: AnyFrameMeta>(&mut self, child_pt: PTL, old_level: Tracked<PagingLevel>,
+                                    // ghost
+                                    mpt: &exec::MockPageTable, frame: &Frame<T>)
     requires
         old(self).level > 1,
         old(self).path.len() >= old(self).level as usize,
@@ -314,11 +348,6 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         &&& mock_page_table.frames@.value().contains_key(self.0.path[self.0.level as usize - 1].unwrap().paddr() as int)
     }
 
-    pub open spec fn mock_page_table_valid_after_map(&self, mock_page_table: &exec::MockPageTable) -> bool {
-        &&& mock_page_table.wf()
-        &&& mock_page_table.frames@.value().contains_key(self.0.path[self.0.level as usize - 1].unwrap().paddr() as int)
-    }
-
     /// Maps the range starting from the current address to a [`Frame<dyn AnyFrameMeta>`].
     ///
     /// It returns the previously mapped [`Frame<dyn AnyFrameMeta>`] if that exists.
@@ -368,12 +397,18 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         self.path_valid_after_map(old(self)),
         instance_match(old(mpt), tokens@),
         mpt.wf(),
-        *cur_alloc_index < exec::MAX_FRAME_NUM, // we have enough frames
-        self.mock_page_table_valid_after_map(mpt),
+        *cur_alloc_index < exec::MAX_FRAME_NUM,
+
+        // the post condition
+        self.0.mock_page_table_valid_after_map(mpt,
+                                            &frame,
+                                            old(self).0.level,
+                                            old(self).0.path[old(self).0.level as usize - 1].unwrap().paddr() as int,
+                                            frame.map_level()),
+
     {
         let end = self.0.va + frame.size();
         let old_level = Tracked(self.0.level);
-        assert(old_level == old(self).0.level);
 
         let tracked exec::Tokens {
             unused_addrs: mut unused_addrs,
@@ -402,6 +437,12 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             mpt_not_contains_not_allocated_frames(mpt, *cur_alloc_index),
             unallocated_frames_are_unused(unused_addrs, unused_pte_addrs, *cur_alloc_index),
             tokens_wf(unused_addrs, unused_pte_addrs),
+            // the post condition
+            self.0.mock_page_table_valid_after_map(mpt,
+                                                &frame,
+                                                old(self).0.level,
+                                                old(self).0.path[old(self).0.level as usize - 1].unwrap().paddr() as int,
+                                                self.0.level),
         {
             // debug_assert!(should_map_as_tracked::<M>(self.0.va)); // TODO
             let cur_level = self.0.level;
@@ -410,14 +451,22 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                 Child::PageTableRef(pt) => {
                     assert(mpt.frames@.value().contains_key(pt as int));
                     assert(cur_entry.pte.frame_paddr() != 0);
-
+                    assert(cur_entry.pte.frame_paddr() == pt);
+                    assert(self.0.mock_page_table_valid_after_map(mpt, &frame, old(self).0.level,
+                                old(self).0.path[path_index_at_level(old(self).0.level)].unwrap().paddr() as int, self.0.level));
+                    assert(self.0.mock_page_table_valid_after_map(mpt, &frame, old(self).0.level,
+                                old(self).0.path[path_index_at_level(old(self).0.level)].unwrap().paddr() as int, (self.0.level - 1) as u8));
                     // SAFETY: `pt` points to a PT that is attached to a node
                     // in the locked sub-tree, so that it is locked and alive.
                     self.0
                         .push_level(
                             // unsafe { PageTableLock::from_raw_paddr(pt) }
                             PTL::from_raw_paddr(pt),
-                            old_level
+                            old_level,
+
+                            // ghost
+                            mpt,
+                            &frame,
                         );
                     assert(self.0.va == old(self).0.va);
                     assert(self.0.path@.len() == old(self).0.path@.len());
@@ -488,12 +537,21 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                         .push_level(
                             // unsafe { PageTableLock::from_raw_paddr(paddr) }
                             PTL::from_raw_paddr(paddr),
-                            old_level
+                            old_level,
+                            mpt,
+                            &frame,
                         );
 
                     *cur_alloc_index += 1; // TODO: do it inside the alloc function
                     assume(unallocated_frames_are_unused(unused_addrs, unused_pte_addrs, *cur_alloc_index)); // TODO: P0
                     assume(*cur_alloc_index < exec::MAX_FRAME_NUM - 4); // TODO
+                    assume(
+                        self.0.mock_page_table_valid_after_map(mpt,
+                                                            &frame,
+                                                            old(self).0.level,
+                                                            old(self).0.path[old(self).0.level as usize - 1].unwrap().paddr() as int,
+                                                            self.0.level));
+                    // TODO: P0: mpt wf here
                 }
                 Child::Frame(_, _) => {
                     // panic!("Mapping a smaller frame in an already mapped huge page");
@@ -528,6 +586,13 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                                             Child::Frame(frame, prop), mpt, self.0.level,
                                             *cur_alloc_index, Tracked(used_pte_addr_token));
         self.0.move_forward();
+
+        // TODO: P0
+        assume(self.0.mock_page_table_valid_after_map(mpt,
+            &frame,
+            old(self).0.level,
+            old(self).0.path[old(self).0.level as usize - 1].unwrap().paddr() as int,
+            frame.map_level()));
 
         // TODO: P0
         assume(forall |i: int| path_index_at_level(self.0.level) <= i <= path_index_at_level(old(self).0.level) ==>

@@ -37,13 +37,12 @@ pub struct Entry<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTabl
 
 impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E, C>> Entry<'a, E, C, PTL> {
 
-
     /// Gets a reference to the child.
     pub(in crate::mm) fn to_ref<T: AnyFrameMeta>(&self, mpt: &exec::MockPageTable) -> (res: Child<E, C, T>)
     requires
         mpt.wf(),
-        self.pte.pte_paddr() == exec::get_pte_from_addr_spec(self.pte.pte_paddr(), mpt).pte_addr,
-        self.pte.frame_paddr() == exec::get_pte_from_addr_spec(self.pte.pte_paddr(), mpt).frame_pa,
+        self.pte.pte_paddr() == exec::get_pte_from_addr(self.pte.pte_paddr(), mpt).pte_addr,
+        self.pte.frame_paddr() == exec::get_pte_from_addr(self.pte.pte_paddr(), mpt).frame_pa,
     ensures
         if (mpt.ptes@.value().contains_key(self.pte.pte_paddr() as int)) {
             match res {
