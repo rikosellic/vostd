@@ -187,7 +187,7 @@ impl PageTableEntryTrait for SimplePageTableEntry {
             // NOTE: this seems not true if we do not add the invariant in mpt.wf() @see mpt.wf()
             // assert(mpt.ptes@.value()[res.pte_addr as int].frame_pa != 0 ==> mpt.ptes@.value()[res.pte_addr as int].frame_pa as u64 != 0);
         }
-        assert(res.frame_pa == 0 ==> 
+        assert(res.frame_pa == 0 ==>
             !mpt.ptes@.value().contains_key(res.pte_addr as int));
         res
     }
@@ -273,6 +273,10 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
                         }
                     }
                 );
+            assert(
+                mpt.frames@.value().contains_key(used_addr as int) ==>
+                    mpt.mem@[cur_alloc_index].1@.mem_contents().is_init()
+            ); // NOTE: this is required for a specified version of verus (2025.04.14)
         }
 
         print_msg("alloc frame", used_addr);
@@ -317,14 +321,16 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
         E::from_usize(self.paddr + idx * SIZEOF_PAGETABLEENTRY, mpt)
     }
 
-    #[verifier::external_body]
-    fn write_pte(&self, idx: usize, pte: E, mpt: &mut MockPageTable, level: crate::mm::PagingLevel, ghost_index: usize) 
+    fn write_pte(&self, idx: usize, pte: E, mpt: &mut MockPageTable, level: crate::mm::PagingLevel,
+                    ghost_index: usize, used_pte_addr_token: Tracked<simple_page_table::SimplePageTable::unused_pte_addrs>)
     ensures
         mpt.wf(),
         mpt.ptes@.instance_id() == old(mpt).ptes@.instance_id(),
         mpt.frames@.instance_id() == old(mpt).frames@.instance_id(),
         spec_helpers::frames_do_not_change(mpt, old(mpt)),
     {
+        assume(mpt.mem@[frame_addr_to_index(self.paddr)].1@.mem_contents().is_init()); // TODO: P0
+        assume(frame_addr_to_index(self.paddr) < MAX_FRAME_NUM as usize); // TODO: P0
         let (p, Tracked(pt)) = get_frame_from_index(frame_addr_to_index(self.paddr), &mpt.mem); // TODO: permission violation
         let mut frame = p.read(Tracked(&pt));
         frame.ptes[idx] = SimplePageTableEntry {
@@ -332,8 +338,38 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
             frame_pa: pte.frame_paddr() as u64,
             level: level as u8,
         };
-        println!("write_pte: paddr = 0x{:x}, idx = {1}, frame_pa = 0x{2:x}, level = {3}", self.paddr, idx, pte.frame_paddr(), level);
         p.write(Tracked(&mut pt), frame);
+
+        proof {
+            // TODO: P0 assumes, need more wf specs
+            assume(self.paddr != pte.frame_paddr());
+            assume(pte.frame_paddr() != 0);
+            assume(mpt.frames@.value().contains_key(self.paddr as int));
+            assume(mpt.frames@.value().contains_key(pte.frame_paddr() as int));
+            assume(!mpt.frames@.value()[self.paddr as int].pte_addrs.contains(pte.pte_paddr() as int));
+            assume(!mpt.frames@.value()[self.paddr as int].pte_addrs.contains(self.paddr + idx * SIZEOF_PAGETABLEENTRY as int));
+            // parent has valid ptes
+            assume(forall |i: int| #[trigger] mpt.frames@.value()[self.paddr as int].pte_addrs.contains(i) ==>
+                mpt.ptes@.value().contains_key(i));
+            // child has no ptes
+            assume(mpt.frames@.value()[pte.frame_paddr() as int].pte_addrs.is_empty());
+            // others points to parent have a higher level
+            assume(forall |i: int| #[trigger] mpt.ptes@.value().contains_key(i) ==>
+                mpt.ptes@.value()[i].frame_pa == self.paddr as int ==> mpt.ptes@.value()[i].level == level + 1 as u8);
+            // parent has the same level ptes
+            assume(forall |i: int| #[trigger] mpt.frames@.value()[self.paddr as int].pte_addrs.contains(i) ==>
+                mpt.ptes@.value()[i].level == level as u8);
+            // no others points to child
+            assume(forall |i: int| #[trigger] mpt.ptes@.value().contains_key(i) ==>
+                mpt.ptes@.value()[i].frame_pa != pte.frame_paddr() as int);
+            // TODO: P0 assumes
+
+            mpt.instance.get().set_child(self.paddr as int, idx as usize, pte.frame_paddr() as int, level as usize,
+                                    mpt.frames.borrow_mut(), mpt.ptes.borrow_mut(), used_pte_addr_token.get());
+        }
+        assume(mpt.wf()); // TODO: P0
+        assume(spec_helpers::frames_do_not_change(mpt, old(mpt))); // TODO: P0
+        assume(spec_helpers::mpt_not_contains_not_allocated_frames(mpt, ghost_index));
     }
 
     #[verifier::external_body]
@@ -573,7 +609,7 @@ ensures
 }
 
 pub open spec fn pte_addr_to_index_spec(pte_addr: usize) -> usize {
-    ((pte_addr - ((pte_addr - PHYSICAL_BASE_ADDRESS_SPEC()) / SIZEOF_FRAME as int) * SIZEOF_FRAME) / 
+    ((pte_addr - ((pte_addr - PHYSICAL_BASE_ADDRESS_SPEC()) / SIZEOF_FRAME as int) * SIZEOF_FRAME) /
         SIZEOF_PAGETABLEENTRY as int) as usize
 }
 

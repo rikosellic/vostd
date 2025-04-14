@@ -464,17 +464,24 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                         used_addr,
                         Tracked(used_addr_token), // TODO: can we pass all the tokens directly?
                     ); // alloc frame here
-                    *cur_alloc_index += 1; // TODO: do it inside the alloc function
+                    let ghost_index = *cur_alloc_index + 1;
+                    assert(unallocated_frames_are_unused(unused_addrs, unused_pte_addrs, ghost_index)); // TODO: P0
 
                     let paddr = pt.into_raw_paddr();
 
+                    assert(!mpt.ptes@.value().contains_key(cur_entry.pte.pte_paddr() as int));
+                    assert(mpt.wf());
+                    assume(cur_entry.pte.pte_paddr() == cur_entry.node.paddr() as int + pte_index(self.0.va, cur_level) * exec::SIZEOF_PAGETABLEENTRY);
                     reveal(spec_helpers::frames_do_not_change);
+                    assume(unused_pte_addrs.contains_key(cur_entry.pte.pte_paddr() as int)); // TODO: P0 need more wf
+                    let tracked used_pte_addr_token = unused_pte_addrs.tracked_remove(cur_entry.pte.pte_paddr() as int);
                     // SAFETY: It was forgotten at the above line.
                     let _ = cur_entry
                         .replace(Child::<E, C, T>::PageTable(
                             // unsafe { PageTableNode::from_raw(paddr) }
                             PageTableNode::from_raw(paddr)
-                        ), mpt, self.0.level, *cur_alloc_index); // alloc pte here
+                        ), mpt, self.0.level, ghost_index,
+                            Tracked(used_pte_addr_token)); // alloc pte here
                     // SAFETY: `pt` points to a PT that is attached to a node
                     // in the locked sub-tree, so that it is locked and alive.
                     self.0
@@ -483,7 +490,10 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                             PTL::from_raw_paddr(paddr),
                             old_level
                         );
-                    assert(*cur_alloc_index < exec::MAX_FRAME_NUM - 4) by { admit(); }; // TODO: P0
+
+                    *cur_alloc_index += 1; // TODO: do it inside the alloc function
+                    assume(unallocated_frames_are_unused(unused_addrs, unused_pte_addrs, *cur_alloc_index)); // TODO: P0
+                    assume(*cur_alloc_index < exec::MAX_FRAME_NUM - 4); // TODO
                 }
                 Child::Frame(_, _) => {
                     // panic!("Mapping a smaller frame in an already mapped huge page");
@@ -508,9 +518,15 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         assert(self.0.level == frame.map_level());
 
         let cur_entry = self.0.cur_entry(mpt);
-        assert(cur_entry.idx < nr_subpage_per_huge() as usize) by { admit(); } // TODO
+        assume(cur_entry.idx < nr_subpage_per_huge() as usize); // TODO
+        assume(!mpt.ptes@.value().contains_key(cur_entry.pte.pte_paddr() as int)); // TODO
+        assume(unused_pte_addrs.contains_key(cur_entry.pte.pte_paddr() as int)); // TODO: P0 need more wf
+        assume(cur_entry.pte.pte_paddr() == cur_entry.node.paddr() as int + pte_index(self.0.va, self.0.level) * exec::SIZEOF_PAGETABLEENTRY);
+        let tracked used_pte_addr_token = unused_pte_addrs.tracked_remove(cur_entry.pte.pte_paddr() as int);
         // Map the current page.
-        let old_entry = cur_entry.replace(Child::Frame(frame, prop), mpt, self.0.level, *cur_alloc_index);
+        let old_entry = cur_entry.replace(
+                                            Child::Frame(frame, prop), mpt, self.0.level,
+                                            *cur_alloc_index, Tracked(used_pte_addr_token));
         self.0.move_forward();
 
         // TODO: P0

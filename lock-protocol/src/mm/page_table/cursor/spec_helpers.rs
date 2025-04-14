@@ -129,4 +129,19 @@ pub open spec fn frames_do_not_change(
             ! #[trigger] mpt.frames@.value().contains_key(i)
 }
 
+// TODO: why this cannot be replaced by mpt == old(mpt)
+pub open spec fn ptes_do_not_change(
+    mpt: &exec::MockPageTable,
+    old_mpt: &exec::MockPageTable,
+) -> bool {
+    &&& forall |i| old_mpt.ptes@.value().contains_key(i) ==>
+            #[trigger] mpt.ptes@.value().contains_key(i)
+    &&& forall |i| mpt.ptes@.value().contains_key(i) ==>
+            #[trigger] old_mpt.ptes@.value().contains_key(i)
+    &&& forall |i| !old_mpt.ptes@.value().contains_key(i) ==>
+            ! #[trigger] mpt.ptes@.value().contains_key(i)
+    &&& forall |i| !old_mpt.ptes@.value().contains_key(i) ==>
+            ! #[trigger] mpt.ptes@.value().contains_key(i)
+}
+
 }

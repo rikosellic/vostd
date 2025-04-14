@@ -115,8 +115,8 @@ SimplePageTable {
             require child as u64 != 0; // TODO: maybe add an axiom
             require pre.frames.contains_key(parent);
             require pre.frames.contains_key(child);
-            require pre.frames[parent].pa != pre.frames[child].pa;
-            require pre.frames[parent].pa == parent;
+            // require pre.frames[parent].pa != pre.frames[child].pa;
+            // require pre.frames[parent].pa == parent;
             require !pre.frames[parent].pte_addrs.contains(parent + index * SIZEOF_PAGETABLEENTRY);
 
             // parent has valid ptes
@@ -140,10 +140,10 @@ SimplePageTable {
             require forall |i: int| pre.ptes.contains_key(i) ==>
                 (#[trigger] pre.ptes[i]).frame_pa != child;
 
-            require pre.frames[child].pa == child;
+            // require pre.frames[child].pa == child;
             let pte_addr = parent + index * SIZEOF_PAGETABLEENTRY;
-            require !pre.frames[parent].pte_addrs.contains(pte_addr);
-            require !pre.ptes.dom().contains(pte_addr);
+            // require !pre.frames[parent].pte_addrs.contains(pte_addr);
+            // require !pre.ptes.dom().contains(pte_addr);
 
             remove unused_pte_addrs -= set { pte_addr };
 

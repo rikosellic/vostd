@@ -8,6 +8,8 @@ use super::{Child, MapTrackingStatus, PageTableLockTrait, PageTableNode};
 
 use crate::exec;
 
+use crate::spec::simple_page_table;
+
 verus! {
 /// A view of an entry in a page table node.
 ///
@@ -93,16 +95,25 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
                                                     mpt: &mut exec::MockPageTable,
                                                     level: PagingLevel,
                                                     ghost_index: usize, // TODO: make it ghost
+                                                    used_pte_addr_token: Tracked<simple_page_table::SimplePageTable::unused_pte_addrs>,
                                                 ) -> (res: Child<E, C, T>)
     requires
+        !old(mpt).ptes@.value().contains_key(self.pte.pte_paddr() as int),
         old(mpt).wf(),
         self.idx < nr_subpage_per_huge(),
         spec_helpers::mpt_not_contains_not_allocated_frames(old(mpt), ghost_index),
+        used_pte_addr_token@.instance_id() == old(mpt).instance@.id(),
+        used_pte_addr_token@.element() == self.node.paddr() + self.idx * exec::SIZEOF_PAGETABLEENTRY as int,
     ensures
+        mpt.ptes@.value().contains_key(self.pte.pte_paddr() as int),
         mpt.instance@.id() == old(mpt).instance@.id(),
         mpt.wf(),
         frames_do_not_change(mpt, old(mpt)),
         spec_helpers::mpt_not_contains_not_allocated_frames(mpt, ghost_index),
+        match new_child {
+            // Child::PageTable(pt) => self.pte.frame_paddr() == pt.ptr as usize, // TODO: ?
+            _ => true,
+        },
     {
         // // assert!(new_child.is_compatible(self.node.level(), self.node.is_tracked()));
 
@@ -129,7 +140,9 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
         //  1. The index is within the bounds.
         //  2. The new PTE is compatible with the page table node, as asserted above.
         // unsafe { self.node.write_pte(self.idx, new_child.into_pte()) };
-        self.node.write_pte(self.idx, new_child.into_pte(mpt, ghost_index), mpt, level, ghost_index);
+        self.node.write_pte(self.idx, new_child.into_pte(mpt, ghost_index), mpt, level, ghost_index, used_pte_addr_token);
+
+        assume(mpt.ptes@.value().contains_key(self.pte.pte_paddr() as int));
 
         old_child
         // unimplemented!()
