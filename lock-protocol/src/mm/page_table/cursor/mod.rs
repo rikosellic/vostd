@@ -472,7 +472,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                     assert(!mpt.ptes@.value().contains_key(cur_entry.pte.pte_paddr() as int));
                     assert(mpt.wf());
                     assume(cur_entry.pte.pte_paddr() == cur_entry.node.paddr() as int + pte_index(self.0.va, cur_level) * exec::SIZEOF_PAGETABLEENTRY);
-                    reveal(spec_helpers::frames_do_not_change);
+                    reveal(spec_helpers::frame_keys_do_not_change);
                     assume(unused_pte_addrs.contains_key(cur_entry.pte.pte_paddr() as int)); // TODO: P0 need more wf
                     let tracked used_pte_addr_token = unused_pte_addrs.tracked_remove(cur_entry.pte.pte_paddr() as int);
                     // SAFETY: It was forgotten at the above line.

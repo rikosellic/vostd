@@ -1,7 +1,7 @@
 use vstd::prelude::*;
 
 use crate::mm::{
-    cursor::spec_helpers::{self, frames_do_not_change}, meta::AnyFrameMeta, nr_subpage_per_huge, page_prop::PageProperty, page_size, vm_space::Token, PageTableEntryTrait, PagingConstsTrait, PagingLevel
+    cursor::spec_helpers::{self, frame_keys_do_not_change}, meta::AnyFrameMeta, nr_subpage_per_huge, page_prop::PageProperty, page_size, vm_space::Token, PageTableEntryTrait, PagingConstsTrait, PagingLevel
 };
 
 use super::{Child, MapTrackingStatus, PageTableLockTrait, PageTableNode};
@@ -108,7 +108,7 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
         mpt.ptes@.value().contains_key(self.pte.pte_paddr() as int),
         mpt.instance@.id() == old(mpt).instance@.id(),
         mpt.wf(),
-        frames_do_not_change(mpt, old(mpt)),
+        frame_keys_do_not_change(mpt, old(mpt)),
         spec_helpers::mpt_not_contains_not_allocated_frames(mpt, ghost_index),
         match new_child {
             // Child::PageTable(pt) => self.pte.frame_paddr() == pt.ptr as usize, // TODO: ?

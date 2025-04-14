@@ -60,7 +60,7 @@ pub trait PageTableEntryTrait:
         mpt.wf(),
         mpt.ptes@.instance_id() == old(mpt).ptes@.instance_id(),
         mpt.frames@.instance_id() == old(mpt).frames@.instance_id(),
-        spec_helpers::frames_do_not_change(mpt, old(mpt)),
+        spec_helpers::frame_keys_do_not_change(mpt, old(mpt)),
         spec_helpers::mpt_not_contains_not_allocated_frames(mpt, ghost_index),
     ;
 
