@@ -163,6 +163,53 @@ SimplePageTable {
         }
     }
 
+    transition! {
+        // remove a pte at a given address
+        remove_at(parent: int, pte_addr: int, child_addr: int) {
+            require pre.frames.contains_key(parent);
+            require pre.frames.contains_key(child_addr);
+            require pre.frames[child_addr].pte_addrs.len() == 0; // child has no ptes
+            require pre.frames[parent].pte_addrs.contains(pte_addr); // parent has the pte
+
+            // pte is valid
+            require pre.ptes.dom().contains(pte_addr);
+            require pre.ptes[pte_addr].frame_pa == child_addr;
+
+            // addrs are valid
+            have unused_addrs >= set { parent };
+            have unused_addrs >= set { child_addr };
+            have unused_pte_addrs >= set { pte_addr };
+
+            update frames = pre.frames.remove(child_addr).insert(parent, FrameView {
+                pa: pre.frames[parent].pa,
+                pte_addrs: pre.frames[parent].pte_addrs.remove(pte_addr),
+            });
+
+            update ptes = pre.ptes.remove(pte_addr);
+            add unused_addrs += set { child_addr };
+            add unused_pte_addrs += set { pte_addr };
+        }
+    }
+
+    #[inductive(remove_at)]
+    pub fn tr_remove_at_invariant(pre: Self, post: Self, parent: int, pte_addr: int, child_addr: int) {
+        assert(pre.frames.contains_key(parent));
+        assert(pre.frames.contains_key(child_addr));
+        assert(pre.frames[child_addr].pte_addrs.len() == 0);
+        assert(pre.frames[parent].pte_addrs.contains(pte_addr));
+        assert(pre.ptes.dom().contains(pte_addr));
+        assert(pre.ptes[pte_addr].frame_pa == child_addr);
+
+        assert(post.frames.contains_key(parent));
+        assert(post.frames.contains_key(child_addr));
+        assert(post.frames[child_addr].pte_addrs.len() == 0);
+        assert(!post.frames[parent].pte_addrs.contains(pte_addr));
+        assert(!post.ptes.dom().contains(pte_addr));
+
+        assert(post.unused_addrs.contains(child_addr));
+        assert(post.unused_pte_addrs.contains(pte_addr));
+    }
+
     #[inductive(set_child)]
     pub fn tr_set_child_invariant(pre: Self, post: Self, parent: int, index: usize, child: int, level: usize) {
         assert(pre.frames.contains_key(parent));
@@ -241,7 +288,7 @@ SimplePageTable {
                 }
             }
         }
-        &&& forall |pte_addr: int| 
+        &&& forall |pte_addr: int|
             #![trigger self.ptes[pte_addr]]
             self.ptes.dom().contains(pte_addr) ==> {
                 self.frames.dom().contains(self.ptes[pte_addr].frame_pa)
@@ -417,9 +464,9 @@ pub fn main_test() {
     let (p_root, Tracked(mut pt_root)) = get_from_index(1, &fake.mem); // TODO: permission violation?
     p_root.write(Tracked(&mut pt_root), f1);
     proof{
-        instance.set_child(p_root.addr() as int, 
-                            index, p_f2.addr() as int, 
-                            level, 
+        instance.set_child(p_root.addr() as int,
+                            index, p_f2.addr() as int,
+                            level,
                             fake.frames.borrow_mut(),
                             &mut pte_token,
                             pte_addr
