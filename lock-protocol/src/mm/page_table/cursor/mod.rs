@@ -524,10 +524,9 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                     assert(mpt_not_contains_not_allocated_frames(mpt, *cur_alloc_index));
                     assert(forall |i: int| path_index_at_level(self.0.level) <= i <= path_index_at_level(root_level@) ==>
                         #[trigger] mpt.frames@.value().contains_key(self.0.path[i].unwrap().paddr() as int));
-                    // TODO: P0 this should be true here see @path_matchs_page_table
                     assert(self.0.mock_page_table_valid_before_map_level(mpt, &frame, old(self).0.level,
                                 self.0.path[path_index_at_level(old(self).0.level)].unwrap().paddr() as int, self.0.level));
-                    assume(self.0.path_matchs_page_table(mpt, old(self).0.level,
+                    assert(self.0.path_matchs_page_table(mpt, old(self).0.level,
                                                         /* root */
                                                         self.0.path[old(self).0.level as usize - 1].unwrap().paddr() as int,
                                                         /* last level */
