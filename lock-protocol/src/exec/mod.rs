@@ -466,8 +466,8 @@ struct_with_invariants!{
                 }
         &&& forall |i: int| #[trigger] self.frames@.value().contains_key(i) ==>
                 self.mem@[frame_addr_to_index(i as usize)].1@.mem_contents().is_init()
-        &&& forall |i: int| self.ptes@.value().contains_key(i) ==> // TODO: why we need this? Isn't it preserved by page_wf?
-                #[trigger] self.ptes@.value()[i].frame_pa != 0
+        &&& forall |i: int| #[trigger] self.ptes@.value().contains_key(i) ==> // TODO: why we need this? Isn't it preserved by page_wf?
+                self.ptes@.value()[i].frame_pa != 0
                 && self.ptes@.value()[i].frame_pa < u64::MAX
                 && self.ptes@.value()[i].frame_pa as u64 != 0 // TODO: this is so wired
         &&& forall |i: int| #[trigger] self.ptes@.value().contains_key(i) ==> // TODO: why we need this? Isn't it preserved by page_wf?
