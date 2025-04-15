@@ -482,8 +482,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                     assert(cur_entry.pte.frame_paddr() == pt);
                     assert(cur_entry.pte.frame_paddr() != 0);
                     assert(cur_entry.pte.frame_paddr() == pt);
-                    reveal_with_fuel(Cursor::mock_page_table_valid_before_map_level, 100);
-                    reveal_with_fuel(Cursor::path_matchs_page_table, 100);
+                    reveal_with_fuel(Cursor::mock_page_table_valid_before_map_level, 4);
+                    reveal_with_fuel(Cursor::path_matchs_page_table, 4);
                     assert(self.0.mock_page_table_valid_before_map_level(mpt, &frame, root_level@,
                                 root_addr as int, self.0.level));
                     // TODO: P0 this should be true here
