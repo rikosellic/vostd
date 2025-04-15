@@ -134,6 +134,19 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             }
     }
 
+    pub open spec fn mock_page_table_valid_before_map_level<T: AnyFrameMeta>(&self, mock_page_table: &exec::MockPageTable,
+        frame: &Frame<T>, level: u8, root: int, last_level: u8) -> bool
+    decreases level
+    {
+        &&& mock_page_table.wf()
+        &&& mock_page_table.frames@.value().contains_key(root)
+        &&& level > last_level ==> {
+            &&& mock_page_table.ptes@.value().contains_key(root + pte_index(self.va, level) * exec::SIZEOF_PAGETABLEENTRY as int)
+            &&& self.mock_page_table_valid_before_map_level(mock_page_table, frame, (level - 1) as u8,
+            mock_page_table.ptes@.value()[root + pte_index(self.va, level) * exec::SIZEOF_PAGETABLEENTRY as int].frame_pa, last_level)
+        }
+    }
+
     // TODO: do we need a path model?
     pub open spec fn path_matchs_page_table(&self, mock_page_table: &exec::MockPageTable, level: u8, root: int, last_level: u8) -> bool
     decreases level
@@ -416,7 +429,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
 
     {
         let end = self.0.va + frame.size();
-        let old_level = Tracked(self.0.level);
+        let root_level = Tracked(self.0.level);
+        let root_addr = self.0.path[self.0.level as usize - 1].as_ref().unwrap().paddr();
 
         let tracked exec::Tokens {
             unused_addrs: mut unused_addrs,
@@ -435,8 +449,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             self.va_valid(frame, Some(old(self))),
             forall |i: int| path_index_at_level(self.0.level) <= i <= path_index_at_level(old(self).0.level)
                             ==> self.0.path[i].is_some(),
-            self.0.path[path_index_at_level(old_level@)] == old(self).0.path[path_index_at_level(old_level@)],
-            old_level@ >= self.0.level,
+            self.0.path[path_index_at_level(root_level@)] == old(self).0.path[path_index_at_level(root_level@)],
+            root_level@ >= self.0.level,
             mpt.wf(),
             *cur_alloc_index < exec::MAX_FRAME_NUM - 4, // we have enough frames
             instance_match_addrs(mpt, unused_addrs, unused_pte_addrs),
@@ -446,16 +460,16 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             unallocated_frames_are_unused(unused_addrs, unused_pte_addrs, *cur_alloc_index),
             tokens_wf(unused_addrs, unused_pte_addrs),
             // the post condition
-            self.0.mock_page_table_valid_after_map(mpt,
+            self.0.mock_page_table_valid_before_map_level(mpt,
                                                 &frame,
-                                                old(self).0.level,
+                                                root_level@,
                                                 /* root */
-                                                self.0.path[old(self).0.level as usize - 1].unwrap().paddr() as int,
+                                                root_addr as int,
                                                 /* last level */
                                                 self.0.level),
-            self.0.path_matchs_page_table(mpt, old(self).0.level,
+            self.0.path_matchs_page_table(mpt, root_level@,
                                                 /* root */
-                                                self.0.path[old(self).0.level as usize - 1].unwrap().paddr() as int,
+                                                root_addr as int,
                                                 /* last level */
                                                 self.0.level),
         {
@@ -468,21 +482,26 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                     assert(cur_entry.pte.frame_paddr() == pt);
                     assert(cur_entry.pte.frame_paddr() != 0);
                     assert(cur_entry.pte.frame_paddr() == pt);
-                    assert(self.0.mock_page_table_valid_after_map(mpt, &frame, old(self).0.level,
-                                self.0.path[path_index_at_level(old(self).0.level)].unwrap().paddr() as int, self.0.level));
-                    reveal_with_fuel(Cursor::mock_page_table_valid_after_map, 3);
+                    reveal_with_fuel(Cursor::mock_page_table_valid_before_map_level, 100);
+                    reveal_with_fuel(Cursor::path_matchs_page_table, 100);
+                    assert(self.0.mock_page_table_valid_before_map_level(mpt, &frame, root_level@,
+                                root_addr as int, self.0.level));
                     // TODO: P0 this should be true here
-                    assume(self.0.mock_page_table_valid_after_map(mpt, &frame, old(self).0.level,
-                    self.0.path[path_index_at_level(old(self).0.level)].unwrap().paddr() as int, (self.0.level - 1) as u8));
-                    assert(self.0.mock_page_table_valid_after_map(mpt, &frame, old(self).0.level,
-                                self.0.path[path_index_at_level(old(self).0.level)].unwrap().paddr() as int, (self.0.level - 1) as u8)) by {
-                                    assert(self.0.path_matchs_page_table(mpt, old(self).0.level,
+                    // assume(self.0.mock_page_table_valid_after_map(mpt, &frame, root_level@,,
+                    // root_addr as int, (self.0.level - 1) as u8));
+                    assert(self.0.mock_page_table_valid_before_map_level(mpt, &frame, root_level@,
+                                root_addr as int, (self.0.level - 1) as u8)) by {
+                                    assert(self.0.path_matchs_page_table(mpt, root_level@,
                                                                         /* root */
-                                                                        self.0.path[old(self).0.level as usize - 1].unwrap().paddr() as int,
+                                                                        self.0.path[root_level@ as usize - 1].unwrap().paddr() as int,
                                                                         /* last level */
                                                                         self.0.level));
                                     assert(mpt.frames@.value().contains_key(self.0.path[self.0.level as usize - 1].unwrap().paddr() as int));
                                     assert(mpt.frames@.value().contains_key(pt as int));
+                                    assert(pt == cur_entry.pte.frame_paddr() as int);
+                                    assert(mpt.ptes@.value().contains_key(cur_entry.pte.pte_paddr() as int));
+                                    assert(self.0.mock_page_table_valid_before_map_level(mpt, &frame, root_level@,
+                                                root_addr as int, self.0.level));
                                 }
                     // SAFETY: `pt` points to a PT that is attached to a node
                     // in the locked sub-tree, so that it is locked and alive.
@@ -490,7 +509,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                         .push_level(
                             // unsafe { PageTableLock::from_raw_paddr(pt) }
                             PTL::from_raw_paddr(pt),
-                            old_level,
+                            root_level,
 
                             // ghost
                             mpt,
@@ -500,13 +519,13 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                     assert(self.0.path@.len() == old(self).0.path@.len());
                     assert(self.0.path[cur_level - 2].is_some());
                     assert(self.0.path[old(self).0.level - 1].is_some());
-                    assert(self.0.path[old_level@ - 1] == old(self).0.path[old_level@ - 1]);
+                    assert(self.0.path[root_level@ - 1] == old(self).0.path[root_level@ - 1]);
 
                     assert(mpt_not_contains_not_allocated_frames(mpt, *cur_alloc_index));
-                    assert(forall |i: int| path_index_at_level(self.0.level) <= i <= path_index_at_level(old_level@) ==>
+                    assert(forall |i: int| path_index_at_level(self.0.level) <= i <= path_index_at_level(root_level@) ==>
                         #[trigger] mpt.frames@.value().contains_key(self.0.path[i].unwrap().paddr() as int));
                     // TODO: P0 this should be true here see @path_matchs_page_table
-                    assume(self.0.mock_page_table_valid_after_map(mpt, &frame, old(self).0.level,
+                    assert(self.0.mock_page_table_valid_before_map_level(mpt, &frame, old(self).0.level,
                                 self.0.path[path_index_at_level(old(self).0.level)].unwrap().paddr() as int, self.0.level));
                     assume(self.0.path_matchs_page_table(mpt, old(self).0.level,
                                                         /* root */
@@ -573,7 +592,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                         .push_level(
                             // unsafe { PageTableLock::from_raw_paddr(paddr) }
                             PTL::from_raw_paddr(paddr),
-                            old_level,
+                            root_level,
                             mpt,
                             &frame,
                         );
@@ -584,7 +603,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
 
                     // TODO: P0 see @path_matchs_page_table
                     assume(
-                        self.0.mock_page_table_valid_after_map(mpt,
+                        self.0.mock_page_table_valid_before_map_level(mpt,
                                                             &frame,
                                                             old(self).0.level,
                                                             self.0.path[old(self).0.level as usize - 1].unwrap().paddr() as int,
