@@ -264,27 +264,24 @@ SimplePageTable {
     pub spec fn page_wf(self) -> bool {
         &&& forall |addr: int| self.frames.dom().contains(addr) ==> {
             let frame = #[trigger] self.frames[addr];
-            frame.pa == addr
-            &&
-            forall |pte_addr: int| frame.pte_addrs.contains(pte_addr) ==> {
+            &&& frame.pa == addr
+            &&& forall |pte_addr: int| frame.pte_addrs.contains(pte_addr) ==> {
                 let pte = self.ptes[pte_addr];
-                self.ptes.dom().contains(pte_addr) // pte_addr is a valid pte address
-                &&
-                self.frames.dom().contains(pte.frame_pa) // pte points to a valid frame address
-                &&
-                self.frames[pte.frame_pa].pa == pte.frame_pa // pte points to a valid frame
-                &&
-                pte.frame_pa != addr // pte points to a different frame
-                &&
-                forall |child_pte_addr: int| self.frames[pte.frame_pa].pte_addrs.contains(child_pte_addr) ==> {
-                    let child_pte = self.ptes[child_pte_addr];
-                    self.ptes.dom().contains(child_pte_addr) // pte_addr is a valid pte address
-                    &&
-                    self.frames.dom().contains(child_pte.frame_pa) // pte points to a valid frame address
-                    &&
-                    self.frames[child_pte.frame_pa].pa == child_pte.frame_pa // pte points to a valid frame
-                    &&
-                    self.ptes[child_pte_addr].level == pte.level - 1 // child level relation
+                &&& self.ptes.dom().contains(pte_addr) // pte_addr is a valid pte address
+                &&& pte.level > 1 ==> { // let's only care about ptes at level 2 or higher
+                    &&& self.frames.dom().contains(pte.frame_pa) // pte points to a valid frame address
+                    &&& self.frames[pte.frame_pa].pa == pte.frame_pa // pte points to a valid frame
+                    &&& pte.frame_pa != addr // pte points to a different frame
+                    &&& forall |child_pte_addr: int| self.frames[pte.frame_pa].pte_addrs.contains(child_pte_addr) ==> {
+                        let child_pte = self.ptes[child_pte_addr];
+                        self.ptes.dom().contains(child_pte_addr) // pte_addr is a valid pte address
+                        &&
+                        self.frames.dom().contains(child_pte.frame_pa) // pte points to a valid frame address
+                        &&
+                        self.frames[child_pte.frame_pa].pa == child_pte.frame_pa // pte points to a valid frame
+                        &&
+                        self.ptes[child_pte_addr].level == pte.level - 1 // child level relation
+                    }
                 }
             }
         }
