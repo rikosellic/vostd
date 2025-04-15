@@ -117,7 +117,14 @@ pub trait PageTableEntryTrait:
         mpt.wf(),
     ensures
         res.pte_paddr() == pte_raw as Paddr,
-        res.frame_paddr() == exec::get_pte_from_addr_spec(pte_raw, mpt).frame_pa;
+        res.frame_paddr() == exec::get_pte_from_addr_spec(pte_raw, mpt).frame_pa,
+        res.frame_paddr() == 0 ==> !mpt.ptes@.value().contains_key(pte_raw as int),
+        res.frame_paddr() != 0 ==> {
+            &&& mpt.ptes@.value().contains_key(res.pte_paddr() as int)
+            &&& mpt.ptes@.value()[res.pte_paddr() as int].frame_pa == res.frame_paddr() as int
+            &&& mpt.frames@.value().contains_key(res.frame_paddr() as int)
+        },
+    ;
 }
 
 /// A minimal set of constants that determines the paging system.

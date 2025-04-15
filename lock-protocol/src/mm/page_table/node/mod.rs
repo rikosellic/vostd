@@ -89,9 +89,11 @@ pub trait PageTableLockTrait<
         used_addr_token@.element() == used_addr as int,
         old(mpt).wf(),
         cur_alloc_index < exec::MAX_FRAME_NUM,
+        cur_alloc_index < usize::MAX - 1, // this is just for cur_alloc_index + 1 to be safe for the post condition
         used_addr_token@.instance_id() == old(mpt).instance@.id(),
         used_addr == exec::frame_index_to_addr(cur_alloc_index),
         spec_helpers::mpt_not_contains_not_allocated_frames(old(mpt), cur_alloc_index),
+        used_addr == exec::frame_index_to_addr(cur_alloc_index) as usize,
     ensures
         mpt.instance@.id() == old(mpt).instance@.id(),
         res.paddr() == used_addr as usize,
@@ -134,11 +136,16 @@ pub trait PageTableLockTrait<
         idx < nr_subpage_per_huge(),
         mpt.wf(),
     ensures
+        mpt.wf(),
         res.pte_paddr() == self.paddr() + idx * exec::SIZEOF_PAGETABLEENTRY,
         res.pte_paddr() == exec::get_pte_from_addr_spec(res.pte_paddr(), mpt).pte_addr,
         res.frame_paddr() == exec::get_pte_from_addr_spec(res.pte_paddr(), mpt).frame_pa,
         res.frame_paddr() == 0 ==> !mpt.ptes@.value().contains_key(res.pte_paddr() as int),
-        res.frame_paddr() != 0 ==> mpt.ptes@.value().contains_key(res.pte_paddr() as int),
+        res.frame_paddr() != 0 ==> {
+            &&& mpt.ptes@.value().contains_key(res.pte_paddr() as int)
+            &&& mpt.ptes@.value()[res.pte_paddr() as int].frame_pa == res.frame_paddr() as int
+            &&& mpt.frames@.value().contains_key(res.frame_paddr() as int)
+        },
     ;
 
     fn write_pte(&self, idx: usize, pte: E, mpt: &mut exec::MockPageTable, level: PagingLevel,
