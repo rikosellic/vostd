@@ -274,13 +274,10 @@ SimplePageTable {
                     &&& pte.frame_pa != addr // pte points to a different frame
                     &&& forall |child_pte_addr: int| self.frames[pte.frame_pa].pte_addrs.contains(child_pte_addr) ==> {
                         let child_pte = self.ptes[child_pte_addr];
-                        self.ptes.dom().contains(child_pte_addr) // pte_addr is a valid pte address
-                        &&
-                        self.frames.dom().contains(child_pte.frame_pa) // pte points to a valid frame address
-                        &&
-                        self.frames[child_pte.frame_pa].pa == child_pte.frame_pa // pte points to a valid frame
-                        &&
-                        self.ptes[child_pte_addr].level == pte.level - 1 // child level relation
+                        &&& self.ptes.dom().contains(child_pte_addr) // pte_addr is a valid pte address
+                        &&& self.frames.dom().contains(child_pte.frame_pa) // pte points to a valid frame address
+                        &&& self.frames[child_pte.frame_pa].pa == child_pte.frame_pa // pte points to a valid frame
+                        &&& self.ptes[child_pte_addr].level == pte.level - 1 // child level relation
                     }
                 }
             }
@@ -288,11 +285,9 @@ SimplePageTable {
         &&& forall |pte_addr: int|
             #![trigger self.ptes[pte_addr]]
             self.ptes.dom().contains(pte_addr) ==> {
-                self.frames.dom().contains(self.ptes[pte_addr].frame_pa)
-                &&
-                self.ptes[pte_addr].frame_pa != 0
-                &&
-                self.ptes[pte_addr].frame_pa as u64 != 0
+                &&& self.frames.dom().contains(self.ptes[pte_addr].frame_pa)
+                &&& self.ptes[pte_addr].frame_pa != 0
+                &&& self.ptes[pte_addr].frame_pa as u64 != 0
             }
     }
 
