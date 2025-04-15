@@ -119,7 +119,6 @@ impl PageTableEntryTrait for SimplePageTableEntry {
         unimplemented!()
     }
 
-    #[verifier::external_body]
     fn new_page(paddr: crate::mm::Paddr, level: crate::mm::PagingLevel, prop: crate::mm::page_prop::PageProperty,
                 mpt: &mut MockPageTable, ghost_index: usize) -> Self {
         // NOTE: this function currently does not create a actual page table entry
@@ -451,8 +450,8 @@ struct_with_invariants!{
                     #[trigger] self.frames@.value().contains_key(frame_index_to_addr(i) as int)
                     &&
                     forall |k: int| 0 <= k < NR_ENTRIES ==>
-                        if (#[trigger] self.mem@[i].1@.value().ptes[k].frame_pa != 0) {
-                            self.ptes@.value().contains_key(self.mem@[i].1@.value().ptes[k].pte_addr as int)
+                        if (self.mem@[i].1@.value().ptes[k].frame_pa != 0) {
+                            #[trigger] self.ptes@.value().contains_key(self.mem@[i].1@.value().ptes[k].pte_addr as int)
                         }
                         else {
                             !self.ptes@.value().contains_key(self.mem@[i].1@.mem_contents().value().ptes[k].pte_addr as int)
@@ -466,11 +465,11 @@ struct_with_invariants!{
         &&& forall |i: int| #[trigger] self.frames@.value().contains_key(i) ==>
                 self.mem@[frame_addr_to_index(i as usize)].1@.mem_contents().is_init()
         &&& forall |i: int| self.ptes@.value().contains_key(i) ==> // TODO: why we need this? Isn't it preserved by page_wf?
-                (#[trigger] self.ptes@.value()[i]).frame_pa != 0
+                #[trigger] self.ptes@.value()[i].frame_pa != 0
                 && self.ptes@.value()[i].frame_pa < u64::MAX
                 && self.ptes@.value()[i].frame_pa as u64 != 0 // TODO: this is so wired
         &&& forall |i: int| #[trigger] self.ptes@.value().contains_key(i) ==> // TODO: why we need this? Isn't it preserved by page_wf?
-                #[trigger] self.frames@.value().contains_key(self.ptes@.value()[i].frame_pa as int)
+                self.frames@.value().contains_key(self.ptes@.value()[i].frame_pa as int)
         }
     }
 }

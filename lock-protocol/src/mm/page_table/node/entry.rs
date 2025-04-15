@@ -141,6 +141,7 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
         // unsafe { self.node.write_pte(self.idx, new_child.into_pte()) };
         self.node.write_pte(self.idx, new_child.into_pte(mpt, ghost_index), mpt, level, ghost_index, used_pte_addr_token);
 
+        // TODO: P0
         assume(mpt.ptes@.value().contains_key(self.pte.pte_paddr() as int));
 
         old_child
