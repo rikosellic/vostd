@@ -15,7 +15,7 @@ AtomicSpec {
 fields {
     pub cpu_num: CpuId,
     pub size: nat,
-    pub ranges: Map<CpuId, RangeState>
+    pub ranges: Map<CpuId, RangeState>,
 }
 
 #[invariant]

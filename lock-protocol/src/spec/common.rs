@@ -4,11 +4,6 @@ use vstd::prelude::*;
 
 verus!{
 
-type Paddr = u64;
-type Vaddr = u64;
-
-pub type Level = nat;
-
 pub type CpuId = nat;
 pub type NodeId = nat;
 
@@ -98,6 +93,7 @@ impl CursorState {
             },
         }
     }
+    
 }
 
 }

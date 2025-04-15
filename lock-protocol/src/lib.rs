@@ -20,6 +20,5 @@ pub mod sync;
 pub mod exec;
 
 fn main() {
-    spec::simple_page_table::main_test();
     exec::main_test();
 }

@@ -13,21 +13,21 @@ pub struct NodeHelper;
 
 impl NodeHelper {
 
-pub open spec fn level_to_dep(level: Level) -> nat 
+pub open spec fn level_to_dep(level: nat) -> nat 
     recommends
         1 <= level <= 4,
 {
     (4 - level) as nat
 }
 
-pub open spec fn dep_to_level(dep: nat) -> Level
+pub open spec fn dep_to_level(dep: nat) -> nat
     recommends
         0 <= dep < 4,
 {
     (4 - dep) as nat
 }
 
-pub proof fn lemma_level_to_dep(level: Level)
+pub proof fn lemma_level_to_dep(level: nat)
     requires
         1 <= level <= 4,
     ensures
@@ -125,7 +125,7 @@ pub proof fn lemma_root_id()
     Self::lemma_tree_size_spec();
 }
 
-pub open spec fn nid_to_trace_rec(nid: NodeId, cur_level: Level, cur_rt: NodeId) -> Seq<nat>
+pub open spec fn nid_to_trace_rec(nid: NodeId, cur_level: nat, cur_rt: NodeId) -> Seq<nat>
     decreases cur_level,
 {
     if cur_level == 0 { Seq::empty() }
@@ -134,7 +134,7 @@ pub open spec fn nid_to_trace_rec(nid: NodeId, cur_level: Level, cur_rt: NodeId)
         let offset = ((nid - cur_rt - 1) / sz as int) as nat;
         let new_rt = cur_rt + offset * sz + 1;
         if new_rt == nid { seq![offset] } else {
-            seq![offset].add(Self::nid_to_trace_rec(nid, (cur_level - 1) as Level, new_rt))
+            seq![offset].add(Self::nid_to_trace_rec(nid, (cur_level - 1) as nat, new_rt))
         }
     }
 }
@@ -321,7 +321,7 @@ pub open spec fn trace_to_nid_from_root(trace: Seq<nat>) -> NodeId
     Self::trace_to_nid(trace, 0, 3)
 }
 
-pub proof fn lemma_nid_to_trace_rec(nid: NodeId, cur_level: Level, cur_rt: NodeId) -> (trace: Seq<nat>)
+pub proof fn lemma_nid_to_trace_rec(nid: NodeId, cur_level: nat, cur_rt: NodeId) -> (trace: Seq<nat>)
     requires
         Self::valid_nid(nid),
         Self::valid_nid(cur_rt),
@@ -372,7 +372,7 @@ pub proof fn lemma_nid_to_trace_rec(nid: NodeId, cur_level: Level, cur_rt: NodeI
             };
             trace 
         } else {
-            let _trace = Self::lemma_nid_to_trace_rec(nid, (cur_level - 1) as Level, new_rt);
+            let _trace = Self::lemma_nid_to_trace_rec(nid, (cur_level - 1) as nat, new_rt);
             let trace = seq![offset].add(_trace);
             assert(Self::trace_to_nid(_trace, new_rt, cur_level - 1) == nid);
             assert(new_rt == cur_rt + offset * sz + 1);
@@ -411,7 +411,7 @@ pub proof fn lemma_trace_to_nid_rec(trace: Seq<nat>, cur_rt: NodeId, cur_level: 
         cur_rt <= nid < cur_rt + Self::tree_size_spec(cur_level),
         nid == cur_rt <==> trace.len() == 0,
         trace.len() != 0 ==>
-            trace =~= Self::nid_to_trace_rec(nid, cur_level as Level, cur_rt),
+            trace =~= Self::nid_to_trace_rec(nid, cur_level as nat, cur_rt),
     decreases trace.len(),
 {
     if trace.len() == 0 {
@@ -483,7 +483,7 @@ pub proof fn lemma_trace_to_nid_rec(trace: Seq<nat>, cur_rt: NodeId, cur_level: 
         }
         assert(trace =~= seq![offset].add(new_trace));
         
-        let _trace = Self::nid_to_trace_rec(nid, cur_level as Level, cur_rt);
+        let _trace = Self::nid_to_trace_rec(nid, cur_level as nat, cur_rt);
         assert(_trace =~= seq![offset].add(new_trace));
 
         nid
@@ -509,7 +509,7 @@ pub open spec fn nid_to_dep(nid: NodeId) -> nat
     Self::nid_to_trace(nid).len()
 }
 
-pub proof fn lemma_valid_level_to_node(nid: NodeId, level: Level)
+pub proof fn lemma_valid_level_to_node(nid: NodeId, level: nat)
     requires
         Self::valid_nid(nid),
         level == Self::dep_to_level(Self::nid_to_dep(nid)),
@@ -733,6 +733,13 @@ pub proof fn lemma_get_child(nid: NodeId, offset: nat)
         offset == Self::get_offset(Self::get_child(nid, offset)),
 {
     admit();
+}
+
+pub open spec fn is_not_leaf(nid: NodeId) -> bool 
+    recommends
+        Self::valid_nid(nid),
+{
+    Self::nid_to_dep(nid) < 3
 }
 
 }
