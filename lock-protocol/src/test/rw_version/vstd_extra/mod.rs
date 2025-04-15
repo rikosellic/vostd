@@ -1,0 +1,1 @@
+pub mod manually_drop;
