@@ -358,6 +358,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
             frame_pa: pte.frame_paddr() as u64,
             level: level as u8,
         };
+        // TODO: P0 currently, the last level frame will cause the inconsistency
+        // between mpt.mem and mpt.frames
         p.write(Tracked(&mut pt), frame);
 
         proof {
