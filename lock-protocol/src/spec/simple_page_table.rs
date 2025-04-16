@@ -117,6 +117,8 @@ SimplePageTable {
             require pre.frames.contains_key(child);
             // require pre.frames[parent].pa != pre.frames[child].pa;
             // require pre.frames[parent].pa == parent;
+
+            // TODO: consider remapping? currently this is correct
             require !pre.frames[parent].pte_addrs.contains(parent + index * SIZEOF_PAGETABLEENTRY);
 
             // parent has valid ptes
@@ -166,27 +168,38 @@ SimplePageTable {
     transition! {
         // remove a pte at a given address
         remove_at(parent: int, pte_addr: int, child_addr: int) {
-            require pre.frames.contains_key(parent);
+            require pre.frames.contains_key(parent); // TODO: weak?
             require pre.frames.contains_key(child_addr);
-            require pre.frames[child_addr].pte_addrs.len() == 0; // child has no ptes
+
+            // TODO: this could be incorrect
+            // require pre.frames[child_addr].pte_addrs.len() == 0; // child has no ptes
+
             require pre.frames[parent].pte_addrs.contains(pte_addr); // parent has the pte
+
+            // no others has the same pte
+            require forall |i: int| pre.frames.contains_key(i) && i != parent ==>
+                ! #[trigger] pre.frames[i].pte_addrs.contains(pte_addr);
 
             // pte is valid
             require pre.ptes.dom().contains(pte_addr);
             require pre.ptes[pte_addr].frame_pa == child_addr;
 
-            // addrs are valid
-            have unused_addrs >= set { parent };
-            have unused_addrs >= set { child_addr };
-            have unused_pte_addrs >= set { pte_addr };
+            // no others points to child
+            require forall |i: int| pre.ptes.contains_key(i) && i != parent ==>
+                (#[trigger] pre.ptes[i]).frame_pa != child_addr;
 
-            update frames = pre.frames.remove(child_addr).insert(parent, FrameView {
+            // TODO: if child has ptes, we need to remove all of them, which in real world is done after unmapping
+            update frames = pre.frames.insert(parent, FrameView {
                 pa: pre.frames[parent].pa,
                 pte_addrs: pre.frames[parent].pte_addrs.remove(pte_addr),
             });
 
+            // TODO: remove child
+            // TODO: this could cause memory leak
+            // pre.frames.insert().remove(); TODO: this is not supported by verus
+
             update ptes = pre.ptes.remove(pte_addr);
-            add unused_addrs += set { child_addr };
+            // add unused_addrs += set { child_addr };
             add unused_pte_addrs += set { pte_addr };
         }
     }
@@ -195,19 +208,22 @@ SimplePageTable {
     pub fn tr_remove_at_invariant(pre: Self, post: Self, parent: int, pte_addr: int, child_addr: int) {
         assert(pre.frames.contains_key(parent));
         assert(pre.frames.contains_key(child_addr));
-        assert(pre.frames[child_addr].pte_addrs.len() == 0);
+        // assert(pre.frames[child_addr].pte_addrs.len() == 0);
         assert(pre.frames[parent].pte_addrs.contains(pte_addr));
         assert(pre.ptes.dom().contains(pte_addr));
         assert(pre.ptes[pte_addr].frame_pa == child_addr);
 
         assert(post.frames.contains_key(parent));
-        assert(post.frames.contains_key(child_addr));
-        assert(post.frames[child_addr].pte_addrs.len() == 0);
+        // assert(!post.frames.contains_key(child_addr)); // TODO
         assert(!post.frames[parent].pte_addrs.contains(pte_addr));
         assert(!post.ptes.dom().contains(pte_addr));
 
-        assert(post.unused_addrs.contains(child_addr));
+        // assert(post.unused_addrs.contains(child_addr));
         assert(post.unused_pte_addrs.contains(pte_addr));
+        assert(forall |i: int| #[trigger] post.frames[parent].pte_addrs.contains(i) ==>
+            post.ptes.dom().contains(i));
+        assert(forall |i: int| #[trigger] post.frames[child_addr].pte_addrs.contains(i) ==>
+            post.ptes.dom().contains(i));
     }
 
     #[inductive(set_child)]
