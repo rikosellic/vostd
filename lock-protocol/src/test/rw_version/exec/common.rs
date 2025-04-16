@@ -17,7 +17,7 @@ pub type Vaddr = u64;
 pub type Level = u64;
 
 // Configurations
-pub spec const global_cpu_num: nat = 2;
+pub spec const GLOBAL_CPU_NUM: nat = 2;
 
 pub const INVALID_PADDR: Paddr = 0xffff_ffff_ffff_ffff;
 

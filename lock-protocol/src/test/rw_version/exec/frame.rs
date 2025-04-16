@@ -128,7 +128,7 @@ pub open spec fn wf(&self) -> bool {
 
         // &&& self.ptes@.len() == 512
 
-        &&& self.inst@.cpu_num() == global_cpu_num
+        &&& self.inst@.cpu_num() == GLOBAL_CPU_NUM
     }
 
     invariant on rc with (nid, inst) is (v: u64, g: RcToken) {

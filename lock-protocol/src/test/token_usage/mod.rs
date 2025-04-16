@@ -23,7 +23,7 @@ use exec_nid::*;
 verus!{
 
 // Configurations
-pub spec const global_cpu_num: nat = 2;
+pub spec const GLOBAL_CPU_NUM: nat = 2;
 
 type NodeToken = ConcreteSpec::nodes;
 type CursorToken = ConcreteSpec::cursors;
@@ -36,9 +36,9 @@ pub tracked struct CursorModel {
 
 impl CursorModel {
     pub open spec fn inv(&self) -> bool {
-        &&& valid_cpu(global_cpu_num, self.cpu)
+        &&& valid_cpu(GLOBAL_CPU_NUM, self.cpu)
         
-        &&& self.inst.cpu_num() == global_cpu_num
+        &&& self.inst.cpu_num() == GLOBAL_CPU_NUM
         &&& self.token.instance_id() == self.inst.id()
         &&& self.token.key() == self.cpu
     }
@@ -122,8 +122,8 @@ impl CursorModel {
         tracked inst: ConcreteSpec::Instance,
     ) -> (tracked s: Self)
         requires
-            valid_cpu(global_cpu_num, cpu),
-            inst.cpu_num() == global_cpu_num,
+            valid_cpu(GLOBAL_CPU_NUM, cpu),
+            inst.cpu_num() == GLOBAL_CPU_NUM,
             token.instance_id() == inst.id(),
             token.key() == cpu,
         ensures
@@ -209,7 +209,7 @@ impl NodeTokenManagement {
 
         &&& forall |nid: NodeId| self.tokens.dom().contains(nid) ==> 
             self.tokens[nid].instance_id() == self.inst.id()
-        &&& self.inst.cpu_num() == global_cpu_num
+        &&& self.inst.cpu_num() == GLOBAL_CPU_NUM
     }
 
     pub proof fn node_acquire(
@@ -426,7 +426,7 @@ impl PageTable {
         &&& self.wf()
         &&& forall |nid| NodeHelper::valid_nid(nid) && self.nodes@.contains_key(nid as u64) ==>
             self.nodes@[nid as u64].inv()
-        &&& self.inst@.cpu_num() == global_cpu_num
+        &&& self.inst@.cpu_num() == GLOBAL_CPU_NUM
     }
 
     #[verifier::external_body]
@@ -582,7 +582,7 @@ fn test() {
             Tracked(inst0),
             Tracked(nodes_tokens0),
             Tracked(cursors_tokens0),
-        ) = ConcreteSpec::Instance::initialize(global_cpu_num);
+        ) = ConcreteSpec::Instance::initialize(GLOBAL_CPU_NUM);
 
         inst = inst0;
         nodes_tokens = nodes_tokens0;
@@ -594,7 +594,7 @@ fn test() {
         |nid| NodeHelper::valid_nid(nid),
     ));
     assert(cursors_tokens.dom() =~= Set::new(
-        |cpu| valid_cpu(global_cpu_num, cpu),
+        |cpu| valid_cpu(GLOBAL_CPU_NUM, cpu),
     ));
 
     let tracked cursor_model_0 = CursorModel::new(0, cursors_tokens.remove(0), inst.clone());

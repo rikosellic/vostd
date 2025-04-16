@@ -44,7 +44,7 @@ pub open spec fn inv(&self) -> bool {
             &&& self.tokens.get_Some_0().1.value() == 0
         }
 
-        &&& self.inst.cpu_num() == global_cpu_num
+        &&& self.inst.cpu_num() == GLOBAL_CPU_NUM
     }
 }
 
@@ -61,7 +61,7 @@ pub open spec fn wf(&self, allocator: FrameAllocator) -> bool {
     predicate {
         &&& self.nodes@.len() == NodeHelper::total_size()
 
-        &&& self.inst@.cpu_num() == global_cpu_num
+        &&& self.inst@.cpu_num() == GLOBAL_CPU_NUM
     }
 
     invariant on nodes with (inst)
