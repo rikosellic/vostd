@@ -665,6 +665,186 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         }
     }
 
+    /// Find and remove the first page in the cursor's following range.
+    ///
+    /// The range to be found in is the current virtual address with the
+    /// provided length.
+    ///
+    /// The function stops and yields the page if it has actually removed a
+    /// page, no matter if the following pages are also required to be unmapped.
+    /// The returned page is the virtual page that existed before the removal
+    /// but having just been unmapped.
+    ///
+    /// It also makes the cursor moves forward to the next page after the
+    /// removed one, when an actual page is removed. If no mapped pages exist
+    /// in the following range, the cursor will stop at the end of the range
+    /// and return [`PageTableItem::NotMapped`].
+    ///
+    /// # Safety
+    ///
+    /// The caller should ensure that the range being unmapped does not affect
+    /// kernel's memory safety.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the end range covers a part of a huge page
+    /// and the next page is that huge page.
+    #[verifier::external_body]
+    pub unsafe fn take_next(&mut self, len: usize,
+        // ghost
+        tokens: Tracked<exec::Tokens>,
+
+        // non ghost, but it should be
+        mpt: &mut exec::MockPageTable) -> PageTableItem {
+        let start = self.0.va;
+        // assert!(len % page_size::<C>(1) == 0); // TODO
+        let end = start + len;
+        // assert!(end <= self.0.barrier_va.end); // TODO
+
+        let tracked exec::Tokens {
+            unused_addrs: mut unused_addrs,
+            unused_pte_addrs: mut unused_pte_addrs,
+        } = tokens.get(); // TODO: can we just use the tokens inside the loop?
+
+        while self.0.va < end {
+            let cur_va = self.0.va;
+            let cur_level = self.0.level;
+            let cur_entry = self.0.cur_entry(mpt);
+
+            // Skip if it is already absent.
+            // if cur_entry.is_none(mpt) { // TODO: is_none
+            if !cur_entry.pte.is_present(mpt) {
+                if self.0.va + page_size::<C>(self.0.level) > end {
+                    self.0.va = end;
+                    break;
+                }
+                self.0.move_forward();
+                continue;
+            }
+
+            // Go down if not applicable.
+            if cur_va % page_size::<C>(cur_level) != 0 || cur_va + page_size::<C>(cur_level) > end {
+                let child = cur_entry.to_ref(mpt);
+                match child {
+                    Child::PageTableRef(pt) => {
+                        // SAFETY: `pt` points to a PT that is attached to a node
+                        // in the locked sub-tree, so that it is locked and alive.
+                        // let pt = unsafe { PageTableLock::<E, C>::from_raw_paddr(pt) };
+                        let pt = unsafe { PTL::from_raw_paddr(pt) };
+                        // If there's no mapped PTEs in the next level, we can
+                        // skip to save time.
+                        if pt.nr_children() != 0 {
+                            self.0.push_level(pt,
+                                            Tracked(cur_level),
+                                // ghost
+                                mpt,
+                            );
+                        } else {
+                            let _ = pt.into_raw_paddr();
+                            if self.0.va + page_size::<C>(self.0.level) > end {
+                                self.0.va = end;
+                                break;
+                            }
+                            self.0.move_forward();
+                        }
+                    }
+                    Child::PageTable(_) => {
+                        // unreachable!();
+                        assert(false);
+                    }
+                    Child::None => {
+                        // unreachable!("Already checked");
+                        assert(false);
+                    }
+                    Child::Frame(_, _) => {
+                        // panic!("Removing part of a huge page");
+                        assert(false);
+                    }
+                    Child::Untracked(_, _, _) => {
+                        // let split_child = cur_entry.split_if_untracked_huge().unwrap();
+                        // self.0.push_level(split_child, cur_level, mpt);
+                        assert(false);
+                    }
+                    // Child::Status(_) => {
+                    Child::Token(_, _) => {
+                        // let split_child = cur_entry.split_if_huge_status().unwrap();
+                        // self.0.push_level(split_child, cur_level, mpt);
+                        assert(false);
+                    }
+                }
+                continue;
+            }
+
+            let tracked used_pte_addr_token: simple_page_table::SimplePageTable::unused_pte_addrs;
+            proof {
+                used_pte_addr_token = unused_pte_addrs.tracked_remove(unused_pte_addrs.dom().choose());
+            }
+            // Unmap the current page and return it.
+            let old = cur_entry.replace(Child::None, mpt, cur_level,
+                                            exec::MAX_FRAME_NUM, Tracked(used_pte_addr_token));
+            let item = match old {
+                Child::Frame(page, prop) => PageTableItem::Mapped {
+                    va: self.0.va,
+                    page,
+                    prop,
+                },
+                Child::Untracked(pa, level, prop) => {
+                    // debug_assert_eq!(level, self.0.level); // TODO
+                    PageTableItem::MappedUntracked {
+                        va: self.0.va,
+                        pa,
+                        len: page_size::<C>(level),
+                        prop,
+                    }
+                }
+                Child::Token(status, _) => PageTableItem::Marked {
+                    va: self.0.va,
+                    len: page_size::<C>(self.0.level),
+                    token: status,
+                },
+                Child::PageTable(pt) => {
+                    let paddr = pt.into_raw();
+                    // SAFETY: We must have locked this node.
+                    let locked_pt = PTL::from_raw_paddr(paddr);
+                    // assert!(
+                    //     !(TypeId::of::<M>() == TypeId::of::<KernelMode>()
+                    //         && self.0.level == C::NR_LEVELS()),
+                    //     "Unmapping shared kernel page table nodes"
+                    // ); // TODO
+                    // SAFETY:
+                    //  - We checked that we are not unmapping shared kernel page table nodes.
+                    //  - We must have locked the entire sub-tree since the range is locked.
+                    let unlocked_pt = locking::dfs_mark_astray(locked_pt);
+                    // See `locking.rs` for why we need this. // TODO: I don't have time to see, so if you see this, please see.
+                    // let drop_after_grace = unlocked_pt.clone();
+                    // crate::sync::after_grace_period(|| {
+                    //     drop(drop_after_grace);
+                    // });
+                    PageTableItem::StrayPageTable {
+                        // pt: unlocked_pt.into(),
+                        pt: Frame {
+                            ptr: unlocked_pt.paddr(),
+                        },
+                        va: self.0.va,
+                        len: page_size::<C>(self.0.level),
+                    }
+                }
+                Child::None | Child::PageTableRef(_) => {
+                    // unreachable!();
+                    assert(false);
+                    PageTableItem::NotMapped { va: 0, len: 0 }
+                },
+            };
+
+            self.0.move_forward();
+
+            return item;
+        }
+
+        // If the loop exits, we did not find any mapped pages in the range.
+        PageTableItem::NotMapped { va: start, len }
+    }
+
 }
 
 
