@@ -673,7 +673,7 @@ ensures
     static MAP: OnceLock<Mutex<usize>> = OnceLock::new();
     if MAP.get().is_none() {
         unsafe{
-            let layout = Layout::new::<[FakePageTableLock<SimplePageTableEntry, PagingConsts>; 4096]>();
+            let layout = Layout::new::<[SimplePageTableEntry; 4096]>();
             let mut ptr = alloc(layout);
             MAP.set(Mutex::new(ptr as *mut u8 as usize)).unwrap();
         }
