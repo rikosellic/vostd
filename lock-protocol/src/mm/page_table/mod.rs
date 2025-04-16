@@ -351,9 +351,8 @@ pub struct PageTable<
     // C: PagingConstsTrait = PagingConsts,
     C: PagingConstsTrait,
 > {
-    root: PageTableNode<E, C>,
-    _phantom: PhantomData<M>,
+    root: PageTableNode,
+    _phantom: PhantomData<(M, E, C)>,
 }
-
 
 }

@@ -1,4 +1,5 @@
 use std::clone;
+use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 
 use vstd::prelude::*;
@@ -34,23 +35,23 @@ pub(in crate::mm) enum Child<
     // C: PagingConstsTrait = PagingConsts,
     E: PageTableEntryTrait,
     C: PagingConstsTrait,
-    T: AnyFrameMeta
+    // T: AnyFrameMeta
 > {
     /// A owning handle to a raw page table node.
-    PageTable(PageTableNode<E, C>),
+    PageTable(PageTableNode),
     /// A reference of a child page table node, in the form of a physical
     /// address.
     PageTableRef(Paddr),
     /// A mapped frame.
-    Frame(Frame<T>, PageProperty),
+    Frame(Frame, PageProperty),
     /// Mapped frames that are not tracked by handles.
     Untracked(Paddr, PagingLevel, PageProperty),
-    Token(Token),
+    Token(Token, PhantomData<(E, C)>),
     None,
 }
 
 // impl Child {
-impl<E: PageTableEntryTrait, C: PagingConstsTrait, T: AnyFrameMeta> Child<E, C, T> {
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
 
     #[verifier::inline]
     pub open spec fn is_none_spec(&self) -> bool {
@@ -104,7 +105,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait, T: AnyFrameMeta> Child<E, C, 
             }
             Child::Untracked(pa, level, prop) => E::new_page(pa, level, prop, mpt, ghost_index),
             Child::None => E::new_absent(),
-            Child::Token(token) => E::new_token(token),
+            Child::Token(token, _) => E::new_token(token),
         }
     }
 

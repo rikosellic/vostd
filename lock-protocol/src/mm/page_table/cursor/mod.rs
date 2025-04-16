@@ -76,14 +76,14 @@ pub struct Cursor<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsT
 const MAX_NR_LEVELS: usize = 4;
 
 // #[derive(Clone, Debug)] // TODO: Implement Debug and Clone for PageTableItem
-pub enum PageTableItem<T: AnyFrameMeta> {
+pub enum PageTableItem {
     NotMapped {
         va: Vaddr,
         len: usize,
     },
     Mapped {
         va: Vaddr,
-        page: Frame<T>,
+        page: Frame,
         prop: PageProperty,
     },
     MappedUntracked {
@@ -93,7 +93,7 @@ pub enum PageTableItem<T: AnyFrameMeta> {
         prop: PageProperty,
     },
     StrayPageTable {
-        pt: Frame<T>,
+        pt: Frame,
         va: Vaddr,
         len: usize,
     },
@@ -115,8 +115,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         &&& mock_page_table.frames@.value().contains_key(self.path[path_index_at_level(self.level)].unwrap().paddr() as int)
     }
 
-    pub open spec fn mock_page_table_valid_after_map<T: AnyFrameMeta>(&self, mock_page_table: &exec::MockPageTable,
-        frame: &Frame<T>, level: u8, root: int, last_level: u8) -> bool
+    pub open spec fn mock_page_table_valid_after_map(&self, mock_page_table: &exec::MockPageTable,
+        frame: &Frame, level: u8, root: int, last_level: u8) -> bool
     decreases level
     {
         &&& mock_page_table.wf()
@@ -134,8 +134,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             }
     }
 
-    pub open spec fn mock_page_table_valid_before_map_level<T: AnyFrameMeta>(&self, mock_page_table: &exec::MockPageTable,
-        frame: &Frame<T>, level: u8, root: int, last_level: u8) -> bool
+    pub open spec fn mock_page_table_valid_before_map_level(&self, mock_page_table: &exec::MockPageTable,
+        frame: &Frame, level: u8, root: int, last_level: u8) -> bool
     decreases level
     {
         &&& mock_page_table.wf()
@@ -230,9 +230,9 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
     }
 
     /// Goes down a level to a child page table.
-    fn push_level<T: AnyFrameMeta>(&mut self, child_pt: PTL, old_level: Tracked<PagingLevel>,
+    fn push_level(&mut self, child_pt: PTL, old_level: Tracked<PagingLevel>,
                                     // ghost
-                                    mpt: &exec::MockPageTable, frame: &Frame<T>)
+                                    mpt: &exec::MockPageTable)
     requires
         old(self).level > 1,
         old(self).path.len() >= old(self).level as usize,
@@ -343,7 +343,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         &&& forall |i: int| 1 < i <= old.0.level ==> #[trigger] self.0.path[i - 1].is_some()
     }
 
-    pub open spec fn va_valid<T: AnyFrameMeta>(&self, frame: Frame<T>, old: Option<&CursorMut<'a, M, E, C, PTL>>) -> bool {
+    pub open spec fn va_valid(&self, frame: Frame, old: Option<&CursorMut<'a, M, E, C, PTL>>) -> bool {
         &&& self.0.va < MAX_USERSPACE_VADDR
         &&& self.0.va >= self.0.barrier_va.start
         &&& self.0.va + frame.size() <= self.0.barrier_va.end
@@ -381,9 +381,9 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
     ///
     /// The caller should ensure that the virtual range being mapped does
     /// not affect kernel's memory safety.
-    pub fn map<T: AnyFrameMeta>(
+    pub fn map(
         &mut self,
-        frame: Frame<T>,
+        frame: Frame,
         prop: PageProperty,
 
         // ghost
@@ -392,7 +392,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         // non ghost
         mpt: &mut exec::MockPageTable,
         cur_alloc_index: &mut usize,
-    ) -> (res: Option<Frame<T>>)
+    ) -> (res: Option<Frame>)
     requires
         instance_match(old(mpt), tokens@),
 
@@ -476,7 +476,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             // debug_assert!(should_map_as_tracked::<M>(self.0.va)); // TODO
             let cur_level = self.0.level;
             let cur_entry = self.0.cur_entry(mpt);
-            match cur_entry.to_ref::<T>(mpt) {
+            match cur_entry.to_ref(mpt) {
                 Child::PageTableRef(pt) => {
                     assert(mpt.frames@.value().contains_key(pt as int));
                     assert(cur_entry.pte.frame_paddr() == pt);
@@ -497,7 +497,6 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
 
                             // ghost
                             mpt,
-                            &frame,
                         );
                     assert(self.0.va == old(self).0.va);
                     assert(self.0.path@.len() == old(self).0.path@.len());
@@ -564,7 +563,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                     let tracked used_pte_addr_token = unused_pte_addrs.tracked_remove(cur_entry.pte.pte_paddr() as int);
                     // SAFETY: It was forgotten at the above line.
                     let _ = cur_entry
-                        .replace(Child::<E, C, T>::PageTable(
+                        .replace(Child::<E, C>::PageTable(
                             // unsafe { PageTableNode::from_raw(paddr) }
                             PageTableNode::from_raw(paddr)
                         ), mpt, self.0.level, ghost_index,
@@ -577,7 +576,6 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                             PTL::from_raw_paddr(paddr),
                             root_level,
                             mpt,
-                            &frame,
                         );
 
                     *cur_alloc_index += 1; // TODO: do it inside the alloc function
@@ -606,7 +604,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
                     // panic!("Mapping a tracked page in an untracked range");
                     assert(false);
                 }
-                Child::Token(_) => {
+                Child::Token(_, _) => {
                     // let split_child = cur_entry.split_if_huge_token().unwrap();
                     // self.0.push_level(split_child);
                     assert(false); // TODO: Token
@@ -647,7 +645,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
 
         match old_entry {
             Child::Frame(old_page, _) => Some(old_page),
-            Child::None | Child::Token(_) => None,
+            Child::None | Child::Token(_, _) => None,
             Child::PageTable(_) => {
                 // todo!("Dropping page table nodes while mapping requires TLB flush")
                 // assert(false); // TODO
@@ -666,6 +664,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             }
         }
     }
+
 }
 
 

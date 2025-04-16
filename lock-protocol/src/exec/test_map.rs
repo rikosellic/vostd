@@ -27,7 +27,7 @@ use crate::spec::spt_helpers::*;
 
 verus! {
 
-pub fn test(va: Vaddr, frame: Frame<SimpleFrameMeta>, page_prop: page_prop::PageProperty)
+pub fn test(va: Vaddr, frame: Frame, page_prop: page_prop::PageProperty)
 requires
     0 <= va < MAX_USERSPACE_VADDR,
 {
@@ -118,7 +118,7 @@ requires
         }
     )); // root
 
-    cursor.map::<SimpleFrameMeta>(frame, page_prop,
+    cursor.map(frame, page_prop,
         Tracked(tokens),
         &mut mock_page_table,
         &mut cur_alloc_index

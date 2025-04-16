@@ -38,7 +38,7 @@ pub struct Entry<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTabl
 impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E, C>> Entry<'a, E, C, PTL> {
 
     /// Gets a reference to the child.
-    pub(in crate::mm) fn to_ref<T: AnyFrameMeta>(&self, mpt: &exec::MockPageTable) -> (res: Child<E, C, T>)
+    pub(in crate::mm) fn to_ref(&self, mpt: &exec::MockPageTable) -> (res: Child<E, C>)
     requires
         mpt.wf(),
         self.pte.pte_paddr() == exec::get_pte_from_addr(self.pte.pte_paddr(), mpt).pte_addr,
@@ -90,12 +90,12 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: PageTableLockTrait<E
     /// The compatibility is specified by the [`Child::is_compatible`].
     // TODO: Implement replace
     // #[verifier::external_body]
-    pub(in crate::mm) fn replace<T: AnyFrameMeta>(self, new_child: Child<E, C, T>,
+    pub(in crate::mm) fn replace(self, new_child: Child<E, C>,
                                                     mpt: &mut exec::MockPageTable,
                                                     level: PagingLevel,
                                                     ghost_index: usize, // TODO: make it ghost
                                                     used_pte_addr_token: Tracked<simple_page_table::SimplePageTable::unused_pte_addrs>,
-                                                ) -> (res: Child<E, C, T>)
+                                                ) -> (res: Child<E, C>)
     requires
         !old(mpt).ptes@.value().contains_key(self.pte.pte_paddr() as int),
         old(mpt).wf(),

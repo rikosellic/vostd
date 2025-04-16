@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Mutex, OnceLock};
 
+use vstd::tokens::*;
+
 use crate::mm::cursor::spec_helpers;
 use crate::mm::entry::Entry;
 use crate::mm::page_prop::{PageFlags, PageProperty, PrivilegedPageFlags};
@@ -304,7 +306,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
     }
 
     #[verifier::external_body]
-    fn unlock(&mut self) -> PageTableNode<E, C> {
+    fn unlock(&mut self) -> PageTableNode {
         todo!()
     }
 
@@ -362,6 +364,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLockTrait<E, C> for 
         // between mpt.mem and mpt.frames
         p.write(Tracked(&mut pt), frame);
 
+        // TODO: it seems we should not allocate here
         proof {
             // TODO: P0 assumes, need more wf specs
             assume(self.paddr != pte.frame_paddr());
@@ -483,9 +486,8 @@ pub tracked struct Tokens {
 
 pub fn main_test() {
     let va = 0;
-    let frame = Frame::<SimpleFrameMeta> {
+    let frame = Frame {
         ptr: 0,
-        _marker: std::marker::PhantomData,
     };
     let page_prop = PageProperty {
         flags: PageFlags { bits: 0 },

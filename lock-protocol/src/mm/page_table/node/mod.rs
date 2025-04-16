@@ -37,18 +37,13 @@ use super::cursor::spec_helpers;
 verus! {
 
 // #[derive(Debug)] // TODO: Debug for PageTableNode
-pub type PageTableNode<
-    // E: PageTableEntryTrait = PageTableEntry,
-    // C: PagingConstsTrait = PagingConsts,
-    E: PageTableEntryTrait,
-    C: PagingConstsTrait,
-    // T: AnyFrameMeta
-> = Frame<PageTablePageMeta<E, C>>;
+pub type PageTableNode = Frame;
 
 // We add PageTableLockTrait to make the verification easier.
 // Originally, it is just a struct that holds a frame.
 // TODO: Can we also change the source code?
-pub trait PageTableLockTrait<
+pub trait PageTableLockTrait
+<
     E: PageTableEntryTrait,
     C: PagingConstsTrait,
 >
@@ -117,7 +112,7 @@ pub trait PageTableLockTrait<
         spec_helpers::pte_keys_do_not_change(mpt, old(mpt)),
     ;
 
-    fn unlock(&mut self) -> PageTableNode<E, C>;
+    fn unlock(&mut self) -> PageTableNode;
 
     fn into_raw_paddr(self: Self) -> (res: Paddr) where Self: Sized
     ensures

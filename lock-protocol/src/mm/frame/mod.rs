@@ -16,28 +16,28 @@ use crate::mm::PAGE_SIZE;
 verus! {
 
 // #[repr(transparent)] TODO: repr(transparent)
-// pub struct Frame<M: AnyFrameMeta + ?Sized> {
-pub struct Frame<M: AnyFrameMeta> {
+// pub struct Frame<M: AnyFrameMeta + ?Sized> { // NOTE: Verus does not support dyn type, so we remove it currently
+pub struct Frame {
     // pub ptr: PPtr<MetaSlot>,
     // pub ptr: *const MetaSlot,
     pub ptr: usize, // TODO: MetaSlot is currently ignored
-    pub _marker: PhantomData<M>,
+    // pub _marker: PhantomData<M>,
 }
 
-impl<M: AnyFrameMeta> Frame<M> {
+// impl<M: AnyFrameMeta> Frame<M> {
 
-    /// Gets the metadata of this page.
-    // TODO: Implement Frame::meta
-    #[verifier::external_body]
-    pub fn meta(&self) -> &M {
-        // SAFETY: The type is tracked by the type system.
-        // unsafe { &*self.slot().as_meta_ptr::<M>() }
-        unimplemented!("Frame::meta")
-    }
-}
+//     /// Gets the metadata of this page.
+//     // TODO: Implement Frame::meta
+//     #[verifier::external_body]
+//     pub fn meta(&self) -> &M {
+//         // SAFETY: The type is tracked by the type system.
+//         // unsafe { &*self.slot().as_meta_ptr::<M>() }
+//         unimplemented!("Frame::meta")
+//     }
+// }
 
 // impl<M: AnyFrameMeta + ?Sized> Frame<M> {
-impl<M: AnyFrameMeta> Frame<M> {
+impl Frame {
 
     /// Gets the physical address of the start of the frame.
     // TODO: Implement
@@ -121,7 +121,7 @@ impl<M: AnyFrameMeta> Frame<M> {
 
         Self {
             ptr: paddr,
-            _marker: PhantomData,
+            // _marker: PhantomData,
         }
         // Self {
         //     ptr: PPtr::<MetaSlot>::from_addr(paddr),
