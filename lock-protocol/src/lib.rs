@@ -10,7 +10,7 @@
 pub mod mm;
 pub mod prelude;
 pub mod spec;
-// pub mod test;
+pub mod test;
 pub mod task;
 pub mod x86_64;
 #[macro_use]

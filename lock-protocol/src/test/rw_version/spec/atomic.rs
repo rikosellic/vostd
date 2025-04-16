@@ -1,7 +1,7 @@
 use builtin::*;
 use builtin_macros::*;
 use state_machines_macros::state_machine;
-use vstd::*;
+use vstd::prelude::*;
 use vstd::map::*;
 
 use super::{
@@ -119,26 +119,46 @@ type Step = AtomicSpec::Step;
 // Lemmas
 
 pub proof fn lemma_mutual_exclusion(
-    s1: State, s2: State, s3: State, cpu: CpuId, nid: NodeId
+    states: Seq<State>, steps: Seq<Step>,
+    cpu_num: CpuId, cpu: CpuId, nid: NodeId,
 )
     requires
-        s1.invariant(),
-        s2.invariant(),
-        s3.invariant(),
-        State::next_by(s1, s2, Step::lock(cpu, nid)),
-    ensures
-        forall |step: Step| 
-            State::next_by(s2, s3, step) &&
-            !step.is_unlock() &&
-            !step.is_no_op() &&
-            !step.is_dummy_to_use_type_params() ==> {
-                let _nid = step.get_lock_1();
+        steps.len() >= 1,
+        states.len() == steps.len() + 1,
+        forall |i| #![auto] 0 <= i < states.len() ==> {
+            &&& states[i].invariant()
+            &&& states[i].cpu_num == cpu_num
+        },
+        forall |i| #![auto] 0 <= i < steps.len() ==>
+            State::next_by(states[i], states[i + 1], steps[i]),
 
-                !NodeHelper::in_subtree(nid, _nid) &&
-                !NodeHelper::in_subtree(_nid, nid)
-            }
+        steps[0] =~= Step::lock(cpu, nid),
+        forall |i| #![auto] 0 < i < steps.len() && steps[i].is_unlock() ==> {
+            let _cpu = steps[i].get_unlock_0();
+            cpu != _cpu
+        },
+
+        valid_cpu(cpu_num, cpu),
+    ensures
+        forall |i| #![auto] 0 < i < states.len() ==>
+            states[i].cursors[cpu] == AtomicCursorState::Locked(nid),
+        forall |i| #![auto] 0 < i < steps.len() && steps[i].is_lock() ==> {
+            let _cpu = steps[i].get_lock_0();
+            let _nid = steps[i].get_lock_1();
+
+            cpu != _cpu &&
+            !NodeHelper::in_subtree(nid, _nid) &&
+            !NodeHelper::in_subtree(_nid, nid)
+        },
+    decreases steps.len(),
 {
     reveal(AtomicSpec::State::next_by);
+    if steps.len() == 1 {} else {
+        lemma_mutual_exclusion(states.drop_last(), steps.drop_last(), cpu_num, cpu, nid);
+        let len = steps.len() as int;
+        assert(states =~= states.drop_last().push(states[len]));
+        assert(steps =~= steps.drop_last().push(steps[len - 1]));
+    }
 }
 
 }
