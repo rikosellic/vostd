@@ -516,6 +516,15 @@ pub open spec fn nid_to_level(nid: NodeId) -> nat
     Self::dep_to_level(Self::nid_to_dep(nid))
 }
 
+pub proof fn lemma_level_dep_relation(nid: NodeId)
+    requires
+        Self::valid_nid(nid),
+    ensures
+        Self::nid_to_level(nid) == 4 - Self::nid_to_dep(nid),
+{
+    admit();
+}
+
 pub proof fn lemma_valid_level_to_node(nid: NodeId, level: nat)
     requires
         Self::valid_nid(nid),

@@ -1,13 +1,18 @@
+use std::ops::Range;
+
 use builtin::*;
 use builtin_macros::*;
 use vstd::prelude::*;
 use vstd::vstd::arithmetic::power2::*;
+use vstd::arithmetic::div_mod::*;
+use vstd::arithmetic::power2::*;
 use vstd::bits::*;
 
 use super::super::spec::{
     common::*,
     utils::*,
 };
+use super::super::vstd_extra::bits::*;
 
 verus!{
 
@@ -29,6 +34,10 @@ pub open spec fn valid_vaddr(va: Vaddr) -> bool {
     0 <= va < pow2(48)
 }
 
+pub open spec fn valid_va_range(va: Range<Vaddr>) -> bool {
+    0 <= va.start <= va.end <= pow2(48)
+}
+
 pub open spec fn vaddr_is_aligned_spec(va: Vaddr) -> bool {
     (va & (low_bits_mask(12) as u64)) == 0
 }
@@ -40,11 +49,36 @@ pub fn vaddr_is_aligned(va: Vaddr) -> (res: bool)
     ensures
         res == vaddr_is_aligned_spec(va),
 {
-    assume(false);
-    (va & (1u64 << 12)) == 0
+    (va & low_bits_mask_u64(12)) == 0
 }
 
-pub open spec fn va_level_to_trace_rec(vaddr: Vaddr, level: Level) -> Seq<nat>
+pub open spec fn va_level_to_offset(va: Vaddr, level: Level) -> nat 
+    recommends
+        valid_vaddr(va),
+        1 <= level <= 4,
+{
+    ((va >> (12 + (level - 1) * 9)) & low_bits_mask(9) as u64) as nat
+}
+
+pub fn pte_index(va: Vaddr, level: Level) -> (res: u64) 
+    requires
+        valid_vaddr(va),
+        1 <= level <= 4,
+    ensures
+        res == va_level_to_offset(va, level),
+        valid_pte_offset(res as nat),
+{
+    let offset = (va >> (12 + (level - 1) * 9)) & low_bits_mask_u64(9);
+    assert(valid_pte_offset(offset as nat)) by {
+        let x: u64 = va >> (12 + (level - 1) * 9);
+        lemma_u64_low_bits_mask_is_mod(x, 9);
+        lemma2_to64();
+        lemma_mod_bound(x as int, pow2(9) as int);
+    };
+    offset
+}
+
+pub open spec fn va_level_to_trace_rec(va: Vaddr, level: Level) -> Seq<nat>
     recommends
         1 <= level <= 4,
     decreases 4 - level,
@@ -52,18 +86,18 @@ pub open spec fn va_level_to_trace_rec(vaddr: Vaddr, level: Level) -> Seq<nat>
     if 1 <= level <= 4 {
         if level == 4 { Seq::empty() }
         else {
-            va_level_to_trace_rec(vaddr, (level + 1) as Level)
-                .push(((vaddr >> (level * 9)) & low_bits_mask(9) as u64) as nat)
+            va_level_to_trace_rec(va, (level + 1) as Level)
+                .push(((va >> (level * 9)) & low_bits_mask(9) as u64) as nat)
         }
     } else { arbitrary() }
 }
 
-pub open spec fn va_level_to_trace(vaddr: Vaddr, level: Level) -> Seq<nat> {
-    va_level_to_trace_rec(vaddr >> 12, level)
+pub open spec fn va_level_to_trace(va: Vaddr, level: Level) -> Seq<nat> {
+    va_level_to_trace_rec(va >> 12, level)
 }
 
-pub open spec fn va_level_to_nid(vaddr: Vaddr, level: Level) -> NodeId {
-    NodeHelper::trace_to_nid_from_root(va_level_to_trace(vaddr, level))
+pub open spec fn va_level_to_nid(va: Vaddr, level: Level) -> NodeId {
+    NodeHelper::trace_to_nid_from_root(va_level_to_trace(va, level))
 }
 
 }

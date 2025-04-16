@@ -13,18 +13,6 @@ pub open spec fn valid_cpu(cpu_num: CpuId, cpu: CpuId) -> bool {
     0 <= cpu < cpu_num
 }
 
-pub open spec fn valid_pos(size: nat, p: nat) -> bool {
-    0 <= p < size
-}
-
-pub open spec fn valid_range(size: nat, l: nat, r: nat) -> bool {
-    0 <= l < r <= size
-}
-
-pub open spec fn pos_in_range(l: nat, r: nat, p: nat) -> bool {
-    l <= p < r
-}
-
 pub open spec fn valid_pte_offset(offset: nat) -> bool {
     0 <= offset < 512
 }
