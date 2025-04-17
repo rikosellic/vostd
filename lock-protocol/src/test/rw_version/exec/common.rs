@@ -13,6 +13,7 @@ use super::super::spec::{
     utils::*,
 };
 use super::super::vstd_extra::bits::*;
+use crate::helpers::extern_const::*;
 
 verus!{
 
@@ -25,6 +26,9 @@ pub type Level = u64;
 pub spec const GLOBAL_CPU_NUM: nat = 2;
 
 pub const INVALID_PADDR: Paddr = 0xffff_ffff_ffff_ffff;
+
+extern_const!(
+pub MAX_RC [MAX_RC_SPEC, CONST_MAX_RC]: u64 = 382);
 
 }
 

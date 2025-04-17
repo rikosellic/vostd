@@ -106,7 +106,7 @@ pub struct PageTableFrame {
 
     // Metadatas in metaslot
     pub pa: Paddr,
-    pub rw_lock: RwLock<NodeToken, spec_fn(NodeToken) -> bool>,
+    pub rw_lock: RwLock<Tracked<NodeToken>, spec_fn(Tracked<NodeToken>) -> bool>,
     pub rc: AtomicU64<_, RcToken, _>,
     
     // // Actual contents in frame
@@ -120,10 +120,10 @@ pub open spec fn wf(&self) -> bool {
         &&& NodeHelper::valid_nid(self.nid@)
 
         &&& valid_paddr(self.pa)
-        &&& forall |token: NodeToken| #![auto] self.rw_lock.inv(token) ==> {
-            &&& token.instance_id() == self.inst@.id()
-            &&& token.key() == self.nid@
-            &&& token.value().is_WriteUnLocked()
+        &&& forall |token: Tracked<NodeToken>| #[trigger] self.rw_lock.inv(token) <==> {
+            &&& token@.instance_id() == self.inst@.id()
+            &&& token@.key() == self.nid@
+            &&& token@.value().is_WriteUnLocked()
         }
 
         // &&& self.ptes@.len() == 512
@@ -135,6 +135,8 @@ pub open spec fn wf(&self) -> bool {
         &&& g.instance_id() == inst@.id()
         &&& g.key() == nid@
         &&& g.value() == v
+
+        &&& v <= MAX_RC() // prevent overflow
     }
 
     // invariant on ptes
@@ -189,6 +191,7 @@ pub open spec fn wf(&self) -> bool {
 }
 
 impl FrameAllocator {
+
     pub open spec fn inv_pt_frame(frame: Frame) -> bool {
         &&& is_variant(frame, "page_table_frame")
         &&& get_union_field::<Frame, ManuallyDrop<PageTableFrame>>(
@@ -217,6 +220,60 @@ impl FrameAllocator {
         let fid: FrameId = pa_to_fid(pa);
         &self.frames[fid as usize]
     }
+
+    #[verifier::external_body]
+    pub fn find_void_frame(&self) -> (res: FrameId)
+        requires
+            self.wf(),
+        ensures
+            valid_fid(res),
+            self.usages@[res as int].is_Void(),
+    {
+        0
+    }
+
+    pub fn find_void_frame_pa(&self) -> (res: Paddr)
+        requires
+            self.wf(),
+        ensures
+            valid_paddr(res),
+            paddr_is_aligned(res),
+            self.usages@[pa_to_fid(res) as int].is_Void(),
+    {
+        let fid = self.find_void_frame();
+        assert(pa_to_fid(fid_to_pa(fid)) == fid) by { admit(); };
+        fid_to_pa(fid)
+    }
+
+    #[verifier::external_body]
+    pub fn allocate_pt_frame(
+        // &mut self,
+        &self,
+        pa: Paddr,
+        nid: Ghost<NodeId>,
+        inst: Tracked<SpecInstance>,
+        node_token: Tracked<NodeToken>,
+        rc_token: Tracked<RcToken>,
+    )
+        requires
+            self.wf(),
+            valid_paddr(pa),
+            paddr_is_aligned(pa),
+            self.usages@[pa_to_fid(pa) as int].is_Void(), // Fix this
+
+            NodeHelper::valid_nid(nid@),
+            inst@.cpu_num() == GLOBAL_CPU_NUM,
+            node_token@.instance_id() == inst@.id(),
+            node_token@.key() == nid@,
+            node_token@.value().is_WriteUnLocked(),
+            rc_token@.instance_id() == inst@.id(),
+            rc_token@.key() == nid@,
+            rc_token@.value() == 0,
+        ensures
+            self.wf(),
+            self.usages@[pa_to_fid(pa) as int].is_PageTable(),
+    {}
+
 }
 
 }
