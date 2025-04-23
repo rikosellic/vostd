@@ -370,7 +370,6 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
     /// Note that this function does not ensure exclusive access to the claimed
     /// virtual address range. The accesses using this cursor may block or fail.
     #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
     pub fn new(pt: &'a PageTable<M>, va: &Range<Vaddr>,
                 Tracked(s): Tracked<AbstractState>) ->
                 (res: (Result<(Self, Ghost<ConcreteCursor>), PageTableError>, Tracked<AbstractState>))
@@ -403,6 +402,10 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
         let ghost mut cur_path = Ghost(PageTableTreePathModel::from_path(TreePath(Seq::empty())));
         assert(s.page_table.get_node(cur_path@).unwrap()@ == s.page_table.tree@.root) by
         { s.page_table.get_node_empty_is_root(cur_path@) }
+
+        assert(cur_pt_addr % PAGE_SIZE_SPEC() == 0) by { admit() };
+        assert(cur_pt_addr < MAX_PADDR_SPEC()) by { admit() };
+        assert(s.get_page(cur_pt_addr).usage == PageUsage::PageTable) by { admit() };
 
         assert(s.page_table.tree@.on_tree(s.page_table.tree@.root));
         assert(s.is_node(cur_pt_addr));
@@ -471,6 +474,9 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
                         let node = child.is_pt().unwrap();
                         assert(node == s.page_table.get_node(cur_path@).unwrap()@.value) by { admit() };
                         assert(node.paddr == cur_pte.paddr()) by { admit() };
+                        assert(node.paddr % PAGE_SIZE_SPEC() == 0) by { admit() };
+                        assert(node.paddr < MAX_PADDR_SPEC()) by { admit() };
+                        assert(s.get_page(node.paddr).usage == PageUsage::PageTable) by { admit() };
                     }
                     cur_pt_addr = cur_pte.paddr();
                 }
