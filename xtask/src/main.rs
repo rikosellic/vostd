@@ -13,7 +13,7 @@ use std::{
     process::{Command, Stdio},
 };
 use memoize::memoize;
-use git2::Repository;
+use git2::{Repository,build::RepoBuilder};
 #[cfg(not(target_os = "windows"))]
 use std::os::unix::fs::PermissionsExt;
 
@@ -203,13 +203,17 @@ enum Commands {
 
 #[derive(Parser, Debug)]
 struct BootstrapArgs {
-    #[arg(long = "no-vscode-extension", help = "Do not build verus vscode extension",
+    /*#[arg(long = "no-vscode-extension", help = "Do not build verus vscode extension",
         default_value = "false", action = ArgAction::SetTrue)]
-    no_vscode_extension: bool,
+    no_vscode_extension: bool,*/
 
     #[arg(long = "restart", help = "Remove all toolchain and restart the bootstrap",
         default_value = "false", action = ArgAction::SetTrue)]
     restart: bool,
+
+    #[arg(long = "rust-version", help = "The rust version to use",
+        default_value = "1.82.0", action = ArgAction::Set)]
+    rust_version: String,
 }
 
 #[derive(Parser, Debug)]
@@ -695,6 +699,8 @@ fn exec_doc(args: &DocArgs) -> Result<(), DynError> {
     Ok(())
 }
 
+#[allow(dead_code)]
+//Not required because now we use our own fork
 fn is_patch_applied(dir: &Path, patch: &Path) -> bool {
     let status = Command::new("git")
         .current_dir(dir)
@@ -709,6 +715,8 @@ fn is_patch_applied(dir: &Path, patch: &Path) -> bool {
     status.success()
 }
 
+#[allow(dead_code)]
+//Not required because now we use our own fork
 fn apply_patch(dir: &Path, patch: &Path) -> bool {
     let status = Command::new("git")
         .current_dir(dir)
@@ -719,8 +727,10 @@ fn apply_patch(dir: &Path, patch: &Path) -> bool {
     status.success()
 }
 
+#[allow(dead_code)]
+// Not required because verus-analyzer now can be found in VsCode extension marketplace
 fn build_vscode_extension(args: &BootstrapArgs) -> Result<(), DynError> {
-    let verus_analyzer_repo = "https://github.com/verus-lang/verus-analyzer.git";
+    let verus_analyzer_repo = "https://github.com/asterinas/verus-analyzer.git";
     let verus_analyzer_dir = Path::new("tools").join("verus-analyzer");
 
     if args.restart && verus_analyzer_dir.exists() {
@@ -740,13 +750,13 @@ fn build_vscode_extension(args: &BootstrapArgs) -> Result<(), DynError> {
         }
     }
 
-    let verus_analyzer_patch = Path::new("..")
+    /*let verus_analyzer_patch = Path::new("..")
         .join("patches")
         .join("verus-analyzer-fixes.patch");
     if !is_patch_applied(&verus_analyzer_dir, &verus_analyzer_patch) {
         println!("Apply the Verus Analyzer patch");
         apply_patch(&verus_analyzer_dir, &verus_analyzer_patch);
-    }
+    }*/
 
     println!("Start to build the Verus Analyzer");
     #[cfg(target_os = "windows")]
@@ -801,26 +811,45 @@ fn build_vscode_extension(args: &BootstrapArgs) -> Result<(), DynError> {
     Ok(())
 }
 
+fn is_verusfmt_installed() -> bool {
+    let output = Command::new("verusfmt")
+        .arg("--version")
+        .output();
+    match output {
+        Ok(output) => {
+            if output.status.success() {
+                return true;
+            }
+        }
+        Err(_) => {}
+    }
+    false
+}
+
 fn install_verusfmt() -> Result<(), DynError> {
     println!("Start to install verusfmt");
     let status = {
         #[cfg(target_os = "windows")]
         {
             // powershell.exe -ExecutionPolicy RemoteSigned -c "irm https://github.com/verus-lang/verusfmt/releases/latest/download/verusfmt-installer.ps1 | iex"
-            Command::new("powershell")
-        .arg("-ExecutionPolicy")
-        .arg("RemoteSigned")
-        .arg("-c")
-        .arg("irm https://github.com/verus-lang/verusfmt/releases/latest/download/verusfmt-installer.ps1 | iex")
-        .status()
+            let mut cmd = Command::new("powershell");
+            cmd
+            .arg("-ExecutionPolicy")
+            .arg("RemoteSigned")
+            .arg("-c")
+            .arg("irm https://github.com/verus-lang/verusfmt/releases/latest/download/verusfmt-installer.ps1 | iex");
+            println!("{:?}", cmd);
+            cmd.status()
         }
         #[cfg(not(target_os = "windows"))]
         {
             // curl --proto '=https' --tlsv1.2 -LsSf https://github.com/verus-lang/verusfmt/releases/latest/download/verusfmt-installer.sh | sh
-            Command::new("bash")
-        .arg("-c")
-        .arg("curl --proto '=https' --tlsv1.2 -LsSf https://github.com/verus-lang/verusfmt/releases/latest/download/verusfmt-installer.sh | sh")
-        .status()
+            let mut cmd = Command::new("bash");
+            cmd
+            .arg("-c")
+            .arg("curl --proto '=https' --tlsv1.2 -LsSf https://github.com/verus-lang/verusfmt/releases/latest/download/verusfmt-installer.sh | sh");
+                println!("{:?}", cmd);
+            cmd.status()
         }
     };
     if let Err(err) = status {
@@ -831,7 +860,7 @@ fn install_verusfmt() -> Result<(), DynError> {
 }
 
 fn exec_bootstrap(args: &BootstrapArgs) -> Result<(), DynError> {
-    let verus_repo = "https://github.com/verus-lang/verus.git";
+    let verus_repo = "https://github.com/asterinas/verus.git";
     let verus_dir = Path::new("tools").join("verus");
 
     // Not required if the project includes fixed Verus code
@@ -844,11 +873,14 @@ fn exec_bootstrap(args: &BootstrapArgs) -> Result<(), DynError> {
             "Start to clone the Verus repository to {}",
             verus_dir.display()
         );
-        let res = Repository::clone(verus_repo, &verus_dir);
-        if res.is_err() {
+        let mut builder = RepoBuilder::new();
+        if let Err(e) = builder.branch(&args.rust_version).clone(verus_repo, &verus_dir)
+        {
             eprintln!(
-                "Failed to clone the Verus repository. Please try to manually clone it to {}",
-                verus_dir.display()
+                "Failed to clone the Verus repository, caused by {}.\r 
+                Please try to manually clone it to {} and run `cargo xtask bootstrap` again.\r
+                The Verus repository is available at {}.",
+                e, verus_dir.display(), verus_repo
             );
             std::process::exit(1);
         }
@@ -892,12 +924,12 @@ fn exec_bootstrap(args: &BootstrapArgs) -> Result<(), DynError> {
         }
     }
 
-    let verus_path = Path::new("..").join("patches").join("verus-fixes.patch");
+    /*let verus_path = Path::new("..").join("patches").join("verus-fixes.patch");
     // Not required if the project includes fixed Verus code
     if !is_patch_applied(&verus_dir, &verus_path) {
         println!("Apply the Verus patch");
         apply_patch(&verus_dir, &verus_path);
-    }
+    }*/
 
     println!("Start to build the Verus compiler");
     #[cfg(target_os = "windows")]
@@ -919,11 +951,13 @@ fn exec_bootstrap(args: &BootstrapArgs) -> Result<(), DynError> {
         cmd.status()?;
     }
 
-    if !args.no_vscode_extension {
+    /*if !args.no_vscode_extension {
         build_vscode_extension(args)?;
-    }
+    }*/
 
-    install_verusfmt()?;
+    if args.restart || !is_verusfmt_installed() {
+        install_verusfmt()?;
+    }
 
     Ok(())
 }
