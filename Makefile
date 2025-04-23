@@ -19,3 +19,6 @@ all:
 	cargo xtask verify --targets fvt5-lifecycle-safety
 	cargo xtask verify --targets fvt10-pt-cursor-navigation
 	cargo xtask verify --targets fvt11-pt-cursor-guards
+
+clean:
+	cargo clean

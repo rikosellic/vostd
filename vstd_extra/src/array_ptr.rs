@@ -339,7 +339,7 @@ pub tracked struct PointsTo<V, const N: usize> {
 #[verusfmt::skip]
 broadcast use
     raw_ptr::group_raw_ptr_axioms,
-    set_lib::group_set_lib_axioms,
+    set_lib::group_set_lib_default,
     set::group_set_axioms;
 
 impl<V, const N: usize> ArrayPtr<V, N> {
