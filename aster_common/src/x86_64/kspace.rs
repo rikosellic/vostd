@@ -103,7 +103,8 @@ pub broadcast proof fn lemma_paddr_to_vaddr_properties(pa: Paddr)
     ensures
         LINEAR_MAPPING_BASE_VADDR() <= #[trigger] paddr_to_vaddr(pa) < VMALLOC_BASE_VADDR(),
         #[trigger] vaddr_to_paddr(paddr_to_vaddr(pa)) == pa,
-{ }
+{
+}
 
 pub broadcast proof fn lemma_vaddr_to_paddr_properties(va: Vaddr)
     requires
@@ -111,7 +112,8 @@ pub broadcast proof fn lemma_vaddr_to_paddr_properties(va: Vaddr)
     ensures
         #[trigger] vaddr_to_paddr(va) < VMALLOC_BASE_VADDR() - LINEAR_MAPPING_BASE_VADDR(),
         #[trigger] paddr_to_vaddr(vaddr_to_paddr(va)) == va,
-{ }
+{
+}
 
 pub proof fn lemma_max_paddr_range()
     ensures
@@ -137,9 +139,11 @@ pub proof fn lemma_mod_0_add(a: int, b: int, m: int)
 pub broadcast proof fn lemma_meta_frame_vaddr_properties(meta: Vaddr)
     requires
         meta % META_SLOT_SIZE() == 0,
-        FRAME_METADATA_RANGE().start <= meta < FRAME_METADATA_RANGE().start + MAX_NR_PAGES() * META_SLOT_SIZE(),
+        FRAME_METADATA_RANGE().start <= meta < FRAME_METADATA_RANGE().start + MAX_NR_PAGES()
+            * META_SLOT_SIZE(),
     ensures
-        LINEAR_MAPPING_BASE_VADDR() <= #[trigger] paddr_to_vaddr(meta_to_page(meta)) < VMALLOC_BASE_VADDR(),
+        LINEAR_MAPPING_BASE_VADDR() <= #[trigger] paddr_to_vaddr(meta_to_page(meta))
+            < VMALLOC_BASE_VADDR(),
         #[trigger] paddr_to_vaddr(meta_to_page(meta)) % PAGE_SIZE() == 0,
 {
     let pa = meta_to_page(meta);
@@ -156,4 +160,4 @@ pub broadcast proof fn lemma_meta_frame_vaddr_properties(meta: Vaddr)
     };
 }
 
-}
+} // verus!

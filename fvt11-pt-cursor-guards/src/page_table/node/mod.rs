@@ -22,16 +22,15 @@ use std::borrow::BorrowMut;
 verus! {
 
 impl RawPageTableNode {
-
     #[rustc_allow_incoherent_impl]
-    pub open spec fn relate(self, model: PageTableNodeValue) -> bool
-    {
+    pub open spec fn relate(self, model: PageTableNodeValue) -> bool {
         self.paddr() == model.paddr()
     }
 
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn clone_shallow(&self, Tracked(model): Tracked<&mut PageTableNodeModel>) -> (res: RawPageTableNode)
+    pub fn clone_shallow(&self, Tracked(model): Tracked<&mut PageTableNodeModel>) -> (res:
+        RawPageTableNode)
         requires
             self.inv(),
             self.relate((*old(model))@.value),
@@ -39,35 +38,27 @@ impl RawPageTableNode {
             res.inv(),
             res.relate((*model)@.value),
     {
-        unimplemented!()
-/*        model.borrow_mut().value.nr_raws = model.borrow().value.nr_raws + 1;
+        unimplemented!()/*        model.borrow_mut().value.nr_raws = model.borrow().value.nr_raws + 1;
         Self {
             raw: self.raw,
             level: self.level,
             _phantom: PhantomData,
         } */
+
     }
 
     /// Converts a raw handle to an accessible handle by pertaining the lock.
     #[rustc_allow_incoherent_impl]
     pub(super) fn lock(self) -> PageTableNode {
-        PageTableNode {
-            page: Page {
-                ptr: PPtr::from_addr(self.paddr()),
-                _marker: PhantomData,
-            },
-        }
+        PageTableNode { page: Page { ptr: PPtr::from_addr(self.paddr()), _marker: PhantomData } }
     }
 }
 
-
 impl PageTableNode {
-
     #[rustc_allow_incoherent_impl]
-    pub open spec fn relate(self, model: PageTableNodeValue) -> bool
-    {
-    &&& self.paddr() == model.paddr()
-    &&& model.is_locked == true
+    pub open spec fn relate(self, model: PageTableNodeValue) -> bool {
+        &&& self.paddr() == model.paddr()
+        &&& model.is_locked == true
     }
 
     #[rustc_allow_incoherent_impl]
@@ -83,8 +74,7 @@ impl PageTableNode {
 
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn read_pte(&self, idx: usize,
-        model: Tracked<&PageTableNodeModel>) -> (res: PageTableEntry)
+    pub fn read_pte(&self, idx: usize, model: Tracked<&PageTableNodeModel>) -> (res: PageTableEntry)
         requires
             self.inv(),
             self.relate((*model@)@.value),
@@ -93,20 +83,23 @@ impl PageTableNode {
         ensures
             model@@.value.perms.unwrap().opt_value()[idx as int].value() == res,
     {
-        proof{
+        proof {
             self.relate_implies_inv(*model@);
             lemma_meta_frame_vaddr_properties(self.page.ptr.addr());
             lemma_max_paddr_range();
         }
-        let ptr =
-            ArrayPtr::<PageTableEntry, NR_ENTRIES>::from_addr(paddr_to_vaddr(self.paddr()));
+        let ptr = ArrayPtr::<PageTableEntry, NR_ENTRIES>::from_addr(paddr_to_vaddr(self.paddr()));
         let tracked perms = model.borrow()@.borrow_value().borrow_perms().tracked_borrow();
         ptr.get(Tracked(&perms), idx)
     }
 
     #[rustc_allow_incoherent_impl]
-    pub fn write_pte(&self, idx: usize, entry: PageTableEntry,
-        Tracked(model): Tracked<&mut PageTableNodeModel>)
+    pub fn write_pte(
+        &self,
+        idx: usize,
+        entry: PageTableEntry,
+        Tracked(model): Tracked<&mut PageTableNodeModel>,
+    )
         requires
             self.inv(),
             self.relate((*old(model))@.value),
@@ -114,13 +107,12 @@ impl PageTableNode {
         ensures
             model@.value.perms.unwrap().opt_value()[idx as int].value() == entry,
     {
-        proof{
+        proof {
             self.relate_implies_inv(*model);
             lemma_meta_frame_vaddr_properties(self.page.ptr.addr());
             lemma_max_paddr_range();
         }
-        let ptr =
-            ArrayPtr::<PageTableEntry, NR_ENTRIES>::from_addr(paddr_to_vaddr(self.paddr()));
+        let ptr = ArrayPtr::<PageTableEntry, NR_ENTRIES>::from_addr(paddr_to_vaddr(self.paddr()));
         pt_node_write_pte(Tracked(model), ptr, idx, entry);
     }
 
@@ -132,10 +124,9 @@ impl PageTableNode {
             self.relate(model@.value),
             model@.value.perms.unwrap().is_uninit_all(),
     {
-        let ptr =
-            ArrayPtr::<PageTableEntry, NR_ENTRIES>::from_addr(paddr_to_vaddr(self.paddr()));
+        let ptr = ArrayPtr::<PageTableEntry, NR_ENTRIES>::from_addr(paddr_to_vaddr(self.paddr()));
         pt_node_free(Tracked(model), ptr);
     }
 }
 
-}
+} // verus!

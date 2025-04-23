@@ -7,24 +7,28 @@ verus! {
 
 #[allow(non_snake_case)]
 pub trait PageMeta: Sync + Sized {
-
     spec fn USAGE_spec() -> PageUsage;
 
-    proof fn used() ensures Self::USAGE_spec() != PageUsage::Unused;
+    proof fn used()
+        ensures
+            Self::USAGE_spec() != PageUsage::Unused,
+    ;
 
     #[verifier::when_used_as_spec(USAGE_spec)]
     fn USAGE() -> (res: PageUsage)
-        ensures res == Self::USAGE_spec();
+        ensures
+            res == Self::USAGE_spec(),
+    ;
 
     spec fn on_drop_spec(page: Page<Self>) -> (res: Page<Self>);
 
     fn on_drop(page: &mut Page<Self>)
         ensures
-            page == Self::on_drop_spec(*old(page));
+            page == Self::on_drop_spec(*old(page)),
+    ;
 }
 
-}
-
+} // verus!
 verus! {
 
 #[derive(Debug, Default)]
@@ -38,7 +42,6 @@ pub struct FrameMeta {
 }
 
 impl PageMeta for FrameMeta {
-
     #[verifier::inline]
     open spec fn USAGE_spec() -> PageUsage {
         PageUsage::Frame
@@ -51,7 +54,8 @@ impl PageMeta for FrameMeta {
     #[inline(always)]
     #[verifier::when_used_as_spec(USAGE_spec)]
     fn USAGE() -> (res: PageUsage)
-            ensures res == Self::USAGE_spec()
+        ensures
+            res == Self::USAGE_spec(),
     {
         PageUsage::Frame
     }
@@ -63,26 +67,22 @@ impl PageMeta for FrameMeta {
 
     #[inline(always)]
     fn on_drop(page: &mut Page<Self>)
-            ensures
-                page == Self::on_drop_spec(*old(page))
+        ensures
+            page == Self::on_drop_spec(*old(page)),
     {
         // Nothing should be done so far since dropping the page would
         // have all taken care of.
     }
 }
 
-}
-
+} // verus!
 verus! {
 
 use vstd::cell::{PCell, PointsTo};
 use vstd::atomic::{PAtomicU8, PermissionU8};
-
 use crate::mm::*;
-
 use crate::x86_64::page_table_entry::PageTableEntry;
 use crate::x86_64::paging_consts::PagingConsts;
-
 use core::marker::PhantomData;
 
 #[rustc_has_incoherent_inherent_impls]
@@ -108,8 +108,7 @@ impl Default for MapTrackingStatus {
 
 #[derive(Debug, Default)]
 #[repr(C)]
-pub struct PageTablePageMetaInner
-{
+pub struct PageTablePageMetaInner {
     pub nr_children: u16,
     pub level: PagingLevel,
     pub is_tracked: MapTrackingStatus,
@@ -117,8 +116,7 @@ pub struct PageTablePageMetaInner
 
 #[repr(C)]
 #[rustc_has_incoherent_inherent_impls]
-pub struct PageTablePageMeta
-{
+pub struct PageTablePageMeta {
     pub lock: PAtomicU8,
     pub inner: PCell<PageTablePageMetaInner>,
     pub _phantom: PhantomData<(PageTableEntry, PagingConsts)>,
@@ -127,39 +125,40 @@ pub struct PageTablePageMeta
 spec fn drop_tree_spec(_page: Page<PageTablePageMeta>) -> Page<PageTablePageMeta>;
 
 #[verifier::external_body]
-extern fn drop_tree(_page: &mut Page<PageTablePageMeta>)
+extern  fn drop_tree(_page: &mut Page<PageTablePageMeta>)
     ensures
-        _page == drop_tree_spec(*old(_page));
+        _page == drop_tree_spec(*old(_page)),
+;
 
 impl PageMeta for PageTablePageMeta {
+    #[verifier::inline]
+    open spec fn USAGE_spec() -> PageUsage {
+        PageUsage::PageTable
+    }
 
-        #[verifier::inline]
-        open spec fn USAGE_spec() -> PageUsage {
-            PageUsage::PageTable
-        }
+    proof fn used() {
+        assert(PageUsage::PageTable != PageUsage::Unused);
+    }
 
-        proof fn used() {
-            assert(PageUsage::PageTable != PageUsage::Unused);
-        }
+    #[inline(always)]
+    #[verifier::when_used_as_spec(USAGE_spec)]
+    fn USAGE() -> (res: PageUsage)
+        ensures
+            res == Self::USAGE_spec(),
+    {
+        PageUsage::PageTable
+    }
 
-        #[inline(always)]
-        #[verifier::when_used_as_spec(USAGE_spec)]
-        fn USAGE() -> (res: PageUsage)
-                ensures res == Self::USAGE_spec()
-        {
-            PageUsage::PageTable
-        }
+    closed spec fn on_drop_spec(_page: Page<Self>) -> (res: Page<Self>) {
+        drop_tree_spec(_page)
+    }
 
-        closed spec fn on_drop_spec(_page: Page<Self>) -> (res: Page<Self>) {
-            drop_tree_spec(_page)
-        }
-
-        fn on_drop(_page: &mut Page<Self>)
-            ensures
-                _page == Self::on_drop_spec(*old(_page))
-        {
-            drop_tree(_page)
-        }
+    fn on_drop(_page: &mut Page<Self>)
+        ensures
+            _page == Self::on_drop_spec(*old(_page)),
+    {
+        drop_tree(_page)
+    }
 }
 
 #[rustc_has_incoherent_inherent_impls]
@@ -175,55 +174,44 @@ impl PageTablePageMetaModel {
 }
 
 impl PageTablePageMeta {
-
-    pub open spec fn new_locked_spec(level: PagingLevel, is_tracked: MapTrackingStatus, res: PageTablePageMetaModel) -> bool {
-    &&& res.lock@.value == 1
-    &&& res.inner.opt_value() == Some({
-        PageTablePageMetaInner {
-            level,
-            nr_children: 0,
-            is_tracked,
-        }
-    })
+    pub open spec fn new_locked_spec(
+        level: PagingLevel,
+        is_tracked: MapTrackingStatus,
+        res: PageTablePageMetaModel,
+    ) -> bool {
+        &&& res.lock@.value == 1
+        &&& res.inner.opt_value() == Some(
+            { PageTablePageMetaInner { level, nr_children: 0, is_tracked } },
+        )
     }
 
-    pub fn new_locked(level: PagingLevel, is_tracked: MapTrackingStatus) -> (res: (Self, Tracked<PageTablePageMetaModel>))
+    pub fn new_locked(level: PagingLevel, is_tracked: MapTrackingStatus) -> (res: (
+        Self,
+        Tracked<PageTablePageMetaModel>,
+    ))
         ensures
             res.1@.relate(&res.0),
             res.1@.inner.is_init(),
-            Self::new_locked_spec(level, is_tracked, res.1@)
+            Self::new_locked_spec(level, is_tracked, res.1@),
     {
         let (inner, Tracked(perm)) = PCell::new(
-            PageTablePageMetaInner {
-            level,
-            nr_children: 0,
-            is_tracked,
-        });
+            PageTablePageMetaInner { level, nr_children: 0, is_tracked },
+        );
         let (lock, Tracked(lk_perm)) = PAtomicU8::new(1);
-        let tracked model = PageTablePageMetaModel {
-            lock: lk_perm,
-            inner: perm,
-        };
-        let meta = Self {
-            lock,
-            inner,
-            _phantom: PhantomData,
-        };
+        let tracked model = PageTablePageMetaModel { lock: lk_perm, inner: perm };
+        let meta = Self { lock, inner, _phantom: PhantomData };
         (meta, Tracked(model))
     }
 }
 
-}
-
+} // verus!
 verus! {
-
 
 #[derive(Debug, Default)]
 #[repr(C)]
 pub struct MetaPageMeta {}
 
 impl PageMeta for MetaPageMeta {
-
     #[verifier::inline]
     open spec fn USAGE_spec() -> PageUsage {
         PageUsage::Meta
@@ -236,7 +224,8 @@ impl PageMeta for MetaPageMeta {
     #[inline(always)]
     #[verifier::when_used_as_spec(USAGE_spec)]
     fn USAGE() -> (res: PageUsage)
-            ensures res == Self::USAGE_spec()
+        ensures
+            res == Self::USAGE_spec(),
     {
         PageUsage::Meta
     }
@@ -248,13 +237,12 @@ impl PageMeta for MetaPageMeta {
 
     fn on_drop(_page: &mut Page<Self>)
         ensures
-            _page == Self::on_drop_spec(*old(_page))
+            _page == Self::on_drop_spec(*old(_page)),
     {
     }
 }
 
-}
-
+} // verus!
 verus! {
 
 #[derive(Debug, Default)]
@@ -262,7 +250,6 @@ verus! {
 pub struct KernelMeta {}
 
 impl PageMeta for KernelMeta {
-
     #[verifier::inline]
     open spec fn USAGE_spec() -> PageUsage {
         PageUsage::Kernel
@@ -275,7 +262,8 @@ impl PageMeta for KernelMeta {
     #[inline(always)]
     #[verifier::when_used_as_spec(USAGE_spec)]
     fn USAGE() -> (res: PageUsage)
-            ensures res == Self::USAGE_spec()
+        ensures
+            res == Self::USAGE_spec(),
     {
         PageUsage::Kernel
     }
@@ -287,10 +275,9 @@ impl PageMeta for KernelMeta {
 
     fn on_drop(_page: &mut Page<Self>)
         ensures
-            _page == Self::on_drop_spec(*old(_page))
+            _page == Self::on_drop_spec(*old(_page)),
     {
     }
 }
 
-
-}
+} // verus!

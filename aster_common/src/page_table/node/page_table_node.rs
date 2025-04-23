@@ -7,16 +7,14 @@ use crate::prelude::*;
 verus! {
 
 #[rustc_has_incoherent_inherent_impls]
-pub struct PageTableNode
-{
+pub struct PageTableNode {
     pub page: Page<PageTablePageMeta>,
 }
 
 impl PageTableNode {
-
     pub open spec fn inv(self) -> bool {
-        self.page.inv_ptr() &&
-        self.page.paddr() < VMALLOC_BASE_VADDR() - LINEAR_MAPPING_BASE_VADDR()
+        self.page.inv_ptr() && self.page.paddr() < VMALLOC_BASE_VADDR()
+            - LINEAR_MAPPING_BASE_VADDR()
     }
 
     pub open spec fn paddr_spec(&self) -> Paddr {
@@ -25,7 +23,8 @@ impl PageTableNode {
 
     #[verifier::when_used_as_spec(paddr_spec)]
     pub fn paddr(&self) -> (res: Paddr)
-        requires self.inv()
+        requires
+            self.inv(),
         ensures
             res == self.paddr_spec(),
             res % PAGE_SIZE() == 0,
@@ -34,9 +33,10 @@ impl PageTableNode {
         self.page.paddr()
     }
 
-    pub fn meta<'a>(&'a self,
+    pub fn meta<'a>(
+        &'a self,
         Tracked(p_slot): Tracked<&'a simple_pptr::PointsTo<MetaSlot>>,
-        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>
+        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>,
     ) -> (res: &PageTablePageMeta)
         requires
             self.inv(),
@@ -50,12 +50,13 @@ impl PageTableNode {
         self.page.meta_pt(Tracked(p_slot), Tracked(p_inner))
     }
 
-    pub fn level(&self,
+    pub fn level(
+        &self,
         Tracked(p_slot): Tracked<&simple_pptr::PointsTo<MetaSlot>>,
         Tracked(p_inner): Tracked<&cell::PointsTo<MetaSlotInner>>,
-        Tracked(pt_inner): Tracked<&cell::PointsTo<PageTablePageMetaInner>>
+        Tracked(pt_inner): Tracked<&cell::PointsTo<PageTablePageMetaInner>>,
     ) -> (res: PagingLevel)
-    requires
+        requires
             self.inv(),
             p_slot.pptr() == self.page.ptr,
             p_slot.is_init(),
@@ -72,12 +73,13 @@ impl PageTableNode {
         inner.level
     }
 
-    pub fn is_tracked(&self,
+    pub fn is_tracked(
+        &self,
         Tracked(p_slot): Tracked<&simple_pptr::PointsTo<MetaSlot>>,
         Tracked(p_inner): Tracked<&cell::PointsTo<MetaSlotInner>>,
-        Tracked(pt_inner): Tracked<&cell::PointsTo<PageTablePageMetaInner>>
+        Tracked(pt_inner): Tracked<&cell::PointsTo<PageTablePageMetaInner>>,
     ) -> (res: MapTrackingStatus)
-    requires
+        requires
             self.inv(),
             p_slot.pptr() == self.page.ptr,
             p_slot.is_init(),
@@ -95,4 +97,4 @@ impl PageTableNode {
     }
 }
 
-}
+} // verus!

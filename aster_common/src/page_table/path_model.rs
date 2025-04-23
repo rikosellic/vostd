@@ -45,8 +45,7 @@ pub broadcast proof fn vaddr_mask_identical(index: usize)
     requires
         0 <= index < 512,
     ensures
-        #[trigger]
-        vaddr_mask(index) == index,
+        #[trigger] vaddr_mask(index) == index,
 {
     assert(low_bits_mask(9) == 511) by {
         lemma_low_bits_mask_values();
@@ -71,8 +70,12 @@ pub proof fn lemma_vaddr_make_bounded<const L: usize>(idx: int, offset: usize)
         0 <= offset < 512,
     ensures
         offset == 0 ==> vaddr_make::<L>(idx, offset) == 0,
-        offset > 0 ==> pow2(12 + 9 * (L - 1 - idx) as nat) <= vaddr_make::<L>(idx, offset) < pow2(12 + 9 * (L - idx) as nat),
-{ admit(); }
+        offset > 0 ==> pow2(12 + 9 * (L - 1 - idx) as nat) <= vaddr_make::<L>(idx, offset) < pow2(
+            12 + 9 * (L - idx) as nat,
+        ),
+{
+    admit();
+}
 
 #[verifier::inline]
 pub open spec fn vaddr_extract<const L: usize>(idx: int, vaddr: usize) -> usize
@@ -90,7 +93,9 @@ pub proof fn lemma_vaddr_make_extract_idempotent<const L: usize>(idx: int, offse
         0 <= offset < 512,
     ensures
         vaddr_extract::<L>(idx, vaddr_make::<L>(idx, offset)) == offset,
-{ admit(); }
+{
+    admit();
+}
 
 pub open spec fn page_size_at_level<const L: usize>(level: int) -> usize
     recommends
@@ -109,15 +114,16 @@ impl View for PageTableTreePathModel {
 }
 
 impl PageTableTreePathModel {
-
     pub proof fn axiom_max_tree_depth()
         ensures
             0 < NR_LEVELS(),
-    { admit(); }
+    {
+        admit();
+    }
 
     pub open spec fn inv(&self) -> bool {
-    &&& self.inner.len() < NR_LEVELS()
-    &&& self.inner.inv()
+        &&& self.inner.len() < NR_LEVELS()
+        &&& self.inner.inv()
     }
 
     pub open spec fn rec_vaddr(path: TreePath<CONST_NR_ENTRIES>, idx: int) -> usize
@@ -125,7 +131,7 @@ impl PageTableTreePathModel {
             0 < NR_LEVELS(),
             path.len() <= NR_LEVELS(),
             0 <= idx <= path.len(),
-        decreases (path.len() - idx)
+        decreases (path.len() - idx),
         when 0 <= idx <= path.len()
     {
         if idx == path.len() {
@@ -136,16 +142,15 @@ impl PageTableTreePathModel {
         }
     }
 
-    pub proof fn rec_vaddr_pop_0(path: TreePath<CONST_NR_ENTRIES>, len:int, idx:int)
+    pub proof fn rec_vaddr_pop_0(path: TreePath<CONST_NR_ENTRIES>, len: int, idx: int)
         requires
             path.inv(),
             len == path.len(),
             0 <= idx < path.len(),
-            path.index(len-1) == 0,
+            path.index(len - 1) == 0,
         ensures
             Self::rec_vaddr(path, idx) == Self::rec_vaddr(path.pop_tail().1, idx),
-        decreases
-            (path.len() - idx),
+        decreases (path.len() - idx),
     {
         if idx == len - 1 {
             assert(Self::rec_vaddr(path, idx + 1) == 0);
@@ -155,7 +160,7 @@ impl PageTableTreePathModel {
         }
     }
 
-    pub proof fn rec_vaddr_push_0(path: TreePath<CONST_NR_ENTRIES>, len:int, idx:int)
+    pub proof fn rec_vaddr_push_0(path: TreePath<CONST_NR_ENTRIES>, len: int, idx: int)
         requires
             path.inv(),
             len == path.len(),
@@ -163,8 +168,7 @@ impl PageTableTreePathModel {
             NR_ENTRIES() > 0,
         ensures
             Self::rec_vaddr(path, idx) == Self::rec_vaddr(path.push_tail(0 as usize), idx),
-        decreases
-            (path.len() - idx),
+        decreases (path.len() - idx),
     {
         let val = 0 as usize;
         assert(0 <= val < NR_ENTRIES());
@@ -172,7 +176,7 @@ impl PageTableTreePathModel {
         assert(pushed.index(len) == 0) by { path.push_tail_property(val) };
         if idx == len {
             assert(Self::rec_vaddr(path, idx) == 0);
-            assert(Self::rec_vaddr(pushed, idx+1) == 0);
+            assert(Self::rec_vaddr(pushed, idx + 1) == 0);
         } else {
             assert(path.index(idx) == pushed.index(idx)) by { path.push_tail_property(0 as usize) };
             Self::rec_vaddr_push_0(path, len, idx + 1);
@@ -181,23 +185,21 @@ impl PageTableTreePathModel {
 
     pub open spec fn vaddr(self) -> usize
         recommends
-            self.inv()
+            self.inv(),
     {
         Self::rec_vaddr(self.inner, 0)
     }
 
     #[verifier::inline]
     pub open spec fn from_path(path: TreePath<CONST_NR_ENTRIES>) -> Self {
-        Self {
-            inner: path,
-        }
+        Self { inner: path }
     }
 
     pub open spec fn rec_from_va(va: usize, idx: int) -> Seq<usize>
         recommends
             0 < NR_LEVELS(),
             0 <= idx <= NR_LEVELS(),
-        decreases (NR_LEVELS() - idx)
+        decreases (NR_LEVELS() - idx),
         when 0 <= idx <= NR_LEVELS()
     {
         if idx == NR_LEVELS() {
@@ -209,28 +211,25 @@ impl PageTableTreePathModel {
     }
 
     pub open spec fn from_va(va: usize) -> Self {
-        Self {
-            inner: TreePath::new(
-                Self::rec_from_va(va, 0)
-            )
-        }
+        Self { inner: TreePath::new(Self::rec_from_va(va, 0)) }
     }
 
     pub broadcast proof fn lemma_from_vaddr_to_vaddr_mod_page_size(va: usize)
         requires
             0 <= va < pow2(48),
         ensures
-            #[trigger]
-            Self::from_va(va).vaddr() == va % PAGE_SIZE(),
-    { admit(); }
+            #[trigger] Self::from_va(va).vaddr() == va % PAGE_SIZE(),
+    {
+        admit();
+    }
 
     #[verifier::inline]
     pub open spec fn len(self) -> nat
         recommends
-            self.inv()
+            self.inv(),
     {
         self.inner.len()
     }
+}
 
-}
-}
+} // verus!
