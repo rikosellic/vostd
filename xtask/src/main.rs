@@ -13,7 +13,7 @@ use std::{
     process::{Command, Stdio},
 };
 use memoize::memoize;
-use git2::{Repository,  build::RepoBuilder};
+use git2::{Repository, build::RepoBuilder};
 use walkdir::WalkDir;
 #[cfg(not(target_os = "windows"))]
 use std::os::unix::fs::PermissionsExt;
