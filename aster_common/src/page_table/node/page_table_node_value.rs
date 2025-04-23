@@ -16,17 +16,16 @@ verus! {
 #[rustc_has_incoherent_inherent_impls]
 pub tracked struct PageTableNodeValue {
     pub ghost paddr: usize,
-    pub ghost is_pt: bool,     // if the node is a page table or a raw page
-    pub ghost is_tracked: bool, // if the node is tracked
-    pub ghost nr_raws: nat,    // number of RawPageTableNodes
-    pub ghost is_locked: bool, // whether the node is locked
-    pub ghost in_cpu: nat,     // number of CPUs that are currently using the node
-    pub ghost nr_parents: nat, // number of parents
+    pub ghost is_pt: bool,  // if the node is a page table or a raw page
+    pub ghost is_tracked: bool,  // if the node is tracked
+    pub ghost nr_raws: nat,  // number of RawPageTableNodes
+    pub ghost is_locked: bool,  // whether the node is locked
+    pub ghost in_cpu: nat,  // number of CPUs that are currently using the node
+    pub ghost nr_parents: nat,  // number of parents
     pub tracked perms: Option<array_ptr::PointsTo<PageTableEntry, CONST_NR_ENTRIES>>,
 }
 
 impl TreeNodeValue for PageTableNodeValue {
-
     open spec fn default() -> Self {
         Self {
             paddr: 0,
@@ -42,26 +41,25 @@ impl TreeNodeValue for PageTableNodeValue {
 
     open spec fn inv(&self) -> bool {
         if self.paddr == 0 {
-        &&& self.nr_raws == 0
-        &&& self.is_locked == false
-        &&& self.in_cpu == 0
-        &&& self.nr_parents == 0
-        &&& self.perms.is_none()
+            &&& self.nr_raws == 0
+            &&& self.is_locked == false
+            &&& self.in_cpu == 0
+            &&& self.nr_parents == 0
+            &&& self.perms.is_none()
         } else {
-        &&& self.perms.is_some()
-        &&& self.perms.unwrap().addr() == paddr_to_vaddr(self.paddr)
-        &&& self.perms.unwrap().wf()
-        &&& self.paddr % PAGE_SIZE_SPEC() == 0
-        &&& self.paddr < MAX_PADDR_SPEC()
+            &&& self.perms.is_some()
+            &&& self.perms.unwrap().addr() == paddr_to_vaddr(self.paddr)
+            &&& self.perms.unwrap().wf()
+            &&& self.paddr % PAGE_SIZE_SPEC() == 0
+            &&& self.paddr < MAX_PADDR_SPEC()
         }
     }
 
     proof fn default_preserves_inv()
         ensures
-            #[trigger]
-            Self::default().inv(),
-    { }
-
+            #[trigger] Self::default().inv(),
+    {
+    }
 }
 
-}
+} // verus!

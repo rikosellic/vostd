@@ -25,7 +25,9 @@ verus! {
 pub open spec fn to_index(n: int) -> int
     recommends
         n > 0,
-{ n - 1 }
+{
+    n - 1
+}
 
 pub open spec fn page_size_spec(level: PagingLevel) -> usize {
     PAGE_SIZE() << (nr_subpage_per_huge::<PagingConsts>().ilog2() * (level - 1))
@@ -34,18 +36,17 @@ pub open spec fn page_size_spec(level: PagingLevel) -> usize {
 /// The page size at a given level.
 #[verifier::when_used_as_spec(page_size_spec)]
 #[verifier::external_body]
-pub fn page_size(level: PagingLevel) -> usize
-{
+pub fn page_size(level: PagingLevel) -> usize {
     assert(level as usize > 0) by { admit() };
     PAGE_SIZE() << (nr_subpage_per_huge::<PagingConsts>().ilog2() as usize * (level as usize - 1))
 }
 
 pub const fn align_down(x: usize, align: usize) -> (res: usize)
     requires
-        align > 0
+        align > 0,
     ensures
         res <= x,
-        res % align == 0
+        res % align == 0,
 {
     let res = x & !(align - 1);
     assert(res <= x) by { admit() };
@@ -53,8 +54,7 @@ pub const fn align_down(x: usize, align: usize) -> (res: usize)
     res
 }
 
-impl <'a, M: PageTableMode> Cursor<'a, M> {
-
+impl<'a, M: PageTableMode> Cursor<'a, M> {
     #[rustc_allow_incoherent_impl]
     pub open spec fn relate_locked_region(self, s: AbstractState, model: ConcreteCursor) -> bool
         recommends
@@ -62,19 +62,16 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
             self.barrier_va.start < self.barrier_va.end,
     {
         let barrier_lv = NR_LEVELS() - self.guard_level;
-        let locked_path =
-            s.page_table.tree@.get_path(model.locked_subtree@);
-        let barrier_start_path =
-            PageTableTreePathModel::from_va(self.barrier_va.start);
-        let barrier_end_path =
-            PageTableTreePathModel::from_va((self.barrier_va.end - 1) as usize);
-        barrier_lv == model.locked_subtree@.level &&
-        {forall |i: int| 0 <= i < barrier_lv ==>
-            locked_path.index(i) == barrier_start_path@.index(i) &&
-            locked_path.index(i) == barrier_end_path@.index(i)
+        let locked_path = s.page_table.tree@.get_path(model.locked_subtree@);
+        let barrier_start_path = PageTableTreePathModel::from_va(self.barrier_va.start);
+        let barrier_end_path = PageTableTreePathModel::from_va((self.barrier_va.end - 1) as usize);
+        barrier_lv == model.locked_subtree@.level && {
+            forall|i: int|
+                0 <= i < barrier_lv ==> locked_path.index(i) == barrier_start_path@.index(i)
+                    && locked_path.index(i) == barrier_end_path@.index(i)
         } && {
-            model.locked_subtree@.is_leaf() ||
-            barrier_start_path@.index(barrier_lv) != barrier_end_path@.index(barrier_lv)
+            model.locked_subtree@.is_leaf() || barrier_start_path@.index(barrier_lv)
+                != barrier_end_path@.index(barrier_lv)
         }
     }
 
@@ -86,14 +83,13 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
         let nodes = s.page_table.get_nodes(model.path);
         // Everything between the barrier level and the current level should be locked
         // Nothing else should be (by us) but could be locked by other cursors
-        (forall |i: int| 0 < i < self.level ==>
-            self.guards[to_index(i)].is_none()) &&
-        (forall |i: int| self.level <= i <= self.guard_level ==>
-            self.guards[to_index(i)].is_some() &&
-            self.guards[to_index(i)].unwrap().relate(nodes[NR_LEVELS() - i]) &&
-            nodes[NR_LEVELS() - i].is_locked) &&
-        (forall |i: int| self.guard_level < i <= NR_LEVELS() ==>
-            self.guards[to_index(i)].is_none())
+        (forall|i: int| 0 < i < self.level ==> self.guards[to_index(i)].is_none()) && (forall|
+            i: int,
+        |
+            self.level <= i <= self.guard_level ==> self.guards[to_index(i)].is_some()
+                && self.guards[to_index(i)].unwrap().relate(nodes[NR_LEVELS() - i])
+                && nodes[NR_LEVELS() - i].is_locked) && (forall|i: int|
+            self.guard_level < i <= NR_LEVELS() ==> self.guards[to_index(i)].is_none())
     }
 
     #[rustc_allow_incoherent_impl]
@@ -101,26 +97,30 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
         recommends
             model.inv(s),
     {
-    &&& self.level == NR_LEVELS() - model.path.len()
-    &&& self.va == model.path.vaddr()
-    &&& self.relate_locked_region(s, model)
-    &&& self.relate_guards(s, model)
+        &&& self.level == NR_LEVELS() - model.path.len()
+        &&& self.va == model.path.vaddr()
+        &&& self.relate_locked_region(s, model)
+        &&& self.relate_guards(s, model)
     }
 
     #[rustc_allow_incoherent_impl]
     pub open spec fn inv(self) -> bool {
-    &&& 0 < self.level <= self.guard_level
-    &&& self.guard_level < NR_LEVELS()
-    &&& self.barrier_va.start <= self.va < self.barrier_va.end
-    &&& self.va % PAGE_SIZE() == 0
-    &&& self.va % page_size_at_level::<CONST_NR_LEVELS>(self.level as int) == 0
-    &&& self.barrier_va.start < self.barrier_va.end
-    &&& self.barrier_va.start % PAGE_SIZE() == 0
-    &&& self.barrier_va.end % PAGE_SIZE() == 0
+        &&& 0 < self.level <= self.guard_level
+        &&& self.guard_level < NR_LEVELS()
+        &&& self.barrier_va.start <= self.va < self.barrier_va.end
+        &&& self.va % PAGE_SIZE() == 0
+        &&& self.va % page_size_at_level::<CONST_NR_LEVELS>(self.level as int) == 0
+        &&& self.barrier_va.start < self.barrier_va.end
+        &&& self.barrier_va.start % PAGE_SIZE() == 0
+        &&& self.barrier_va.end % PAGE_SIZE() == 0
     }
 
     #[rustc_allow_incoherent_impl]
-    pub fn virt_addr(&self, Ghost(s): Ghost<AbstractState>, Tracked(model): Tracked<ConcreteCursor>) -> (res: Vaddr)
+    pub fn virt_addr(
+        &self,
+        Ghost(s): Ghost<AbstractState>,
+        Tracked(model): Tracked<ConcreteCursor>,
+    ) -> (res: Vaddr)
         requires
             self.inv(),
             self.relate(s, model),
@@ -139,8 +139,10 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
             s.page_table.inv(),
             model.path.len() > 0,
         ensures
-            forall |i:int| 0 <= i <= model.path.len() ==>
-            s.page_table.get_nodes(model.push_level_spec().path)[i] == s.page_table.get_nodes(model.path)[i]
+            forall|i: int|
+                0 <= i <= model.path.len() ==> s.page_table.get_nodes(
+                    model.push_level_spec().path,
+                )[i] == s.page_table.get_nodes(model.path)[i],
     {
         let n = model.path.len() as int;
         model.lemma_push_level_spec_extends(s);
@@ -149,10 +151,12 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
 
     /// Goes down a level to a child page table.
     #[rustc_allow_incoherent_impl]
-    fn push_level(&mut self,
-                    node: PageTableNode,
-                    Ghost(s): Ghost<AbstractState>,
-                    Tracked(model): Tracked<&ConcreteCursor>)
+    fn push_level(
+        &mut self,
+        node: PageTableNode,
+        Ghost(s): Ghost<AbstractState>,
+        Tracked(model): Tracked<&ConcreteCursor>,
+    )
         requires
             old(self).inv(),
             1 < old(self).level,
@@ -166,32 +170,39 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
             self.level == old(self).level - 1,
             self.relate(s, model.push_level_spec()),
     {
-        assert(self.va == model.push_level_spec().path.vaddr()) by
-        { model.lemma_push_level_spec_preserves_vaddr(model.path.inner.len() as int) };
+        assert(self.va == model.push_level_spec().path.vaddr()) by {
+            model.lemma_push_level_spec_preserves_vaddr(model.path.inner.len() as int)
+        };
 
         let ghost old_nodes = s.page_table.get_nodes(model.path);
         let ghost nodes = s.page_table.get_nodes(model.push_level_spec().path);
 
-        assert(forall |i:int| NR_LEVELS() - self.guard_level <= i <= NR_LEVELS() - self.level ==>
-            nodes[i] == old_nodes[i]) by { self.lemma_push_level_nodes_match(s, model) };
+        assert(forall|i: int|
+            NR_LEVELS() - self.guard_level <= i <= NR_LEVELS() - self.level ==> nodes[i]
+                == old_nodes[i]) by { self.lemma_push_level_nodes_match(s, model) };
 
-        assert(forall |i:int| NR_LEVELS() - self.guard_level <= i <= NR_LEVELS() - self.level ==>
-            self.guards@[to_index(NR_LEVELS() - i)].unwrap().relate(old_nodes[i]));
+        assert(forall|i: int|
+            NR_LEVELS() - self.guard_level <= i <= NR_LEVELS() - self.level
+                ==> self.guards@[to_index(NR_LEVELS() - i)].unwrap().relate(old_nodes[i]));
 
-        assert(nodes[NR_LEVELS() - self.level + 1] ==
-            s.page_table.get_node(model.path).unwrap()@.children[0].unwrap().value) by
-            { s.page_table.tree@.seek_trace_next(model.path@, 0);
+        assert(nodes[NR_LEVELS() - self.level + 1] == s.page_table.get_node(
+            model.path,
+        ).unwrap()@.children[0].unwrap().value) by {
+            s.page_table.tree@.seek_trace_next(model.path@, 0);
         };
 
         self.level = self.level - 1;
         self.guards.set((self.level - 1) as usize, Some(node));
 
-        assert(forall |i:int| NR_LEVELS() - self.guard_level <= i <= NR_LEVELS() - self.level - 1 ==>
-            self.guards@[to_index(NR_LEVELS() - i)].unwrap().relate(nodes[i]));
+        assert(forall|i: int|
+            NR_LEVELS() - self.guard_level <= i <= NR_LEVELS() - self.level - 1
+                ==> self.guards@[to_index(NR_LEVELS() - i)].unwrap().relate(nodes[i]));
         assert(node.relate(nodes[NR_LEVELS() - self.level]));
 
         assert(self.guards@[to_index(self.level as int)] == Some(node));
-        assert(self.guards@[to_index(self.level as int)].unwrap().relate(nodes[NR_LEVELS() - self.level]));
+        assert(self.guards@[to_index(self.level as int)].unwrap().relate(
+            nodes[NR_LEVELS() - self.level],
+        ));
     }
 
     #[rustc_allow_incoherent_impl]
@@ -200,8 +211,10 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
             s.page_table.inv(),
             model.path.len() > 0,
         ensures
-            forall |i:int| 0 <= i <= model.pop_level_spec().path.len() ==>
-            s.page_table.get_nodes(model.pop_level_spec().path)[i] == s.page_table.get_nodes(model.path)[i]
+            forall|i: int|
+                0 <= i <= model.pop_level_spec().path.len() ==> s.page_table.get_nodes(
+                    model.pop_level_spec().path,
+                )[i] == s.page_table.get_nodes(model.path)[i],
     {
         let n = model.pop_level_spec().path.len() as int;
         model.lemma_pop_level_spec_prepends(s);
@@ -217,7 +230,11 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
     /// This method requires locks acquired before calling it. The discarded
     /// level will be unlocked.
     #[rustc_allow_incoherent_impl]
-    fn pop_level(&mut self, Tracked(s): Tracked<AbstractState>, Tracked(model): Tracked<&ConcreteCursor>)
+    fn pop_level(
+        &mut self,
+        Tracked(s): Tracked<AbstractState>,
+        Tracked(model): Tracked<&ConcreteCursor>,
+    )
         requires
             old(self).inv(),
             model.inv(s),
@@ -231,27 +248,37 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
             self.level == old(self).level + 1,
             self.relate(s, model.pop_level_spec()),
     {
-        assert(model.pop_level_spec().path.vaddr() == model.path.vaddr()) by
-            { model.lemma_pop_level_spec_preserves_vaddr(NR_LEVELS() - self.level) };
+        assert(model.pop_level_spec().path.vaddr() == model.path.vaddr()) by {
+            model.lemma_pop_level_spec_preserves_vaddr(NR_LEVELS() - self.level)
+        };
 
         let ghost old_nodes = s.page_table.get_nodes(model.path);
         let ghost nodes = s.page_table.get_nodes(model.pop_level_spec().path);
 
-        assert(old_nodes.len() == NR_LEVELS() - self.level + 1) by { s.page_table.get_nodes_len(model.path) };
-        assert(model.pop_level_spec().path.len() == NR_LEVELS() - self.level - 1) by { model.lemma_pop_level_spec_len() };
-        assert(nodes.len() == old_nodes.len() - 1) by { s.page_table.get_nodes_len(model.pop_level_spec().path) };
+        assert(old_nodes.len() == NR_LEVELS() - self.level + 1) by {
+            s.page_table.get_nodes_len(model.path)
+        };
+        assert(model.pop_level_spec().path.len() == NR_LEVELS() - self.level - 1) by {
+            model.lemma_pop_level_spec_len()
+        };
+        assert(nodes.len() == old_nodes.len() - 1) by {
+            s.page_table.get_nodes_len(model.pop_level_spec().path)
+        };
 
-        assert(forall |i:int| NR_LEVELS() - self.guard_level - 1 <= i <= NR_LEVELS() - self.level - 1 ==>
-            nodes[i] == old_nodes[i]) by { self.lemma_pop_level_nodes_match(s, model) };
+        assert(forall|i: int|
+            NR_LEVELS() - self.guard_level - 1 <= i <= NR_LEVELS() - self.level - 1 ==> nodes[i]
+                == old_nodes[i]) by { self.lemma_pop_level_nodes_match(s, model) };
 
-        assert(forall |i:int| NR_LEVELS() - self.guard_level + 1 <= i <= NR_LEVELS() - self.level - 1 ==>
-            self.guards@[to_index(NR_LEVELS() - i)].unwrap().relate(old_nodes[i]));
+        assert(forall|i: int|
+            NR_LEVELS() - self.guard_level + 1 <= i <= NR_LEVELS() - self.level - 1
+                ==> self.guards@[to_index(NR_LEVELS() - i)].unwrap().relate(old_nodes[i]));
 
         self.guards.set((self.level - 1) as usize, None);
         self.level = self.level + 1;
 
-        assert(forall |i:int| NR_LEVELS() - self.guard_level + 1 <= i <= NR_LEVELS() - self.level ==>
-            self.guards@[to_index(NR_LEVELS() - i)].unwrap().relate(old_nodes[i]));
+        assert(forall|i: int|
+            NR_LEVELS() - self.guard_level + 1 <= i <= NR_LEVELS() - self.level
+                ==> self.guards@[to_index(NR_LEVELS() - i)].unwrap().relate(old_nodes[i]));
     }
 
     /// Traverses forward in the current level to the next PTE.
@@ -260,9 +287,11 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
     /// page if possible.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn move_forward(&mut self,
+    pub fn move_forward(
+        &mut self,
         Tracked(s): Tracked<AbstractState>,
-        mut model: Tracked<&ConcreteCursor>)
+        mut model: Tracked<&ConcreteCursor>,
+    )
         requires
             old(self).inv(),
             model@.inv(s),
@@ -297,7 +326,6 @@ impl <'a, M: PageTableMode> Cursor<'a, M> {
 
         self.va = next_va;
     }
-
 }
 
-}
+} // verus!

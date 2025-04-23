@@ -13,7 +13,8 @@ use std::{
     process::{Command, Stdio},
 };
 use memoize::memoize;
-use git2::{Repository,build::RepoBuilder};
+use git2::{Repository, build::RepoBuilder};
+use walkdir::WalkDir;
 #[cfg(not(target_os = "windows"))]
 use std::os::unix::fs::PermissionsExt;
 
@@ -206,7 +207,6 @@ struct BootstrapArgs {
     /*#[arg(long = "no-vscode-extension", help = "Do not build verus vscode extension",
         default_value = "false", action = ArgAction::SetTrue)]
     no_vscode_extension: bool,*/
-
     #[arg(long = "restart", help = "Remove all toolchain and restart the bootstrap",
         default_value = "false", action = ArgAction::SetTrue)]
     restart: bool,
@@ -812,9 +812,7 @@ fn build_vscode_extension(args: &BootstrapArgs) -> Result<(), DynError> {
 }
 
 fn is_verusfmt_installed() -> bool {
-    let output = Command::new("verusfmt")
-        .arg("--version")
-        .output();
+    let output = Command::new("verusfmt").arg("--version").output();
     match output {
         Ok(output) => {
             if output.status.success() {
@@ -848,7 +846,7 @@ fn install_verusfmt() -> Result<(), DynError> {
             cmd
             .arg("-c")
             .arg("curl --proto '=https' --tlsv1.2 -LsSf https://github.com/verus-lang/verusfmt/releases/latest/download/verusfmt-installer.sh | sh");
-                println!("{:?}", cmd);
+            println!("{:?}", cmd);
             cmd.status()
         }
     };
@@ -874,13 +872,17 @@ fn exec_bootstrap(args: &BootstrapArgs) -> Result<(), DynError> {
             verus_dir.display()
         );
         let mut builder = RepoBuilder::new();
-        if let Err(e) = builder.branch(&args.rust_version).clone(verus_repo, &verus_dir)
+        if let Err(e) = builder
+            .branch(&args.rust_version)
+            .clone(verus_repo, &verus_dir)
         {
             eprintln!(
                 "Failed to clone the Verus repository, caused by {}.\r 
                 Please try to manually clone it to {} and run `cargo xtask bootstrap` again.\r
                 The Verus repository is available at {}.",
-                e, verus_dir.display(), verus_repo
+                e,
+                verus_dir.display(),
+                verus_repo
             );
             std::process::exit(1);
         }
@@ -1007,9 +1009,8 @@ fn exec_fmt() -> Result<(), DynError> {
             let path = target.src_path;
             let src_dir = path.parent().unwrap();
             // Just search for all `.rs` files in the src directory instead of chasing them
-            let files = fs::read_dir(src_dir)?.filter_map(|entry| {
-                let entry = entry.unwrap();
-                let path = entry.path();
+            let files = WalkDir::new(src_dir).into_iter().filter_map(|entry| {
+                let path = entry.ok()?.path().to_path_buf();
                 if path.is_file() && path.extension().map_or(false, |ext| ext == "rs") {
                     Some(path)
                 } else {

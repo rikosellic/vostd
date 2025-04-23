@@ -21,25 +21,25 @@ pub struct Page<M: PageMeta> {
     pub _marker: PhantomData<M>,
 }
 
-impl <M: PageMeta> Page<M> {
-
+impl<M: PageMeta> Page<M> {
     pub open spec fn inv_ptr(self) -> bool {
         let addr = self.ptr.addr();
-        FRAME_METADATA_RANGE().start <= addr &&
-        addr < FRAME_METADATA_RANGE().start + MAX_NR_PAGES() * META_SLOT_SIZE() &&
-        addr % META_SLOT_SIZE() == 0
+        FRAME_METADATA_RANGE().start <= addr && addr < FRAME_METADATA_RANGE().start + MAX_NR_PAGES()
+            * META_SLOT_SIZE() && addr % META_SLOT_SIZE() == 0
     }
 
     #[verifier::inline]
     pub open spec fn paddr_spec(&self) -> Paddr
-        recommends self.inv_ptr()
+        recommends
+            self.inv_ptr(),
     {
         meta_to_page(self.ptr.addr())
     }
 
     #[verifier::when_used_as_spec(paddr_spec)]
     pub fn paddr(&self) -> (res: Paddr)
-        requires self.inv_ptr()
+        requires
+            self.inv_ptr(),
         ensures
             res == self.paddr_spec(),
             res % PAGE_SIZE() == 0,
@@ -48,10 +48,11 @@ impl <M: PageMeta> Page<M> {
         meta_to_page(self.ptr.addr())
     }
 
-    pub fn meta_pt<'a>(&'a self,
+    pub fn meta_pt<'a>(
+        &'a self,
         Tracked(p_slot): Tracked<&'a simple_pptr::PointsTo<MetaSlot>>,
-        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>)
-        -> (res: &'a PageTablePageMeta)
+        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>,
+    ) -> (res: &'a PageTablePageMeta)
         requires
             self.inv_ptr(),
             p_slot.pptr() == self.ptr,
@@ -67,10 +68,11 @@ impl <M: PageMeta> Page<M> {
         slot.borrow_pt(Tracked(p_inner))
     }
 
-    pub fn meta_frame<'a>(&'a self,
+    pub fn meta_frame<'a>(
+        &'a self,
         Tracked(p_slot): Tracked<&'a simple_pptr::PointsTo<MetaSlot>>,
-        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>)
-        -> (res: &'a FrameMeta)
+        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>,
+    ) -> (res: &'a FrameMeta)
         requires
             self.inv_ptr(),
             p_slot.pptr() == self.ptr,
@@ -87,4 +89,4 @@ impl <M: PageMeta> Page<M> {
     }
 }
 
-}
+} // verus!

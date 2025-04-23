@@ -8,31 +8,25 @@ use aster_common::prelude::*;
 
 verus! {
 
-    pub tracked struct ConcretePageTableModel (
-        pub tracked PageTableTreeModel,
-    );
+pub tracked struct ConcretePageTableModel(pub tracked PageTableTreeModel);
 
-    pub tracked struct IntermediatePageTableModel (
-        pub tracked PageTablePathModel,
-    );
+pub tracked struct IntermediatePageTableModel(pub tracked PageTablePathModel);
 
-    pub tracked struct FlatPageTableModel (
-        pub tracked PageTableMapModel,
-    );
+pub tracked struct FlatPageTableModel(pub tracked PageTableMapModel);
 
-}
-
+} // verus!
 verus! {
 
 impl ConcretePageTableModel {
-
     pub open spec fn inv(self) -> bool {
         self.0.inv()
     }
 
     #[verifier::returns(proof)]
-    pub proof fn borrow_tree(#[verifier::proof] &self) -> Tracked<&PageTableTreeModel>
-    {
+    pub proof fn borrow_tree(
+        #[verifier::proof]
+        &self,
+    ) -> Tracked<&PageTableTreeModel> {
         Tracked(&self.0)
     }
 
@@ -58,18 +52,14 @@ impl ConcretePageTableModel {
         }
     }
 
-    pub open spec fn get_path(self, node: PageTableNodeModel) ->
-        (res: PageTableTreePathModel)
+    pub open spec fn get_path(self, node: PageTableNodeModel) -> (res: PageTableTreePathModel)
         recommends
             self.inv(),
             node@.inv(),
             self.0@.on_tree(node@),
     {
-        PageTableTreePathModel::from_path(
-            self.0@.get_path(node@)
-        )
+        PageTableTreePathModel::from_path(self.0@.get_path(node@))
     }
-
 }
 
-}
+} // verus!

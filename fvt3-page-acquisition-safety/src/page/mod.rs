@@ -25,13 +25,13 @@ pub struct Page<M: PageMeta> {
 }
 
 } // verus!
-
 verus! {
 
 impl<M: PageMeta> Page<M> {
-
-    pub fn from_unused(paddr: Paddr, Tracked(s): Tracked<AbstractState>)
-        -> (res: (Option<Self>, Tracked<AbstractState>))
+    pub fn from_unused(paddr: Paddr, Tracked(s): Tracked<AbstractState>) -> (res: (
+        Option<Self>,
+        Tracked<AbstractState>,
+    ))
         requires
             s.invariants(),
             0 <= paddr && paddr < MAX_PADDR,
@@ -42,8 +42,7 @@ impl<M: PageMeta> Page<M> {
             s.get_page(paddr).relate_meta_slot_full(&s.get_meta_slot(paddr)),
         ensures
             PageModel::from_unused_spec(paddr, res.0, s, res.1@),
-            res.1@.get_page(paddr).relate_meta_slot_full(&
-                res.1@.get_meta_slot(paddr)),
+            res.1@.get_page(paddr).relate_meta_slot_full(&res.1@.get_meta_slot(paddr)),
     {
         let (slot, Tracked(slot_model)) = MetaSlot::from_paddr(paddr);
         assert(slot.inv_relate(&slot_model));
@@ -52,7 +51,7 @@ impl<M: PageMeta> Page<M> {
                 s.get_meta_slot_relate_to_paddr(paddr);
             };
             assert(slot_model.address == paddr) by {
-            assert(slot_model == MetaSlot::model_from_paddr_spec(paddr));
+                assert(slot_model == MetaSlot::model_from_paddr_spec(paddr));
                 MetaSlot::axiom_model_from_paddr_address(paddr);
             };
             MetaSlot::axiom_meta_slot_model_singleton(&slot_model, &s.get_meta_slot(paddr));
@@ -81,7 +80,10 @@ impl<M: PageMeta> Page<M> {
 
             let Tracked(s_panic) = panic(Tracked(s), "Failed to claim slot");
             let tracked s_end = AbstractState {
-                meta_slots: s.meta_slots.insert(paddr as int / PAGE_SIZE as int, slot_model_claimed),
+                meta_slots: s.meta_slots.insert(
+                    paddr as int / PAGE_SIZE as int,
+                    slot_model_claimed,
+                ),
                 ..s_panic
             };
 
@@ -89,7 +91,6 @@ impl<M: PageMeta> Page<M> {
             assert(PageModel::from_unused_spec_failure(paddr, r.0, s, r.1@));
             return r;
         }
-
         assert(rv == true);
         assert(slot_model_claimed.state == MetaSlotState::Claimed);
         assert(slot_model_claimed.usage == usage);
@@ -110,7 +111,7 @@ impl<M: PageMeta> Page<M> {
             state: usage.as_state(),
             usage,
             ref_count: 1,
-            owners: Set::empty().insert(PageOwner::Kernel{context_id: s.context_id}),
+            owners: Set::empty().insert(PageOwner::Kernel { context_id: s.context_id }),
             ..page_model
         };
         assert(page_model.invariants());
@@ -130,4 +131,4 @@ impl<M: PageMeta> Page<M> {
     }
 }
 
-}
+} // verus!

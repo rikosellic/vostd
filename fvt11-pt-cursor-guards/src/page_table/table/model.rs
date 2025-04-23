@@ -6,7 +6,6 @@ use aster_common::prelude::*;
 verus! {
 
 impl PageTableModel {
-
     #[rustc_allow_incoherent_impl]
     #[verifier::inline]
     pub open spec fn on_tree(self, node: PageTableNodeModel) -> bool
@@ -18,8 +17,7 @@ impl PageTableModel {
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn get_nodes(self, path: PageTableTreePathModel) ->
-        (res: Seq<PageTableNodeValue>)
+    pub open spec fn get_nodes(self, path: PageTableTreePathModel) -> (res: Seq<PageTableNodeValue>)
         recommends
             self.inv(),
             path.inv(),
@@ -30,8 +28,10 @@ impl PageTableModel {
     #[rustc_allow_incoherent_impl]
     pub proof fn get_nodes_len(self, path: PageTableTreePathModel)
         ensures
-            self.get_nodes(path).len() == path.len() + 1
-    { admit() }
+            self.get_nodes(path).len() == path.len() + 1,
+    {
+        admit()
+    }
 
     #[rustc_allow_incoherent_impl]
     pub open spec fn get_node(self, path: PageTableTreePathModel) -> Option<PageTableNodeModel>
@@ -49,23 +49,24 @@ impl PageTableModel {
     #[rustc_allow_incoherent_impl]
     pub proof fn get_node_empty_is_root(self, path: PageTableTreePathModel)
         requires
-            path.inner.len() == 0
+            path.inner.len() == 0,
         ensures
-            self.get_node(path) == Some(PageTableNodeModel::from_node(self.tree@.root))
-    { assert(self.tree@.trace(path.inner).len() == 0) by { self.tree@.trace_no_longer_than_path(path.inner) }; }
+            self.get_node(path) == Some(PageTableNodeModel::from_node(self.tree@.root)),
+    {
+        assert(self.tree@.trace(path.inner).len() == 0) by {
+            self.tree@.trace_no_longer_than_path(path.inner)
+        };
+    }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn get_path(self, node: PageTableNodeModel) ->
-        (res: PageTableTreePathModel)
+    pub open spec fn get_path(self, node: PageTableNodeModel) -> (res: PageTableTreePathModel)
         recommends
             self.inv(),
             node@.inv(),
             self.tree@.on_tree(node@),
     {
-        PageTableTreePathModel::from_path(
-            self.tree@.get_path(node@)
-        )
+        PageTableTreePathModel::from_path(self.tree@.get_path(node@))
     }
 }
 
-}
+} // verus!

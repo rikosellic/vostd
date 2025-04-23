@@ -10,8 +10,7 @@ verus! {
 /// either a page table node or a page, it holds a reference count to the
 /// corresponding page.
 #[rustc_has_incoherent_inherent_impls]
-pub enum Child
-{
+pub enum Child {
     PageTable(RawPageTableNode),
     Page(DynPage, PageProperty),
     /// Pages not tracked by handles.
@@ -20,7 +19,6 @@ pub enum Child
 }
 
 impl Child {
-
     #[verifier::inline]
     pub open spec fn is_none_spec(&self) -> bool {
         match self {
@@ -36,8 +34,6 @@ impl Child {
             _ => false,
         }
     }
-
 }
 
-
-}
+} // verus!

@@ -12,4 +12,5 @@ pub struct CpuExceptionInfo {
     /// The virtual address where a page fault occurred.
     pub page_fault_addr: usize,
 }
-}
+
+} // verus!

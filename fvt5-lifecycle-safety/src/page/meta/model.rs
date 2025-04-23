@@ -10,24 +10,20 @@ use vstd::atomic_ghost::*;
 use crate::common::*;
 use aster_common::prelude::*;
 
-verus!{
+verus! {
 
 //
 // # Primitives for MetaSlot
 //
-
 impl MetaSlot {
-
-#[rustc_allow_incoherent_impl]
-#[verifier::external_body]
-pub fn as_meta_slot_ptr(&self) -> (res: Vaddr)
-    ensures
-        res as int == self.id(),
-{
-    self as *const MetaSlot as Vaddr
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
+    pub fn as_meta_slot_ptr(&self) -> (res: Vaddr)
+        ensures
+            res as int == self.id(),
+    {
+        self as *const MetaSlot as Vaddr
+    }
 }
 
-}
-
-}
-
+} // verus!
