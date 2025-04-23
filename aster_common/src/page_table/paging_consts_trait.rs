@@ -8,13 +8,13 @@ verus! {
 
 #[allow(non_snake_case)]
 pub trait PagingConstsTrait: Debug + Sync {
-
     spec fn BASE_PAGE_SIZE_spec() -> usize;
 
     proof fn lemma_BASE_PAGE_SIZE_properties()
         ensures
             0 < Self::BASE_PAGE_SIZE_spec(),
-            is_power_2(Self::BASE_PAGE_SIZE_spec() as int),;
+            is_power_2(Self::BASE_PAGE_SIZE_spec() as int),
+    ;
 
     /// The smallest page size.
     /// This is also the page size at level 1 page tables.
@@ -24,7 +24,8 @@ pub trait PagingConstsTrait: Debug + Sync {
         ensures
             res == Self::BASE_PAGE_SIZE_spec(),
             0 < res,
-            is_power_2(res as int),;
+            is_power_2(res as int),
+    ;
 
     spec fn NR_LEVELS_spec() -> PagingLevel;
 
@@ -40,7 +41,7 @@ pub trait PagingConstsTrait: Debug + Sync {
             res == NR_LEVELS(),
             res == Self::NR_LEVELS_spec(),
             res > 0,
-            ;
+    ;
 
     spec fn HIGHEST_TRANSLATION_LEVEL_spec() -> PagingLevel;
 
@@ -49,7 +50,9 @@ pub trait PagingConstsTrait: Debug + Sync {
     #[inline(always)]
     #[verifier::when_used_as_spec(HIGHEST_TRANSLATION_LEVEL_spec)]
     fn HIGHEST_TRANSLATION_LEVEL() -> (res: PagingLevel)
-        ensures res == Self::HIGHEST_TRANSLATION_LEVEL_spec();
+        ensures
+            res == Self::HIGHEST_TRANSLATION_LEVEL_spec(),
+    ;
 
     spec fn PTE_SIZE_spec() -> usize;
 
@@ -61,12 +64,13 @@ pub trait PagingConstsTrait: Debug + Sync {
             res == Self::PTE_SIZE_spec(),
             is_power_2(res as int),
             0 < res <= Self::BASE_PAGE_SIZE(),
-        ;
+    ;
 
     proof fn lemma_PTE_SIZE_properties()
         ensures
             0 < Self::PTE_SIZE_spec() <= Self::BASE_PAGE_SIZE(),
-            is_power_2(Self::PTE_SIZE_spec() as int),;
+            is_power_2(Self::PTE_SIZE_spec() as int),
+    ;
 
     spec fn ADDRESS_WIDTH_spec() -> usize;
 
@@ -75,7 +79,9 @@ pub trait PagingConstsTrait: Debug + Sync {
     #[inline(always)]
     #[verifier::when_used_as_spec(ADDRESS_WIDTH_spec)]
     fn ADDRESS_WIDTH() -> (res: usize)
-        ensures res == Self::ADDRESS_WIDTH_spec();
+        ensures
+            res == Self::ADDRESS_WIDTH_spec(),
+    ;
 }
 
-}
+} // verus!

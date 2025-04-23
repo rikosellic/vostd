@@ -14,4 +14,4 @@ pub enum PageTableError {
     UnalignedVaddr,
 }
 
-}
+} // verus!

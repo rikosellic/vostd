@@ -3,6 +3,7 @@ use core::cmp::PartialEq;
 use core::fmt::Debug;
 
 verus! {
+
 pub enum PageState {
     Unused,
     Typed,
@@ -20,10 +21,8 @@ pub enum PageUsage {
     /// The page is reserved or unusable. The kernel should not touch it.
     #[allow(dead_code)]
     Reserved,
-
     /// The page is used as a frame, i.e., a page of untyped memory.
     Frame,
-
     /// The page is used by a page table.
     PageTable,
     /// The page stores metadata of other pages.
@@ -47,7 +46,8 @@ impl PageUsage {
     #[verifier::external_body]
     #[verifier::when_used_as_spec(as_u8_spec)]
     pub fn as_u8(&self) -> (res: u8)
-        ensures res == self.as_u8_spec()
+        ensures
+            res == self.as_u8_spec(),
     {
         *self as u8
     }
@@ -63,7 +63,7 @@ impl PageUsage {
     #[verifier::when_used_as_spec(as_state_spec)]
     pub fn as_state(&self) -> (res: PageState)
         ensures
-            res == self.as_state_spec()
+            res == self.as_state_spec(),
     {
         match &self {
             PageUsage::Unused => PageState::Unused,
@@ -73,4 +73,4 @@ impl PageUsage {
     }
 }
 
-}
+} // verus!

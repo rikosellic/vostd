@@ -17,23 +17,26 @@ pub struct DynPage {
 }
 
 #[verifier::external]
-unsafe impl Send for DynPage {}
+unsafe impl Send for DynPage {
+
+}
 
 #[verifier::external]
-unsafe impl Sync for DynPage {}
+unsafe impl Sync for DynPage {
+
+}
 
 impl DynPage {
-
     pub open spec fn inv_ptr(&self) -> bool {
         let addr = self.ptr.addr();
-        FRAME_METADATA_RANGE().start <= addr &&
-        addr < FRAME_METADATA_RANGE().start + MAX_NR_PAGES() * META_SLOT_SIZE() &&
-        addr % META_SLOT_SIZE() == 0
+        FRAME_METADATA_RANGE().start <= addr && addr < FRAME_METADATA_RANGE().start + MAX_NR_PAGES()
+            * META_SLOT_SIZE() && addr % META_SLOT_SIZE() == 0
     }
 
     #[verifier::inline]
     pub open spec fn paddr_spec(&self) -> Paddr
-        recommends self.inv_ptr()
+        recommends
+            self.inv_ptr(),
     {
         let addr = self.ptr.addr();
         meta_to_page(addr)
@@ -42,15 +45,14 @@ impl DynPage {
     #[verifier::when_used_as_spec(paddr_spec)]
     #[inline(always)]
     pub fn paddr(&self) -> (res: Paddr)
-        requires self.inv_ptr()
+        requires
+            self.inv_ptr(),
         ensures
             res == self.paddr_spec(),
             res % PAGE_SIZE() == 0,
     {
         meta_to_page(self.ptr.addr())
     }
-
-
 }
 
-}
+} // verus!

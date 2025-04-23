@@ -21,27 +21,33 @@ pub const BASE_PAGE_SIZE: usize = 4096;
 
 #[allow(non_snake_case)]
 pub proof fn correctness_PAGE_SIZE()
-    ensures PAGE_SIZE == mm::PAGE_SIZE(),
-{ }
+    ensures
+        PAGE_SIZE == mm::PAGE_SIZE(),
+{
+}
 
 #[allow(non_snake_case)]
 pub proof fn correctness_NR_ENTRIES()
-    ensures NR_ENTRIES == PAGE_SIZE / PagingConsts::PTE_SIZE(),
-{ }
+    ensures
+        NR_ENTRIES == PAGE_SIZE / PagingConsts::PTE_SIZE(),
+{
+}
 
 #[allow(non_snake_case)]
 pub proof fn correctness_NR_LEVELS()
-    ensures NR_LEVELS == mm::NR_LEVELS(),
-{ }
+    ensures
+        NR_LEVELS == mm::NR_LEVELS(),
+{
+}
 
 #[allow(non_snake_case)]
 pub proof fn correctness_BASE_PAGE_SIZE()
-    ensures BASE_PAGE_SIZE == x86_64::PagingConsts::BASE_PAGE_SIZE(),
-{ }
-
+    ensures
+        BASE_PAGE_SIZE == x86_64::PagingConsts::BASE_PAGE_SIZE(),
+{
+}
 
 impl PageTableNodeValue {
-
     #[rustc_allow_incoherent_impl]
     pub open spec fn paddr(self) -> usize {
         self.paddr
@@ -49,10 +55,7 @@ impl PageTableNodeValue {
 
     #[rustc_allow_incoherent_impl]
     pub open spec fn clone_raw(self) -> Self {
-        Self {
-            nr_raws: self.nr_raws + 1,
-            ..self
-        }
+        Self { nr_raws: self.nr_raws + 1, ..self }
     }
 
     #[rustc_allow_incoherent_impl]
@@ -60,15 +63,14 @@ impl PageTableNodeValue {
         if self.is_locked {
             None
         } else {
-            Some(Self {
-                is_locked: true,
-                ..self
-            })
+            Some(Self { is_locked: true, ..self })
         }
     }
 
     #[rustc_allow_incoherent_impl]
-    pub proof fn borrow_perms(tracked &self) -> (tracked res: &Option<array_ptr::PointsTo<PageTableEntry, NR_ENTRIES>>)
+    pub proof fn borrow_perms(tracked &self) -> (tracked res: &Option<
+        array_ptr::PointsTo<PageTableEntry, NR_ENTRIES>,
+    >)
         ensures
             *res == self.perms,
     {
@@ -77,9 +79,12 @@ impl PageTableNodeValue {
 
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn write_pte(Tracked(value): Tracked<&mut Self>,
+    pub fn write_pte(
+        Tracked(value): Tracked<&mut Self>,
         ptr: ArrayPtr<PageTableEntry, NR_ENTRIES>,
-        index: usize, entry: PageTableEntry)
+        index: usize,
+        entry: PageTableEntry,
+    )
         requires
             old(value).inv(),
             old(value).paddr != 0,
@@ -93,9 +98,11 @@ impl PageTableNodeValue {
             value.perms.unwrap().pptr() == ptr,
             value.perms.unwrap().is_init(index as int),
             value.perms.unwrap().opt_value()[index as int].value() == entry,
-            forall |i: int| 0 <= i < NR_ENTRIES && i != index ==>
-                #[trigger]
-                value.perms.unwrap().opt_value()[i].value() == old(value).perms.unwrap().opt_value()[i].value(),
+            forall|i: int|
+                0 <= i < NR_ENTRIES && i != index
+                    ==> #[trigger] value.perms.unwrap().opt_value()[i].value() == old(
+                    value,
+                ).perms.unwrap().opt_value()[i].value(),
     {
         let tracked mut perms = value.perms.tracked_unwrap();
         ptr.overwrite(Tracked(&mut perms), index, entry);
@@ -103,9 +110,12 @@ impl PageTableNodeValue {
 
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub proof fn tracked_write_pte(tracked &mut self,
+    pub proof fn tracked_write_pte(
+        tracked &mut self,
         tracked arr_ptr: ArrayPtr<PageTableEntry, NR_ENTRIES>,
-        tracked index: usize, tracked entry: PageTableEntry)
+        tracked index: usize,
+        tracked entry: PageTableEntry,
+    )
         requires
             old(self).inv(),
             old(self).paddr != 0,
@@ -119,17 +129,18 @@ impl PageTableNodeValue {
             self.perms.unwrap().pptr() == arr_ptr,
             self.perms.unwrap().is_init(index as int),
             self.perms.unwrap().opt_value()[index as int].value() == entry,
-            forall |i: int| 0 <= i < NR_ENTRIES && i != index ==>
-                #[trigger]
-                self.perms.unwrap().opt_value()[i].value() == old(self).perms.unwrap().opt_value()[i].value(),
+            forall|i: int|
+                0 <= i < NR_ENTRIES && i != index
+                    ==> #[trigger] self.perms.unwrap().opt_value()[i].value() == old(
+                    self,
+                ).perms.unwrap().opt_value()[i].value(),
     {
         let tracked perms = self.perms.tracked_borrow();
         arr_ptr.tracked_overwrite(&mut perms, index, entry);
     }
 
     #[rustc_allow_incoherent_impl]
-    pub fn drop(Tracked(value): Tracked<Self>,
-        ptr: ArrayPtr<PageTableEntry, NR_ENTRIES>)
+    pub fn drop(Tracked(value): Tracked<Self>, ptr: ArrayPtr<PageTableEntry, NR_ENTRIES>)
         requires
             value.inv(),
             value.paddr != 0,
@@ -141,10 +152,12 @@ impl PageTableNodeValue {
     }
 }
 
-
-pub proof fn pt_node_tracked_write_pte(tracked node: &mut PageTableNodeModel,
+pub proof fn pt_node_tracked_write_pte(
+    tracked node: &mut PageTableNodeModel,
     tracked arr_ptr: ArrayPtr<PageTableEntry, NR_ENTRIES>,
-    tracked index: usize, tracked entry: PageTableEntry)
+    tracked index: usize,
+    tracked entry: PageTableEntry,
+)
     requires
         old(node)@.inv(),
         old(node)@.value.paddr != 0,
@@ -158,16 +171,21 @@ pub proof fn pt_node_tracked_write_pte(tracked node: &mut PageTableNodeModel,
         node@.value.perms.unwrap().pptr() == arr_ptr,
         node@.value.perms.unwrap().is_init(index as int),
         node@.value.perms.unwrap().opt_value()[index as int].value() == entry,
-        forall |i: int| 0 <= i < NR_ENTRIES && i != index ==>
-            #[trigger]
-            node@.value.perms.unwrap().opt_value()[i].value() == old(node)@.value.perms.unwrap().opt_value()[i].value(),
+        forall|i: int|
+            0 <= i < NR_ENTRIES && i != index
+                ==> #[trigger] node@.value.perms.unwrap().opt_value()[i].value() == old(
+                node,
+            )@.value.perms.unwrap().opt_value()[i].value(),
 {
     node.inner.value.tracked_write_pte(arr_ptr, index, entry);
 }
 
-pub fn pt_node_write_pte(Tracked(node): Tracked<&mut PageTableNodeModel>,
+pub fn pt_node_write_pte(
+    Tracked(node): Tracked<&mut PageTableNodeModel>,
     arr_ptr: ArrayPtr<PageTableEntry, NR_ENTRIES>,
-    index: usize, entry: PageTableEntry)
+    index: usize,
+    entry: PageTableEntry,
+)
     requires
         old(node)@.inv(),
         old(node)@.value.paddr != 0,
@@ -181,15 +199,19 @@ pub fn pt_node_write_pte(Tracked(node): Tracked<&mut PageTableNodeModel>,
         node@.value.perms.unwrap().pptr() == arr_ptr,
         node@.value.perms.unwrap().is_init(index as int),
         node@.value.perms.unwrap().opt_value()[index as int].value() == entry,
-        forall |i: int| 0 <= i < NR_ENTRIES && i != index ==>
-            #[trigger]
-            node@.value.perms.unwrap().opt_value()[i].value() == old(node)@.value.perms.unwrap().opt_value()[i].value(),
+        forall|i: int|
+            0 <= i < NR_ENTRIES && i != index
+                ==> #[trigger] node@.value.perms.unwrap().opt_value()[i].value() == old(
+                node,
+            )@.value.perms.unwrap().opt_value()[i].value(),
 {
     PageTableNodeValue::write_pte(Tracked(&mut node.inner.value), arr_ptr, index, entry);
 }
 
-pub fn pt_node_free(Tracked(node): Tracked<PageTableNodeModel>,
-    ptr: ArrayPtr<PageTableEntry, NR_ENTRIES>)
+pub fn pt_node_free(
+    Tracked(node): Tracked<PageTableNodeModel>,
+    ptr: ArrayPtr<PageTableEntry, NR_ENTRIES>,
+)
     requires
         node@.inv(),
         node@.value.paddr != 0,
@@ -203,4 +225,4 @@ pub fn pt_node_free(Tracked(node): Tracked<PageTableNodeModel>,
     assert(!node@.value.is_locked) by { admit() };
 }
 
-}
+} // verus!
