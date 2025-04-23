@@ -9,7 +9,6 @@ use crate::common::*;
 verus! {
 
 impl PageModel {
-
     pub open spec fn get_vaddr_spec(&self) -> (res: int) {
         let vaddr = FRAME_METADATA_RANGE.start + self.index * META_SLOT_SIZE;
         vaddr as int
@@ -20,34 +19,44 @@ impl PageModel {
         paddr as int
     }
 
-    pub open spec fn from_unused_spec_failure<M: PageMeta>(paddr: Paddr,
-    page: Option<Page<M>>, s1: AbstractState, s2: AbstractState) -> bool
-    {
-        page.is_none() &&
-        s2.failed(&s1)
+    pub open spec fn from_unused_spec_failure<M: PageMeta>(
+        paddr: Paddr,
+        page: Option<Page<M>>,
+        s1: AbstractState,
+        s2: AbstractState,
+    ) -> bool {
+        page.is_none() && s2.failed(&s1)
     }
 
-    pub open spec fn from_unused_spec_success<M: PageMeta>(paddr: Paddr,
-        page: Option<Page<M>>, s1: AbstractState, s2: AbstractState) -> bool
-    {
+    pub open spec fn from_unused_spec_success<M: PageMeta>(
+        paddr: Paddr,
+        page: Option<Page<M>>,
+        s1: AbstractState,
+        s2: AbstractState,
+    ) -> bool {
         page.is_some() && {
             let model = s2.get_page(paddr);
             let page = page.unwrap();
             let usage = M::get_usage_spec();
             {
-                page.relate_model(&model) &&
-                model.invariants() &&
-                model.state == usage.as_state() &&
-                model.usage == usage &&
-                model.ref_count == 1
+                page.relate_model(&model) && model.invariants() && model.state == usage.as_state()
+                    && model.usage == usage && model.ref_count == 1
             }
         }
     }
 
-    pub open spec fn from_unused_spec<M: PageMeta>(paddr: Paddr,
-        page: Option<Page<M>>, s1: AbstractState, s2: AbstractState) -> bool
-    {
-        Self::from_unused_spec_failure(paddr, page, s1, s2) || Self::from_unused_spec_success(paddr, page, s1, s2)
+    pub open spec fn from_unused_spec<M: PageMeta>(
+        paddr: Paddr,
+        page: Option<Page<M>>,
+        s1: AbstractState,
+        s2: AbstractState,
+    ) -> bool {
+        Self::from_unused_spec_failure(paddr, page, s1, s2) || Self::from_unused_spec_success(
+            paddr,
+            page,
+            s1,
+            s2,
+        )
     }
 
     pub open spec fn permission(&self, perm: PageUsePermission) -> bool {
@@ -55,23 +64,20 @@ impl PageModel {
             true
         } else {
             match self.usage {
-                PageUsage::Frame => {
-                    perm == PageUsePermission::ReadWrite
-                },
+                PageUsage::Frame => { perm == PageUsePermission::ReadWrite },
                 PageUsage::PageTable => {
                     ||| perm == PageUsePermission::PageTableEntry
                     ||| perm == PageUsePermission::RawPointer
                 },
-                PageUsage::Meta => {
-                    perm == PageUsePermission::RawPointer
-                },
+                PageUsage::Meta => { perm == PageUsePermission::RawPointer },
                 _ => false,
             }
         }
     }
 
-    pub open spec fn new_spec(&self, usage: PageUsage, owner: PageOwner) ->
-    (res: Option<PageModel,>) {
+    pub open spec fn new_spec(&self, usage: PageUsage, owner: PageOwner) -> (res: Option<
+        PageModel,
+    >) {
         if self.ref_count == 0 && usage != PageUsage::Unused {
             Some(
                 PageModel {
@@ -88,8 +94,8 @@ impl PageModel {
         }
     }
 
-    pub open spec fn transfer_spec(&self, prev_owner: PageOwner,
-        new_owner: PageOwner) -> (res: Option<PageModel,>) {
+    pub open spec fn transfer_spec(&self, prev_owner: PageOwner, new_owner: PageOwner) -> (res:
+        Option<PageModel>) {
         if self.owners.contains(prev_owner) {
             Some(PageModel { owners: self.owners.remove(prev_owner).insert(new_owner), ..*self })
         } else {
@@ -127,16 +133,19 @@ impl PageModel {
             if self.owners.is_singleton() {
                 Some(self.dispose_spec())
             } else {
-                Some(PageModel {
+                Some(
+                    PageModel {
                         ref_count: self.ref_count - 1,
                         owners: self.owners.remove(owner),
                         ..*self
-                    })
-                }
+                    },
+                )
+            }
         } else {
             // double free
             None
         }
     }
 }
+
 } // verus!

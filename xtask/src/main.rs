@@ -13,7 +13,8 @@ use std::{
     process::{Command, Stdio},
 };
 use memoize::memoize;
-use git2::{Repository, build::RepoBuilder};
+use git2::{Repository,  build::RepoBuilder};
+use walkdir::WalkDir;
 #[cfg(not(target_os = "windows"))]
 use std::os::unix::fs::PermissionsExt;
 
@@ -1008,9 +1009,8 @@ fn exec_fmt() -> Result<(), DynError> {
             let path = target.src_path;
             let src_dir = path.parent().unwrap();
             // Just search for all `.rs` files in the src directory instead of chasing them
-            let files = fs::read_dir(src_dir)?.filter_map(|entry| {
-                let entry = entry.unwrap();
-                let path = entry.path();
+            let files = WalkDir::new(src_dir).into_iter().filter_map(|entry| {
+                let path = entry.ok()?.path().to_path_buf();
                 if path.is_file() && path.extension().map_or(false, |ext| ext == "rs") {
                     Some(path)
                 } else {

@@ -10,8 +10,7 @@ use crate::prelude::{
 verus! {
 
 #[rustc_has_incoherent_inherent_impls]
-pub struct Entry<'a>
-{
+pub struct Entry<'a> {
     /// The page table entry.
     ///
     /// We store the page table entry here to optimize the number of reads from
@@ -26,8 +25,7 @@ pub struct Entry<'a>
     pub node: &'a PageTableNode,
 }
 
-impl <'a> Entry<'a> {
-
+impl<'a> Entry<'a> {
     pub open spec fn new_spec(pte: PageTableEntry, idx: usize, node: &'a PageTableNode) -> Self {
         Self { pte, idx, node }
     }
@@ -37,10 +35,11 @@ impl <'a> Entry<'a> {
         Self { pte, idx, node }
     }
 
-    pub fn is_node(&self,
+    pub fn is_node(
+        &self,
         Tracked(p_slot): Tracked<&simple_pptr::PointsTo<MetaSlot>>,
         Tracked(p_inner): Tracked<&cell::PointsTo<MetaSlotInner>>,
-        Tracked(pt_inner): Tracked<&cell::PointsTo<PageTablePageMetaInner>>
+        Tracked(pt_inner): Tracked<&cell::PointsTo<PageTablePageMetaInner>>,
     ) -> bool
         requires
             self.node.inv(),
@@ -53,10 +52,10 @@ impl <'a> Entry<'a> {
             pt_inner.id() == p_slot.value().borrow_pt_spec(p_inner).inner.id(),
             pt_inner.is_init(),
     {
-        self.pte.is_present() && !self.pte.is_last(self.node.level(
-            Tracked(p_slot), Tracked(p_inner), Tracked(pt_inner)
-        ))
+        self.pte.is_present() && !self.pte.is_last(
+            self.node.level(Tracked(p_slot), Tracked(p_inner), Tracked(pt_inner)),
+        )
     }
 }
 
-}
+} // verus!

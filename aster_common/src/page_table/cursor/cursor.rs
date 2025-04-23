@@ -8,8 +8,7 @@ use crate::prelude::*;
 verus! {
 
 #[rustc_has_incoherent_inherent_impls]
-pub struct Cursor<'a, M: PageTableMode>
-{
+pub struct Cursor<'a, M: PageTableMode> {
     /// The lock guards of the cursor. The level 1 page table lock guard is at
     /// index 0, and the level N page table lock guard is at index N - 1.
     ///
@@ -31,25 +30,11 @@ pub struct Cursor<'a, M: PageTableMode>
 }
 
 pub enum PageTableItem {
-    NotMapped {
-        va: Vaddr,
-        len: usize,
-    },
-    Mapped {
-        va: Vaddr,
-        page: DynPage,
-        prop: PageProperty,
-    },
-    PageTableNode {
-        page: DynPage,
-    },
+    NotMapped { va: Vaddr, len: usize },
+    Mapped { va: Vaddr, page: DynPage, prop: PageProperty },
+    PageTableNode { page: DynPage },
     #[allow(dead_code)]
-    MappedUntracked {
-        va: Vaddr,
-        pa: Paddr,
-        len: usize,
-        prop: PageProperty,
-    },
+    MappedUntracked { va: Vaddr, pa: Paddr, len: usize, prop: PageProperty },
 }
 
-}
+} // verus!

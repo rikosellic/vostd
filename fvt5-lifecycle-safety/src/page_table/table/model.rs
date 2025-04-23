@@ -6,7 +6,6 @@ use aster_common::prelude::*;
 verus! {
 
 impl PageTableModel {
-
     #[rustc_allow_incoherent_impl]
     #[verifier::inline]
     pub open spec fn on_tree(self, node: PageTableNodeModel) -> bool
@@ -18,8 +17,7 @@ impl PageTableModel {
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn get_nodes(self, path: PageTableTreePathModel) ->
-        (res: Seq<PageTableNodeValue>)
+    pub open spec fn get_nodes(self, path: PageTableTreePathModel) -> (res: Seq<PageTableNodeValue>)
         recommends
             self.inv(),
             path.inv(),
@@ -43,23 +41,22 @@ impl PageTableModel {
     #[rustc_allow_incoherent_impl]
     pub proof fn get_node_empty_is_root(self, path: PageTableTreePathModel)
         requires
-            path.inner.len() == 0
+            path.inner.len() == 0,
         ensures
-            self.get_node(path) == Some(PageTableNodeModel::from_node(self.tree@.root))
-    { admit() }
+            self.get_node(path) == Some(PageTableNodeModel::from_node(self.tree@.root)),
+    {
+        admit()
+    }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn get_path(self, node: PageTableNodeModel) ->
-        (res: PageTableTreePathModel)
+    pub open spec fn get_path(self, node: PageTableNodeModel) -> (res: PageTableTreePathModel)
         recommends
             self.inv(),
             node@.inv(),
             self.tree@.on_tree(node@),
     {
-        PageTableTreePathModel::from_path(
-            self.tree@.get_path(node@)
-        )
+        PageTableTreePathModel::from_path(self.tree@.get_path(node@))
     }
 }
 
-}
+} // verus!

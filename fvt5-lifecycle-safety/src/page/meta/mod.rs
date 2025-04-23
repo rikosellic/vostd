@@ -3,14 +3,5 @@ pub mod model;
 //pub mod impls;
 //pub mod specs;
 
-use core::{
-    mem::ManuallyDrop,
-    mem::size_of,
-    cell::UnsafeCell,
-};
-use vstd::{
-    prelude::*,
-    cell::*,
-    atomic::*,
-    atomic_ghost::*,
-};
+use core::{mem::ManuallyDrop, mem::size_of, cell::UnsafeCell};
+use vstd::{prelude::*, cell::*, atomic::*, atomic_ghost::*};

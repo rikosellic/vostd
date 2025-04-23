@@ -10,19 +10,16 @@ verus! {
 
 #[derive(Debug)]
 #[rustc_has_incoherent_inherent_impls]
-pub struct PageTable<M: PageTableMode,>
-{
+pub struct PageTable<M: PageTableMode> {
     pub root: RawPageTableNode,
     pub _phantom: PhantomData<M>,
 }
 
-}
-
+} // verus!
 verus! {
 
 #[verifier::inline]
-pub open spec fn nr_subpage_per_huge_spec<C: PagingConstsTrait>() -> usize
-{
+pub open spec fn nr_subpage_per_huge_spec<C: PagingConstsTrait>() -> usize {
     C::BASE_PAGE_SIZE() / C::PTE_SIZE()
 }
 
@@ -42,6 +39,7 @@ pub proof fn lemma_nr_subpage_per_huge_bounded<C: PagingConstsTrait>()
 {
     C::lemma_PTE_SIZE_properties();
     broadcast use group_div_basics;
+
     assert(C::PTE_SIZE() <= C::BASE_PAGE_SIZE());
     assert(C::BASE_PAGE_SIZE() / C::PTE_SIZE() <= C::BASE_PAGE_SIZE());
     assert(C::BASE_PAGE_SIZE() / C::PTE_SIZE() > 0) by {
@@ -49,10 +47,8 @@ pub proof fn lemma_nr_subpage_per_huge_bounded<C: PagingConstsTrait>()
     };
 }
 
-
 #[verifier::inline]
-pub open spec fn nr_pte_index_bits_spec<C: PagingConstsTrait>() -> usize
-{
+pub open spec fn nr_pte_index_bits_spec<C: PagingConstsTrait>() -> usize {
     nr_subpage_per_huge::<C>().ilog2() as usize
 }
 
@@ -82,8 +78,7 @@ pub proof fn lemma_nr_pte_index_bits_bounded<C: PagingConstsTrait>()
     }
 }
 
-}
-
+} // verus!
 verus! {
 
 pub proof fn bits_of_base_page_size()
@@ -96,7 +91,8 @@ pub proof fn bits_of_base_page_size()
 pub proof fn value_of_nr_subpage_per_huge()
     ensures
         nr_subpage_per_huge::<PagingConsts>() == 512,
-{ }
+{
+}
 
 pub proof fn bits_of_nr_pte_index()
     ensures
@@ -107,8 +103,7 @@ pub proof fn bits_of_nr_pte_index()
 }
 
 #[verifier::inline]
-pub open spec fn pte_index_mask_spec() -> usize
-{
+pub open spec fn pte_index_mask_spec() -> usize {
     0x1ff
 }
 
@@ -153,10 +148,12 @@ pub fn pte_index(va: Vaddr, level: PagingLevel) -> (res: usize)
 
 pub proof fn pte_index_preserves_order(va1: Vaddr, va2: Vaddr, level: PagingLevel)
     requires
-        va1 <= va2
+        va1 <= va2,
     ensures
-        pte_index(va1,level) <= pte_index(va2,level)
-{ admit() }
+        pte_index(va1, level) <= pte_index(va2, level),
+{
+    admit()
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PageTableError {
@@ -168,4 +165,4 @@ pub enum PageTableError {
     UnalignedVaddr,
 }
 
-}
+} // verus!
