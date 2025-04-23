@@ -1,24 +1,32 @@
-.DEFAULT_GOAL:= all
+.DEFAULT_GOAL := all
 
-fvt1:
-	cargo xtask verify --targets fvt1-mem-region-init
+# List of verification targets
+VERIFICATION_TARGETS := \
+	fvt1-mem-region-init \
+	fvt3-page-acquisition-safety \
+	fvt4-into-from-raw \
+	fvt5-lifecycle-safety \
+	fvt10-pt-cursor-navigation \
+	fvt11-pt-cursor-guards
 
-fvt5:
-	cargo xtask verify --targets fvt5-lifecycle-safety
+# Compile-only targets
+COMPILE_TARGETS := vstd_extra aster_common
 
-fvt10:
-	cargo xtask verify --targets fvt10-pt-cursor-navigation
+# Pattern rule for individual FVT targets
+fvt%:
+	cargo xtask verify --targets $(filter fvt$*-%, $(VERIFICATION_TARGETS))
 
-fvt11:
-	cargo xtask verify --targets fvt11-pt-cursor-guards
+all: compile verify
 
-all:
-	cargo xtask compile --targets vstd_extra
-	cargo xtask compile --targets aster_common
-	cargo xtask verify --targets fvt1-mem-region-init
-	cargo xtask verify --targets fvt5-lifecycle-safety
-	cargo xtask verify --targets fvt10-pt-cursor-navigation
-	cargo xtask verify --targets fvt11-pt-cursor-guards
+compile:
+	@for target in $(COMPILE_TARGETS); do \
+		cargo xtask compile --targets $$target; \
+	done
+
+verify:
+	@for target in $(VERIFICATION_TARGETS); do \
+		cargo xtask verify --targets $$target; \
+	done
 
 clean:
 	cargo clean
