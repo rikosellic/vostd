@@ -4,6 +4,8 @@ members = [
     "vstd_extra",
     "aster_common",
     "fvt1-mem-region-init",
+    "fvt3-page-acquisition-safety",
+    "fvt4-into-from-raw",
     "fvt5-lifecycle-safety",
     "fvt10-pt-cursor-navigation",
     "fvt11-pt-cursor-guards",
