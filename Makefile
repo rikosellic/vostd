@@ -16,6 +16,9 @@ COMPILE_TARGETS := vstd_extra aster_common
 fvt%:
 	cargo xtask verify --targets $(filter fvt$*-%, $(VERIFICATION_TARGETS))
 
+fmt:
+	cargo xtask fmt
+
 all: compile verify
 
 compile:

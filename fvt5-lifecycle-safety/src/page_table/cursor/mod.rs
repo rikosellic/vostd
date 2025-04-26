@@ -416,10 +416,6 @@ impl<'a, M: PageTableMode> Cursor<'a, M> {
             s.page_table.get_node_empty_is_root(cur_path@)
         }
 
-        assert(cur_pt_addr % PAGE_SIZE_SPEC() == 0) by { admit() };
-        assert(cur_pt_addr < MAX_PADDR_SPEC()) by { admit() };
-        assert(s.get_page(cur_pt_addr).usage == PageUsage::PageTable) by { admit() };
-
         assert(s.page_table.tree@.on_tree(s.page_table.tree@.root));
         assert(s.is_node(cur_pt_addr));
 
