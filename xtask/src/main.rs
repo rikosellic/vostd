@@ -13,7 +13,10 @@ use std::{
     process::{Command, Stdio},
 };
 use memoize::memoize;
-use git2::{Repository, build::RepoBuilder};
+use git2::{
+    Repository, ResetType,
+    build::{RepoBuilder, CheckoutBuilder},
+};
 use walkdir::WalkDir;
 #[cfg(not(target_os = "windows"))]
 use std::os::unix::fs::PermissionsExt;
@@ -200,6 +203,7 @@ enum Commands {
     Bootstrap(BootstrapArgs),
     Compile(CompileArgs),
     Fmt,
+    Update(UpdateArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -210,6 +214,17 @@ struct BootstrapArgs {
     #[arg(long = "restart", help = "Remove all toolchain and restart the bootstrap",
         default_value = "false", action = ArgAction::SetTrue)]
     restart: bool,
+
+    #[arg(long = "rust-version", help = "The rust version to use",
+        default_value = "1.82.0", action = ArgAction::Set)]
+    rust_version: String,
+}
+
+#[derive(Parser, Debug)]
+struct UpdateArgs {
+    #[arg(long = "no-verus", help = "Do not update verus",
+        default_value = "false", action = ArgAction::SetTrue)]
+    no_verus: bool,
 
     #[arg(long = "rust-version", help = "The rust version to use",
         default_value = "1.82.0", action = ArgAction::Set)]
@@ -857,6 +872,29 @@ fn install_verusfmt() -> Result<(), DynError> {
     Ok(())
 }
 
+fn compile_verus() -> Result<(), DynError> {
+    println!("Start to build the Verus compiler");
+    #[cfg(target_os = "windows")]
+    {
+        let cmd = &mut Command::new("powershell");
+        cmd.current_dir(Path::new("tools").join("verus").join("source"))
+            .arg("/c")
+            .arg("& '..\\tools\\activate.ps1' ; vargo build --release --features singular");
+        println!("{:?}", cmd);
+        cmd.status()?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let cmd = &mut Command::new("bash");
+        cmd.current_dir(Path::new("tools").join("verus").join("source"))
+            .arg("-c")
+            .arg("source ../tools/activate && vargo build --release --features singular");
+        println!("{:?}", cmd);
+        cmd.status()?;
+    }
+    Ok(())
+}
+
 fn exec_bootstrap(args: &BootstrapArgs) -> Result<(), DynError> {
     let verus_repo = "https://github.com/asterinas/verus.git";
     let verus_dir = Path::new("tools").join("verus");
@@ -933,25 +971,7 @@ fn exec_bootstrap(args: &BootstrapArgs) -> Result<(), DynError> {
         apply_patch(&verus_dir, &verus_path);
     }*/
 
-    println!("Start to build the Verus compiler");
-    #[cfg(target_os = "windows")]
-    {
-        let cmd = &mut Command::new("powershell");
-        cmd.current_dir(Path::new("tools").join("verus").join("source"))
-            .arg("/c")
-            .arg("& '..\\tools\\activate.ps1' ; vargo build --release --features singular");
-        println!("{:?}", cmd);
-        cmd.status()?;
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let cmd = &mut Command::new("bash");
-        cmd.current_dir(Path::new("tools").join("verus").join("source"))
-            .arg("-c")
-            .arg("source ../tools/activate && vargo build --release --features singular");
-        println!("{:?}", cmd);
-        cmd.status()?;
-    }
+    compile_verus()?;
 
     /*if !args.no_vscode_extension {
         build_vscode_extension(args)?;
@@ -961,6 +981,30 @@ fn exec_bootstrap(args: &BootstrapArgs) -> Result<(), DynError> {
         install_verusfmt()?;
     }
 
+    Ok(())
+}
+
+fn exec_update(args: &UpdateArgs) -> Result<(), DynError> {
+    if !args.no_verus {
+        let verus_dir = Path::new("tools").join("verus");
+        if !verus_dir.exists() {
+            println!(
+                "The Verus directory does not exist, please run `cargo xtask bootstrap` first."
+            );
+            std::process::exit(1);
+        }
+        println!(
+            "Start to update the Verus repository at {}",
+            verus_dir.display()
+        );
+        let repo = Repository::open(&verus_dir)?;
+        let mut checkout_builder = CheckoutBuilder::new();
+        checkout_builder.force();
+        let obj = repo.revparse_single(&format!("origin/{}", args.rust_version))?;
+        repo.reset(&obj, ResetType::Hard, Some(&mut checkout_builder))?;
+
+        compile_verus()?;
+    }
     Ok(())
 }
 
@@ -1043,6 +1087,7 @@ fn main() {
         Commands::Bootstrap(args) => exec_bootstrap(args),
         Commands::Compile(args) => exec_compile(args),
         Commands::Fmt => exec_fmt(),
+        Commands::Update(args) => exec_update(args),
     } {
         eprintln!("Error: {}", e);
         std::process::exit(1);
