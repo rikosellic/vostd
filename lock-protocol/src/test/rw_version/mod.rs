@@ -1,3 +1,5 @@
-pub mod vstd_extra;
+// FIXME: bug!
+// pub mod exec;
 pub mod spec;
-pub mod exec;
+// FIXME: bug!
+// pub mod vstd_extra;

@@ -175,7 +175,9 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
         if va.start % C::BASE_PAGE_SIZE() != 0 || va.end % C::BASE_PAGE_SIZE() != 0 {
             return Err(PageTableError::UnalignedVaddr);
         }
-        // const { assert!(C::NR_LEVELS() as usize <= MAX_NR_LEVELS) }; // TODO
+        // TODO
+        // const { assert!(C::NR_LEVELS() as usize <= MAX_NR_LEVELS) };
+
         let new_pt_is_tracked = if should_map_as_tracked::<M>(va.start) {
             MapTrackingStatus::Tracked
         } else {
@@ -225,7 +227,9 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
             // panic!("Popping a level without a lock");
             // assert(false); // TODO
         }
-        // let _taken = taken.unwrap().into_raw_paddr(); // TODO
+        // TODO
+        // let _taken = taken.unwrap().into_raw_paddr();
+
         self.level = self.level + 1;
     }
 
@@ -439,39 +443,54 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait, PTL: Pa
 
         #[verifier::loop_isolation(false)]
         // Go down if not applicable.
-        while self.0.level > frame.map_level()
-            // || self.0.va % page_size::<C>(self.0.level) != 0 // TODO?
-            // || self.0.va + page_size::<C>(self.0.level) > end // TODO?
-        invariant
-            // self.0.va + page_size::<C>(self.0.level) <= end,
-            self.0.level >= frame.map_level(),
-            self.0.path.len() == old(self).0.path.len(),
-            self.va_valid(frame, Some(old(self))),
-            forall |i: int| path_index_at_level(self.0.level) <= i <= path_index_at_level(old(self).0.level)
-                            ==> self.0.path[i].is_some(),
-            self.0.path[path_index_at_level(root_level@)] == old(self).0.path[path_index_at_level(root_level@)],
-            root_level@ >= self.0.level,
-            mpt.wf(),
-            *cur_alloc_index < exec::MAX_FRAME_NUM - 4, // we have enough frames
-            instance_match_addrs(mpt, unused_addrs, unused_pte_addrs),
-            forall |i: int| path_index_at_level(self.0.level) <= i <= path_index_at_level(old(self).0.level) ==>
-                #[trigger] mpt.frames@.value().contains_key(self.0.path[i].unwrap().paddr() as int),
-            mpt_not_contains_not_allocated_frames(mpt, *cur_alloc_index),
-            unallocated_frames_are_unused(unused_addrs, unused_pte_addrs, *cur_alloc_index),
-            tokens_wf(unused_addrs, unused_pte_addrs),
-            // the post condition
-            self.0.mock_page_table_valid_before_map_level(mpt,
-                                                &frame,
-                                                root_level@,
-                                                /* root */
-                                                root_addr as int,
-                                                /* last level */
-                                                self.0.level),
-            self.0.path_matchs_page_table(mpt, root_level@,
-                                                /* root */
-                                                root_addr as int,
-                                                /* last level */
-                                                self.0.level),
+        while self.0.level
+            > frame.map_level()   // || self.0.va % page_size::<C>(self.0.level) != 0
+        // TODO?
+        // || self.0.va + page_size::<C>(self.0.level) > end // TODO?
+
+            invariant
+        // self.0.va + page_size::<C>(self.0.level) <= end,
+
+                self.0.level >= frame.map_level(),
+                self.0.path.len() == old(self).0.path.len(),
+                self.va_valid(frame, Some(old(self))),
+                forall|i: int|
+                    path_index_at_level(self.0.level) <= i <= path_index_at_level(old(self).0.level)
+                        ==> self.0.path[i].is_some(),
+                self.0.path[path_index_at_level(root_level@)] == old(
+                    self,
+                ).0.path[path_index_at_level(root_level@)],
+                root_level@ >= self.0.level,
+                mpt.wf(),
+                *cur_alloc_index < exec::MAX_FRAME_NUM - 4,  // we have enough frames
+                instance_match_addrs(mpt, unused_addrs, unused_pte_addrs),
+                forall|i: int|
+                    path_index_at_level(self.0.level) <= i <= path_index_at_level(old(self).0.level)
+                        ==> #[trigger] mpt.frames@.value().contains_key(
+                        self.0.path[i].unwrap().paddr() as int,
+                    ),
+                mpt_not_contains_not_allocated_frames(mpt, *cur_alloc_index),
+                unallocated_frames_are_unused(unused_addrs, unused_pte_addrs, *cur_alloc_index),
+                tokens_wf(unused_addrs, unused_pte_addrs),
+                // the post condition
+                self.0.mock_page_table_valid_before_map_level(
+                    mpt,
+                    &frame,
+                    root_level@,
+                    /* root */
+                    root_addr as int,
+                    /* last level */
+                    self.0.level,
+                ),
+                self.0.path_matchs_page_table(
+                    mpt,
+                    root_level@,
+                    /* root */
+                    root_addr as int,
+                    /* last level */
+                    self.0.level,
+                ),
+            decreases self.0.level - frame.map_level(),
         {
             // debug_assert!(should_map_as_tracked::<M>(self.0.va)); // TODO
             let cur_level = self.0.level;
