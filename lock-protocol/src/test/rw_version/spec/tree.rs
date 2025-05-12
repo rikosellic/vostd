@@ -34,7 +34,7 @@ pub fn inv_nodes(&self) -> bool {
 
 pub open spec fn rc_equal(
     nid: NodeId,
-    rc: nat, 
+    rc: nat,
     cursors: Set<CursorState>,
 ) -> bool
     recommends cursors.finite(),
@@ -49,15 +49,15 @@ pub open spec fn rc_equal(
                 if rc == 0 { false }
                 else {
                     Self::rc_equal(
-                        nid, 
-                        (rc - 1) as nat, 
+                        nid,
+                        (rc - 1) as nat,
                         cursors.remove(cursor)
-                    ) 
+                    )
                 }
             } else {
                 Self::rc_equal(
-                    nid, 
-                    rc, 
+                    nid,
+                    rc,
                     cursors.remove(cursor)
                 )
             }
@@ -85,7 +85,7 @@ pub fn rc_cursors_relation(&self) -> bool {
 }
 
 pub open spec fn rc_positive(&self, path: Seq<NodeId>) -> bool {
-    forall |i| #![auto] 0 <= i < path.len() ==> 
+    forall |i| #![auto] 0 <= i < path.len() ==>
         self.reader_counts[path[i]] > 0
 }
 
@@ -106,23 +106,23 @@ pub fn inv_cursors(&self) -> bool {
 #[invariant]
 pub fn inv_rw_lock(&self) -> bool {
     forall |nid: NodeId| #![auto]
-        self.reader_counts.dom().contains(nid) && 
+        self.reader_counts.dom().contains(nid) &&
         self.reader_counts[nid] > 0 ==> self.nodes[nid].is_WriteUnLocked()
 }
 
 #[invariant]
 pub fn inv_non_overlapping(&self) -> bool {
     forall |cpu1: CpuId, cpu2: CpuId| #![auto]
-        cpu1 != cpu2 && 
-        self.cursors.dom().contains(cpu1) && 
+        cpu1 != cpu2 &&
+        self.cursors.dom().contains(cpu1) &&
         self.cursors.dom().contains(cpu2) ==> {
-            if !self.cursors[cpu1].hold_write_lock() || 
+            if !self.cursors[cpu1].hold_write_lock() ||
                 !self.cursors[cpu2].hold_write_lock() { true }
             else {
                 let nid1 = self.cursors[cpu1].get_write_lock_node();
                 let nid2 = self.cursors[cpu2].get_write_lock_node();
 
-                !NodeHelper::in_subtree(nid1, nid2) && 
+                !NodeHelper::in_subtree(nid1, nid2) &&
                 !NodeHelper::in_subtree(nid2, nid1)
             }
         }
@@ -131,13 +131,13 @@ pub fn inv_non_overlapping(&self) -> bool {
 init!{
     initialize(cpu_num: CpuId) {
         require(cpu_num > 0);
-        
+
         init cpu_num = cpu_num;
         init nodes = Map::new(
             |nid| NodeHelper::valid_nid(nid),
-            |nid| if nid == NodeHelper::root_id() { 
+            |nid| if nid == NodeHelper::root_id() {
                 NodeState::WriteUnLocked
-            } else { 
+            } else {
                 NodeState::UnAllocated
             },
         );
@@ -294,4 +294,4 @@ fn deallocate_inductive(pre: Self, post: Self, cpu: CpuId, nid: NodeId) { admit(
 
 }
 
-}
+} // verus!

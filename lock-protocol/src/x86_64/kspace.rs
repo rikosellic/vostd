@@ -103,7 +103,8 @@ pub broadcast proof fn lemma_paddr_to_vaddr_properties(pa: Paddr)
     ensures
         LINEAR_MAPPING_BASE_VADDR() <= #[trigger] paddr_to_vaddr(pa) < VMALLOC_BASE_VADDR(),
         #[trigger] vaddr_to_paddr(paddr_to_vaddr(pa)) == pa,
-{ }
+{
+}
 
 pub broadcast proof fn lemma_vaddr_to_paddr_properties(va: Vaddr)
     requires
@@ -111,7 +112,8 @@ pub broadcast proof fn lemma_vaddr_to_paddr_properties(va: Vaddr)
     ensures
         #[trigger] vaddr_to_paddr(va) < VMALLOC_BASE_VADDR() - LINEAR_MAPPING_BASE_VADDR(),
         #[trigger] paddr_to_vaddr(vaddr_to_paddr(va)) == va,
-{ }
+{
+}
 
 pub proof fn lemma_max_paddr_range()
     ensures
@@ -156,11 +158,11 @@ pub proof fn lemma_mod_0_add(a: int, b: int, m: int)
 //         lemma_mod_0_add(pa as int, LINEAR_MAPPING_BASE_VADDR() as int, PAGE_SIZE() as int);
 //     };
 // }
-
 extern_const!(
     pub TRACKED_MAPPED_PAGES_BASE_VADDR [TRACKED_MAPPED_PAGES_BASE_VADDR_SPEC, CONST_TRACKED_MAPPED_PAGES_BASE_VADDR]:
         Vaddr = 0xffff_d000_0000_0000 << CONST_ADDR_WIDTH_SHIFT
 );
+
 extern_const!(
     pub VMALLOC_VADDR_RANGE [VMALLOC_VADDR_RANGE_SPEC, CONST_VMALLOC_VADDR_RANGE]:
         Range<Vaddr> = CONST_VMALLOC_BASE_VADDR..CONST_TRACKED_MAPPED_PAGES_BASE_VADDR
@@ -171,8 +173,8 @@ extern_const!(
 /// About what is tracked mapping, see [`crate::mm::frame::meta::MapTrackingStatus`].
 pub fn should_map_as_tracked(addr: Vaddr) -> bool {
     // !(LINEAR_MAPPING_VADDR_RANGE().contains(&addr) || VMALLOC_VADDR_RANGE().contains(&addr))
-    !(LINEAR_MAPPING_VADDR_RANGE().start <= addr && addr < LINEAR_MAPPING_VADDR_RANGE().end)
-    || !(VMALLOC_VADDR_RANGE().start <= addr && addr < VMALLOC_VADDR_RANGE().end)
+    !(LINEAR_MAPPING_VADDR_RANGE().start <= addr && addr < LINEAR_MAPPING_VADDR_RANGE().end) || !(
+    VMALLOC_VADDR_RANGE().start <= addr && addr < VMALLOC_VADDR_RANGE().end)
 }
 
-}
+} // verus!

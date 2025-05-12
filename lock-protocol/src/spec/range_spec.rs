@@ -26,8 +26,8 @@ pub fn inv_slots(&self) -> bool {
 #[invariant]
 pub fn inv_ranges(&self) -> bool {
     &&& forall |cpu: CpuId| #![auto]
-        valid_cpu(self.cpu_num, cpu) <==> self.ranges.contains_key(cpu) 
-    
+        valid_cpu(self.cpu_num, cpu) <==> self.ranges.contains_key(cpu)
+
     &&& forall |cpu: CpuId| #![auto] self.ranges.contains_key(cpu) ==> {
         &&& self.ranges[cpu].inv()
         &&& match self.ranges[cpu] {
@@ -38,7 +38,7 @@ pub fn inv_ranges(&self) -> bool {
         }
     }
 
-    &&& forall |cpu1: CpuId, cpu2: CpuId| 
+    &&& forall |cpu1: CpuId, cpu2: CpuId|
         cpu1 != cpu2 && self.ranges.contains_key(cpu1) && self.ranges.contains_key(cpu2) ==>
             self.ranges[cpu1].no_overlap(&self.ranges[cpu2])
 }
@@ -187,7 +187,7 @@ transition!{
 transition!{
     range_release_start(cpu: CpuId) {
         require(valid_cpu(pre.cpu_num, cpu));
-        
+
         require(pre.ranges[cpu].is_Hold());
         let l = pre.ranges[cpu].get_Hold_0();
         let r = pre.ranges[cpu].get_Hold_1();
@@ -388,18 +388,18 @@ fn range_acquire_start_inductive(pre: Self, post: Self, cpu: CpuId, l: nat, r: n
 fn pos_acquire_inductive(pre: Self, post: Self, cpu: CpuId, p: nat) {
     assert(pre.slots[p].is_Free());
     assert(pre.slots.insert(p, SlotState::Locked) =~= post.slots);
-    
+
     let l = pre.ranges[cpu].get_Creating_0();
     let r = pre.ranges[cpu].get_Creating_1();
     let cur_p = pre.ranges[cpu].get_Creating_2();
     assert(cur_p == p && cur_p < r);
     assert(pre.ranges.insert(cpu, RangeState::Creating(l, r, cur_p + 1)) =~= post.ranges);
 
-    assert(forall |cpu: CpuId| pre.ranges.contains_key(cpu) ==> 
+    assert(forall |cpu: CpuId| pre.ranges.contains_key(cpu) ==>
         #[trigger] pre.ranges[cpu].pos_is_not_held(p)
     );
     assert(!post.ranges[cpu].pos_is_not_held(p));
-    assert(!(forall |cpu: CpuId| post.ranges.contains_key(cpu) ==> 
+    assert(!(forall |cpu: CpuId| post.ranges.contains_key(cpu) ==>
         #[trigger] post.ranges[cpu].pos_is_not_held(p)
     ));
 
@@ -534,7 +534,7 @@ fn pos_acquire_skip_inductive(pre: Self, post: Self, cpu: CpuId, p: nat, skip_le
 #[inductive(range_acquire_end)]
 fn range_acquire_end_inductive(pre: Self, post: Self, cpu: CpuId) {
     assert(pre.slots =~= post.slots);
-    
+
     let l = pre.ranges[cpu].get_Creating_0();
     let r = pre.ranges[cpu].get_Creating_1();
     assert(pre.ranges[cpu] =~= RangeState::Creating(l, r, r));
@@ -560,7 +560,7 @@ fn range_release_start_inductive(pre: Self, post: Self, cpu: CpuId) {
     };
 
     assert(forall |i| #![auto]
-        pre.ranges[cpu].pos_is_not_held(i) <==> 
+        pre.ranges[cpu].pos_is_not_held(i) <==>
         post.ranges[cpu].pos_is_not_held(i)
     );
 }
@@ -573,7 +573,7 @@ fn pos_release_inductive(pre: Self, post: Self, cpu: CpuId, p: nat) {
         assert(pre.ranges[cpu].no_overlap(&pre.ranges[_cpu]));
     };
     assert(forall |i| i != p ==> {
-        pre.ranges[cpu].pos_is_not_held(i) <==> 
+        pre.ranges[cpu].pos_is_not_held(i) <==>
         post.ranges[cpu].pos_is_not_held(i)
     });
     assert forall |_cpu| _cpu != cpu && #[trigger] pre.ranges.contains_key(_cpu) implies {
@@ -706,4 +706,4 @@ fn no_op_inductive(pre: Self, post: Self) {}
 
 }
 
-}
+} // verus!

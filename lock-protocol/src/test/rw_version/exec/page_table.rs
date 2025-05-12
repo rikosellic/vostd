@@ -7,19 +7,10 @@ use vstd::hash_map::*;
 use vstd::tokens::*;
 use vstd::atomic_ghost::*;
 
+use super::super::spec::{common::*, utils::*, tree::*};
+use super::{common::*, types::*, frame::*};
 
-use super::super::spec::{
-    common::*,
-    utils::*,
-    tree::*,
-};
-use super::{
-    common::*,
-    types::*,
-    frame::*,
-};
-
-verus!{
+verus! {
 
 struct_with_invariants!{
 
@@ -88,7 +79,7 @@ pub open spec fn wf(&self, allocator: FrameAllocator) -> bool {
 }
 
 impl PageTable {
-    
-}
 
 }
+
+} // verus!

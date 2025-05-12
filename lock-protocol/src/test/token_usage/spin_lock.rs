@@ -5,7 +5,7 @@ use vstd::{
     atomic_ghost::AtomicBool,
     atomic_with_ghost,
     cell::{PCell, PointsTo},
-    prelude::*
+    prelude::*,
 };
 
 use super::common::*;
@@ -35,7 +35,7 @@ fields {
 pub fn inv(&self) -> bool {
     &&& self.storage.is_Some() ==>
         self.user_inv.contains(self.storage.get_Some_0())
-    
+
     &&& self.locked == false <==> self.storage.is_Some()
 
     &&& self.guard.is_None() <==> self.storage.is_Some()
@@ -67,7 +67,7 @@ transition!{
 transition!{
     release(t: T) {
         require(pre.user_inv.contains(t));
-        
+
         update locked = false;
         remove guard -= Some(());
 
@@ -88,9 +88,8 @@ fn release_inductive(pre: Self, post: Self, t: T) {}
 
 }
 
-}
-
-verus!{
+} // verus!
+verus! {
 
 pub tracked struct PageLockGuard {
     tracked guard: Tracked<SpinLockSpec::guard<PagePerm>>,
@@ -135,39 +134,25 @@ impl PageLock {
             perm@.paddr == paddr,
         ensures
             res.wf(),
-            forall |perm: PagePerm| #![auto] res.inv(perm) <==> (perm.paddr == paddr),
+            forall|perm: PagePerm| #![auto] res.inv(perm) <==> (perm.paddr == paddr),
     {
         let tracked perm = perm.get();
-        
+
         let tracked inst;
         let tracked locked_token;
-        let ghost user_inv = Set::new(
-            |perm: PagePerm| perm.paddr == paddr,
-        );
+        let ghost user_inv = Set::new(|perm: PagePerm| perm.paddr == paddr);
         proof {
-            let tracked (
-                Tracked(inst0),
-                Tracked(locked_token0),
-                _,
-            ) = SpinLockSpec::Instance::initialize(perm, user_inv, Some(perm));
+            let tracked (Tracked(inst0), Tracked(locked_token0), _) =
+                SpinLockSpec::Instance::initialize(perm, user_inv, Some(perm));
 
             inst = inst0;
             locked_token = locked_token0;
         }
         let tracked_inst: Tracked<SpinLockSpec::Instance<PagePerm>> = Tracked(inst.clone());
 
-        let locked_atomic = AtomicBool::new(
-            Ghost(tracked_inst),
-            false,
-            Tracked(locked_token),
-        );
+        let locked_atomic = AtomicBool::new(Ghost(tracked_inst), false, Tracked(locked_token));
 
-        Self {
-            paddr,
-            locked: locked_atomic,
-            inst: Tracked(inst),
-            user_inv: Ghost(user_inv),
-        }
+        Self { paddr, locked: locked_atomic, inst: Tracked(inst), user_inv: Ghost(user_inv) }
     }
 
     pub fn acquire(&self) -> (res: Tracked<PageLockGuard>)
@@ -190,7 +175,8 @@ impl PageLock {
                     &&& self.user_inv@.contains(perm.get_Some_0())
                 },
         {
-            let result = atomic_with_ghost!(
+            let result =
+                atomic_with_ghost!(
                 &self.locked => compare_exchange(false, true);
                 returning res;
                 ghost g => {
@@ -225,4 +211,4 @@ impl PageLock {
     }
 }
 
-}
+} // verus!

@@ -20,12 +20,11 @@ use vstd::simple_pptr::PointsTo;
 verus! {
 
 type Paddr = usize;
+
 type Vaddr = usize;
 
 use crate::mm::NR_ENTRIES;
-
 use crate::exec::SIZEOF_PAGETABLEENTRY;
-
 use crate::exec::SIZEOF_FRAME;
 
 #[derive(Clone, Copy)]
@@ -37,6 +36,7 @@ pub struct Frame {
     pub ptes: [PageTableEntry; 512],
     // pub has_ptes: bool,
 }
+
 #[derive(Clone, Copy)]
 pub struct PageTableEntry {
     pub frame_pa: Paddr,
@@ -55,8 +55,8 @@ pub ghost struct FrameView {
     // pub ptes: [PageTableEntry; 512],
     pub pte_addrs: Set<int>,
 }
-}
 
+} // verus!
 tokenized_state_machine! {
 SimplePageTable {
 
@@ -351,6 +351,7 @@ struct_with_invariants! {
 }
 
 verus! {
+
 pub fn main_test() {
     broadcast use vstd::std_specs::hash::group_hash_axioms;
     broadcast use vstd::hash_map::group_hash_map_axioms;
@@ -373,7 +374,7 @@ pub fn main_test() {
 
     assert(fake.wf());
 
-    let (p_root, Tracked(mut pt_root)) = get_from_index(1, &fake.mem); // TODO: permission violation?
+    let (p_root, Tracked(mut pt_root)) = get_from_index(1, &fake.mem);  // TODO: permission violation?
 
     assert(pt_root.pptr() == p_root);
     assert(pt_root.mem_contents() == MemContents::<Frame>::Uninit);
@@ -382,11 +383,7 @@ pub fn main_test() {
 
     let mut f1 = Frame {
         // pa: p_root.addr(),
-        ptes: [PageTableEntry {
-            frame_pa: 0,
-            flags: PteFlag,
-            level: 0,
-        }; NR_ENTRIES],
+        ptes: [PageTableEntry { frame_pa: 0, flags: PteFlag, level: 0 };NR_ENTRIES],
     };
 
     assert(unused_addrs.dom().contains(p_root.addr() as int));
@@ -405,16 +402,22 @@ pub fn main_test() {
 
     // assert(!fake.wf()); // it seems we cannot assert the structure is not wf when it is not
 
-    proof{
+    proof {
         assert(fake.frames@.value().dom().len() == 0);
         assert(!fake.frames@.value().dom().contains(p_root.addr() as int));
 
         // instance.new_at(p_root.addr(), f1, fake.frames.borrow_mut(), used_addr);
-        instance.new_at(p_root.addr() as int, FrameView {
-            pa: p_root.addr() as int,
-            // has_ptes: false,
-            pte_addrs: Set::empty(),
-        }, fake.frames.borrow_mut(), used_addr, &pte_token);
+        instance.new_at(
+            p_root.addr() as int,
+            FrameView {
+                pa: p_root.addr() as int,
+                // has_ptes: false,
+                pte_addrs: Set::empty(),
+            },
+            fake.frames.borrow_mut(),
+            used_addr,
+            &pte_token,
+        );
 
         assert(fake.frames@.value().contains_key(p_root.addr() as int));
     }
@@ -428,21 +431,23 @@ pub fn main_test() {
     assert(pt_f2.pptr().addr() == p_root.addr() + SIZEOF_FRAME);
     let f2 = Frame {
         // pa: p_f2.addr(),
-        ptes: [PageTableEntry {
-            frame_pa: 0,
-            flags: PteFlag,
-            level: 0,
-        }; NR_ENTRIES],
+        ptes: [PageTableEntry { frame_pa: 0, flags: PteFlag, level: 0 };NR_ENTRIES],
     };
 
     let tracked used_addr = unused_addrs.tracked_remove(p_f2.addr() as int);
 
-    proof{
-        instance.new_at(p_f2.addr() as int, FrameView{
-            pa: p_f2.addr() as int,
-            // has_ptes: false,
-            pte_addrs: Set::empty(),
-        }, fake.frames.borrow_mut(), used_addr, &pte_token);
+    proof {
+        instance.new_at(
+            p_f2.addr() as int,
+            FrameView {
+                pa: p_f2.addr() as int,
+                // has_ptes: false,
+                pte_addrs: Set::empty(),
+            },
+            fake.frames.borrow_mut(),
+            used_addr,
+            &pte_token,
+        );
     }
 
     p_f2.write(Tracked(&mut pt_f2), f2);
@@ -452,33 +457,27 @@ pub fn main_test() {
     let level = 4;
     let f1 = Frame {
         ptes: {
-            let mut ptes = [PageTableEntry {
-                frame_pa: 0,
-                flags: PteFlag,
-                level: 0,
-            }; NR_ENTRIES];
-            ptes[index] = PageTableEntry {
-                frame_pa: p_f2.addr(),
-                flags: PteFlag,
-                level: level,
-            };
+            let mut ptes = [PageTableEntry { frame_pa: 0, flags: PteFlag, level: 0 };NR_ENTRIES];
+            ptes[index] = PageTableEntry { frame_pa: p_f2.addr(), flags: PteFlag, level: level };
             ptes
-        }
+        },
     };
     let pte_addr = p_root.addr() + index * SIZEOF_PAGETABLEENTRY;
 
     let tracked pte_addr = unused_pte_addrs.tracked_remove(pte_addr as int);
 
-    let (p_root, Tracked(mut pt_root)) = get_from_index(1, &fake.mem); // TODO: permission violation?
+    let (p_root, Tracked(mut pt_root)) = get_from_index(1, &fake.mem);  // TODO: permission violation?
     p_root.write(Tracked(&mut pt_root), f1);
-    proof{
-        instance.set_child(p_root.addr() as int,
-                            index, p_f2.addr() as int,
-                            level,
-                            fake.frames.borrow_mut(),
-                            &mut pte_token,
-                            pte_addr
-                );
+    proof {
+        instance.set_child(
+            p_root.addr() as int,
+            index,
+            p_f2.addr() as int,
+            level,
+            fake.frames.borrow_mut(),
+            &mut pte_token,
+            pte_addr,
+        );
     }
     fake.mem.remove(&1);
     assert(fake.mem.len() == NR_ENTRIES - 1);
@@ -496,21 +495,19 @@ fn alloc_page_table_entries() -> (res: HashMap<usize, (PPtr<Frame>, Tracked<Poin
         res@.dom().len() == NR_ENTRIES,
         res@.len() == NR_ENTRIES,
         res.len() == NR_ENTRIES,
-        forall |i:usize| 0 <= i < NR_ENTRIES ==> {
-            res@.dom().contains(i)
-        },
-        forall |i:usize| 0 <= i < NR_ENTRIES ==> {
-            res@.contains_key(i)
-        },
-        forall |i:usize| 0 <= i < NR_ENTRIES ==> {
-            (#[trigger] res@[i]).1@.pptr() == res@[i].0
-        },
-        forall |i:usize| 0 <= i < NR_ENTRIES ==> {
-            #[trigger] res@[i].1@.mem_contents() == MemContents::<Frame>::Uninit
-        },
-        forall |i:usize, j:usize| 0 <= i < j < NR_ENTRIES && i == j - 1 ==> {
-            && (#[trigger] res@[i]).0.addr() + SIZEOF_FRAME == (#[trigger] res@[j]).0.addr() // pointers are adjacent
-        },
+        forall|i: usize| 0 <= i < NR_ENTRIES ==> { res@.dom().contains(i) },
+        forall|i: usize| 0 <= i < NR_ENTRIES ==> { res@.contains_key(i) },
+        forall|i: usize| 0 <= i < NR_ENTRIES ==> { (#[trigger] res@[i]).1@.pptr() == res@[i].0 },
+        forall|i: usize|
+            0 <= i < NR_ENTRIES ==> {
+                #[trigger] res@[i].1@.mem_contents() == MemContents::<Frame>::Uninit
+            },
+        forall|i: usize, j: usize|
+            0 <= i < j < NR_ENTRIES && i == j - 1 ==> {
+                &&(#[trigger] res@[i]).0.addr() + SIZEOF_FRAME == (
+                #[trigger] res@[j]).0.addr()  // pointers are adjacent
+
+            },
         res@[0].0.addr() == PHYSICAL_BASE_ADDRESS_SPEC(),
         res@.dom().finite(),
 {
@@ -518,34 +515,28 @@ fn alloc_page_table_entries() -> (res: HashMap<usize, (PPtr<Frame>, Tracked<Poin
     // map.insert(0, (PPtr::from_addr(0), Tracked::assume_new()));
     let p = PHYSICAL_BASE_ADDRESS();
     for i in 0..NR_ENTRIES {
-        map.insert(
-            i,
-            (
-                PPtr::from_addr(p + i * SIZEOF_FRAME),
-                Tracked::assume_new()
-            )
-        );
+        map.insert(i, (PPtr::from_addr(p + i * SIZEOF_FRAME), Tracked::assume_new()));
     }
     map
 }
 
 #[verifier::external_body]
-fn get_from_index(index: usize, map: &HashMap<usize, (PPtr<Frame>, Tracked<PointsTo<Frame>>)>) -> (res: (PPtr<Frame>, Tracked<PointsTo<Frame>>))
+fn get_from_index(
+    index: usize,
+    map: &HashMap<usize, (PPtr<Frame>, Tracked<PointsTo<Frame>>)>,
+) -> (res: (PPtr<Frame>, Tracked<PointsTo<Frame>>))
     requires
         0 <= index < NR_ENTRIES,
         map@.dom().contains(index),
-        forall |i:usize| 0 <= i < NR_ENTRIES ==> {
-            map@.dom().contains(i)
-        },
-        forall |i:usize| 0 <= i < NR_ENTRIES ==> {
-            (#[trigger] map@[i]).1@.pptr() == map@[i].0
-        }
+        forall|i: usize| 0 <= i < NR_ENTRIES ==> { map@.dom().contains(i) },
+        forall|i: usize| 0 <= i < NR_ENTRIES ==> { (#[trigger] map@[i]).1@.pptr() == map@[i].0 },
     ensures
-        // res.0.addr() != 0,
+// res.0.addr() != 0,
+
         res.1@.pptr() == res.0,
         // NOTE: this is not true! && res.0.addr() == map@[index]@.0.addr()
         res.0 == map@[index].0,
-        res.1 == map@[index].1
+        res.1 == map@[index].1,
 {
     let (p, Tracked(pt)) = map.get(&index).unwrap();
     (*p, Tracked::assume_new())
@@ -570,10 +561,10 @@ use std::alloc::{alloc, dealloc, Layout};
 #[verifier::external_body]
 #[verifier::when_used_as_spec(PHYSICAL_BASE_ADDRESS_SPEC)]
 pub fn PHYSICAL_BASE_ADDRESS() -> (res: usize)
-ensures
-    res == PHYSICAL_BASE_ADDRESS_SPEC()
+    ensures
+        res == PHYSICAL_BASE_ADDRESS_SPEC(),
 {
-    unsafe{
+    unsafe {
         let layout = Layout::new::<[PageTableEntry; 4096]>();
         let mut ptr = alloc(layout);
         ptr as *mut u8 as usize
@@ -596,8 +587,8 @@ fn print_mem(mem: HashMap<usize, (PPtr<Frame>, Tracked<PointsTo<Frame>>)>) {
     println!("Frame2: pa: {}", p.addr());
 
     // let's try to find frame2 by virtual address
-    let va = 10; // va is just the level since we only set one level of page table
-    let (p, Tracked(mut pt)) = mem.get(&1).unwrap(); // let say root is 1
+    let va = 10;  // va is just the level since we only set one level of page table
+    let (p, Tracked(mut pt)) = mem.get(&1).unwrap();  // let say root is 1
     let frame = p.read(Tracked(&mut pt));
     let pte = frame.ptes[va];
     let p2_addr = pte.frame_pa;

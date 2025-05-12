@@ -25,7 +25,7 @@ fn test() {
             iter.keys == g_keys,
             g_keys.to_set() =~= set![3u32, 6u32],
             items@ == iter@,
-            // iter.pos == m_keys@.0, // this also fails
+    // iter.pos == m_keys@.0, // this also fails
     {
         assert(iter.keys.take(iter.pos).push(*k) =~= iter.keys.take(iter.pos + 1));
         items.push(*k);

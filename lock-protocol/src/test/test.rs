@@ -1,4 +1,3 @@
-
 pub type Paddr = usize;
 
 #[derive(Clone, Copy)]
@@ -11,8 +10,8 @@ pub struct PageTableEntry {
 
     // TODO: this should not be here, just for testing {
     pub level: usize, // this should not be here, just for testing
-    // pub children_addr: Paddr, // this should not be here, just for testing
-    // }
+                      // pub children_addr: Paddr, // this should not be here, just for testing
+                      // }
 }
 
 #[derive(Clone)]
@@ -30,17 +29,19 @@ pub struct SimplePageTableEntry {
 }
 
 fn main() {
-    println!("size of PageTableEntry: {}", core::mem::size_of::<PageTableEntry>());
+    println!(
+        "size of PageTableEntry: {}",
+        core::mem::size_of::<PageTableEntry>()
+    );
     println!("size of Frame: {}", core::mem::size_of::<Frame>());
-    println!("size of SimplePageTableEntry: {}", core::mem::size_of::<SimplePageTableEntry>());
+    println!(
+        "size of SimplePageTableEntry: {}",
+        core::mem::size_of::<SimplePageTableEntry>()
+    );
 
     use std::collections::HashMap;
 
-    let map = HashMap::from([
-        ("a", 1),
-        ("b", 2),
-        ("c", 3),
-    ]);
+    let map = HashMap::from([("a", 1), ("b", 2), ("c", 3)]);
 
     for key in map.keys() {
         println!("{key}");

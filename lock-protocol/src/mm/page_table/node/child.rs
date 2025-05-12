@@ -52,7 +52,6 @@ pub(in crate::mm) enum Child<
 
 // impl Child {
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
-
     #[verifier::inline]
     pub open spec fn is_none_spec(&self) -> bool {
         match self {
@@ -79,30 +78,37 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
     /// child is needed again by reading the PTE of a page table node, extra
     /// information should be provided using the [`Child::from_pte`] method.
     pub(super) fn into_pte(self, mpt: &mut exec::MockPageTable, ghost_index: usize) -> (res: E)
-    requires
-        old(mpt).wf(),
-        spec_helpers::mpt_not_contains_not_allocated_frames(old(mpt), ghost_index), // TODO: can we remove this?
-    ensures
-        mpt.wf(),
-        mpt.ptes@.instance_id() == old(mpt).ptes@.instance_id(),
-        mpt.frames@.instance_id() == old(mpt).frames@.instance_id(),
-        spec_helpers::frame_keys_do_not_change(mpt, old(mpt)),
-        spec_helpers::mpt_not_contains_not_allocated_frames(mpt, ghost_index), // TODO: can we remove this?
+        requires
+            old(mpt).wf(),
+            spec_helpers::mpt_not_contains_not_allocated_frames(
+                old(mpt),
+                ghost_index,
+            ),  // TODO: can we remove this?
+
+        ensures
+            mpt.wf(),
+            mpt.ptes@.instance_id() == old(mpt).ptes@.instance_id(),
+            mpt.frames@.instance_id() == old(mpt).frames@.instance_id(),
+            spec_helpers::frame_keys_do_not_change(mpt, old(mpt)),
+            spec_helpers::mpt_not_contains_not_allocated_frames(
+                mpt,
+                ghost_index,
+            ),  // TODO: can we remove this?
     {
         match self {
             Child::PageTable(pt) => {
                 // let pt = ManuallyDrop::new(pt);
                 E::new_pt(pt.start_paddr())
-            }
+            },
             Child::PageTableRef(_) => {
                 // panic!("`PageTableRef` should not be converted to PTE");
                 // TODO
                 E::new_absent()
-            }
+            },
             Child::Frame(page, prop) => {
                 let level = page.map_level();
                 E::new_page(page.into_raw(), level, prop, mpt, ghost_index)
-            }
+            },
             Child::Untracked(pa, level, prop) => E::new_page(pa, level, prop, mpt, ghost_index),
             Child::None => E::new_absent(),
             Child::Token(token, _) => E::new_token(token),
@@ -137,28 +143,25 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
             //     // SAFETY: The physical address is written as a valid token.
             //     return Child::Token(unsafe { Token::from_raw_inner(paddr) });
             // }
-
             // TODO: We currently do not model Child::Token
-
             return Child::None;
         }
-
         let paddr = pte.frame_paddr();
 
         // TODO: Model is_last
         // if !pte.is_last(level) {
-            // SAFETY: The physical address is valid and the PTE already owns
-            // the reference to the page.
-            // unsafe { inc_frame_ref_count(paddr) }; // TODO
-            // SAFETY: The physical address points to a valid page table node
-            // at the given level.
-            // let pt = unsafe { PageTableNode::from_raw(paddr) };
-            let pt = PageTableNode::from_raw(paddr);
-            assert(pt.ptr == paddr);
-            assert(paddr == pte.frame_paddr());
-            assert(pt.ptr == pte.frame_paddr());
-            // debug_assert_eq!(pt.level(), level - 1);
-            return Child::PageTable(pt);
+        // SAFETY: The physical address is valid and the PTE already owns
+        // the reference to the page.
+        // unsafe { inc_frame_ref_count(paddr) }; // TODO
+        // SAFETY: The physical address points to a valid page table node
+        // at the given level.
+        // let pt = unsafe { PageTableNode::from_raw(paddr) };
+        let pt = PageTableNode::from_raw(paddr);
+        assert(pt.ptr == paddr);
+        assert(paddr == pte.frame_paddr());
+        assert(pt.ptr == pte.frame_paddr());
+        // debug_assert_eq!(pt.level(), level - 1);
+        return Child::PageTable(pt);
         // }
 
         // TODO: model is_tracked
@@ -200,30 +203,30 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
         clone_raw: bool,
         mpt: &exec::MockPageTable,
     ) -> (res: Self)
-    requires
-        mpt.wf(),
-        pte.pte_paddr() == exec::get_pte_from_addr_spec(pte.pte_paddr(), mpt).pte_addr,
-        pte.frame_paddr() == exec::get_pte_from_addr_spec(pte.pte_paddr(), mpt).frame_pa,
-    ensures
-        if (mpt.ptes@.value().contains_key(pte.pte_paddr() as int)) {
-            if (clone_raw) {
-                match res {
-                    Child::PageTable(_) => true,
-                    _ => false,
+        requires
+            mpt.wf(),
+            pte.pte_paddr() == exec::get_pte_from_addr_spec(pte.pte_paddr(), mpt).pte_addr,
+            pte.frame_paddr() == exec::get_pte_from_addr_spec(pte.pte_paddr(), mpt).frame_pa,
+        ensures
+            if (mpt.ptes@.value().contains_key(pte.pte_paddr() as int)) {
+                if (clone_raw) {
+                    match res {
+                        Child::PageTable(_) => true,
+                        _ => false,
+                    }
+                } else {
+                    match res {
+                        Child::PageTableRef(pt) => pt == pte.frame_paddr() as usize
+                            && mpt.frames@.value().contains_key(pt as int),
+                        _ => false,
+                    }
                 }
             } else {
                 match res {
-                    Child::PageTableRef(pt) =>
-                        pt == pte.frame_paddr() as usize && mpt.frames@.value().contains_key(pt as int),
+                    Child::None => true,
                     _ => false,
                 }
-            }
-        } else {
-            match res {
-                Child::None => true,
-                _ => false,
-            }
-        },
+            },
     {
         if !pte.is_present(mpt) {
             // let paddr = pte.paddr();
@@ -233,32 +236,29 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
             //     // SAFETY: The physical address is written as a valid token.
             //     return Child::Token(unsafe { Token::from_raw_inner(paddr) });
             // }
-
             // TODO: We currently do not model Child::Token
-
             return Child::None;
         }
-
         let paddr = pte.frame_paddr();
 
         // TODO: Model is_last
         // if !pte.is_last(level) {
-            if clone_raw {
-                // SAFETY: The physical address is valid and the PTE already owns
-                // the reference to the page.
-                // unsafe { inc_frame_ref_count(paddr) }; // TODO
-                // SAFETY: The physical address points to a valid page table node
-                // at the given level.
-                // let pt = unsafe { PageTableNode::from_raw(paddr) };
-                let pt = PageTableNode::from_raw(paddr);
-                assert(pt.ptr == paddr);
-                assert(paddr == pte.frame_paddr());
-                assert(pt.ptr == pte.frame_paddr());
-                // debug_assert_eq!(pt.level(), level - 1);
-                return Child::PageTable(pt);
-            } else {
-                return Child::PageTableRef(paddr);
-            }
+        if clone_raw {
+            // SAFETY: The physical address is valid and the PTE already owns
+            // the reference to the page.
+            // unsafe { inc_frame_ref_count(paddr) }; // TODO
+            // SAFETY: The physical address points to a valid page table node
+            // at the given level.
+            // let pt = unsafe { PageTableNode::from_raw(paddr) };
+            let pt = PageTableNode::from_raw(paddr);
+            assert(pt.ptr == paddr);
+            assert(paddr == pte.frame_paddr());
+            assert(pt.ptr == pte.frame_paddr());
+            // debug_assert_eq!(pt.level(), level - 1);
+            return Child::PageTable(pt);
+        } else {
+            return Child::PageTableRef(paddr);
+        }
         // }
 
         // TODO: model is_tracked
@@ -278,7 +278,6 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
 
         // }
     }
-
 }
 
-}
+} // verus!

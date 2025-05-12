@@ -31,17 +31,20 @@ pub type PagingLevel = u8;
 
 // TODO: Formalize these constants
 pub const NR_ENTRIES: usize = 512;
+
 pub const NR_LEVELS: usize = 4;
+
 pub const PAGE_SIZE: usize = 4096;
+
 pub const BASE_PAGE_SIZE: usize = 4096;
+
 pub const PTE_SIZE: usize = 8;
 
 /// The page size
 // pub const PAGE_SIZE: usize = page_size::<PagingConsts>(1);
-
 pub open spec fn page_size_spec<C: PagingConstsTrait>(level: PagingLevel) -> usize
-recommends
-    level > 0 && level <= NR_LEVELS,
+    recommends
+        level > 0 && level <= NR_LEVELS,
 {
     // C::BASE_PAGE_SIZE << (nr_subpage_per_huge::<C>().ilog2() as usize * (level as usize - 1))
     match level {
@@ -57,12 +60,12 @@ recommends
 // TODO: Formalize page_size
 #[verifier::when_used_as_spec(page_size_spec)]
 pub const fn page_size<C: PagingConstsTrait>(level: PagingLevel) -> (res: usize)
-requires
-    level > 0 && level <= NR_LEVELS,
-ensures
-    res != 0,
-    res == page_size_spec::<C>(level),
-    is_power_2(res as int)
+    requires
+        level > 0 && level <= NR_LEVELS,
+    ensures
+        res != 0,
+        res == page_size_spec::<C>(level),
+        is_power_2(res as int),
 {
     // C::BASE_PAGE_SIZE << (nr_subpage_per_huge::<C>().ilog2() as usize * (level as usize - 1))
     let t = nr_subpage_per_huge().ilog2() as u64;
@@ -70,9 +73,7 @@ ensures
         assert(nr_subpage_per_huge() == 512);
         assert(log(2, 512) == 9) by {
             assert(512 == pow(2, 9)) by (compute_only);
-            assert(log(2, 512) == 9) by {
-                lemma_log_pow(2, 9)
-            }
+            assert(log(2, 512) == 9) by { lemma_log_pow(2, 9) }
         }
     };
     let l = level as u64 - 1;
@@ -94,7 +95,7 @@ ensures
         4 => assert(res == ((BASE_PAGE_SIZE as u64) << 27) as usize),
         _ => assert(false),
     };
-    proof{
+    proof {
         lemma_pow2_is_power2_to64();
     }
     res as usize
@@ -108,10 +109,10 @@ pub open spec fn nr_subpage_per_huge_spec() -> usize {
 /// The number of sub pages in a huge page.
 #[verifier::when_used_as_spec(nr_subpage_per_huge_spec)]
 pub const fn nr_subpage_per_huge() -> (res: usize)
-ensures
-    res != 0,
-    res == nr_subpage_per_huge_spec(),
-    res == BASE_PAGE_SIZE / PTE_SIZE,
+    ensures
+        res != 0,
+        res == nr_subpage_per_huge_spec(),
+        res == BASE_PAGE_SIZE / PTE_SIZE,
 {
     // C::BASE_PAGE_SIZE / C::PTE_SIZE
     BASE_PAGE_SIZE / PTE_SIZE

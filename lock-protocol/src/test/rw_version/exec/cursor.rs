@@ -6,26 +6,12 @@ use builtin::*;
 use builtin_macros::*;
 use vstd::prelude::*;
 use vstd::atomic_with_ghost;
-use vstd::rwlock::{
-    ReadHandle,
-    WriteHandle,
-};
+use vstd::rwlock::{ReadHandle, WriteHandle};
 use vstd::vpanic;
 use vstd::pervasive::allow_panic;
 
-use super::super::spec::{
-    common::*,
-    utils::*,
-    tree::*,
-};
-use super::{
-    common::*,
-    utils::*,
-    types::*,
-    cpu::*,
-    frame::*,
-    page_table::*,
-};
+use super::super::spec::{common::*, utils::*, tree::*};
+use super::{common::*, utils::*, types::*, cpu::*, frame::*, page_table::*};
 
 verus! {
 
@@ -53,7 +39,7 @@ pub open spec fn wf(&self) -> bool {
         &&& 1 <= self.guard_level <= 4
         &&& self.level <= self.guard_level
 
-        &&& forall |level: Level| #![trigger self.path[level - 1]] 
+        &&& forall |level: Level| #![trigger self.path[level - 1]]
             1 <= level <= 4 ==> {
                 if level < self.guard_level {
                     self.path[level - 1].is_None()
@@ -72,8 +58,7 @@ pub open spec fn wf(&self) -> bool {
 }
 
 impl<'a> Cursor<'a> {
-
-    pub open spec fn init_wf(&self, va: Range<Vaddr>) -> bool 
+    pub open spec fn init_wf(&self, va: Range<Vaddr>) -> bool
         recommends
             va_range_wf(va),
     {
@@ -81,17 +66,14 @@ impl<'a> Cursor<'a> {
         &&& self.va == va.start
         &&& self.level == va_range_get_guard_level(va)
     }
-
 }
 
-}
-
+} // verus!
 verus! {
 
 pub struct TransHandler;
 
 impl TransHandler {
-
     pub fn acquire_write<'a>(
         pt_frame: &'a PageTableFrame,
         m: Tracked<LockProtocolModel>,
@@ -134,7 +116,7 @@ impl TransHandler {
                     &g,
                     m.token,
                 );
-                
+
                 node_token = res.0.get();
                 m.token = res.1.get();
                 tree_path = tree_path.push(pt_frame.nid@);
@@ -222,10 +204,10 @@ impl TransHandler {
                 assert(next <= MAX_RC()) by { admit(); }; // How to remove this?
 
                 let tracked res = pt_frame.inst.borrow().read_lock(
-                    m.cpu, 
+                    m.cpu,
                     pt_frame.nid@,
-                    node_token, 
-                    g, 
+                    node_token,
+                    g,
                     m.token,
                 );
                 g = res.0.get();
@@ -261,7 +243,7 @@ impl TransHandler {
             pt_frame.rc => fetch_sub(1);
             update prev -> next;
             ghost g => {
-                assert(prev > 0) by { admit(); } // How to remove this? 
+                assert(prev > 0) by { admit(); } // How to remove this?
 
                 let tracked res = pt_frame.inst.borrow().read_unlock(
                     m.cpu,
@@ -274,7 +256,7 @@ impl TransHandler {
                 tree_path = tree_path.drop_last();
             }
         );
-        
+
         (Tracked(m), Ghost(tree_path))
     }
 
@@ -296,7 +278,8 @@ impl TransHandler {
             tree_path@.len() > 0,
             NodeHelper::in_subtree(tree_path@.last(), nid as NodeId),
         ensures
-            // allocator.wf(),
+    // allocator.wf(),
+
     {
         let tracked m = m.borrow();
         let ghost tree_path = *tree_path@;
@@ -335,11 +318,9 @@ impl TransHandler {
             Tracked(rc_token),
         );
     }
-
 }
 
-}
-
+} // verus!
 verus! {
 
 pub open spec fn va_range_wf(va: Range<Vaddr>) -> bool {
@@ -349,25 +330,28 @@ pub open spec fn va_range_wf(va: Range<Vaddr>) -> bool {
     &&& vaddr_is_aligned(va.end)
 }
 
-pub open spec fn va_range_get_guard_level_rec(
-    va: Range<Vaddr>, cur_level: Level
-) -> Level 
+pub open spec fn va_range_get_guard_level_rec(va: Range<Vaddr>, cur_level: Level) -> Level
     recommends
         va_range_wf(va),
         1 <= cur_level <= 4,
     decreases cur_level,
 {
     if 1 <= cur_level <= 4 {
-        if cur_level == 1 { 1 }
-        else {
+        if cur_level == 1 {
+            1
+        } else {
             let st = va.start;
             let en = (va.end - 1) as u64;
 
             if va_level_to_offset(st, cur_level) == va_level_to_offset(en, cur_level) {
                 va_range_get_guard_level_rec(va, (cur_level - 1) as Level)
-            } else { cur_level }
+            } else {
+                cur_level
+            }
         }
-    } else { arbitrary() }
+    } else {
+        arbitrary()
+    }
 }
 
 pub open spec fn va_range_get_guard_level(va: Range<Vaddr>) -> Level
@@ -399,16 +383,18 @@ pub proof fn lemma_va_range_get_tree_path(va: Range<Vaddr>)
     requires
         va_range_wf(va),
     ensures
-        forall |i| #![auto] 0 <= i < va_range_get_tree_path(va).len() ==> 
-            NodeHelper::valid_nid(va_range_get_tree_path(va)[i]),
+        forall|i|
+            #![auto]
+            0 <= i < va_range_get_tree_path(va).len() ==> NodeHelper::valid_nid(
+                va_range_get_tree_path(va)[i],
+            ),
         va_range_get_tree_path(va).len() == 5 - va_range_get_guard_level(va),
 {
     admit();
 }
 
-
 pub fn lock_range<'a>(
-    pt: &PageTable, 
+    pt: &PageTable,
     allocator: &'a FrameAllocator,
     va: &Range<Vaddr>,
     m: Tracked<LockProtocolModel>,
@@ -430,12 +416,12 @@ pub fn lock_range<'a>(
         invariant
             0 <= i <= 4,
             path@.len() == i,
-            forall |_i| 0 <= _i < i ==> path@[_i].is_None(),
+            forall|_i| 0 <= _i < i ==> path@[_i].is_None(),
     {
         path.push(GuardInPath::None);
     }
     assert(path.len() == 4);
-    assert(forall |i| 0 <= i < 4 ==> path@[i].is_None());
+    assert(forall|i| 0 <= i < 4 ==> path@[i].is_None());
 
     let mut cur_nid: u64 = 0;
     let mut cur_level: Level = 4;
@@ -464,34 +450,28 @@ pub fn lock_range<'a>(
             allocator.wf(),
             va_range_wf(*va),
             m.inv(pt.inst@),
-
             NodeHelper::valid_nid(cur_nid as NodeId),
             cur_nid as NodeId == va_level_to_nid(va.start, cur_level),
             1 <= cur_level <= 4,
             cur_level as nat == NodeHelper::nid_to_level(cur_nid as NodeId),
             cur_level >= va_range_get_guard_level(*va),
             1 <= va_range_get_guard_level(*va) <= 4,
-
             path.len() == 4,
-            forall |i| cur_level <= i < 4 ==> path@[i].is_ReadLocked(),
-            forall |i| 0 <= i < cur_level ==> path@[i].is_None(),
-
+            forall|i| cur_level <= i < 4 ==> path@[i].is_ReadLocked(),
+            forall|i| 0 <= i < cur_level ==> path@[i].is_None(),
             tree_path.len() == 4 - cur_level,
             tree_path.is_prefix_of(va_range_get_tree_path(*va)),
             m.pred_cursor_ReadLocking(tree_path),
         ensures
             m.inv(pt.inst@),
-
             NodeHelper::valid_nid(cur_nid as NodeId),
             cur_nid as NodeId == va_level_to_nid(va.start, cur_level),
             1 <= cur_level <= 4,
             cur_level as nat == NodeHelper::nid_to_level(cur_nid as NodeId),
             cur_level == va_range_get_guard_level(*va),
-
             path.len() == 4,
-            forall |i| cur_level <= i < 4 ==> path@[i].is_ReadLocked(),
-            forall |i| 0 <= i < cur_level ==> path@[i].is_None(),
-
+            forall|i| cur_level <= i < 4 ==> path@[i].is_ReadLocked(),
+            forall|i| 0 <= i < cur_level ==> path@[i].is_None(),
             tree_path.len() == 4 - cur_level,
             tree_path.is_prefix_of(va_range_get_tree_path(*va)),
             m.pred_cursor_ReadLocking(tree_path),
@@ -502,12 +482,17 @@ pub fn lock_range<'a>(
             cur_level > 1 && start_idx == end_idx
         };
         if !level_too_high {
-            assert(cur_level == va_range_get_guard_level(*va)) by { admit(); };
-            break;
+            assert(cur_level == va_range_get_guard_level(*va)) by {
+                admit();
+            };
+            break ;
         }
-        assert(cur_level != va_range_get_guard_level(*va)) by { admit(); };
+        assert(cur_level != va_range_get_guard_level(*va)) by {
+            admit();
+        };
 
-        let pa: Paddr = atomic_with_ghost!{
+        let pa: Paddr =
+            atomic_with_ghost!{
             pt.nodes[cur_nid as usize] => load();
             returning res;
             ghost g => {
@@ -519,31 +504,36 @@ pub fn lock_range<'a>(
         };
 
         // TODO: fix this.
-        if pa == INVALID_PADDR { continue; }
-
+        if pa == INVALID_PADDR {
+            continue ;
+        }
         assert(valid_paddr(pa));
         assert(paddr_is_aligned(pa));
 
-        assert(allocator.usages@[pa_to_fid(pa) as int].is_PageTable()) by { admit(); };
-        let frame: &Frame = allocator.get_pt_frame_from_pa(pa);
-        let pt_frame: &PageTableFrame = unsafe {
-            frame.page_table_frame.deref()
+        assert(allocator.usages@[pa_to_fid(pa) as int].is_PageTable()) by {
+            admit();
         };
+        let frame: &Frame = allocator.get_pt_frame_from_pa(pa);
+        let pt_frame: &PageTableFrame = unsafe { frame.page_table_frame.deref() };
         // How to remove these?
-        assert(pt_frame.nid == cur_nid as NodeId) by { admit(); }
-        assert(pt_frame.inst@.id() == pt.inst@.id()) by { admit(); }
-        assert(pt_frame =~= 
-            get_union_field::<Frame, ManuallyDrop<PageTableFrame>>(
-                *frame, 
-                "page_table_frame",
-            ).deref()
-        ) by { admit(); };
+        assert(pt_frame.nid == cur_nid as NodeId) by {
+            admit();
+        }
+        assert(pt_frame.inst@.id() == pt.inst@.id()) by {
+            admit();
+        }
+        assert(pt_frame =~= get_union_field::<Frame, ManuallyDrop<PageTableFrame>>(
+            *frame,
+            "page_table_frame",
+        ).deref()) by {
+            admit();
+        };
         assert(pt_frame.wf());
 
-        assert(wf_tree_path(tree_path.push(cur_nid as NodeId))) by { admit(); };
-        let res = TransHandler::acquire_read(
-            pt_frame, Tracked(m), Ghost(tree_path)
-        );
+        assert(wf_tree_path(tree_path.push(cur_nid as NodeId))) by {
+            admit();
+        };
+        let res = TransHandler::acquire_read(pt_frame, Tracked(m), Ghost(tree_path));
         let read_handle = res.0;
         proof {
             m = res.1.get();
@@ -560,24 +550,28 @@ pub fn lock_range<'a>(
         assert(NodeHelper::valid_nid(nxt_nid as NodeId));
 
         // Check if the pte exisis
-        let res = atomic_with_ghost!{
+        let res =
+            atomic_with_ghost!{
             pt.nodes[nxt_nid as usize] => load();
             ghost g => {}
         };
         if res == INVALID_PADDR {
             // Lock upgrades
             let res = TransHandler::release_read(
-                pt_frame, read_handle, Tracked(m), Ghost(tree_path)
+                pt_frame,
+                read_handle,
+                Tracked(m),
+                Ghost(tree_path),
             );
             proof {
                 m = res.0.get();
                 tree_path = res.1@;
             }
 
-            assert(wf_tree_path(tree_path.push(cur_nid as NodeId))) by { admit(); };
-            let res = TransHandler::acquire_write(
-                pt_frame, Tracked(m), Ghost(tree_path)
-            );
+            assert(wf_tree_path(tree_path.push(cur_nid as NodeId))) by {
+                admit();
+            };
+            let res = TransHandler::acquire_write(pt_frame, Tracked(m), Ghost(tree_path));
             let node_token = res.0;
             let write_handle = res.1;
             proof {
@@ -586,17 +580,15 @@ pub fn lock_range<'a>(
             }
 
             // Check again
-            let res = atomic_with_ghost!{
+            let res =
+                atomic_with_ghost!{
                 pt.nodes[nxt_nid as usize] => load();
                 ghost g => {}
             };
             if res == INVALID_PADDR {
                 // Allocate new page table node
-                TransHandler::allocate(
-                    pt, allocator, nxt_nid, Tracked(&m), Ghost(&tree_path)
-                );
+                TransHandler::allocate(pt, allocator, nxt_nid, Tracked(&m), Ghost(&tree_path));
             }
-
             let res = TransHandler::release_write(
                 pt_frame,
                 node_token,
@@ -614,8 +606,12 @@ pub fn lock_range<'a>(
             cur_nid = nxt_nid;
             cur_level = cur_level - 1;
 
-            assert(cur_nid as NodeId == va_level_to_nid(va.start, cur_level)) by { admit(); };
-            assert(tree_path.is_prefix_of(va_range_get_tree_path(*va))) by { admit(); };
+            assert(cur_nid as NodeId == va_level_to_nid(va.start, cur_level)) by {
+                admit();
+            };
+            assert(tree_path.is_prefix_of(va_range_get_tree_path(*va))) by {
+                admit();
+            };
         }
     }
 
@@ -625,38 +621,33 @@ pub fn lock_range<'a>(
             allocator.wf(),
             va_range_wf(*va),
             m.inv(pt.inst@),
-
             NodeHelper::valid_nid(cur_nid as NodeId),
             cur_nid as NodeId == va_level_to_nid(va.start, cur_level),
             1 <= cur_level <= 4,
             cur_level == va_range_get_guard_level(*va),
-
             path.len() == 4,
-            forall |i| cur_level <= i < 4 ==> path@[i].is_ReadLocked(),
-            forall |i| 0 <= i < cur_level ==> path@[i].is_None(),
-
+            forall|i| cur_level <= i < 4 ==> path@[i].is_ReadLocked(),
+            forall|i| 0 <= i < cur_level ==> path@[i].is_None(),
             tree_path.len() == 4 - cur_level,
             tree_path.is_prefix_of(va_range_get_tree_path(*va)),
             va_range_get_tree_path(*va).len() == 5 - va_range_get_guard_level(*va),
             m.pred_cursor_ReadLocking(tree_path),
         ensures
             m.inv(pt.inst@),
-
             NodeHelper::valid_nid(cur_nid as NodeId),
             cur_nid as NodeId == va_level_to_nid(va.start, cur_level),
             1 <= cur_level <= 4,
             cur_level == va_range_get_guard_level(*va),
-
             path.len() == 4,
-            forall |i| cur_level <= i < 4 ==> path@[i].is_ReadLocked(),
+            forall|i| cur_level <= i < 4 ==> path@[i].is_ReadLocked(),
             path@[cur_level - 1].is_WriteLocked(),
-            forall |i| 0 <= i < cur_level - 1 ==> path@[i].is_None(),
-
+            forall|i| 0 <= i < cur_level - 1 ==> path@[i].is_None(),
             tree_path.len() == 5 - cur_level,
             tree_path =~= va_range_get_tree_path(*va),
             m.pred_cursor_WriteLocked(tree_path),
     {
-        let pa: Paddr = atomic_with_ghost!{
+        let pa: Paddr =
+            atomic_with_ghost!{
             pt.nodes[cur_nid as usize] => load();
             returning res;
             ghost g => {
@@ -668,31 +659,36 @@ pub fn lock_range<'a>(
         };
 
         // TODO: fix this.
-        if pa == INVALID_PADDR { continue; }
-
+        if pa == INVALID_PADDR {
+            continue ;
+        }
         assert(valid_paddr(pa));
         assert(paddr_is_aligned(pa));
 
-        assert(allocator.usages@[pa_to_fid(pa) as int].is_PageTable()) by { admit(); };
-        let frame: &Frame = allocator.get_pt_frame_from_pa(pa);
-        let pt_frame: &PageTableFrame = unsafe {
-            frame.page_table_frame.deref()
+        assert(allocator.usages@[pa_to_fid(pa) as int].is_PageTable()) by {
+            admit();
         };
+        let frame: &Frame = allocator.get_pt_frame_from_pa(pa);
+        let pt_frame: &PageTableFrame = unsafe { frame.page_table_frame.deref() };
         // How to remove these?
-        assert(pt_frame.nid == cur_nid as NodeId) by { admit(); }
-        assert(pt_frame.inst@.id() == pt.inst@.id()) by { admit(); }
-        assert(pt_frame =~= 
-            get_union_field::<Frame, ManuallyDrop<PageTableFrame>>(
-                *frame, 
-                "page_table_frame",
-            ).deref()
-        ) by { admit(); };
+        assert(pt_frame.nid == cur_nid as NodeId) by {
+            admit();
+        }
+        assert(pt_frame.inst@.id() == pt.inst@.id()) by {
+            admit();
+        }
+        assert(pt_frame =~= get_union_field::<Frame, ManuallyDrop<PageTableFrame>>(
+            *frame,
+            "page_table_frame",
+        ).deref()) by {
+            admit();
+        };
         assert(pt_frame.wf());
 
-        assert(wf_tree_path(tree_path.push(cur_nid as NodeId))) by { admit(); };
-        let res = TransHandler::acquire_write(
-            pt_frame, Tracked(m), Ghost(tree_path), 
-        );
+        assert(wf_tree_path(tree_path.push(cur_nid as NodeId))) by {
+            admit();
+        };
+        let res = TransHandler::acquire_write(pt_frame, Tracked(m), Ghost(tree_path));
         let node_token = res.0;
         let write_handle = res.1;
         proof {
@@ -705,19 +701,16 @@ pub fn lock_range<'a>(
         assert(cur_level >= 1);
         path[(cur_level - 1) as usize] = GuardInPath::WriteLocked(write_handle);
 
-        assert(tree_path.is_prefix_of(va_range_get_tree_path(*va))) by { admit(); };
+        assert(tree_path.is_prefix_of(va_range_get_tree_path(*va))) by {
+            admit();
+        };
 
-        break;
+        break ;
     }
 
-    let cursor = Cursor::<'a> {
-        path,
-        level: cur_level,
-        guard_level: cur_level,
-        va: va.start,
-    };
+    let cursor = Cursor::<'a> { path, level: cur_level, guard_level: cur_level, va: va.start };
 
     (cursor, Tracked(m))
 }
 
-}
+} // verus!

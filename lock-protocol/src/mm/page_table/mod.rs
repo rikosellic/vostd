@@ -19,13 +19,12 @@ use crate::exec;
 verus! {
 
 pub trait PageTableEntryTrait:
-    // Clone + Copy +
-    // Default +
-    // Sized + Send + Sync + 'static
-    // Debug // TODO: Implement Debug for PageTableEntryTrait
-    // + Pod + PodOnce // TODO: Implement Pod and PodOnce for PageTableEntryTrait
-    Sized
-{
+// Clone + Copy +
+// Default +
+// Sized + Send + Sync + 'static
+// Debug // TODO: Implement Debug for PageTableEntryTrait
+// + Pod + PodOnce // TODO: Implement Pod and PodOnce for PageTableEntryTrait
+Sized {
     /// Create a set of new invalid page table flags that indicates an absent page.
     ///
     /// Note that currently the implementation requires an all zero PTE to be an absent PTE.
@@ -39,29 +38,36 @@ pub trait PageTableEntryTrait:
     /// or [`Self::new_pt`], whatever modified with [`Self::set_prop`] or not,
     /// this method should return true.
     fn is_present(&self, mpt: &exec::MockPageTable) -> (res: bool)
-    requires
-        mpt.wf(),
-        self.pte_paddr() == exec::get_pte_from_addr(self.pte_paddr(), mpt).pte_addr,
-        self.frame_paddr() == exec::get_pte_from_addr(self.pte_paddr(), mpt).frame_pa,
-    ensures
-        // mpt.ptes@.value().contains_key(self.pte_paddr() as int) == res,
-        res ==> mpt.ptes@.value().contains_key(self.pte_paddr() as int) &&
-                mpt.frames@.value().contains_key(self.frame_paddr() as int),
-        !res ==> !mpt.ptes@.value().contains_key(self.pte_paddr() as int),
-        mpt.wf(),
+        requires
+            mpt.wf(),
+            self.pte_paddr() == exec::get_pte_from_addr(self.pte_paddr(), mpt).pte_addr,
+            self.frame_paddr() == exec::get_pte_from_addr(self.pte_paddr(), mpt).frame_pa,
+        ensures
+    // mpt.ptes@.value().contains_key(self.pte_paddr() as int) == res,
+
+            res ==> mpt.ptes@.value().contains_key(self.pte_paddr() as int)
+                && mpt.frames@.value().contains_key(self.frame_paddr() as int),
+            !res ==> !mpt.ptes@.value().contains_key(self.pte_paddr() as int),
+            mpt.wf(),
     ;
 
     /// Create a new PTE with the given physical address and flags that map to a page.
-    fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty, mpt: &mut exec::MockPageTable, ghost_index: usize) -> (res: Self)
-    requires
-        old(mpt).wf(),
-        spec_helpers::mpt_not_contains_not_allocated_frames(old(mpt), ghost_index),
-    ensures
-        mpt.wf(),
-        mpt.ptes@.instance_id() == old(mpt).ptes@.instance_id(),
-        mpt.frames@.instance_id() == old(mpt).frames@.instance_id(),
-        spec_helpers::frame_keys_do_not_change(mpt, old(mpt)),
-        spec_helpers::mpt_not_contains_not_allocated_frames(mpt, ghost_index),
+    fn new_page(
+        paddr: Paddr,
+        level: PagingLevel,
+        prop: PageProperty,
+        mpt: &mut exec::MockPageTable,
+        ghost_index: usize,
+    ) -> (res: Self)
+        requires
+            old(mpt).wf(),
+            spec_helpers::mpt_not_contains_not_allocated_frames(old(mpt), ghost_index),
+        ensures
+            mpt.wf(),
+            mpt.ptes@.instance_id() == old(mpt).ptes@.instance_id(),
+            mpt.frames@.instance_id() == old(mpt).frames@.instance_id(),
+            spec_helpers::frame_keys_do_not_change(mpt, old(mpt)),
+            spec_helpers::mpt_not_contains_not_allocated_frames(mpt, ghost_index),
     ;
 
     /// Create a new PTE that map to a child page table.
@@ -77,13 +83,17 @@ pub trait PageTableEntryTrait:
     ///  - the value of the token.
     #[verifier::when_used_as_spec(frame_paddr_spec)]
     fn frame_paddr(&self) -> (res: Paddr)
-    ensures res == self.frame_paddr_spec();
+        ensures
+            res == self.frame_paddr_spec(),
+    ;
 
     spec fn frame_paddr_spec(&self) -> Paddr;
 
     #[verifier::when_used_as_spec(pte_addr_spec)]
     fn pte_paddr(&self) -> (res: Paddr)
-    ensures res == self.pte_addr_spec();
+        ensures
+            res == self.pte_addr_spec(),
+    ;
 
     spec fn pte_addr_spec(&self) -> Paddr;
 
@@ -113,34 +123,32 @@ pub trait PageTableEntryTrait:
     /// Converts a usize `pte_raw` into a PTE.
     // TODO: Implement as_usize and from_usize
     fn from_usize(pte_raw: usize, mpt: &exec::MockPageTable) -> (res: Self)
-    requires
-        mpt.wf(),
-    ensures
-        res.pte_paddr() == pte_raw as Paddr,
-        res.frame_paddr() == exec::get_pte_from_addr_spec(pte_raw, mpt).frame_pa,
-        res.frame_paddr() == 0 ==> !mpt.ptes@.value().contains_key(pte_raw as int),
-        res.frame_paddr() != 0 ==> {
-            &&& mpt.ptes@.value().contains_key(res.pte_paddr() as int)
-            &&& mpt.ptes@.value()[res.pte_paddr() as int].frame_pa == res.frame_paddr() as int
-            &&& mpt.frames@.value().contains_key(res.frame_paddr() as int)
-        },
+        requires
+            mpt.wf(),
+        ensures
+            res.pte_paddr() == pte_raw as Paddr,
+            res.frame_paddr() == exec::get_pte_from_addr_spec(pte_raw, mpt).frame_pa,
+            res.frame_paddr() == 0 ==> !mpt.ptes@.value().contains_key(pte_raw as int),
+            res.frame_paddr() != 0 ==> {
+                &&& mpt.ptes@.value().contains_key(res.pte_paddr() as int)
+                &&& mpt.ptes@.value()[res.pte_paddr() as int].frame_pa == res.frame_paddr() as int
+                &&& mpt.frames@.value().contains_key(res.frame_paddr() as int)
+            },
     ;
 }
 
 /// A minimal set of constants that determines the paging system.
 /// This provides an abstraction over most paging modes in common architectures.
 pub trait PagingConstsTrait:
-// Clone + Debug + Default + Send + Sync + 'static
-Sized
-{
-
+    // Clone + Debug + Default + Send + Sync + 'static
+Sized {
     spec fn BASE_PAGE_SIZE_SPEC() -> usize;
 
     // /// The smallest page size.
     // /// This is also the page size at level 1 page tables.
     fn BASE_PAGE_SIZE() -> (res: usize)
-    ensures
-        res != 0
+        ensures
+            res != 0,
     ;
 
     spec fn NR_LEVELS_SPEC() -> PagingLevel;
@@ -154,13 +162,12 @@ Sized
     // The highest level that a PTE can be directly used to translate a VA.
     // /// This affects the the largest page size supported by the page table.
     // const HIGHEST_TRANSLATION_LEVEL: PagingLevel;
-
     // /// The size of a PTE.
     // const PTE_SIZE: usize;
-
     // /// The address width may be BASE_PAGE_SIZE.ilog2() + NR_LEVELS * IN_FRAME_INDEX_BITS.
     // /// If it is shorter than that, the higher bits in the highest level are ignored.
     // const ADDRESS_WIDTH: usize;
+
 }
 
 // TODO: This is for x86, create the arch directory and move this to x86/mod.rs
@@ -172,16 +179,17 @@ pub struct PagingConsts {}
 
 // TODO: This is for x86, create the arch directory and move this to x86/mod.rs
 impl PagingConstsTrait for PagingConsts {
-
     open spec fn BASE_PAGE_SIZE_SPEC() -> usize {
         4096
     }
 
     #[verifier::when_used_as_spec(BASE_PAGE_SIZE_SPEC)]
     fn BASE_PAGE_SIZE() -> (res: usize)
-    ensures
-        res == Self::BASE_PAGE_SIZE_SPEC(),
-    { 4096 }
+        ensures
+            res == Self::BASE_PAGE_SIZE_SPEC(),
+    {
+        4096
+    }
 
     open spec fn NR_LEVELS_SPEC() -> PagingLevel {
         4
@@ -189,20 +197,23 @@ impl PagingConstsTrait for PagingConsts {
 
     #[verifier::when_used_as_spec(NR_LEVELS_SPEC)]
     fn NR_LEVELS() -> (res: PagingLevel)
-    ensures
-        res == Self::NR_LEVELS_SPEC(),
-    { 4 }
+        ensures
+            res == Self::NR_LEVELS_SPEC(),
+    {
+        4
+    }
     // const ADDRESS_WIDTH: usize = 48;
     // const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 2;
     // const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
+
 }
 
 /// This is a compile-time technique to force the frame developers to distinguish
 /// between the kernel global page table instance, process specific user page table
 /// instance, and device page table instances.
-pub trait PageTableMode: Debug // TODO: Clone?
+pub trait PageTableMode: Debug  // TODO: Clone?
 //  + 'static
-{
+ {
     /// The range of virtual addresses that the page table can manage.
     // const VADDR_RANGE: Range<Vaddr>;
     fn VADDR_RANGE() -> Range<Vaddr>;
@@ -213,7 +224,7 @@ pub trait PageTableMode: Debug // TODO: Clone?
     }
 }
 
-#[derive(Debug)] // TODO Copy?
+#[derive(Debug)]  // TODO Copy?
 pub struct UserMode {}
 
 impl PageTableMode for UserMode {
@@ -223,7 +234,7 @@ impl PageTableMode for UserMode {
     }
 }
 
-#[derive(Debug)] // TODO Copy?
+#[derive(Debug)]  // TODO Copy?
 pub struct KernelMode {}
 
 impl PageTableMode for KernelMode {
@@ -245,7 +256,6 @@ pub enum PageTableError {
 
 // Copied from aster_common
 // TODO: Check if these are correct
-
 // Here are some const values that are determined by the paging constants.
 pub proof fn bits_of_base_page_size()
     ensures
@@ -256,10 +266,12 @@ pub proof fn bits_of_base_page_size()
 
 pub proof fn value_of_nr_subpage_per_huge()
     ensures
-        // TODO
-        // nr_subpage_per_huge::<PagingConsts>() == 512,
+// TODO
+// nr_subpage_per_huge::<PagingConsts>() == 512,
+
         nr_subpage_per_huge() == 512,
-{ }
+{
+}
 
 pub proof fn bits_of_nr_pte_index()
     ensures
@@ -270,8 +282,7 @@ pub proof fn bits_of_nr_pte_index()
 }
 
 #[verifier::inline]
-pub open spec fn nr_pte_index_bits_spec<C: PagingConstsTrait>() -> usize
-{
+pub open spec fn nr_pte_index_bits_spec<C: PagingConstsTrait>() -> usize {
     // nr_subpage_per_huge::<C>().ilog2() as usize // TODO
     nr_subpage_per_huge().ilog2() as usize
 }
@@ -280,16 +291,15 @@ pub open spec fn nr_pte_index_bits_spec<C: PagingConstsTrait>() -> usize
 #[inline(always)]
 #[verifier::when_used_as_spec(nr_pte_index_bits_spec)]
 pub const fn nr_pte_index_bits<C: PagingConstsTrait>() -> (res: usize)
-ensures
-    res == nr_pte_index_bits_spec::<C>(),
+    ensures
+        res == nr_pte_index_bits_spec::<C>(),
 {
     // nr_subpage_per_huge::<C>().ilog2() as usize // TODO
     nr_subpage_per_huge().ilog2() as usize
 }
 
 #[verifier::inline]
-pub open spec fn pte_index_mask_spec() -> usize
-{
+pub open spec fn pte_index_mask_spec() -> usize {
     0x1ff
 }
 
@@ -316,12 +326,12 @@ pub open spec fn pte_index_spec(va: Vaddr, level: PagingLevel) -> usize
 #[verifier::when_used_as_spec(pte_index_spec)]
 /// The index of a VA's PTE in a page table node at the given level.
 // const fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> usize
-pub fn pte_index(va: Vaddr, level: PagingLevel) -> (res: usize) // TODO: type, const
-requires
-    0 < level <= PagingConsts::NR_LEVELS_SPEC(),
-ensures
-    res == pte_index_spec(va, level),
-    res < nr_subpage_per_huge()
+pub fn pte_index(va: Vaddr, level: PagingLevel) -> (res: usize)  // TODO: type, const
+    requires
+        0 < level <= PagingConsts::NR_LEVELS_SPEC(),
+    ensures
+        res == pte_index_spec(va, level),
+        res < nr_subpage_per_huge(),
 {
     let base_bits = PagingConsts::BASE_PAGE_SIZE().ilog2();
     assert(base_bits == 12) by {
@@ -355,4 +365,4 @@ pub struct PageTable<
     _phantom: PhantomData<(M, E, C)>,
 }
 
-}
+} // verus!

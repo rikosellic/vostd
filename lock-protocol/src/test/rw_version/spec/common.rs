@@ -4,9 +4,10 @@ use vstd::prelude::*;
 
 use super::utils::*;
 
-verus!{
+verus! {
 
 pub type CpuId = nat;
+
 pub type NodeId = nat;
 
 pub open spec fn valid_cpu(cpu_num: CpuId, cpu: CpuId) -> bool {
@@ -18,17 +19,17 @@ pub open spec fn valid_pte_offset(offset: nat) -> bool {
 }
 
 pub open spec fn wf_tree_path(path: Seq<NodeId>) -> bool {
-    if path.len() == 0 { true }
-    else {
+    if path.len() == 0 {
+        true
+    } else {
         &&& path[0] == NodeHelper::root_id()
-        &&& forall |i: int| 1 <= i < path.len() ==>
-            NodeHelper::is_child(path[i - 1], #[trigger] path[i])
+        &&& forall|i: int|
+            1 <= i < path.len() ==> NodeHelper::is_child(path[i - 1], #[trigger] path[i])
     }
 }
 
-}
-
-verus!{
+} // verus!
+verus! {
 
 #[is_variant]
 pub enum NodeState {
@@ -38,14 +39,13 @@ pub enum NodeState {
 }
 
 #[is_variant]
-pub enum CursorState{
+pub enum CursorState {
     Void,
     ReadLocking(Seq<NodeId>),
     WriteLocked(Seq<NodeId>),
 }
 
 impl CursorState {
-
     pub open spec fn inv(&self) -> bool {
         match *self {
             Self::Void => true,
@@ -60,24 +60,22 @@ impl CursorState {
         }
     }
 
-    pub open spec fn get_path(&self) -> Seq<NodeId> 
+    pub open spec fn get_path(&self) -> Seq<NodeId>
         recommends
             self.inv(),
     {
         match *self {
             Self::Void => Seq::empty(),
-            Self::ReadLocking(path) | 
-            Self::WriteLocked(path) => path,
+            Self::ReadLocking(path) | Self::WriteLocked(path) => path,
         }
     }
 
-    pub open spec fn hold_write_lock(&self) -> bool 
+    pub open spec fn hold_write_lock(&self) -> bool
         recommends
             self.inv(),
     {
         match *self {
-            Self::Void | 
-            Self::ReadLocking(_) => false,
+            Self::Void | Self::ReadLocking(_) => false,
             Self::WriteLocked(_) => true,
         }
     }
@@ -88,8 +86,7 @@ impl CursorState {
             self.hold_write_lock(),
     {
         match *self {
-            Self::Void | 
-            Self::ReadLocking(_) => arbitrary(),
+            Self::Void | Self::ReadLocking(_) => arbitrary(),
             Self::WriteLocked(path) => path.last(),
         }
     }
@@ -113,7 +110,6 @@ impl CursorState {
         let path = self.get_read_lock_path();
         path.contains(nid)
     }
-    
 }
 
 #[is_variant]
@@ -128,4 +124,4 @@ pub enum NodeStability {
     Instable,
 }
 
-}
+} // verus!

@@ -21,14 +21,11 @@ pub struct LockBody {
 // TODO: Implement Sync
 // SAFETY: The structure will be used for synchronization by design.
 // unsafe impl Sync for LockBody {}
-
 // TODO: Implement Send
 // SAFETY: When sending a lock body there will be no shared references to it.
 // So there's no race that could happen.
 // unsafe impl Send for LockBody {}
-
 impl LockBody {
-
     /// Create a new queued spinlock, which is unlocked.
     // TODO: Implement
     #[verifier::external_body]
@@ -36,10 +33,7 @@ impl LockBody {
         // Self {
         //     val: ManuallyDrop::new(UnsafeCell::new(0)),
         // }
-
-        Self {
-            locked: Cell::new(false),
-        }
+        Self { locked: Cell::new(false) }
     }
 
     /// Create a new queued spinlock, which is locked.
@@ -52,10 +46,7 @@ impl LockBody {
         // Self {
         //     val: ManuallyDrop::new(UnsafeCell::new(Self::LOCKED_VAL)),
         // }
-
-        Self {
-            locked: Cell::new(true),
-        }
+        Self { locked: Cell::new(true) }
     }
 
     /// Try to lock the queued spinlock.
@@ -116,13 +107,12 @@ impl LockBody {
         //                       :       v                               |  :
         // contended             :    (*,x,y) +--> (*,0,0) ---> (*,0,1) -'  :
         //   queue               :         ^--'                             :
-
         match self.try_lock_impl() {
-            Ok(()) => {}
+            Ok(()) => {},
             Err(val) => {
                 // Slow path. There are pending spinners or queued spinners.
                 self.lock_slow(val);
-            }
+            },
         }
     }
 
@@ -184,4 +174,4 @@ impl LockBody {
     }
 }
 
-}
+} // verus!

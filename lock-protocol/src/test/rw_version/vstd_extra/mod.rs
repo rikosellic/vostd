@@ -1,2 +1,2 @@
-pub mod manually_drop;
 pub mod bits;
+pub mod manually_drop;

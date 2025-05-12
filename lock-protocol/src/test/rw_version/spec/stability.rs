@@ -6,7 +6,7 @@ use vstd::prelude::*;
 use super::utils::*;
 use super::common::*;
 
-verus!{
+verus! {
 
 state_machine!{
 
@@ -217,4 +217,4 @@ fn no_op_inductive(pre: Self, post: Self) {}
 
 }
 
-}
+} // verus!

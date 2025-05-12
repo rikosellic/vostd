@@ -2,9 +2,10 @@ use builtin::*;
 use builtin_macros::*;
 use vstd::prelude::*;
 
-verus!{
+verus! {
 
 pub type CpuId = nat;
+
 pub type NodeId = nat;
 
 pub open spec fn valid_cpu(cpu_num: CpuId, cpu: CpuId) -> bool {
@@ -27,9 +28,8 @@ pub open spec fn valid_pte_offset(offset: nat) -> bool {
     0 <= offset < 512
 }
 
-}
-
-verus!{
+} // verus!
+verus! {
 
 #[is_variant]
 pub enum NodeState {
@@ -41,7 +41,7 @@ pub enum NodeState {
 }
 
 #[is_variant]
-pub enum CursorState{
+pub enum CursorState {
     Empty,
     Creating(NodeId, NodeId, NodeId),
     Hold(NodeId, NodeId),
@@ -49,22 +49,21 @@ pub enum CursorState{
 }
 
 impl CursorState {
-
     pub open spec fn inv(&self) -> bool {
         match *self {
             Self::Empty => true,
-            Self::Creating(st, en, cur_nid) => 
-                st < en && st <= cur_nid <= en,
+            Self::Creating(st, en, cur_nid) => st < en && st <= cur_nid <= en,
             Self::Hold(st, en) => st < en,
-            Self::Destroying(st, en, cur_nid) =>
-                st < en && st <= cur_nid <= en,
+            Self::Destroying(st, en, cur_nid) => st < en && st <= cur_nid <= en,
         }
     }
 
     pub open spec fn get_locked_range(&self) -> (NodeId, NodeId) {
         match *self {
             CursorState::Empty => (arbitrary(), arbitrary()),
-            CursorState::Creating(st, _, en) | CursorState::Hold(st, en) | CursorState::Destroying(st, _, en) => (st, en),
+            CursorState::Creating(st, _, en)
+            | CursorState::Hold(st, en)
+            | CursorState::Destroying(st, _, en) => (st, en),
         }
     }
 
@@ -87,18 +86,18 @@ impl CursorState {
             Self::Creating(st1, _, en1) | Self::Hold(st1, en1) | Self::Destroying(st1, _, en1) => {
                 match *cursor {
                     Self::Empty => true,
-                    Self::Creating(st2, _, en2) | Self::Hold(st2, en2) | Self::Destroying(st2, _, en2) =>
-                        st1 == en1 || st2 == en2 || en1 <= st2 || en2 <= st1,
+                    Self::Creating(st2, _, en2)
+                    | Self::Hold(st2, en2)
+                    | Self::Destroying(st2, _, en2) => st1 == en1 || st2 == en2 || en1 <= st2 || en2
+                        <= st1,
                 }
             },
         }
     }
-    
 }
 
-}
-
-verus!{
+} // verus!
+verus! {
 
 #[is_variant]
 pub enum SlotState {
@@ -121,11 +120,9 @@ impl RangeState {
     pub open spec fn inv(&self) -> bool {
         match *self {
             Self::Empty => true,
-            Self::Creating(l, r, cur_p) => 
-                l < r && l <= cur_p <= r,
+            Self::Creating(l, r, cur_p) => l < r && l <= cur_p <= r,
             Self::Hold(l, r) => l < r,
-            Self::Destroying(l, r, cur_p) =>
-                l < r && l <= cur_p <= r,
+            Self::Destroying(l, r, cur_p) => l < r && l <= cur_p <= r,
         }
     }
 
@@ -155,12 +152,13 @@ impl RangeState {
             Self::Creating(l1, _, r1) | Self::Hold(l1, r1) | Self::Destroying(l1, _, r1) => {
                 match *range {
                     Self::Empty => true,
-                    Self::Creating(l2, _, r2) | Self::Hold(l2, r2) | Self::Destroying(l2, _, r2) =>
-                        l1 == r1 || l2 == r2 || r1 <= l2 || r2 <= l1,
+                    Self::Creating(l2, _, r2)
+                    | Self::Hold(l2, r2)
+                    | Self::Destroying(l2, _, r2) => l1 == r1 || l2 == r2 || r1 <= l2 || r2 <= l1,
                 }
             },
         }
     }
 }
 
-}
+} // verus!

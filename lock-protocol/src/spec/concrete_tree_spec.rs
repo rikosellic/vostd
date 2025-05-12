@@ -43,7 +43,7 @@ pub fn inv_cursors(&self) -> bool {
         }
     }
 
-    &&& forall |cpu1: CpuId, cpu2: CpuId| 
+    &&& forall |cpu1: CpuId, cpu2: CpuId|
         cpu1 != cpu2 && self.cursors.contains_key(cpu1) && self.cursors.contains_key(cpu2) ==>
             self.cursors[cpu1].no_overlap(&self.cursors[cpu2])
 }
@@ -66,14 +66,14 @@ pub fn inv_cursors_nodes_relation(&self) -> bool {
 init!{
     initialize(cpu_num: CpuId) {
         require(cpu_num > 0);
-        
+
         init cpu_num = cpu_num;
         init nodes = Map::new(
             |nid| NodeHelper::valid_nid(nid),
-            |nid| if nid == NodeHelper::root_id() { 
-                NodeState::Free 
-            } else { 
-                NodeState::Empty 
+            |nid| if nid == NodeHelper::root_id() {
+                NodeState::Free
+            } else {
+                NodeState::Empty
             },
         );
         init cursors = Map::new(
@@ -384,7 +384,7 @@ fn node_acquire_inductive(pre: Self, post: Self, cpu: CpuId, nid: NodeId) {
             }
         }
     };
-    
+
     assert forall |_cpu| _cpu != cpu && post.cursors.contains_key(_cpu) implies {
         match post.cursors[_cpu] {
             CursorState::Empty => true,
@@ -405,7 +405,7 @@ fn node_acquire_inductive(pre: Self, post: Self, cpu: CpuId, nid: NodeId) {
             };
         }
     };
-    
+
     assert(post.cursors[cpu].is_Creating());
     let st = post.cursors[cpu].get_Creating_0();
     let en = post.cursors[cpu].get_Creating_2();
@@ -427,16 +427,16 @@ fn node_acquire_skip_inductive(pre: Self, post: Self, cpu: CpuId, nid: NodeId) {
         |_nid| NodeState::Empty,
     );
     assert(_nodes.submap_of(pre.nodes));
-    assert forall |_nid| #[trigger] NodeHelper::in_subtree(nid, _nid) implies { 
+    assert forall |_nid| #[trigger] NodeHelper::in_subtree(nid, _nid) implies {
         pre.nodes[_nid].is_Empty()
     } by {
         assert(_nodes.dom().contains(_nid));
-        assert(pre.nodes.dom().contains(_nid));   
+        assert(pre.nodes.dom().contains(_nid));
     };
-    assert(forall |_nid| #[trigger] NodeHelper::in_subtree(nid, _nid) ==> 
+    assert(forall |_nid| #[trigger] NodeHelper::in_subtree(nid, _nid) ==>
         post.nodes[_nid].is_EmptyLocked()
     );
-    assert(forall |_nid| NodeHelper::in_subtree(nid, _nid) <==> 
+    assert(forall |_nid| NodeHelper::in_subtree(nid, _nid) <==>
         nid <= _nid < NodeHelper::next_outside_subtree(nid)
     );
     assert(post.cursors[cpu].is_Creating());
@@ -571,7 +571,7 @@ fn node_release_inductive(pre: Self, post: Self, cpu: CpuId, nid: NodeId) {
             };
         }
     };
-    
+
     assert(post.cursors[cpu].is_Destroying());
     let st = post.cursors[cpu].get_Destroying_0();
     let en = post.cursors[cpu].get_Destroying_2();
@@ -590,16 +590,16 @@ fn node_release_skip_inductive(pre: Self, post: Self, cpu: CpuId, nid: NodeId) {
         |_nid| NodeState::EmptyLocked,
     );
     assert(_nodes.submap_of(pre.nodes));
-    assert forall |_nid| #[trigger] NodeHelper::in_subtree(nid, _nid) implies { 
+    assert forall |_nid| #[trigger] NodeHelper::in_subtree(nid, _nid) implies {
         pre.nodes[_nid].is_EmptyLocked()
     } by {
         assert(_nodes.dom().contains(_nid));
-        assert(pre.nodes.dom().contains(_nid));   
+        assert(pre.nodes.dom().contains(_nid));
     };
-    assert(forall |_nid| #[trigger] NodeHelper::in_subtree(nid, _nid) ==> 
+    assert(forall |_nid| #[trigger] NodeHelper::in_subtree(nid, _nid) ==>
         post.nodes[_nid].is_Empty()
     );
-    assert(forall |_nid| NodeHelper::in_subtree(nid, _nid) <==> 
+    assert(forall |_nid| NodeHelper::in_subtree(nid, _nid) <==>
         nid <= _nid < NodeHelper::next_outside_subtree(nid)
     );
 
@@ -683,4 +683,4 @@ fn cursor_destroy_end_inductive(pre: Self, post: Self, cpu: CpuId) {}
 
 }
 
-}
+} // verus!

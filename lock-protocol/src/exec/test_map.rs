@@ -72,7 +72,7 @@ requires
     let f = exec::create_new_frame(PHYSICAL_BASE_ADDRESS(), 4);
     assert(f.ptes[0].frame_pa == 0 as u64);
     p.write(Tracked(&mut pt), f);
-    
+
     assert(pt.mem_contents() != MemContents::<SimpleFrame>::Uninit);
     assert(pt.value().ptes.len() == NR_ENTRIES);
     assert(pt.value().ptes == f.ptes);

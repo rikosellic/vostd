@@ -6,7 +6,7 @@ use vstd::map::*;
 
 use super::common::*;
 
-verus!{
+verus! {
 
 state_machine!{
 
@@ -33,7 +33,7 @@ pub fn inv(&self) -> bool {
         }
     }
 
-    &&& forall |cpu1: CpuId, cpu2: CpuId| #![auto] 
+    &&& forall |cpu1: CpuId, cpu2: CpuId| #![auto]
         cpu1 != cpu2 && valid_cpu(self.cpu_num, cpu1) && valid_cpu(self.cpu_num, cpu2) ==>
             self.ranges[cpu1].no_overlap(&self.ranges[cpu2])
 }
@@ -59,7 +59,7 @@ transition!{
     acquire(cpu: CpuId, l: nat, r: nat) {
         require(valid_cpu(pre.cpu_num, cpu));
         require(valid_range(pre.size, l, r));
-        
+
         require(pre.ranges[cpu].is_Empty());
         let new_range = RangeState::Hold(l, r);
         require(pre.all_no_overlap(&new_range));
@@ -98,10 +98,10 @@ fn no_op_inductive(pre: Self, post: Self) {}
 }
 
 type State = AtomicSpec::State;
+
 type Step = AtomicSpec::Step;
 
 // Lemmas
-
 pub proof fn lemma_mutual_exclusion(s1: State, s2: State, cpu: CpuId, l: nat, r: nat)
     requires
         s1.invariant(),
@@ -118,4 +118,4 @@ pub proof fn lemma_mutual_exclusion(s1: State, s2: State, cpu: CpuId, l: nat, r:
     };
 }
 
-}
+} // verus!

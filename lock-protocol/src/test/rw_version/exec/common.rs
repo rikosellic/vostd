@@ -8,16 +8,14 @@ use vstd::arithmetic::div_mod::*;
 use vstd::arithmetic::power2::*;
 use vstd::bits::*;
 
-use super::super::spec::{
-    common::*,
-    utils::*,
-};
+use super::super::spec::{common::*, utils::*};
 use super::super::vstd_extra::bits::*;
 use crate::helpers::extern_const::*;
 
-verus!{
+verus! {
 
 pub type Paddr = u64;
+
 pub type Vaddr = u64;
 
 pub type Level = u64;
@@ -30,9 +28,8 @@ pub const INVALID_PADDR: Paddr = 0xffff_ffff_ffff_ffff;
 extern_const!(
 pub MAX_RC [MAX_RC_SPEC, CONST_MAX_RC]: u64 = 382);
 
-}
-
-verus!{
+} // verus!
+verus! {
 
 pub open spec fn valid_vaddr(va: Vaddr) -> bool {
     0 <= va < pow2(48)
@@ -56,7 +53,7 @@ pub fn vaddr_is_aligned(va: Vaddr) -> (res: bool)
     (va & low_bits_mask_u64(12)) == 0
 }
 
-pub open spec fn va_level_to_offset(va: Vaddr, level: Level) -> nat 
+pub open spec fn va_level_to_offset(va: Vaddr, level: Level) -> nat
     recommends
         valid_vaddr(va),
         1 <= level <= 4,
@@ -64,7 +61,7 @@ pub open spec fn va_level_to_offset(va: Vaddr, level: Level) -> nat
     ((va >> (12 + (level - 1) * 9)) & low_bits_mask(9) as u64) as nat
 }
 
-pub fn pte_index(va: Vaddr, level: Level) -> (res: u64) 
+pub fn pte_index(va: Vaddr, level: Level) -> (res: u64)
     requires
         valid_vaddr(va),
         1 <= level <= 4,
@@ -88,12 +85,16 @@ pub open spec fn va_level_to_trace_rec(va: Vaddr, level: Level) -> Seq<nat>
     decreases 4 - level,
 {
     if 1 <= level <= 4 {
-        if level == 4 { Seq::empty() }
-        else {
-            va_level_to_trace_rec(va, (level + 1) as Level)
-                .push(((va >> (level * 9)) & low_bits_mask(9) as u64) as nat)
+        if level == 4 {
+            Seq::empty()
+        } else {
+            va_level_to_trace_rec(va, (level + 1) as Level).push(
+                ((va >> (level * 9)) & low_bits_mask(9) as u64) as nat,
+            )
         }
-    } else { arbitrary() }
+    } else {
+        arbitrary()
+    }
 }
 
 pub open spec fn va_level_to_trace(va: Vaddr, level: Level) -> Seq<nat> {
@@ -104,4 +105,4 @@ pub open spec fn va_level_to_nid(va: Vaddr, level: Level) -> NodeId {
     NodeHelper::trace_to_nid_from_root(va_level_to_trace(va, level))
 }
 
-}
+} // verus!

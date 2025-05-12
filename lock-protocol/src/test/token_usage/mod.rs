@@ -1,6 +1,6 @@
-mod spin_lock;
 mod common;
 mod exec_nid;
+mod spin_lock;
 
 use std::collections::HashMap;
 
@@ -11,21 +11,19 @@ use vstd::prelude::*;
 use vstd::hash_map::*;
 use vstd::tokens::*;
 
-use super::super::spec::{
-    common::*, utils::*,
-    concrete_tree_spec::ConcreteSpec,
-};
+use super::super::spec::{common::*, utils::*, concrete_tree_spec::ConcreteSpec};
 
 use common::*;
 use spin_lock::*;
 use exec_nid::*;
 
-verus!{
+verus! {
 
 // Configurations
 pub spec const GLOBAL_CPU_NUM: nat = 2;
 
 type NodeToken = ConcreteSpec::nodes;
+
 type CursorToken = ConcreteSpec::cursors;
 
 pub tracked struct CursorModel {
@@ -37,7 +35,6 @@ pub tracked struct CursorModel {
 impl CursorModel {
     pub open spec fn inv(&self) -> bool {
         &&& valid_cpu(GLOBAL_CPU_NUM, self.cpu)
-        
         &&& self.inst.cpu_num() == GLOBAL_CPU_NUM
         &&& self.token.instance_id() == self.inst.id()
         &&& self.token.key() == self.cpu
@@ -82,13 +79,15 @@ impl CursorModel {
 
     pub open spec fn relate_state_Hold(&self, state: CursorState) -> bool {
         &&& state.is_Hold()
-        &&& self.pred_cursor_Hold(
-            state.get_Hold_0(),
-            state.get_Hold_1(),
-        )
+        &&& self.pred_cursor_Hold(state.get_Hold_0(), state.get_Hold_1())
     }
 
-    pub open spec fn pred_cursor_Destroying(&self, st: NodeId, en: NodeId, cur_nid: NodeId) -> bool {
+    pub open spec fn pred_cursor_Destroying(
+        &self,
+        st: NodeId,
+        en: NodeId,
+        cur_nid: NodeId,
+    ) -> bool {
         let state = self.token.value();
         {
             &&& state.is_Destroying()
@@ -117,8 +116,8 @@ impl CursorModel {
     }
 
     pub proof fn new(
-        cpu: CpuId, 
-        tracked token: CursorToken, 
+        cpu: CpuId,
+        tracked token: CursorToken,
         tracked inst: ConcreteSpec::Instance,
     ) -> (tracked s: Self)
         requires
@@ -139,7 +138,9 @@ impl CursorModel {
 pub struct FrameAllocater;
 
 impl FrameAllocater {
-    pub fn allocate() -> Paddr { 0 }
+    pub fn allocate() -> Paddr {
+        0
+    }
 }
 
 pub struct Page {
@@ -151,6 +152,7 @@ impl Page {
     pub open spec fn inv(&self) -> bool {
         &&& valid_paddr(self.paddr)
         // &&& self.lock.paddr == self.paddr
+
     }
 
     pub open spec fn valid_perm(&self, perm: &PagePerm) -> bool {
@@ -165,23 +167,26 @@ impl Page {
     {
         let tracked perm = PagePerm { paddr };
         let lock = PageLock::new(paddr, Tracked(perm));
-        
-        Self {
-            paddr,
-            lock,
-        }
+
+        Self { paddr, lock }
     }
 
-    pub open spec fn offset_aligned(offset: Paddr) -> bool { true }
+    pub open spec fn offset_aligned(offset: Paddr) -> bool {
+        true
+    }
 
-    pub fn read_u64(&self, offset: Paddr, perm: &PagePerm) -> u64 
+    pub fn read_u64(&self, offset: Paddr, perm: &PagePerm) -> u64
         requires
             self.inv(),
             Self::offset_aligned(offset),
             self.valid_perm(perm),
-    { 0 }
+    {
+        0
+    }
 
-    pub fn write_u64(&self, offset: Paddr, val: u64, perm: Tracked<PagePerm>) -> (res: Tracked<PagePerm>)
+    pub fn write_u64(&self, offset: Paddr, val: u64, perm: Tracked<PagePerm>) -> (res: Tracked<
+        PagePerm,
+    >)
         requires
             self.inv(),
             Self::offset_aligned(offset),
@@ -201,19 +206,16 @@ pub tracked struct NodeTokenManagement {
 }
 
 impl NodeTokenManagement {
-
     pub open spec fn inv(&self) -> bool {
         &&& NodeHelper::valid_nid(self.nid)
-        
         &&& self.childs.len() == 512
-
-        &&& forall |nid: NodeId| self.tokens.dom().contains(nid) ==> 
-            self.tokens[nid].instance_id() == self.inst.id()
+        &&& forall|nid: NodeId|
+            self.tokens.dom().contains(nid) ==> self.tokens[nid].instance_id() == self.inst.id()
         &&& self.inst.cpu_num() == GLOBAL_CPU_NUM
     }
 
     pub proof fn node_acquire(
-        tracked &mut self, 
+        tracked &mut self,
         tracked model: CursorModel,
         state: CursorState,
     ) -> (tracked res: (CursorModel, CursorState))
@@ -235,8 +237,12 @@ impl NodeTokenManagement {
         let tracked node_token = self.tokens.tracked_remove(self.nid);
         assert(node_token.value().is_Free()) by { admit() };
         let tracked cursor_token = model.token;
-        let tracked (Tracked(new_node_token), Tracked(new_cursor_token)) = 
-            self.inst.node_acquire(model.cpu, self.nid, node_token, cursor_token);
+        let tracked (Tracked(new_node_token), Tracked(new_cursor_token)) = self.inst.node_acquire(
+            model.cpu,
+            self.nid,
+            node_token,
+            cursor_token,
+        );
         self.tokens.tracked_insert(self.nid, new_node_token);
         (
             CursorModel::new(model.cpu, new_cursor_token, model.inst),
@@ -265,19 +271,16 @@ impl NodeTokenManagement {
             res.0.relate_state_Creating(res.1),
             self.inst.id() == model.inst.id(),
     {
-        let ghost subtree: Set<NodeId> = Set::new(
-            |nid: NodeId| NodeHelper::in_subtree(child, nid)
-        );
+        let ghost subtree: Set<NodeId> = Set::new(|nid: NodeId| NodeHelper::in_subtree(child, nid));
         assert(subtree.subset_of(self.tokens.dom())) by { admit() };
         let tracked node_tokens = MapToken::from_map(
-            self.inst.id(), 
-            self.tokens.tracked_remove_keys(subtree)
+            self.inst.id(),
+            self.tokens.tracked_remove_keys(subtree),
         );
-        assert(forall |nid| node_tokens.dom().contains(nid) ==> 
-            node_tokens.map()[nid].is_Empty()
-        ) by { admit() };
+        assert(forall|nid| node_tokens.dom().contains(nid) ==> node_tokens.map()[nid].is_Empty())
+            by { admit() };
         let tracked cursor_token = model.token;
-        let tracked (Tracked(new_node_tokens), Tracked(new_cursor_token)) = 
+        let tracked (Tracked(new_node_tokens), Tracked(new_cursor_token)) =
             self.inst.node_acquire_skip(model.cpu, child, node_tokens, cursor_token);
         let tracked new_node_tokens = new_node_tokens.into_map();
         self.tokens.tracked_union_prefer_right(new_node_tokens);
@@ -286,7 +289,6 @@ impl NodeTokenManagement {
             state.trans_node_acquire_skip(child),
         )
     }
-
 }
 
 struct_with_invariants!{
@@ -322,8 +324,8 @@ impl PageTableNode {
     }
 
     // pub open spec fn valid_tokens(
-    //     nid: NodeId, 
-    //     childs: Seq<Option<()>>, 
+    //     nid: NodeId,
+    //     childs: Seq<Option<()>>,
     //     tokens: Map<NodeId, NodeToken>
     // ) -> bool {
     //     &&& forall |_nid| tokens.dom().contains(_nid) <==> {
@@ -334,13 +336,10 @@ impl PageTableNode {
     //             &&& NodeHelper::in_subtree(NodeHelper::get_child(nid, offset), _nid)
     //         }
     //     }
-
     //     &&& tokens[nid].value().is_Free()
-
     //     &&& forall |_nid| #![auto] _nid != nid && tokens.dom().contains(_nid) ==>
     //         tokens[_nid].value().is_Empty()
     // }
-
     pub open spec fn relate_manager(&self) -> bool {
         &&& self.nid@ == self.manager@.nid
         &&& self.childs@ =~= self.manager@.childs
@@ -348,10 +347,8 @@ impl PageTableNode {
 
     pub open spec fn inv(&self) -> bool {
         &&& self.wf()
-        
         &&& self.relate_manager()
         &&& self.manager@.inv()
-
         &&& self.page.inv()
     }
 
@@ -361,9 +358,9 @@ impl PageTableNode {
 
     #[verifier::external_body]
     pub fn new(
-        nid: Ghost<NodeId>, 
+        nid: Ghost<NodeId>,
         tracked tokens: Tracked<MapToken<NodeId, NodeState, NodeToken>>,
-        page: Page, 
+        page: Page,
     ) -> (res: Self)
         requires
             NodeHelper::valid_nid(nid@),
@@ -375,11 +372,10 @@ impl PageTableNode {
         // Self {
         //     nid: Ghost(nid@),
         //     childs: Ghost(Seq::new(512, |i| Option::None)),
-        //     manager: 
+        //     manager:
         //     page,
         // }
     }
-
     // pub fn new_from_paddr(nid: Ghost<NodeId>, paddr: Paddr, tracked tokens: Tracked<Map<NodeId, NodeToken>>) -> (res: Self)
     //     requires
     //         NodeHelper::valid_nid(nid@),
@@ -391,6 +387,7 @@ impl PageTableNode {
     //     let page = Page::new(paddr);
     //     Self::new(nid, page, Tracked(tokens.get()))
     // }
+
 }
 
 struct_with_invariants!{
@@ -411,38 +408,48 @@ pub open spec fn wf(&self) -> bool {
 
 impl PageTable {
     pub open spec fn wf(&self) -> bool {
-        &&& forall |nid: NodeId| self.nodes@.contains_key(nid as u64) ==> NodeHelper::valid_nid(nid)
+        &&& forall|nid: NodeId| self.nodes@.contains_key(nid as u64) ==> NodeHelper::valid_nid(nid)
         &&& self.nodes@.contains_key(NodeHelper::root_id() as u64)
-        &&& forall |nid: NodeId| #![auto] nid != NodeHelper::root_id() && NodeHelper::valid_nid(nid) ==> {
-            self.nodes@.contains_key(nid as u64) ==> self.nodes@.contains_key(NodeHelper::get_parent(nid) as u64)
-        }
-        &&& forall |nid: NodeId| NodeHelper::valid_nid(nid) && self.nodes@.contains_key(nid as u64) ==> {
-            forall |offset: nat| #![auto] valid_pte_offset(offset) && self.nodes@[nid as u64].child_exist(offset) ==>
-                self.nodes@.contains_key(NodeHelper::get_child(nid, offset) as u64)
-        }
+        &&& forall|nid: NodeId|
+            #![auto]
+            nid != NodeHelper::root_id() && NodeHelper::valid_nid(nid) ==> {
+                self.nodes@.contains_key(nid as u64) ==> self.nodes@.contains_key(
+                    NodeHelper::get_parent(nid) as u64,
+                )
+            }
+        &&& forall|nid: NodeId|
+            NodeHelper::valid_nid(nid) && self.nodes@.contains_key(nid as u64) ==> {
+                forall|offset: nat|
+                    #![auto]
+                    valid_pte_offset(offset) && self.nodes@[nid as u64].child_exist(offset)
+                        ==> self.nodes@.contains_key(NodeHelper::get_child(nid, offset) as u64)
+            }
     }
 
     pub open spec fn inv(&self) -> bool {
         &&& self.wf()
-        &&& forall |nid| NodeHelper::valid_nid(nid) && self.nodes@.contains_key(nid as u64) ==>
-            self.nodes@[nid as u64].inv()
+        &&& forall|nid|
+            NodeHelper::valid_nid(nid) && self.nodes@.contains_key(nid as u64)
+                ==> self.nodes@[nid as u64].inv()
         &&& self.inst@.cpu_num() == GLOBAL_CPU_NUM
     }
 
     #[verifier::external_body]
     pub fn new(
         tracked inst: Tracked<ConcreteSpec::Instance>,
-        tracked tokens: Tracked<Map<NodeId, NodeToken>>
+        tracked tokens: Tracked<Map<NodeId, NodeToken>>,
     ) -> (res: Self)
         requires
-            forall |nid| #![auto] tokens@.dom().contains(nid) <==> NodeHelper::valid_nid(nid),
-            forall |nid| #![auto] tokens@.dom().contains(nid) ==> {
-                if nid == NodeHelper::root_id() {
-                    tokens@[nid].value().is_Free()
-                } else { 
-                    tokens@[nid].value().is_Empty() 
-                }
-            },
+            forall|nid| #![auto] tokens@.dom().contains(nid) <==> NodeHelper::valid_nid(nid),
+            forall|nid|
+                #![auto]
+                tokens@.dom().contains(nid) ==> {
+                    if nid == NodeHelper::root_id() {
+                        tokens@[nid].value().is_Free()
+                    } else {
+                        tokens@[nid].value().is_Empty()
+                    }
+                },
         ensures
             res.inv(),
     {
@@ -467,7 +474,7 @@ impl PageTable {
     }
 
     pub fn dfs_acquire_lock(
-        &mut self, 
+        &mut self,
         nid: u64,
         tracked model: Tracked<CursorModel>,
         state: Ghost<CursorState>,
@@ -496,7 +503,7 @@ impl PageTable {
             state = res.1;
         }
 
-        for offset in 0..512 
+        for offset in 0..512
             invariant
                 0 <= offset < 512,
                 self.inv(),
@@ -512,8 +519,7 @@ impl PageTable {
                     state = res.1@;
                 }
             } else {
-                let tracked res = 
-                    cur_node.manager@.node_acquire_skip(child as nat, model, state);
+                let tracked res = cur_node.manager@.node_acquire_skip(child as nat, model, state);
                 proof {
                     model = res.0;
                     state = res.1;
@@ -521,11 +527,11 @@ impl PageTable {
             }
         }
 
-        (Tracked(model), Ghost(state)) 
+        (Tracked(model), Ghost(state))
     }
 
     pub fn cursor_create(
-        &mut self, 
+        &mut self,
         nid: u64,
         tracked model: Tracked<CursorModel>,
     ) -> (tracked new_model: Tracked<CursorModel>)
@@ -537,35 +543,38 @@ impl PageTable {
             old(self).inst@.id() == model@.inst.id(),
         ensures
             new_model@.inv(),
-            new_model@.relate_state_Hold(CursorState::Hold(
-                nid as NodeId,
-                NodeHelper::next_outside_subtree(nid as NodeId),
-            )),
+            new_model@.relate_state_Hold(
+                CursorState::Hold(nid as NodeId, NodeHelper::next_outside_subtree(nid as NodeId)),
+            ),
             self.inst@.id() == new_model@.inst.id(),
     {
         let tracked model_start;
         proof {
             let tracked model = model.get();
             let tracked token = model.token;
-            let tracked new_token = 
-                self.inst.borrow().cursor_create_start(model.cpu, nid as NodeId, token);
+            let tracked new_token = self.inst.borrow().cursor_create_start(
+                model.cpu,
+                nid as NodeId,
+                token,
+            );
             model_start = CursorModel::new(model.cpu, new_token, model.inst);
         }
         let res = self.dfs_acquire_lock(
-            nid, 
+            nid,
             Tracked(model_start),
-            Ghost(CursorState::Creating(
-                nid as NodeId, 
-                NodeHelper::next_outside_subtree(nid as NodeId), 
-                nid as NodeId
-            )),
+            Ghost(
+                CursorState::Creating(
+                    nid as NodeId,
+                    NodeHelper::next_outside_subtree(nid as NodeId),
+                    nid as NodeId,
+                ),
+            ),
         );
         let tracked model_end;
         proof {
             let tracked model = res.0.get();
             let tracked token = model.token;
-            let tracked new_token = 
-                self.inst.borrow().cursor_create_end(model.cpu, token);
+            let tracked new_token = self.inst.borrow().cursor_create_end(model.cpu, token);
             model_end = CursorModel::new(model.cpu, new_token, model.inst);
         }
         Tracked(model_end)
@@ -578,11 +587,8 @@ fn test() {
     let tracked nodes_tokens;
     let tracked mut cursors_tokens;
     proof {
-        let tracked (
-            Tracked(inst0),
-            Tracked(nodes_tokens0),
-            Tracked(cursors_tokens0),
-        ) = ConcreteSpec::Instance::initialize(GLOBAL_CPU_NUM);
+        let tracked (Tracked(inst0), Tracked(nodes_tokens0), Tracked(cursors_tokens0)) =
+            ConcreteSpec::Instance::initialize(GLOBAL_CPU_NUM);
 
         inst = inst0;
         nodes_tokens = nodes_tokens0;
@@ -590,12 +596,8 @@ fn test() {
     }
     let tracked_inst: Tracked<ConcreteSpec::Instance> = Tracked(inst.clone());
 
-    assert(nodes_tokens.dom() =~= Set::new(
-        |nid| NodeHelper::valid_nid(nid),
-    ));
-    assert(cursors_tokens.dom() =~= Set::new(
-        |cpu| valid_cpu(GLOBAL_CPU_NUM, cpu),
-    ));
+    assert(nodes_tokens.dom() =~= Set::new(|nid| NodeHelper::valid_nid(nid)));
+    assert(cursors_tokens.dom() =~= Set::new(|cpu| valid_cpu(GLOBAL_CPU_NUM, cpu)));
 
     let tracked cursor_model_0 = CursorModel::new(0, cursors_tokens.remove(0), inst.clone());
     let tracked cursor_model_1 = CursorModel::new(1, cursors_tokens.remove(1), inst.clone());
@@ -604,4 +606,4 @@ fn test() {
     let mut page_table = PageTable::new(tracked_inst, Tracked(nodes_tokens.into_map()));
 }
 
-}
+} // verus!

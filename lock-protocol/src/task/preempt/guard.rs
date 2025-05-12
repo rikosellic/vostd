@@ -8,21 +8,23 @@ pub struct DisabledPreemptGuard {
     _private: (),
 }
 
-impl !Send for DisabledPreemptGuard {}
+impl !Send for DisabledPreemptGuard {
 
-    #[verifier::external_body]
-    extern fn cpu_local_inc_guard_count()
-        opens_invariants none
-        no_unwind
-    ;
-    #[verifier::external_body]
-    extern fn cpu_local_dec_guard_count()
-        opens_invariants none
-        no_unwind
-    ;
+}
+
+#[verifier::external_body]
+extern  fn cpu_local_inc_guard_count()
+    opens_invariants none
+    no_unwind
+;
+
+#[verifier::external_body]
+extern  fn cpu_local_dec_guard_count()
+    opens_invariants none
+    no_unwind
+;
 
 impl DisabledPreemptGuard {
-
     fn new() -> Self {
         cpu_local_inc_guard_count();
         Self { _private: () }
@@ -47,4 +49,4 @@ pub fn disable_preempt() -> DisabledPreemptGuard {
     DisabledPreemptGuard::new()
 }
 
-}
+} // verus!

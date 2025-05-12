@@ -9,14 +9,12 @@ use state_machines_macros::case_on_next;
 
 use super::common::*;
 
-use super::{
-    range_spec::RangeSpec,
-    atomic_spec::AtomicSpec,
-};
+use super::{range_spec::RangeSpec, atomic_spec::AtomicSpec};
 
-verus!{
+verus! {
 
 type StateC = RangeSpec::State;
+
 type StateA = AtomicSpec::State;
 
 pub open spec fn state_trans(s: RangeState) -> RangeState {
@@ -56,15 +54,17 @@ pub proof fn init_refines_init(post: StateC) {
 }
 
 pub proof fn next_refines_next(pre: StateC, post: StateC) {
-    requires({
-        &&& pre.invariant()
-        &&& post.invariant()
-        &&& interp(pre).invariant()
-        &&& StateC::next(pre, post)
-    });
+    requires(
+        {
+            &&& pre.invariant()
+            &&& post.invariant()
+            &&& interp(pre).invariant()
+            &&& StateC::next(pre, post)
+        },
+    );
     ensures(StateA::next(interp(pre), interp(post)));
     case_on_next!{pre, post, RangeSpec => {
-        
+
         slot_acquire_outside_range(p) => {
             assert_maps_equal!(interp(pre).ranges, interp(post).ranges);
             AtomicSpec::show::no_op(interp(pre), interp(post));
@@ -117,10 +117,10 @@ pub proof fn next_refines_next(pre: StateC, post: StateC) {
                 assert(post.ranges[cpu].no_overlap(&post.ranges[_cpu]));
             };
             assert(interp(pre).all_no_overlap(&new_range));
-            
+
             AtomicSpec::show::acquire(interp(pre), interp(post), cpu, l, r);
         }
-        
+
         range_release_start(cpu) => {
             let new_range = RangeState::Empty;
             assert(interp(pre).ranges.insert(cpu, new_range) =~= interp(post).ranges);
@@ -149,4 +149,4 @@ pub proof fn next_refines_next(pre: StateC, post: StateC) {
     }}
 }
 
-}
+} // verus!

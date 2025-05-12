@@ -20,12 +20,11 @@ verus! {
 pub struct Frame {
     // pub ptr: PPtr<MetaSlot>,
     // pub ptr: *const MetaSlot,
-    pub ptr: usize, // TODO: MetaSlot is currently ignored
+    pub ptr: usize,  // TODO: MetaSlot is currently ignored
     // pub _marker: PhantomData<M>,
 }
 
 // impl<M: AnyFrameMeta> Frame<M> {
-
 //     /// Gets the metadata of this page.
 //     // TODO: Implement Frame::meta
 //     #[verifier::external_body]
@@ -35,10 +34,8 @@ pub struct Frame {
 //         unimplemented!("Frame::meta")
 //     }
 // }
-
 // impl<M: AnyFrameMeta + ?Sized> Frame<M> {
 impl Frame {
-
     /// Gets the physical address of the start of the frame.
     // TODO: Implement
     #[verifier::when_used_as_spec(start_paddr_spec)]
@@ -60,9 +57,9 @@ impl Frame {
     /// page frame.
     #[verifier::when_used_as_spec(map_level_spec)]
     pub const fn map_level(&self) -> (res: PagingLevel)
-    ensures
-        res == 1,
-        res == self.map_level_spec(),
+        ensures
+            res == 1,
+            res == self.map_level_spec(),
     {
         1
     }
@@ -74,9 +71,9 @@ impl Frame {
     /// Gets the size of this page in bytes.
     #[verifier::when_used_as_spec(size_spec)]
     pub const fn size(&self) -> (res: usize)
-    ensures
-        res == PAGE_SIZE,
-        res == self.size_spec(),
+        ensures
+            res == PAGE_SIZE,
+            res == self.size_spec(),
     {
         PAGE_SIZE
     }
@@ -113,12 +110,11 @@ impl Frame {
     /// no checking of the usage in this function.
     /// TODO: Implement Frame::from_raw
     pub(in crate::mm) fn from_raw(paddr: Paddr) -> (res: Self)
-    ensures
-        res.ptr == paddr,
+        ensures
+            res.ptr == paddr,
     {
         // let vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
         // let ptr = vaddr as *const MetaSlot;
-
         Self {
             ptr: paddr,
             // _marker: PhantomData,
@@ -127,7 +123,8 @@ impl Frame {
         //     ptr: PPtr::<MetaSlot>::from_addr(paddr),
         //      _marker: PhantomData
         // }
+
     }
 }
 
-}
+} // verus!

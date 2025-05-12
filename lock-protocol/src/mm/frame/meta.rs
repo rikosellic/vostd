@@ -3,32 +3,34 @@ use vstd::*;
 
 verus! {
 
-    // TODO: AnyFrameMeta
-    pub trait AnyFrameMeta {}
+// TODO: AnyFrameMeta
+pub trait AnyFrameMeta {
 
-    // TODO: MetaSlot
-    pub struct MetaSlot {}
+}
 
-    /// The error type for getting the frame from a physical address.
-    #[derive(Debug)]
-    pub enum GetFrameError {
-        /// The frame is in use.
-        InUse,
-        /// The frame is not in use.
-        Unused,
-        /// The frame is being initialized or destructed.
-        Busy,
-        /// The frame is private to an owner of [`UniqueFrame`].
-        ///
-        /// [`UniqueFrame`]: super::unique::UniqueFrame
-        Unique,
-        /// The provided physical address is out of bound.
-        OutOfBound,
-        /// The provided physical address is not aligned.
-        NotAligned,
-    }
+// TODO: MetaSlot
+pub struct MetaSlot {}
 
-    /// Makes a structure usable as a frame metadata.
+/// The error type for getting the frame from a physical address.
+#[derive(Debug)]
+pub enum GetFrameError {
+    /// The frame is in use.
+    InUse,
+    /// The frame is not in use.
+    Unused,
+    /// The frame is being initialized or destructed.
+    Busy,
+    /// The frame is private to an owner of [`UniqueFrame`].
+    ///
+    /// [`UniqueFrame`]: super::unique::UniqueFrame
+    Unique,
+    /// The provided physical address is out of bound.
+    OutOfBound,
+    /// The provided physical address is not aligned.
+    NotAligned,
+}
+
+/// Makes a structure usable as a frame metadata.
     ///
     /// Directly implementing [`AnyFrameMeta`] is not safe since the size and alignment
     /// must be checked. This macro provides a safe way to implement the trait with
@@ -45,9 +47,10 @@ verus! {
         };
     }
 
-    /// The metadata of frames that holds metadata of frames.
-    #[derive(Debug, Default)]
-    pub struct MetaPageMeta {}
+/// The metadata of frames that holds metadata of frames.
+#[derive(Debug, Default)]
+pub struct MetaPageMeta {}
 
-    impl_frame_meta_for!(MetaPageMeta);
-}
+impl_frame_meta_for!(MetaPageMeta);
+
+} // verus!

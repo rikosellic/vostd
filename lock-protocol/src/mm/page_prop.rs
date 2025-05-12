@@ -339,7 +339,7 @@ impl PageFlags {
     {
         Self { bits: 0b01000000 }
     }
-    
+
     #[allow(non_snake_case)]
     #[verifier::inline]
     pub open spec fn AVAIL2_spec() -> Self {

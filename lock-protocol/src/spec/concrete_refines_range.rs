@@ -10,14 +10,12 @@ use state_machines_macros::case_on_next;
 use super::common::*;
 use super::utils::*;
 
-use super::{
-    concrete_tree_spec::ConcreteSpec,
-    range_spec::RangeSpec,
-};
+use super::{concrete_tree_spec::ConcreteSpec, range_spec::RangeSpec};
 
-verus!{
+verus! {
 
 type StateC = ConcreteSpec::State;
+
 type StateA = RangeSpec::State;
 
 pub open spec fn node_to_slot(s: NodeState) -> SlotState {
@@ -43,10 +41,7 @@ pub open spec fn interp(s: StateC) -> StateA {
     StateA {
         cpu_num: s.cpu_num,
         size: NodeHelper::total_size(),
-        slots: Map::new(
-            |nid: NodeId| NodeHelper::valid_nid(nid),
-            |nid| node_to_slot(s.nodes[nid]),
-        ),
+        slots: Map::new(|nid: NodeId| NodeHelper::valid_nid(nid), |nid| node_to_slot(s.nodes[nid])),
         ranges: Map::new(
             |cpu: CpuId| valid_cpu(s.cpu_num, cpu),
             |cpu| cursor_to_range(s.cursors[cpu]),
@@ -79,15 +74,17 @@ pub proof fn init_refines_init(post: StateC) {
 }
 
 pub proof fn next_refines_next(pre: StateC, post: StateC) {
-    requires({
-        &&& pre.invariant()
-        &&& post.invariant()
-        &&& interp(pre).invariant()
-        &&& StateC::next(pre, post)
-    });
+    requires(
+        {
+            &&& pre.invariant()
+            &&& post.invariant()
+            &&& interp(pre).invariant()
+            &&& StateC::next(pre, post)
+        },
+    );
     ensures(StateA::next(interp(pre), interp(post)));
     case_on_next!{pre, post, ConcreteSpec => {
-        
+
         node_acquire_outside_cursor(nid) => {
             assert(interp(post).slots =~= interp(pre).slots.insert(nid, SlotState::LockedOutside));
             RangeSpec::show::slot_acquire_outside_range(interp(pre), interp(post), nid);
@@ -111,7 +108,7 @@ pub proof fn next_refines_next(pre: StateC, post: StateC) {
         cursor_create_start(cpu, nid) => {
             let new_range = RangeState::Creating(nid, NodeHelper::next_outside_subtree(nid), nid);
             assert(interp(post).ranges =~= interp(pre).ranges.insert(cpu, new_range));
-            RangeSpec::show::range_acquire_start(interp(pre), interp(post), 
+            RangeSpec::show::range_acquire_start(interp(pre), interp(post),
                 cpu, nid, NodeHelper::next_outside_subtree(nid)
             );
         }
@@ -141,7 +138,7 @@ pub proof fn next_refines_next(pre: StateC, post: StateC) {
                 assert(_nodes.dom().contains(_nid));
                 assert(pre.nodes.dom().contains(_nid));
             };
-            assert(forall |_nid| NodeHelper::in_subtree(nid, _nid) <==> 
+            assert(forall |_nid| NodeHelper::in_subtree(nid, _nid) <==>
                 nid <= _nid < NodeHelper::next_outside_subtree(nid)
             );
             assert forall |i| nid <= i < NodeHelper::next_outside_subtree(nid) implies {
@@ -166,7 +163,7 @@ pub proof fn next_refines_next(pre: StateC, post: StateC) {
             let new_range = RangeState::Creating(l, r, NodeHelper::next_outside_subtree(nid));
             assert(interp(post).ranges =~= interp(pre).ranges.insert(cpu, new_range));
 
-            RangeSpec::show::pos_acquire_skip(interp(pre), interp(post), 
+            RangeSpec::show::pos_acquire_skip(interp(pre), interp(post),
                 cpu, nid, NodeHelper::sub_tree_size(nid)
             );
         }
@@ -179,7 +176,7 @@ pub proof fn next_refines_next(pre: StateC, post: StateC) {
             assert(interp(post).ranges =~= interp(pre).ranges.insert(cpu, new_range));
             RangeSpec::show::range_acquire_end(interp(pre), interp(post), cpu);
         }
-        
+
         cursor_destroy_start(cpu) => {
             let l = interp(pre).ranges[cpu].get_Hold_0();
             let r = interp(pre).ranges[cpu].get_Hold_1();
@@ -213,7 +210,7 @@ pub proof fn next_refines_next(pre: StateC, post: StateC) {
                 assert(_nodes.dom().contains(_nid));
                 assert(pre.nodes.dom().contains(_nid));
             };
-            assert(forall |_nid| NodeHelper::in_subtree(nid, _nid) <==> 
+            assert(forall |_nid| NodeHelper::in_subtree(nid, _nid) <==>
                 nid <= _nid < NodeHelper::next_outside_subtree(nid)
             );
             assert forall |i| nid <= i < NodeHelper::next_outside_subtree(nid) implies {
@@ -238,7 +235,7 @@ pub proof fn next_refines_next(pre: StateC, post: StateC) {
             let new_range = RangeState::Destroying(l, r, nid);
             assert(interp(post).ranges =~= interp(pre).ranges.insert(cpu, new_range));
 
-            RangeSpec::show::pos_release_skip(interp(pre), interp(post), 
+            RangeSpec::show::pos_release_skip(interp(pre), interp(post),
                 cpu, nid, NodeHelper::sub_tree_size(nid),
             );
         }
@@ -252,4 +249,4 @@ pub proof fn next_refines_next(pre: StateC, post: StateC) {
     }}
 }
 
-}
+} // verus!
