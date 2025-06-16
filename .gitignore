@@ -1,0 +1,43 @@
+# Git subrepo
+.git-subrepo/
+.git-slave/
+.gitslave
+
+# Cargo
+Cargo.lock
+target/
+
+# Verus
+.verus-log/
+
+# VS Code
+.vscode/settings.json
+
+# Tools
+tools/verus
+tools/verus-analyzer
+
+# anchor
+.anchor
+
+# macos
+.DS_Store
+
+**/*.rs.bk
+
+# node
+node_modules
+package-lock.json
+
+# ledger
+test-ledger
+
+# yarn
+.yarn
+
+#log
+*.log.json
+*.log.json.gz
+
+# toolchain
+dv/
