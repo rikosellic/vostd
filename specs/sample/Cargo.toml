@@ -8,8 +8,8 @@ edition = "2024"
 crate-type = ["rlib"]
 name = "sample_specs"
 # for cargo
-# path = "src/.dummy.rs"
-path = "src/lib.rs"
+path = "src/.dummy.rs"
+# path = "src/lib.rs"
 
 [features]
 verus = []
