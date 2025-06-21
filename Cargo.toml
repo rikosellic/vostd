@@ -3,6 +3,10 @@ members = [
     "scripts",
     "code/sample",
     "specs/sample",
+#    "ostd",
+#    "ostd/libs/ostd-macros",
+#    "ostd/libs/ostd-test",
+#    "kernel/libs/int-to-c-enum",
 ]
 exclude = [
     "scripts",
@@ -10,6 +14,7 @@ exclude = [
     "tools/verus",
     "tools/verus-analyzer",
     "tests",
+    "osdk",
 ]
 resolver = "2"
 
