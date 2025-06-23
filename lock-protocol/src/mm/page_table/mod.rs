@@ -127,11 +127,7 @@ impl<C: PageTableConfig> PagingConstsTrait for C {
         C::C::BASE_PAGE_SIZE_SPEC()
     }
 
-    #[verifier::when_used_as_spec(BASE_PAGE_SIZE_SPEC)]
-    fn BASE_PAGE_SIZE() -> (res: usize)
-        ensures
-            res == Self::BASE_PAGE_SIZE_SPEC(),
-    {
+    fn BASE_PAGE_SIZE() -> (res: usize) {
         C::C::BASE_PAGE_SIZE()
     }
 
@@ -139,11 +135,7 @@ impl<C: PageTableConfig> PagingConstsTrait for C {
         C::C::NR_LEVELS_SPEC()
     }
 
-    #[verifier::when_used_as_spec(NR_LEVELS_SPEC)]
-    fn NR_LEVELS() -> (res: PagingLevel)
-        ensures
-            res == Self::NR_LEVELS_SPEC(),
-    {
+    fn NR_LEVELS() -> (res: PagingLevel) {
         C::C::NR_LEVELS()
     }
 }
@@ -212,17 +204,17 @@ Sized {
     ///  - the physical address of the page it maps to;
     ///  - the value of the token.
     #[verifier::when_used_as_spec(frame_paddr_spec)]
-    fn frame_paddr(&self) -> (res: Paddr)
-        ensures
-            res == self.frame_paddr_spec(),
+    fn frame_paddr(&self) -> Paddr
+        returns
+            self.frame_paddr_spec(),
     ;
 
     spec fn frame_paddr_spec(&self) -> Paddr;
 
     #[verifier::when_used_as_spec(pte_addr_spec)]
-    fn pte_paddr(&self) -> (res: Paddr)
-        ensures
-            res == self.pte_addr_spec(),
+    fn pte_paddr(&self) -> Paddr
+        returns
+            self.pte_addr_spec(),
     ;
 
     spec fn pte_addr_spec(&self) -> Paddr;
@@ -276,10 +268,11 @@ Sized {
 
     // /// The smallest page size.
     // /// This is also the page size at level 1 page tables.
+    #[verifier::when_used_as_spec(BASE_PAGE_SIZE_SPEC)]
     fn BASE_PAGE_SIZE() -> (res: usize)
         ensures
-            res == Self::BASE_PAGE_SIZE_SPEC(),
             res != 0,
+            res == Self::BASE_PAGE_SIZE_SPEC(),
     ;
 
     spec fn NR_LEVELS_SPEC() -> PagingLevel;
@@ -289,11 +282,11 @@ Sized {
     // /// the level 1 to 5 on AMD64 corresponds to Page Tables, Page Directory Tables,
     // /// Page Directory Pointer Tables, Page-Map Level-4 Table, and Page-Map Level-5
     // /// Table, respectively.
-    fn NR_LEVELS() -> (res: PagingLevel)
-        ensures
-            res == Self::NR_LEVELS_SPEC(),
-            res != 0,
-    ;
+    #[verifier::when_used_as_spec(NR_LEVELS_SPEC)]
+    fn NR_LEVELS() -> PagingLevel
+        returns
+            Self::NR_LEVELS_SPEC(),
+    ;  // /
     // The highest level that a PTE can be directly used to translate a VA.
     // /// This affects the the largest page size supported by the page table.
     // const HIGHEST_TRANSLATION_LEVEL: PagingLevel;
@@ -318,11 +311,7 @@ impl PagingConstsTrait for PagingConsts {
         4096
     }
 
-    #[verifier::when_used_as_spec(BASE_PAGE_SIZE_SPEC)]
-    fn BASE_PAGE_SIZE() -> (res: usize)
-        ensures
-            res == Self::BASE_PAGE_SIZE_SPEC(),
-    {
+    fn BASE_PAGE_SIZE() -> (res: usize) {
         4096
     }
 
@@ -330,11 +319,7 @@ impl PagingConstsTrait for PagingConsts {
         4
     }
 
-    #[verifier::when_used_as_spec(NR_LEVELS_SPEC)]
-    fn NR_LEVELS() -> (res: PagingLevel)
-        ensures
-            res == Self::NR_LEVELS_SPEC(),
-    {
+    fn NR_LEVELS() -> (res: PagingLevel) {
         4
     }
     // const ADDRESS_WIDTH: usize = 48;
