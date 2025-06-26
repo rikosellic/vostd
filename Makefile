@@ -11,7 +11,8 @@ VERIFICATION_TARGETS := \
 	fvt10-pt-cursor-navigation \
 	fvt11-pt-cursor-guards \
 	fvt13-vmspace-unmap-safety \
-	lock-protocol
+	lock-protocol \
+	os-model \
 
 # Compile-only targets
 COMPILE_TARGETS := vstd_extra aster_common
@@ -22,6 +23,9 @@ fvt%:
 
 lock-protocol:
 	cargo xtask verify --targets lock-protocol
+
+os-model:
+	cargo xtask verify --targets os-model
 
 fmt:
 	cargo xtask fmt
