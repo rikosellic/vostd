@@ -1,9 +1,12 @@
 use vstd::prelude::*;
+use vstd::arithmetic::power2::*;
+use vstd_extra::bits_extra::*;
 
 verus! {
 
 global layout usize is size == 8;
-  // Assuming 64-bit architecture
+
+// Assuming 64-bit architecture
 /// Virtual addresses.
 pub type Vaddr = usize;
 
@@ -27,7 +30,7 @@ pub(crate) trait PagingConstsTrait: Sized {
     }
 
     open spec fn BASE_PAGE_SIZE_spec() -> usize {
-        1usize << Self::base_page_size_width()
+        pow2(Self::base_page_size_width() as nat) as usize
     }
 
     spec fn NR_LEVELS_spec() -> PagingLevel;
@@ -35,7 +38,7 @@ pub(crate) trait PagingConstsTrait: Sized {
     spec fn HIGHEST_TRANSLATION_LEVEL_spec() -> PagingLevel;
 
     open spec fn PTE_SIZE_spec() -> usize {
-        1usize << Self::pte_size_width()
+        pow2(Self::pte_size_width() as nat) as usize
     }
 
     spec fn ADDRESS_WIDTH_spec() -> usize;
@@ -45,17 +48,20 @@ pub(crate) trait PagingConstsTrait: Sized {
     proof fn lemma_paging_const_properties()
         ensures
             0 < Self::pte_size_width() < Self::base_page_size_width() < Self::ADDRESS_WIDTH_spec()
-                <= 64,
+                <= usize::BITS,
             Self::ADDRESS_WIDTH_spec() == Self::base_page_size_width() + Self::NR_LEVELS()
                 * Self::in_frame_index_width(),
             0 < Self::HIGHEST_TRANSLATION_LEVEL() <= Self::NR_LEVELS(),
+            Self::BASE_PAGE_SIZE_spec() == pow2(Self::base_page_size_width() as nat) as usize,
+            Self::PTE_SIZE_spec() == pow2(Self::pte_size_width() as nat) as usize,
+            0 < Self::HIGHEST_TRANSLATION_LEVEL_spec() <= Self::NR_LEVELS_spec(),
     ;
 
     /// The smallest page size.
     /// This is also the page size at level 1 page tables.
     #[inline(always)]
     #[verifier::when_used_as_spec(BASE_PAGE_SIZE_spec)]
-    fn BASE_PAGE_SIZE() -> usize
+    fn BASE_PAGE_SIZE() -> (res: usize)
         returns
             Self::BASE_PAGE_SIZE_spec(),
     ;
@@ -68,8 +74,6 @@ pub(crate) trait PagingConstsTrait: Sized {
     #[inline(always)]
     #[verifier::when_used_as_spec(NR_LEVELS_spec)]
     fn NR_LEVELS() -> (res: PagingLevel)
-        ensures
-            res > 0,
         returns
             Self::NR_LEVELS_spec(),
     ;
@@ -79,14 +83,12 @@ pub(crate) trait PagingConstsTrait: Sized {
     #[inline(always)]
     #[verifier::when_used_as_spec(HIGHEST_TRANSLATION_LEVEL_spec)]
     fn HIGHEST_TRANSLATION_LEVEL() -> (res: PagingLevel)
-        ensures
-            0 < res <= Self::NR_LEVELS(),
         returns
             Self::HIGHEST_TRANSLATION_LEVEL_spec(),
     ;
 
     /// The size of a PTE.
-    #[inline(always)]
+    //#[inline(always)]
     #[verifier::when_used_as_spec(PTE_SIZE_spec)]
     fn PTE_SIZE() -> (res: usize)
         returns
@@ -98,9 +100,6 @@ pub(crate) trait PagingConstsTrait: Sized {
     #[inline(always)]
     #[verifier::when_used_as_spec(ADDRESS_WIDTH_spec)]
     fn ADDRESS_WIDTH() -> (res: usize)
-        ensures
-            0 < Self::pte_size_width() < Self::base_page_size_width() < res <= 64,
-            res == Self::base_page_size_width() + Self::NR_LEVELS() * Self::in_frame_index_width(),
         returns
             Self::ADDRESS_WIDTH_spec(),
     ;
@@ -119,8 +118,6 @@ pub(crate) trait PagingConstsTrait: Sized {
     #[inline(always)]
     #[verifier::when_used_as_spec(VA_SIGN_EXT_spec)]
     fn VA_SIGN_EXT() -> (res: bool)
-        ensures
-            res == Self::VA_SIGN_EXT_spec(),
         returns
             Self::VA_SIGN_EXT_spec(),
     ;
@@ -130,15 +127,14 @@ pub(crate) trait PagingConstsTrait: Sized {
 pub(crate)   /*const*/
 fn nr_subpage_per_huge<C: PagingConstsTrait>() -> usize
     returns
-        1usize << (C::base_page_size_width() - C::pte_size_width()),
+        pow2((C::base_page_size_width() - C::pte_size_width()) as nat) as usize,
 {
     proof {
+        C::lemma_paging_const_properties();
         let page_width = C::base_page_size_width();
         let pte_width = C::pte_size_width();
-        C::lemma_paging_const_properties();
-        assert(page_width > 0);
-        assert(pte_width > 0);
-        assert((1usize << pte_width) > 0) by (bit_vector);
+        lemma_usize_pow2_no_overflow(pte_width as nat);
+
     }
     C::BASE_PAGE_SIZE() / C::PTE_SIZE()
 }
