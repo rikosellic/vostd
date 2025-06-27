@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := all
-.PHONY: lock-protocol
+.PHONY: lock-protocol os-model
 
 # List of verification targets
 VERIFICATION_TARGETS := \
