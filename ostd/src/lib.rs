@@ -26,21 +26,21 @@
 
 extern crate alloc;
 
-#[cfg(target_arch = "x86_64")]
+//#[cfg(target_arch = "x86_64")]
 #[path = "arch/x86/mod.rs"]
 pub mod arch;
-#[cfg(target_arch = "riscv64")]
-#[path = "arch/riscv/mod.rs"]
-pub mod arch;
-pub mod boot;
+//#[cfg(target_arch = "riscv64")]
+//#[path = "arch/riscv/mod.rs"]
+//pub mod arch;
+/*pub mod boot;
 pub mod bus;
 pub mod console;
 pub mod cpu;
 mod error;
 pub mod io;
-pub mod logger;
+pub mod logger;*/
 pub mod mm;
-pub mod panic;
+/*pub mod panic;
 pub mod prelude;
 pub mod smp;
 pub mod sync;
@@ -48,9 +48,9 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 pub mod user;
-pub mod util;
+pub mod util; */
 
-use core::sync::atomic::{AtomicBool, Ordering};
+/*use core::sync::atomic::{AtomicBool, Ordering};
 
 pub use ostd_macros::{
     global_frame_allocator, global_heap_allocator, global_heap_allocator_slot_map, main,
@@ -189,3 +189,4 @@ pub mod ktest {
     pub use ostd_macros::{test_main as main, test_panic_handler as panic_handler};
     pub use ostd_test::*;
 }
+*/

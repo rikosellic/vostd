@@ -35,7 +35,7 @@ pub type UFrame = Frame<dyn AnyUFrameMeta>;
 /// Makes a structure usable as untyped frame metadata.
 ///
 /// If this macro is used for built-in typed frame metadata, it won't compile.
-#[macro_export]
+/*#[macro_export]
 macro_rules! impl_untyped_frame_meta_for {
     // Implement without specifying the drop behavior.
     ($t:ty) => {
@@ -61,10 +61,10 @@ macro_rules! impl_untyped_frame_meta_for {
         }
         impl $crate::mm::frame::untyped::AnyUFrameMeta for $t {}
     };
-}
+}*/
 
 // A special case of untyped metadata is the unit type.
-impl_untyped_frame_meta_for!(());
+//impl_untyped_frame_meta_for!(());
 
 /// A physical memory range that is untyped.
 ///

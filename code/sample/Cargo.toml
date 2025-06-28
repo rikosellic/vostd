@@ -3,4 +3,25 @@ name = "sample"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+crate-type = ["rlib"]
+name = "sample"
+# for cargo
+path = "src/.dummy.rs"
+# path = "src/lib.rs"
+
+[features]
+verus = []
+verify = ["verus"]
+alloc = []
+default = ["verify", "alloc"]
+
+[package.metadata.verus]
+path = "src/lib.rs"
+verify = true
+check_lifetime = true
+
 [dependencies]
+vstd = { path = "../../tools/verus/source/vstd" }
+builtin = { path = "../../tools/verus/source/builtin" }
+builtin_macros = { path = "../../tools/verus/source/builtin_macros" }

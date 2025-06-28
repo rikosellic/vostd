@@ -31,11 +31,11 @@
 //! as well, leaving the handle only a pointer to the metadata slot. Users
 //! can create custom metadata types by implementing the [`AnyFrameMeta`] trait.
 
-pub mod allocator;
+//pub mod allocator;
 pub mod linked_list;
-pub mod meta;
-pub mod segment;
-pub mod unique;
+//pub mod meta;
+//pub mod segment;
+//pub mod unique;
 pub mod untyped;
 
 mod frame_ref;
@@ -50,7 +50,7 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-pub use allocator::GlobalFrameAllocator;
+//pub use allocator::GlobalFrameAllocator;
 use meta::{mapping, AnyFrameMeta, GetFrameError, MetaSlot, REF_COUNT_UNUSED};
 pub use segment::Segment;
 use untyped::{AnyUFrameMeta, UFrame};
@@ -177,7 +177,7 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     /// potentially between calling this method and acting on the result.
     pub fn reference_count(&self) -> u64 {
         let refcnt = self.slot().ref_count.load(Ordering::Relaxed);
-        debug_assert!(refcnt < meta::REF_COUNT_MAX);
+//        debug_assert!(refcnt < meta::REF_COUNT_MAX);
         refcnt
     }
 
@@ -242,6 +242,7 @@ impl<M: AnyFrameMeta + ?Sized> Clone for Frame<M> {
     }
 }
 
+/*
 impl<M: AnyFrameMeta + ?Sized> Drop for Frame<M> {
     fn drop(&mut self) {
         let last_ref_cnt = self.slot().ref_count.fetch_sub(1, Ordering::Release);
@@ -259,6 +260,7 @@ impl<M: AnyFrameMeta + ?Sized> Drop for Frame<M> {
         }
     }
 }
+*/
 
 impl<M: AnyFrameMeta> TryFrom<Frame<dyn AnyFrameMeta>> for Frame<M> {
     type Error = Frame<dyn AnyFrameMeta>;

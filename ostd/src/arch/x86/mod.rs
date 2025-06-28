@@ -2,23 +2,23 @@
 
 //! Platform-specific code for the x86 platform.
 
-pub mod boot;
+/*pub mod boot;
 pub(crate) mod cpu;
 pub mod device;
 pub(crate) mod ex_table;
 pub(crate) mod io;
 pub mod iommu;
 pub(crate) mod irq;
-pub(crate) mod kernel;
+pub(crate) mod kernel;*/
 pub(crate) mod mm;
-pub(crate) mod pci;
+/*pub(crate) mod pci;
 pub mod qemu;
 pub mod serial;
 pub mod task;
 pub mod timer;
-pub mod trap;
+pub mod trap;*/
 
-use io::construct_io_mem_allocator_builder;
+/*use io::construct_io_mem_allocator_builder;
 use spin::Once;
 use x86::cpuid::{CpuId, FeatureInfo};
 
@@ -264,3 +264,4 @@ macro_rules! if_tdx_enabled {
 }
 
 pub use if_tdx_enabled;
+*/

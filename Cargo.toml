@@ -1,9 +1,12 @@
 [workspace]
 members = [
     "scripts",
+    "vstd_extra",
+    "aster_common",
     "code/sample",
     "specs/sample",
-#    "ostd",
+    "code/ostd",
+    "specs/ostd",
 #    "ostd/libs/ostd-macros",
 #    "ostd/libs/ostd-test",
 #    "kernel/libs/int-to-c-enum",
@@ -14,6 +17,7 @@ exclude = [
     "tools/verus",
     "tools/verus-analyzer",
     "tests",
+    "ostd",
     "osdk",
 ]
 resolver = "2"

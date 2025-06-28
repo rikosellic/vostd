@@ -20,7 +20,7 @@ use super::{
 use crate::{
     arch::mm::PagingConsts,
     mm::{Paddr, Vaddr},
-    panic::abort,
+//    panic::abort,
 };
 
 /// A linked list of frames.
@@ -209,7 +209,8 @@ where
             let id = LIST_ID_ALLOCATOR.fetch_add(1, Ordering::Relaxed);
             if id >= MAX_LIST_ID {
                 log::error!("The frame list ID allocator has exhausted.");
-                abort();
+//                abort();
+                unimplemented!()
             }
             self.list_id = id;
             id
@@ -451,7 +452,7 @@ impl<M> Link<M> {
 
 // SAFETY: If `M::on_drop` reads the page using the provided `VmReader`,
 // the safety is upheld by the one who implements `AnyFrameMeta` for `M`.
-unsafe impl<M> AnyFrameMeta for Link<M>
+/*unsafe impl<M> AnyFrameMeta for Link<M>
 where
     M: AnyFrameMeta,
 {
@@ -463,3 +464,4 @@ where
         self.meta.is_untyped()
     }
 }
+*/
