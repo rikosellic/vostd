@@ -14,7 +14,7 @@
 #![feature(let_chains)]
 #![feature(linkage)]
 #![feature(min_specialization)]
-#![feature(negative_impls)]
+//#![feature(negative_impls)]
 #![feature(ptr_metadata)]
 #![feature(ptr_sub_ptr)]
 #![feature(sync_unsafe_cell)]
@@ -25,6 +25,8 @@
 #![warn(missing_docs)]
 
 extern crate alloc;
+
+use vstd_extra::prelude;
 
 //#[cfg(target_arch = "x86_64")]
 #[path = "arch/x86/mod.rs"]

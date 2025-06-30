@@ -41,6 +41,7 @@ impl<M: AnyFrameMeta> UniqueFrame<M> {
         })
     }
 
+    /*
     /// Repurposes the frame with a new metadata.
     pub fn repurpose<M1: AnyFrameMeta>(self, metadata: M1) -> UniqueFrame<M1> {
         // SAFETY: We are the sole owner and the metadata is initialized.
@@ -49,7 +50,7 @@ impl<M: AnyFrameMeta> UniqueFrame<M> {
         unsafe { self.slot().write_meta(metadata) };
         // SAFETY: The metadata is initialized with type `M1`.
         unsafe { core::mem::transmute(self) }
-    }
+    }*/
 
     /// Gets the metadata of this page.
     pub fn meta(&self) -> &M {
@@ -104,6 +105,7 @@ impl<M: AnyFrameMeta + ?Sized> UniqueFrame<M> {
         unsafe { &mut *self.slot().dyn_meta_ptr() }
     }
 
+    /*
     /// Resets the frame to unused without up-calling the allocator.
     ///
     /// This is solely useful for the allocator implementation/testing and
@@ -122,7 +124,7 @@ impl<M: AnyFrameMeta + ?Sized> UniqueFrame<M> {
         // SAFETY: We are the sole owner and the reference count is 0.
         // The slot is initialized.
         unsafe { this.slot().drop_last_in_place() };
-    }
+    }*/
 
     /// Converts this frame into a raw physical address.
     pub(crate) fn into_raw(self) -> Paddr {
@@ -153,7 +155,7 @@ impl<M: AnyFrameMeta + ?Sized> UniqueFrame<M> {
     }
 }
 
-impl<M: AnyFrameMeta + ?Sized> Drop for UniqueFrame<M> {
+/*impl<M: AnyFrameMeta + ?Sized> Drop for UniqueFrame<M> {
     fn drop(&mut self) {
         self.slot().ref_count.store(0, Ordering::Relaxed);
         // SAFETY: We are the sole owner and the reference count is 0.
@@ -162,7 +164,7 @@ impl<M: AnyFrameMeta + ?Sized> Drop for UniqueFrame<M> {
 
         super::allocator::get_global_frame_allocator().dealloc(self.start_paddr(), PAGE_SIZE);
     }
-}
+}*/
 
 impl<M: AnyFrameMeta + ?Sized> From<UniqueFrame<M>> for Frame<M> {
     fn from(unique: UniqueFrame<M>) -> Self {

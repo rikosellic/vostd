@@ -6,7 +6,7 @@ use super::{
     meta::{AnyFrameMeta, MetaSlot},
     Frame,
 };
-use crate::{mm::Paddr, sync::non_null::NonNullPtr};
+use crate::{mm::Paddr/*, sync::non_null::NonNullPtr*/};
 
 /// A struct that can work as `&'a Frame<M>`.
 #[derive(Debug)]
@@ -43,7 +43,7 @@ impl<M: AnyFrameMeta + ?Sized> Deref for FrameRef<'_, M> {
 
 // SAFETY: `Frame` is essentially a `*const MetaSlot` that could be used as a non-null
 // `*const` pointer.
-unsafe impl<M: AnyFrameMeta + ?Sized> NonNullPtr for Frame<M> {
+/*unsafe impl<M: AnyFrameMeta + ?Sized> NonNullPtr for Frame<M> {
     type Target = PhantomData<Self>;
 
     type Ref<'a>
@@ -79,4 +79,4 @@ unsafe impl<M: AnyFrameMeta + ?Sized> NonNullPtr for Frame<M> {
     fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> core::ptr::NonNull<Self::Target> {
         NonNull::new(ptr_ref.inner.ptr.cast_mut()).unwrap().cast()
     }
-}
+}*/

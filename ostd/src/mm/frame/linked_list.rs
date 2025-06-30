@@ -17,6 +17,9 @@ use super::{
     unique::UniqueFrame,
     MetaSlot,
 };
+
+use aster_common::prelude::meta;
+
 use crate::{
     arch::mm::PagingConsts,
     mm::{Paddr, Vaddr},
@@ -208,7 +211,7 @@ where
         if self.list_id == 0 {
             let id = LIST_ID_ALLOCATOR.fetch_add(1, Ordering::Relaxed);
             if id >= MAX_LIST_ID {
-                log::error!("The frame list ID allocator has exhausted.");
+//                log::error!("The frame list ID allocator has exhausted.");
 //                abort();
                 unimplemented!()
             }

@@ -33,9 +33,9 @@
 
 //pub mod allocator;
 pub mod linked_list;
-//pub mod meta;
+pub mod meta;
 //pub mod segment;
-//pub mod unique;
+pub mod unique;
 pub mod untyped;
 
 mod frame_ref;
@@ -52,7 +52,7 @@ use core::{
 
 //pub use allocator::GlobalFrameAllocator;
 use meta::{mapping, AnyFrameMeta, GetFrameError, MetaSlot, REF_COUNT_UNUSED};
-pub use segment::Segment;
+//pub use segment::Segment;
 use untyped::{AnyUFrameMeta, UFrame};
 
 use super::{PagingLevel, PAGE_SIZE};
@@ -262,6 +262,7 @@ impl<M: AnyFrameMeta + ?Sized> Drop for Frame<M> {
 }
 */
 
+/*
 impl<M: AnyFrameMeta> TryFrom<Frame<dyn AnyFrameMeta>> for Frame<M> {
     type Error = Frame<dyn AnyFrameMeta>;
 
@@ -277,7 +278,7 @@ impl<M: AnyFrameMeta> TryFrom<Frame<dyn AnyFrameMeta>> for Frame<M> {
             Err(dyn_frame)
         }
     }
-}
+}*/
 
 impl<M: AnyFrameMeta> From<Frame<M>> for Frame<dyn AnyFrameMeta> {
     fn from(frame: Frame<M>) -> Self {

@@ -39,8 +39,8 @@ pub use self::{
     page_prop::{CachePolicy, PageFlags, PageProperty},
 //    vm_space::VmSpace,
 };
-pub(crate) use self::{
-    kspace::paddr_to_vaddr, page_prop::PrivilegedPageFlags, page_table::PageTable,
+pub(crate) use aster_common::prelude::{
+    paddr_to_vaddr, PrivilegedPageFlags, PageTable,
 };
 use crate::arch::mm::PagingConsts;
 

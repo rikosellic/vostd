@@ -7,13 +7,13 @@
 //! the declaration of untyped frames and segments, and the implementation of
 //! extra functionalities (such as [`VmIo`]) for them.
 
-use super::{meta::AnyFrameMeta, Frame, Segment};
+use super::{meta::AnyFrameMeta, Frame/*, Segment*/};
 use crate::{
     mm::{
-        io::{FallibleVmRead, FallibleVmWrite, VmIo, VmReader, VmWriter},
-        paddr_to_vaddr, Infallible,
+//        io::{FallibleVmRead, FallibleVmWrite, VmIo, VmReader, VmWriter},
+        paddr_to_vaddr, //Infallible,
     },
-    Error, Result,
+//    Error, Result,
 };
 
 /// The metadata of untyped frame.
@@ -32,10 +32,11 @@ pub trait AnyUFrameMeta: AnyFrameMeta {}
 /// The usage of this frame will not be changed while this object is alive.
 pub type UFrame = Frame<dyn AnyUFrameMeta>;
 
+/*
 /// Makes a structure usable as untyped frame metadata.
 ///
 /// If this macro is used for built-in typed frame metadata, it won't compile.
-/*#[macro_export]
+#[macro_export]
 macro_rules! impl_untyped_frame_meta_for {
     // Implement without specifying the drop behavior.
     ($t:ty) => {
@@ -66,6 +67,7 @@ macro_rules! impl_untyped_frame_meta_for {
 // A special case of untyped metadata is the unit type.
 //impl_untyped_frame_meta_for!(());
 
+/*
 /// A physical memory range that is untyped.
 ///
 /// Untyped frames or segments can be safely read and written by the kernel or
@@ -75,9 +77,9 @@ pub trait UntypedMem {
     fn reader(&self) -> VmReader<'_, Infallible>;
     /// Borrows a writer that can write the untyped memory.
     fn writer(&self) -> VmWriter<'_, Infallible>;
-}
+}*/
 
-macro_rules! impl_untyped_for {
+/*macro_rules! impl_untyped_for {
     ($t:ident) => {
         impl<UM: AnyUFrameMeta + ?Sized> UntypedMem for $t<UM> {
             fn reader(&self) -> VmReader<'_, Infallible> {
@@ -131,3 +133,4 @@ macro_rules! impl_untyped_for {
 
 impl_untyped_for!(Frame);
 impl_untyped_for!(Segment);
+*/
