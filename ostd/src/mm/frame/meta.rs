@@ -68,17 +68,19 @@ use crate::{
 //    util::ops::range_difference,
 };
 
+pub use aster_common::prelude::{MetaSlot, META_SLOT_SIZE, FrameMeta};
+
 /// The maximum number of bytes of the metadata of a frame.
-pub const FRAME_METADATA_MAX_SIZE: usize = META_SLOT_SIZE
+pub const FRAME_METADATA_MAX_SIZE: usize = META_SLOT_SIZE()
     - size_of::<AtomicU64>()
 //    - size_of::<FrameMetaVtablePtr>()
     - size_of::<AtomicU64>();
 /// The maximum alignment in bytes of the metadata of a frame.
-pub const FRAME_METADATA_MAX_ALIGN: usize = META_SLOT_SIZE;
+pub const FRAME_METADATA_MAX_ALIGN: usize = META_SLOT_SIZE();
 
-const META_SLOT_SIZE: usize = 64;
+//const META_SLOT_SIZE: usize = 64;
 
-#[repr(C)]
+/*#[repr(C)]
 pub(in crate::mm) struct MetaSlot {
     /// The metadata of a frame.
     ///
@@ -122,11 +124,11 @@ pub(in crate::mm) struct MetaSlot {
     /// we would have to ensure that the type is correct before the read, which
     /// costs a synchronization.
     pub(super) in_list: AtomicU64,
-}
+}*/
 
-pub(super) const REF_COUNT_UNUSED: u64 = u64::MAX;
-pub(super) const REF_COUNT_UNIQUE: u64 = u64::MAX - 1;
-pub(super) const REF_COUNT_MAX: u64 = i64::MAX as u64;
+pub(super) const REF_COUNT_UNUSED: u32 = u32::MAX;
+pub(super) const REF_COUNT_UNIQUE: u32 = u32::MAX - 1;
+pub(super) const REF_COUNT_MAX: u32 = i32::MAX as u32;
 
 //type FrameMetaVtablePtr = core::ptr::DynMetadata<dyn AnyFrameMeta>;
 
@@ -220,6 +222,9 @@ pub(super) fn get_slot(paddr: Paddr) -> Result<&'static MetaSlot, GetFrameError>
 }
 
 impl MetaSlot {
+
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     /// Initializes the metadata slot of a frame assuming it is unused.
     ///
     /// If successful, the function returns a pointer to the metadata slot.
@@ -227,11 +232,13 @@ impl MetaSlot {
     ///
     /// The resulting reference count held by the returned pointer is
     /// [`REF_COUNT_UNIQUE`] if `as_unique_ptr` is `true`, otherwise `1`.
-    pub(super) fn get_from_unused<M: AnyFrameMeta>(
+    pub(super) fn get_from_unused(
         paddr: Paddr,
-        metadata: M,
+        metadata: FrameMeta,
         as_unique_ptr: bool,
     ) -> Result<*const Self, GetFrameError> {
+        unimplemented!()
+        /*
         let slot = get_slot(paddr)?;
 
         // `Acquire` pairs with the `Release` in `drop_last_in_place` and ensures the metadata
@@ -259,11 +266,15 @@ impl MetaSlot {
         }
 
         Ok(slot as *const MetaSlot)
+        */
     }
 
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     /// Gets another owning pointer to the metadata slot from the given page.
     pub(super) fn get_from_in_use(paddr: Paddr) -> Result<*const Self, GetFrameError> {
-        let slot = get_slot(paddr)?;
+        unimplemented!()
+/*        let slot = get_slot(paddr)?;
 
         // Try to increase the reference count for an in-use frame. Otherwise fail.
         loop {
@@ -297,15 +308,19 @@ impl MetaSlot {
                 }
             }
             core::hint::spin_loop();
-        }
+        }*/
     }
 
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     /// Increases the frame reference count by one.
     ///
     /// # Safety
     ///
     /// The caller must have already held a reference to the frame.
     pub(super) unsafe fn inc_ref_count(&self) {
+        unimplemented!()
+        /*
         let last_ref_cnt = self.ref_count.fetch_add(1, Ordering::Relaxed);
         debug_assert!(last_ref_cnt != 0 && last_ref_cnt != REF_COUNT_UNUSED);
 
@@ -315,14 +330,16 @@ impl MetaSlot {
             // <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.clone>.
 //            abort();
             unimplemented!()
-        }
+        }*/
     }
 
+    #[rustc_allow_incoherent_impl]
     /// Gets the corresponding frame's physical address.
     pub(super) fn frame_paddr(&self) -> Paddr {
         mapping::meta_to_frame::<PagingConsts>(self as *const MetaSlot as Vaddr)
     }
 
+    #[rustc_allow_incoherent_impl]
     /// Gets a dynamically typed pointer to the stored metadata.
     ///
     /// # Safety
@@ -332,7 +349,7 @@ impl MetaSlot {
     ///
     /// The returned pointer should not be dereferenced as mutable unless having
     /// exclusive access to the metadata slot.
-    pub(super) unsafe fn dyn_meta_ptr(&self) -> *mut dyn AnyFrameMeta {
+    pub(super) unsafe fn dyn_meta_ptr(&self) -> *mut FrameMeta {
         unimplemented!()
         /*
         // SAFETY: The page metadata is valid to be borrowed immutably, since
@@ -348,6 +365,8 @@ impl MetaSlot {
         meta_ptr*/
     }
 
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     /// Gets the stored metadata as type `M`.
     ///
     /// Calling the method should be safe, but using the returned pointer would
@@ -357,16 +376,18 @@ impl MetaSlot {
     ///  - the initialized metadata is of type `M`;
     ///  - the returned pointer should not be dereferenced as mutable unless
     ///    having exclusive access to the metadata slot.
-    pub(super) fn as_meta_ptr<M: AnyFrameMeta>(&self) -> *mut M {
-        self.storage.get() as *mut M
+    pub(super) fn as_meta_ptr(&self) -> *mut FrameMeta {
+        unimplemented!()
+//        self.storage.get() as *mut M
     }
 
+    #[rustc_allow_incoherent_impl]
     /// Writes the metadata to the slot without reading or dropping the previous value.
     ///
     /// # Safety
     ///
     /// The caller should have exclusive access to the metadata slot's fields.
-    pub(super) unsafe fn write_meta<M: AnyFrameMeta>(&self, metadata: M) {
+    pub(super) unsafe fn write_meta(&self, metadata: FrameMeta) {
         unimplemented!()
         /*
         const { assert!(size_of::<M>() <= FRAME_METADATA_MAX_SIZE) };

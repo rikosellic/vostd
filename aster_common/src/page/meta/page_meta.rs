@@ -5,6 +5,8 @@ use super::PageUsage;
 
 verus! {
 
+use crate::prelude::MetaSlot;
+
 #[allow(non_snake_case)]
 pub trait PageMeta: Sync + Sized {
     spec fn USAGE_spec() -> PageUsage;
@@ -73,6 +75,23 @@ impl PageMeta for FrameMeta {
         // Nothing should be done so far since dropping the page would
         // have all taken care of.
     }
+}
+
+/// The metadata of linked list frames.
+///
+/// Linked list frames can be contained in a [`LinkedList`].
+#[derive(Debug)]
+#[rustc_has_incoherent_inherent_impls]
+pub struct Link {
+    pub next: Option<Box<Link>>, // Previously `NonNull`, so needs invariant
+    pub prev: Option<Box<Link>>, // Likewise
+    pub meta: FrameMeta,
+}
+
+#[rustc_has_incoherent_inherent_impls]
+pub struct UniqueFrameLink {
+    pub ptr: *const MetaSlot,
+    pub _marker: PhantomData<FrameMeta>,
 }
 
 } // verus!

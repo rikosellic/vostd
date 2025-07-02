@@ -10,12 +10,12 @@ use crate::{mm::Paddr/*, sync::non_null::NonNullPtr*/};
 
 /// A struct that can work as `&'a Frame<M>`.
 #[derive(Debug)]
-pub struct FrameRef<'a, M: AnyFrameMeta + ?Sized> {
-    inner: ManuallyDrop<Frame<M>>,
-    _marker: PhantomData<&'a Frame<M>>,
+pub struct FrameRef<'a> {
+    inner: ManuallyDrop<Frame>,
+    _marker: PhantomData<&'a Frame>,
 }
 
-impl<M: AnyFrameMeta + ?Sized> FrameRef<'_, M> {
+impl FrameRef<'_> {
     /// Borrows the [`Frame`] at the physical address as a [`FrameRef`].
     ///
     /// # Safety
@@ -33,8 +33,8 @@ impl<M: AnyFrameMeta + ?Sized> FrameRef<'_, M> {
     }
 }
 
-impl<M: AnyFrameMeta + ?Sized> Deref for FrameRef<'_, M> {
-    type Target = Frame<M>;
+impl Deref for FrameRef<'_> {
+    type Target = Frame;
 
     fn deref(&self) -> &Self::Target {
         &self.inner

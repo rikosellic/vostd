@@ -21,7 +21,7 @@ use crate::{
 /// If a structure `M` implements [`AnyUFrameMeta`], it can be used as the
 /// metadata of a type of untyped frames [`Frame<M>`]. All frames of such type
 /// will be accessible as untyped memory.
-pub trait AnyUFrameMeta: AnyFrameMeta {}
+//pub trait AnyUFrameMeta: AnyFrameMeta {}
 
 /// A smart pointer to an untyped frame with any metadata.
 ///
@@ -30,7 +30,7 @@ pub trait AnyUFrameMeta: AnyFrameMeta {}
 /// untyped frame metadata.
 ///
 /// The usage of this frame will not be changed while this object is alive.
-pub type UFrame = Frame<dyn AnyUFrameMeta>;
+pub type UFrame = Frame;
 
 /*
 /// Makes a structure usable as untyped frame metadata.
