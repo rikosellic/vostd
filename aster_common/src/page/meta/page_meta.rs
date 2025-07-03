@@ -1,4 +1,5 @@
 use vstd::prelude::*;
+use vstd::simple_pptr::*;
 
 use super::super::Page;
 use super::PageUsage;
@@ -80,11 +81,10 @@ impl PageMeta for FrameMeta {
 /// The metadata of linked list frames.
 ///
 /// Linked list frames can be contained in a [`LinkedList`].
-#[derive(Debug)]
 #[rustc_has_incoherent_inherent_impls]
 pub struct Link {
-    pub next: Option<Box<Link>>, // Previously `NonNull`, so needs invariant
-    pub prev: Option<Box<Link>>, // Likewise
+    pub next: Option<PPtr<Link>>, // Previously `NonNull`, so needs invariant
+    pub prev: Option<PPtr<Link>>, // Likewise
     pub meta: FrameMeta,
 }
 

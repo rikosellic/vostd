@@ -6,6 +6,7 @@
 //! [super::meta]) to allow any type of frame to be used in a linked list.
 
 use vstd::prelude::*;
+use vstd::simple_pptr::*;
 
 use core::{
     ops::{Deref, DerefMut},
@@ -91,8 +92,8 @@ impl MetaSlot {
 /// [`from_in_use`]: Frame::from_in_use
 pub struct LinkedList
 {
-    front: Option<Link>,
-    back: Option<Link>,
+    front: Option<PPtr<Link>>,
+    back: Option<PPtr<Link>>,
     /// The number of frames in the list.
     size: usize,
     /// A lazily initialized ID, used to check whether a frame is in the list.
@@ -250,14 +251,14 @@ impl LinkedList
 pub struct CursorMut<'a>
 {
     list: &'a mut LinkedList,
-    current: Option<Link>,
+    current: Option<PPtr<Link>>,
 }
 
 verus!{
 
 impl CursorMut<'_>
 {
-    /// Moves the cursor to the next frame towards the back.
+/*    /// Moves the cursor to the next frame towards the back.
     ///
     /// If the cursor is pointing to the "ghost" non-element then this will
     /// move it to the first element of the [`LinkedList`]. If it is pointing
@@ -283,7 +284,7 @@ impl CursorMut<'_>
             Some(current) => unsafe { current.as_ref().prev },
             None => self.list.back,
         };
-    }
+    }*/
 
     /*
     /// Gets the mutable reference to the current frame's metadata.
@@ -384,8 +385,8 @@ impl CursorMut<'_>
             } else {
 //                debug_assert_eq!(self.list.front, Some(*current));
                 frame.meta_mut().next = Some(*current);
-                current_mut.prev = Some(frame_ptr);
-                self.list.front = Some(frame_ptr);
+                current_mut.prev = Some(*frame_ptr);
+                self.list.front = Some(*frame_ptr);
             }
         } else {
             // We are at the "ghost" non-element.
@@ -396,11 +397,11 @@ impl CursorMut<'_>
                     back.as_mut().next = Some(frame_ptr);
                 }
                 frame.meta_mut().prev = Some(*back);
-                self.list.back = Some(frame_ptr);
+                self.list.back = Some(*frame_ptr);
             } else {
 //                debug_assert_eq!(self.list.front, None);
-                self.list.front = Some(frame_ptr);
-                self.list.back = Some(frame_ptr);
+                self.list.front = Some(*frame_ptr);
+                self.list.back = Some(*frame_ptr);
             }
         }
 

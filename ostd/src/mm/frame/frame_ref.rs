@@ -24,12 +24,14 @@ impl FrameRef<'_> {
     ///  - the frame outlives the created reference, so that the reference can
     ///    be seen as borrowed from that frame.
     ///  - the type of the [`FrameRef`] (`M`) matches the borrowed frame.
+    #[verifier::external_body]
     pub(in crate::mm) unsafe fn borrow_paddr(raw: Paddr) -> Self {
-        Self {
+        unimplemented!()
+/*        Self {
             // SAFETY: The caller ensures the safety.
             inner: ManuallyDrop::new(unsafe { Frame::from_raw(raw) }),
             _marker: PhantomData,
-        }
+        }*/
     }
 }
 

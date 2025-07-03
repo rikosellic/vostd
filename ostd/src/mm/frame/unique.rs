@@ -89,7 +89,7 @@ impl UniqueFrameLink {
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
     #[rustc_allow_incoherent_impl]
-    pub fn dyn_meta(&self) -> FrameMeta {
+    pub fn dyn_meta(&self) -> &FrameMeta {
         // SAFETY: The metadata is initialized and valid.
         unsafe { &*self.slot().dyn_meta_ptr() }
     }

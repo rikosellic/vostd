@@ -49,6 +49,8 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use vstd::simple_pptr::*;
+
 //use align_ext::AlignExt;
 //use log::info;
 
@@ -68,7 +70,7 @@ use crate::{
 //    util::ops::range_difference,
 };
 
-pub use aster_common::prelude::{MetaSlot, META_SLOT_SIZE, FrameMeta};
+pub use aster_common::prelude::{MetaSlot, META_SLOT_SIZE, FrameMeta, Link};
 
 /// The maximum number of bytes of the metadata of a frame.
 pub const FRAME_METADATA_MAX_SIZE: usize = META_SLOT_SIZE()
@@ -376,7 +378,7 @@ impl MetaSlot {
     ///  - the initialized metadata is of type `M`;
     ///  - the returned pointer should not be dereferenced as mutable unless
     ///    having exclusive access to the metadata slot.
-    pub(super) fn as_meta_ptr(&self) -> *mut FrameMeta {
+    pub(super) fn as_meta_ptr(&self) -> PPtr<Link> {
         unimplemented!()
 //        self.storage.get() as *mut M
     }
