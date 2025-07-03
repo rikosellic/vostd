@@ -317,17 +317,11 @@ impl PageTableEntryPerms {
         &&& self.inner.is_init_all()
         &&& self.inner.value().len() == 512
         // Page table well-formed.
-        &&& forall|i: nat|
-            #![auto]
-            0 <= self.inner.value().len() < 512 ==> {
-                &&& self.inner.value()[i as int].wf()
-                &&& self.inner.value()[i as int].wf_with_node_info(
-                    paddr,
-                    level,
-                    instance_id,
-                    nid,
-                    i,
-                )
+        &&& forall|i: int|
+            #![trigger self.inner.value()[i]]
+            0 <= i < 512 ==> {
+                &&& self.inner.value()[i].wf()
+                &&& self.inner.value()[i].wf_with_node_info(level, instance_id, nid, i as nat)
             }
     }
 
