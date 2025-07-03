@@ -36,6 +36,7 @@ verus! {
 
 #[derive(Debug, Default)]
 #[repr(C)]
+#[rustc_has_incoherent_inherent_impls]
 pub struct FrameMeta {
     // If not doing so, the page table metadata would fit
     // in the front padding of meta slot and make it 12 bytes.

@@ -143,9 +143,11 @@ impl LinkedList
         self.cursor_front_mut().insert_before(frame);
     }
 
+    #[verifier::external_body]
     /// Pops a frame from the front of the linked list.
     pub fn pop_front(&mut self) -> Option<UniqueFrameLink> {
-        self.cursor_front_mut().take_current()
+        unimplemented!()
+//        self.cursor_front_mut().take_current()
     }
 
     /// Pushes a frame to the back of the linked list.
@@ -153,9 +155,11 @@ impl LinkedList
         self.cursor_at_ghost_mut().insert_before(frame);
     }
 
+    #[verifier::external_body]
     /// Pops a frame from the back of the linked list.
     pub fn pop_back(&mut self) -> Option<UniqueFrameLink> {
-        self.cursor_back_mut().take_current()
+        unimplemented!()
+//        self.cursor_back_mut().take_current()
     }
 
     /// Tells if a frame is in the list.
@@ -172,6 +176,8 @@ impl LinkedList
     ///
     /// This method fail if [`Self::contains`] returns `false`.
     pub fn cursor_mut_at(&mut self, frame: Paddr) -> Option<CursorMut<'_>> {
+        unimplemented!()
+        /*
         let Ok(slot) = get_slot(frame) else {
             return None;
         };
@@ -184,7 +190,7 @@ impl LinkedList
             })
         } else {
             None
-        }
+        }*/
     }
 
     #[verifier::external_body]
@@ -192,11 +198,14 @@ impl LinkedList
     ///
     /// If the list is empty, the cursor points to the "ghost" non-element.
     pub fn cursor_front_mut(&mut self) -> CursorMut<'_> {
+        unimplemented!()
+        /*
         let current = self.front;
         CursorMut {
             list: self,
             current,
         }
+        */
     }
 
     #[verifier::external_body]
@@ -204,11 +213,14 @@ impl LinkedList
     ///
     /// If the list is empty, the cursor points to the "ghost" non-element.
     pub fn cursor_back_mut(&mut self) -> CursorMut<'_> {
+        unimplemented!()
+        /*
         let current = self.back;
         CursorMut {
             list: self,
             current,
         }
+        */
     }
 
     #[verifier::external_body]
@@ -251,10 +263,18 @@ impl LinkedList
 pub struct CursorMut<'a>
 {
     list: &'a mut LinkedList,
-    current: Option<PPtr<Link>>,
+    current: Option<&'a mut PPtr<Link>>,
 }
 
 verus!{
+
+impl FrameMeta {
+    #[verifier::external_body]
+    #[rustc_allow_incoherent_impl]
+    pub fn to_vaddr(self) -> Vaddr {
+        unimplemented!()
+    }
+}
 
 impl CursorMut<'_>
 {
@@ -306,11 +326,13 @@ impl CursorMut<'_>
     /// If successful, the frame is returned and the cursor is moved to the
     /// next frame. If the cursor is pointing to the back of the list then it
     /// is moved to the "ghost" non-element.
-    pub fn take_current(&mut self) -> Option<UniqueFrameLink> {
+    pub fn take_current(&mut self, cur_perm: Tracked<&PointsTo<Link>>,
+        prev_perm: Tracked<&mut PointsTo<Link>>,
+        next_perm: Tracked<&mut PointsTo<Link>>) -> Option<UniqueFrameLink> {
         let current = self.current?;
 
         let mut frame = {
-            let meta_ptr = current.as_ptr() as *mut MetaSlot;
+            let meta_ptr = current.borrow(cur_perm).meta.to_vaddr();
             let paddr = mapping::meta_to_frame::<PagingConsts>(meta_ptr as Vaddr);
             // SAFETY: The frame was forgotten when inserted into the linked list.
             unsafe { UniqueFrameLink::from_raw(paddr) }
@@ -321,10 +343,9 @@ impl CursorMut<'_>
         if let Some(prev) = &mut frame.meta_mut().prev {
             // SAFETY: We own the previous node by `&mut self` and the node is
             // initialized.
-            let prev_mut = unsafe { prev.as_mut() };
-
-//            debug_assert_eq!(prev_mut.next, Some(current));
+            let prev_mut = prev.take(prev_perm);
             prev_mut.next = next_ptr;
+            prev.put(prev_perm, prev_mut);
         } else {
             self.list.front = next_ptr;
         }
@@ -332,11 +353,11 @@ impl CursorMut<'_>
         if let Some(next) = &mut frame.meta_mut().next {
             // SAFETY: We own the next node by `&mut self` and the node is
             // initialized.
-            let next_mut = unsafe { next.as_mut() };
-
-//            debug_assert_eq!(next_mut.prev, Some(current));
+            let next_mut = next.take(prev_perm);
             next_mut.prev = prev_ptr;
-            self.current = Some(next_mut);
+            next.put(next_perm, next_mut);
+
+            self.current = Some(next);
         } else {
             self.list.back = prev_ptr;
             self.current = None;
