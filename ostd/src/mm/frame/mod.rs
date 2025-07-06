@@ -44,6 +44,8 @@ pub use frame_ref::FrameRef;
 #[cfg(ktest)]
 mod test;
 
+use vstd::prelude::*;
+
 use core::{
     marker::PhantomData,
     mem::ManuallyDrop,
@@ -67,6 +69,8 @@ pub(in crate::mm) fn max_paddr() -> Paddr {
     max_paddr
 }
 
+verus! {
+
 /// A smart pointer to a frame.
 ///
 /// A frame is a contiguous range of bytes in physical memory. The [`Frame`]
@@ -80,6 +84,7 @@ pub(in crate::mm) fn max_paddr() -> Paddr {
 pub struct Frame {
     ptr: *const MetaSlot,
     _marker: PhantomData<FrameMeta>,
+}
 }
 /*
 unsafe impl<M: AnyFrameMeta + ?Sized> Send for Frame<M> {}

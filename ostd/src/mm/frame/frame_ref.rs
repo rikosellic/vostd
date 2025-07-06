@@ -14,7 +14,7 @@ pub struct FrameRef<'a> {
     inner: ManuallyDrop<Frame>,
     _marker: PhantomData<&'a Frame>,
 }
-
+/*
 impl FrameRef<'_> {
     /// Borrows the [`Frame`] at the physical address as a [`FrameRef`].
     ///
@@ -33,7 +33,7 @@ impl FrameRef<'_> {
             _marker: PhantomData,
         }*/
     }
-}
+}*/
 
 impl Deref for FrameRef<'_> {
     type Target = Frame;

@@ -14,6 +14,11 @@
 //! address in the kernel space. So finding the metadata of a frame often
 //! comes with no costs since the translation is a simple arithmetic operation.
 
+use vstd::prelude::*;
+use vstd::simple_pptr::*;
+
+verus! {
+
 pub(crate) mod mapping {
     //! The metadata of each physical page is linear mapped to fixed virtual addresses
     //! in [`FRAME_METADATA_RANGE`].
@@ -21,13 +26,13 @@ pub(crate) mod mapping {
     use core::mem::size_of;
 
     use super::MetaSlot;
-    use aster_common::prelude::FRAME_METADATA_RANGE;
-    use crate::mm::{/*kspace::FRAME_METADATA_RANGE,*/ Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE};
+    use aster_common::prelude::{FRAME_METADATA_RANGE, PAGE_SIZE};
+    use crate::mm::{/*kspace::FRAME_METADATA_RANGE,*/ Paddr, PagingConstsTrait, Vaddr};
 
     /// Converts a physical address of a base frame to the virtual address of the metadata slot.
     pub(crate) const fn frame_to_meta<C: PagingConstsTrait>(paddr: Paddr) -> Vaddr {
         let base = FRAME_METADATA_RANGE().start;
-        let offset = paddr / PAGE_SIZE;
+        let offset = paddr / PAGE_SIZE();
         base + offset * size_of::<MetaSlot>()
     }
 
@@ -35,8 +40,9 @@ pub(crate) mod mapping {
     pub(crate) const fn meta_to_frame<C: PagingConstsTrait>(vaddr: Vaddr) -> Paddr {
         let base = FRAME_METADATA_RANGE().start;
         let offset = (vaddr - base) / size_of::<MetaSlot>();
-        offset * PAGE_SIZE
+        offset * PAGE_SIZE()
     }
+}
 }
 
 use core::{
@@ -49,7 +55,6 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use vstd::simple_pptr::*;
 
 //use align_ext::AlignExt;
 //use log::info;
@@ -187,6 +192,8 @@ macro_rules! impl_frame_meta_for {
 
 pub use impl_frame_meta_for;
 
+verus!{
+
 /// The error type for getting the frame from a physical address.
 #[derive(Debug)]
 pub enum GetFrameError {
@@ -207,8 +214,10 @@ pub enum GetFrameError {
 }
 
 /// Gets the reference to a metadata slot.
+#[verifier::external_body]
 pub(super) fn get_slot(paddr: Paddr) -> Result<&'static MetaSlot, GetFrameError> {
-    if paddr % PAGE_SIZE != 0 {
+    unimplemented!()
+/*    if paddr % PAGE_SIZE != 0 {
         return Err(GetFrameError::NotAligned);
     }
     if paddr >= super::max_paddr() {
@@ -220,7 +229,7 @@ pub(super) fn get_slot(paddr: Paddr) -> Result<&'static MetaSlot, GetFrameError>
 
     // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
     // mutably borrowed, so taking an immutable reference to it is safe.
-    Ok(unsafe { &*ptr })
+    Ok(unsafe { &*ptr })*/
 }
 
 impl MetaSlot {
@@ -313,13 +322,13 @@ impl MetaSlot {
         }*/
     }
 
-    #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
     /// Increases the frame reference count by one.
     ///
     /// # Safety
     ///
     /// The caller must have already held a reference to the frame.
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub(super) unsafe fn inc_ref_count(&self) {
         unimplemented!()
         /*
@@ -335,13 +344,13 @@ impl MetaSlot {
         }*/
     }
 
-    #[rustc_allow_incoherent_impl]
     /// Gets the corresponding frame's physical address.
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub(super) fn frame_paddr(&self) -> Paddr {
         mapping::meta_to_frame::<PagingConsts>(self as *const MetaSlot as Vaddr)
     }
 
-    #[rustc_allow_incoherent_impl]
     /// Gets a dynamically typed pointer to the stored metadata.
     ///
     /// # Safety
@@ -351,6 +360,8 @@ impl MetaSlot {
     ///
     /// The returned pointer should not be dereferenced as mutable unless having
     /// exclusive access to the metadata slot.
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub(super) unsafe fn dyn_meta_ptr(&self) -> *mut FrameMeta {
         unimplemented!()
         /*
@@ -367,8 +378,6 @@ impl MetaSlot {
         meta_ptr*/
     }
 
-    #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
     /// Gets the stored metadata as type `M`.
     ///
     /// Calling the method should be safe, but using the returned pointer would
@@ -378,17 +387,20 @@ impl MetaSlot {
     ///  - the initialized metadata is of type `M`;
     ///  - the returned pointer should not be dereferenced as mutable unless
     ///    having exclusive access to the metadata slot.
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub(super) fn as_meta_ptr(&self) -> PPtr<Link> {
         unimplemented!()
 //        self.storage.get() as *mut M
     }
 
-    #[rustc_allow_incoherent_impl]
     /// Writes the metadata to the slot without reading or dropping the previous value.
     ///
     /// # Safety
     ///
     /// The caller should have exclusive access to the metadata slot's fields.
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub(super) unsafe fn write_meta(&self, metadata: FrameMeta) {
         unimplemented!()
         /*
@@ -665,3 +677,4 @@ fn add_temp_linear_mapping(max_paddr: Paddr) {
     }
 }
 */
+}

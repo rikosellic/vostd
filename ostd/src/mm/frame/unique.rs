@@ -3,9 +3,10 @@
 //! The unique frame pointer that is not shared with others.
 
 use vstd::prelude::*;
+use vstd::simple_pptr::PPtr;
 
 pub use aster_common::prelude::{UniqueFrameLink, Link};
-use aster_common::prelude::FrameMeta;
+use aster_common::prelude::{FrameMeta, PAGE_SIZE};
 
 use core::{marker::PhantomData, mem::ManuallyDrop, sync::atomic::Ordering};
 
@@ -13,7 +14,7 @@ use super::{
     meta::{GetFrameError, REF_COUNT_UNIQUE},
     Frame, MetaSlot,
 };
-use crate::mm::{frame::mapping, Paddr, PagingConsts, PagingLevel, PAGE_SIZE};
+use crate::mm::{frame::mapping, Paddr, PagingConsts, PagingLevel};
 
 verus!{
 
@@ -52,7 +53,7 @@ impl UniqueFrameLink {
     /// Gets the mutable metadata of this page.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn meta_mut(&mut self) -> &mut Link {
+    pub fn meta_mut(&mut self) -> PPtr<Link> {
         unimplemented!()
         // SAFETY: The type is tracked by the type system.
         // And we have the exclusive access to the metadata.
@@ -82,27 +83,29 @@ impl UniqueFrameLink {
     /// Gets the size of this page in bytes.
     #[rustc_allow_incoherent_impl]
     pub const fn size(&self) -> usize {
-        PAGE_SIZE
+        PAGE_SIZE()
     }
 
     /// Gets the dyncamically-typed metadata of this frame.
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
     #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub fn dyn_meta(&self) -> &FrameMeta {
         // SAFETY: The metadata is initialized and valid.
         unsafe { &*self.slot().dyn_meta_ptr() }
     }
-
+/*
     /// Gets the dyncamically-typed metadata of this frame.
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
     #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub fn dyn_meta_mut(&mut self) -> &mut FrameMeta {
         // SAFETY: The metadata is initialized and valid. We have the exclusive
         // access to the frame.
         unsafe { &mut *self.slot().dyn_meta_ptr() }
-    }
+    }*/
 
     /*
     /// Resets the frame to unused without up-calling the allocator.
@@ -127,6 +130,7 @@ impl UniqueFrameLink {
 
     /// Converts this frame into a raw physical address.
     #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub(crate) fn into_raw(self) -> Paddr {
         let this = ManuallyDrop::new(self);
         this.start_paddr()
@@ -139,21 +143,25 @@ impl UniqueFrameLink {
     /// The caller must ensure that the physical address is valid and points to
     /// a forgotten frame that was previously casted by [`Self::into_raw`].
     #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub(crate) unsafe fn from_raw(paddr: Paddr) -> Self {
-        let vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
+        unimplemented!()
+/*        let vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
         let ptr = vaddr as *const MetaSlot;
 
         Self {
             ptr,
             _marker: PhantomData,
-        }
+        }*/
     }
 
     #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub(super) fn slot(&self) -> &MetaSlot {
+        unimplemented!()
         // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
         // mutably borrowed, so taking an immutable reference to it is safe.
-        unsafe { &*self.ptr }
+//        unsafe { &*self.ptr }
     }
 }
 
