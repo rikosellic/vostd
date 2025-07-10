@@ -6,6 +6,7 @@ use builtin::*;
 use builtin_macros::*;
 use vstd::prelude::*;
 use vstd::atomic_with_ghost;
+use vstd::bits::*;
 use vstd::rwlock::{ReadHandle, WriteHandle};
 use vstd::vpanic;
 use vstd::pervasive::allow_panic;
@@ -162,13 +163,30 @@ pub open spec fn va_range_get_guard_level(va: Range<Vaddr>) -> PagingLevel
     va_range_get_guard_level_rec(va, 4)
 }
 
+pub proof fn lemma_va_range_get_guard_level_rec(va: Range<Vaddr>, level: PagingLevel)
+    requires
+        va_range_wf(va),
+        1 <= level <= 4,
+    ensures
+        1 <= va_range_get_guard_level_rec(va, level) <= level,
+    decreases level,
+{
+    if level > 1 {
+        let st = va.start;
+        let en = (va.end - 1) as usize;
+        if va_level_to_offset(st, level) == va_level_to_offset(en, level) {
+            lemma_va_range_get_guard_level_rec(va, (level - 1) as PagingLevel);
+        }
+    }
+}
+
 pub proof fn lemma_va_range_get_guard_level(va: Range<Vaddr>)
     requires
         va_range_wf(va),
     ensures
         1 <= va_range_get_guard_level(va) <= 4,
 {
-    admit();  // TODO
+    lemma_va_range_get_guard_level_rec(va, 4);
 }
 
 pub open spec fn va_range_get_tree_path(va: Range<Vaddr>) -> Seq<NodeId>
@@ -191,7 +209,26 @@ pub proof fn lemma_va_range_get_tree_path(va: Range<Vaddr>)
             ),
         va_range_get_tree_path(va).len() == 5 - va_range_get_guard_level(va),
 {
-    admit();  //TODO
+    let guard_level = va_range_get_guard_level(va);
+    let trace = va_level_to_trace(va.start, guard_level);
+    lemma_va_range_get_guard_level(va);
+    lemma_va_level_to_trace_rec_len(va.start >> 12, guard_level);
+    assert(trace.len() == 4 - guard_level);
+    let path = va_range_get_tree_path(va);
+    assert(path.len() == 1 + trace.len());
+    assert(path.len() == 5 - guard_level);
+    assert forall|i| 0 <= i < path.len() implies NodeHelper::valid_nid(path[i]) by {
+        let nid = path[i];
+        if i == 0 {
+            assert(nid == NodeHelper::root_id());
+            NodeHelper::lemma_root_id();
+        } else {
+            let sub_trace = trace.subrange(0, i);
+            assert(nid == NodeHelper::trace_to_nid(sub_trace));
+            lemma_va_level_to_trace_valid(va.start, guard_level);
+            NodeHelper::lemma_trace_to_nid_sound(sub_trace);
+        }
+    }
 }
 
 // pub proof fn lemma_va_range_get_tree_path_inc(
