@@ -96,8 +96,37 @@ pub fn page_to_meta(paddr: Paddr) -> (res: Vaddr)
 }
 
 #[inline(always)]
+#[verifier::when_used_as_spec(page_to_meta_spec)]
+pub fn frame_to_meta(paddr: Paddr) -> (res: Vaddr)
+    requires
+        paddr % PAGE_SIZE() == 0,
+        paddr < MAX_PADDR(),
+    ensures
+        res == page_to_meta_spec(paddr),
+        res % META_SLOT_SIZE() == 0,
+{
+    let base = FRAME_METADATA_RANGE().start;
+    let offset = paddr / PAGE_SIZE();
+    base + offset * META_SLOT_SIZE()
+}
+
+#[inline(always)]
 #[verifier::when_used_as_spec(meta_to_page_spec)]
 pub fn meta_to_page(vaddr: Vaddr) -> (res: Paddr)
+    requires
+        FRAME_METADATA_RANGE().start <= vaddr && vaddr < FRAME_METADATA_RANGE().end,
+        vaddr % META_SLOT_SIZE() == 0,
+    ensures
+        res == meta_to_page_spec(vaddr),
+{
+    let base = FRAME_METADATA_RANGE().start;
+    let offset = (vaddr - base) / META_SLOT_SIZE();
+    offset * PAGE_SIZE()
+}
+
+#[inline(always)]
+#[verifier::when_used_as_spec(meta_to_page_spec)]
+pub fn meta_to_frame(vaddr: Vaddr) -> (res: Paddr)
     requires
         FRAME_METADATA_RANGE().start <= vaddr && vaddr < FRAME_METADATA_RANGE().end,
         vaddr % META_SLOT_SIZE() == 0,

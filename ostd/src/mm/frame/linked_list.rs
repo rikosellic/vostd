@@ -14,21 +14,52 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use core::borrow::BorrowMut;
+
 use super::{
-    mapping,
     meta::{get_slot},
     MetaSlot,
 };
 
-use aster_common::prelude::{meta, Link, UniqueFrameLink, FrameMeta};
+use aster_common::prelude::{meta, mapping, Link, UniqueFrameLink, FrameMeta};
 
 use crate::{
     arch::mm::PagingConsts,
     mm::{Paddr, Vaddr},
-//    panic::abort,
 };
 
 verus! {
+
+#[macro_export]
+macro_rules! update_field {
+    ($ptr:expr => $field:tt <- $val:expr,
+     $perm:expr) => {
+        ::builtin_macros::verus_exec_expr!(
+        {
+            let mut __tmp = $ptr.take(Tracked($perm));
+            __tmp.$field = $val;
+            $ptr.put(Tracked($perm), __tmp);
+        })
+    };
+    ($ptr:expr => $field:tt += $val:expr,
+     $perm:expr) => {
+        ::builtin_macros::verus_exec_expr!(
+        {
+            let mut __tmp = $ptr.take(Tracked($perm));
+            __tmp.$field = __tmp.$field + $val;
+            $ptr.put(Tracked($perm), __tmp);
+        })
+    };
+    ($ptr:expr => $field:tt -= $val:expr,
+     $perm:expr) => {
+        ::builtin_macros::verus_exec_expr!(
+        {
+            let mut __tmp = $ptr.take(Tracked($perm));
+            __tmp.$field = __tmp.$field - $val;
+            $ptr.put(Tracked($perm), __tmp);
+        })
+    }
+}
 
 impl MetaSlot {
     #[verifier::external_body]
@@ -345,52 +376,38 @@ impl CursorMut
 
         let mut frame = {
             let meta_ptr = current.borrow(Tracked(&*cur_perm)).meta.to_vaddr();
-            let paddr = mapping::meta_to_frame::<PagingConsts>(meta_ptr as Vaddr);
+            let paddr = mapping::meta_to_frame(meta_ptr);
             // SAFETY: The frame was forgotten when inserted into the linked list.
             unsafe { UniqueFrameLink::from_raw(paddr) }
         };
 
-        let mut frame_meta_mut = frame.meta_mut().take(Tracked(cur_perm));
-
         let next_ptr = frame.meta().next;
 
-        if let Some(prev) = frame_meta_mut.prev {
+        if let Some(prev) = frame.meta_mut().borrow(Tracked(&*cur_perm)).prev {
             // SAFETY: We own the previous node by `&mut self` and the node is
             // initialized.
-            let mut prev_mut = prev.take(Tracked(prev_perm));
-            prev_mut.next = next_ptr;
-            prev.put(Tracked(prev_perm), prev_mut);
+            update_field!(prev => next <- next_ptr, prev_perm);
         } else {
-            let mut list_mut = self.list.take(Tracked(list_perm));
-            list_mut.front = next_ptr;
-            self.list.put(Tracked(list_perm), list_mut);
+            update_field!(self.list => front <- next_ptr, list_perm);
         }
         let prev_ptr = frame.meta().prev;
-        if let Some(next) = frame_meta_mut.next {
+        if let Some(next) = frame.meta_mut().borrow(Tracked(&*cur_perm)).next {
             // SAFETY: We own the next node by `&mut self` and the node is
             // initialized.
-            let mut next_mut = next.take(Tracked(prev_perm));
-            next_mut.prev = prev_ptr;
-            next.put(Tracked(next_perm), next_mut);
-
+            update_field!(next => prev <- prev_ptr, next_perm);
             self.current = Some(next);
         } else {
-            let mut list_mut = self.list.take(Tracked(list_perm));
-            list_mut.back = prev_ptr;
-            self.list.put(Tracked(list_perm), list_mut);
+            update_field!(self.list => back <- prev_ptr, list_perm);
             self.current = None;
         }
 
-        frame_meta_mut.next = None;
-        frame_meta_mut.prev = None;
-        frame.meta_mut().put(Tracked(cur_perm), frame_meta_mut);
+        update_field!(frame.meta_mut() => next <- None, cur_perm);
+        update_field!(frame.meta_mut() => prev <- None, cur_perm);
 
 //        frame.slot().in_list.store(0, Ordering::Relaxed);
 //        frame.slot().in_list_store(0);
 
-        let mut list_mut = self.list.take(Tracked(list_perm));
-        list_mut.size = list_mut.size - 1;
-        self.list.put(Tracked(list_perm), list_mut);
+        update_field!(self.list => size -= 1, list_perm);
 
         Some(frame)
     }
@@ -414,58 +431,41 @@ impl CursorMut
 //        debug_assert_eq!(frame.slot().in_list.load(Ordering::Relaxed), 0);
 
         let frame_ptr = frame.meta_mut();
-        let mut frame_meta_mut = frame_ptr.take(Tracked(frame_perm));
 
         if let Some(current) = self.current {
             // SAFETY: We own the current node by `&mut self` and the node is
             // initialized.
-            let mut current_mut = current.take(Tracked(cur_perm));
 
-            if let Some(prev) = current_mut.prev {
+            if let Some(prev) = current.borrow(Tracked(&*cur_perm)).prev {
                 // SAFETY: We own the previous node by `&mut self` and the node
                 // is initialized.
-                let mut prev_mut = prev.take(Tracked(prev_perm));
+                update_field!(prev => next <- Some(frame_ptr), prev_perm);
 
 //                debug_assert_eq!(prev_mut.next, Some(*current));
-                prev_mut.next = Some(frame_ptr);
-                prev.put(Tracked(prev_perm), prev_mut);
-
-                frame_meta_mut.prev = Some(prev);
-                frame_meta_mut.next = Some(current);
-                current_mut.prev = Some(frame_ptr);
+                update_field!(frame_ptr => prev <- Some(prev), frame_perm);
+                update_field!(frame_ptr => next <- Some(current), frame_perm);
+                update_field!(current => prev <- Some(frame_ptr), cur_perm);
             } else {
 //                debug_assert_eq!(self.list.front, Some(*current));
-                frame_meta_mut.next = Some(current);
-                current_mut.prev = Some(frame_ptr);
+                update_field!(frame_ptr => next <- Some(current), frame_perm);
+                update_field!(current => prev <- Some(frame_ptr), cur_perm);
                 
-                let mut list_mut = self.list.take(Tracked(list_perm));
-                list_mut.front = Some(frame_ptr);
-                self.list.put(Tracked(list_perm), list_mut);
+                update_field!(self.list => front <- Some(frame_ptr), list_perm);
             }
         } else {
             // We are at the "ghost" non-element.
-            let mut list_mut = self.list.take(Tracked(list_perm));
-
-            if let Some(back) = list_mut.back {
+            if let Some(back) = self.list.borrow(Tracked(&*list_perm)).back {
                 // SAFETY: We have ownership of the links via `&mut self`.
 //                    debug_assert!(back.as_mut().next.is_none());
-                let mut back_mut = back.take(Tracked(back_perm));
-                back_mut.next = Some(frame_ptr);
-                back.put(Tracked(back_perm), back_mut);
-
-                frame_meta_mut.prev = Some(back);
-
-                list_mut.back = Some(frame_ptr);
+                update_field!(back => next <- Some(frame_ptr), back_perm);
+                update_field!(frame_ptr => prev <- Some(back), frame_perm);
+                update_field!(self.list => back <- Some(frame_ptr), list_perm);
             } else {
 //                debug_assert_eq!(self.list.front, None);
-                list_mut.front = Some(frame_ptr);
-                list_mut.back = Some(frame_ptr);
+                update_field!(self.list => front <- Some(frame_ptr), list_perm);
+                update_field!(self.list => back <- Some(frame_ptr), list_perm);
             }
-
-            self.list.put(Tracked(list_perm), list_mut);
         }
-
-        frame_ptr.put(Tracked(frame_perm), frame_meta_mut);
 
         /*
         frame
@@ -480,9 +480,7 @@ impl CursorMut
         // Forget the frame to transfer the ownership to the list.
         let _ = frame.into_raw();
 
-        let mut list_mut = self.list.take(Tracked(list_perm));
-        list_mut.size = list_mut.size + 1;
-        self.list.put(Tracked(list_perm), list_mut);
+        update_field!(self.list => size += 1, list_perm);
     }
 
 /*    /// Provides a reference to the linked list.

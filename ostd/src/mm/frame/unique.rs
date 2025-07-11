@@ -6,7 +6,7 @@ use vstd::prelude::*;
 use vstd::simple_pptr::PPtr;
 
 pub use aster_common::prelude::{UniqueFrameLink, Link};
-use aster_common::prelude::{FrameMeta, PAGE_SIZE};
+use aster_common::prelude::{mapping, FrameMeta, PAGE_SIZE};
 
 use core::{marker::PhantomData, mem::ManuallyDrop, sync::atomic::Ordering};
 
@@ -14,7 +14,7 @@ use super::{
     meta::{GetFrameError, REF_COUNT_UNIQUE},
     Frame, MetaSlot,
 };
-use crate::mm::{frame::mapping, Paddr, PagingConsts, PagingLevel};
+use crate::mm::{Paddr, PagingConsts, PagingLevel};
 
 verus!{
 

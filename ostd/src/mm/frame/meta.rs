@@ -17,34 +17,6 @@
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
-verus! {
-
-pub(crate) mod mapping {
-    //! The metadata of each physical page is linear mapped to fixed virtual addresses
-    //! in [`FRAME_METADATA_RANGE`].
-
-    use core::mem::size_of;
-
-    use super::MetaSlot;
-    use aster_common::prelude::{FRAME_METADATA_RANGE, PAGE_SIZE};
-    use crate::mm::{/*kspace::FRAME_METADATA_RANGE,*/ Paddr, PagingConstsTrait, Vaddr};
-
-    /// Converts a physical address of a base frame to the virtual address of the metadata slot.
-    pub(crate) const fn frame_to_meta<C: PagingConstsTrait>(paddr: Paddr) -> Vaddr {
-        let base = FRAME_METADATA_RANGE().start;
-        let offset = paddr / PAGE_SIZE();
-        base + offset * size_of::<MetaSlot>()
-    }
-
-    /// Converts a virtual address of the metadata slot to the physical address of the frame.
-    pub(crate) const fn meta_to_frame<C: PagingConstsTrait>(vaddr: Vaddr) -> Paddr {
-        let base = FRAME_METADATA_RANGE().start;
-        let offset = (vaddr - base) / size_of::<MetaSlot>();
-        offset * PAGE_SIZE()
-    }
-}
-}
-
 use core::{
     alloc::Layout,
     any::Any,
@@ -75,7 +47,7 @@ use crate::{
 //    util::ops::range_difference,
 };
 
-pub use aster_common::prelude::{MetaSlot, META_SLOT_SIZE, FrameMeta, Link};
+pub use aster_common::prelude::{mapping, MetaSlot, META_SLOT_SIZE, FrameMeta, Link};
 
 /// The maximum number of bytes of the metadata of a frame.
 pub const FRAME_METADATA_MAX_SIZE: usize = META_SLOT_SIZE()
@@ -348,7 +320,7 @@ impl MetaSlot {
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
     pub(super) fn frame_paddr(&self) -> Paddr {
-        mapping::meta_to_frame::<PagingConsts>(self as *const MetaSlot as Vaddr)
+        mapping::meta_to_frame(self as *const MetaSlot as Vaddr)
     }
 
     /// Gets a dynamically typed pointer to the stored metadata.
