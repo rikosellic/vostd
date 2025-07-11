@@ -21,6 +21,7 @@ use super::{
     MetaSlot,
 };
 
+use vstd_extra::update_field;
 use aster_common::prelude::{meta, mapping, Link, UniqueFrameLink, FrameMeta};
 
 use crate::{
@@ -29,37 +30,6 @@ use crate::{
 };
 
 verus! {
-
-#[macro_export]
-macro_rules! update_field {
-    ($ptr:expr => $field:tt <- $val:expr,
-     $perm:expr) => {
-        ::builtin_macros::verus_exec_expr!(
-        {
-            let mut __tmp = $ptr.take(Tracked($perm));
-            __tmp.$field = $val;
-            $ptr.put(Tracked($perm), __tmp);
-        })
-    };
-    ($ptr:expr => $field:tt += $val:expr,
-     $perm:expr) => {
-        ::builtin_macros::verus_exec_expr!(
-        {
-            let mut __tmp = $ptr.take(Tracked($perm));
-            __tmp.$field = __tmp.$field + $val;
-            $ptr.put(Tracked($perm), __tmp);
-        })
-    };
-    ($ptr:expr => $field:tt -= $val:expr,
-     $perm:expr) => {
-        ::builtin_macros::verus_exec_expr!(
-        {
-            let mut __tmp = $ptr.take(Tracked($perm));
-            __tmp.$field = __tmp.$field - $val;
-            $ptr.put(Tracked($perm), __tmp);
-        })
-    }
-}
 
 impl MetaSlot {
     #[verifier::external_body]
