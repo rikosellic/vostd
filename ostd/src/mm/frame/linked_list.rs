@@ -22,7 +22,7 @@ use super::{
 };
 
 use vstd_extra::update_field;
-use aster_common::prelude::{meta, mapping, Link, UniqueFrameLink, FrameMeta};
+use aster_common::prelude::{meta, mapping, Link, UniqueFrameLink, FrameMeta, FRAME_METADATA_RANGE, META_SLOT_SIZE};
 
 use crate::{
     arch::mm::PagingConsts,
@@ -93,13 +93,13 @@ impl MetaSlot {
 /// [`from_in_use`]: Frame::from_in_use
 pub struct LinkedList
 {
-    front: Option<PPtr<Link>>,
-    back: Option<PPtr<Link>>,
+    pub front: Option<PPtr<Link>>,
+    pub back: Option<PPtr<Link>>,
     /// The number of frames in the list.
-    size: usize,
+    pub size: usize,
     /// A lazily initialized ID, used to check whether a frame is in the list.
     /// 0 means uninitialized.
-    list_id: u64,
+    pub list_id: u64,
 }
 
 // SAFETY: Only the pointers are not `Send` and `Sync`. But our interfaces
@@ -274,8 +274,8 @@ verus!{
 /// to the "ghost" non-element when the cursor surpasses the back of the list.
 pub struct CursorMut
 {
-    list: PPtr<LinkedList>,
-    current: Option<PPtr<Link>>,
+    pub list: PPtr<LinkedList>,
+    pub current: Option<PPtr<Link>>,
 }
 
 impl FrameMeta {
@@ -340,30 +340,48 @@ impl CursorMut
         Tracked(list_perm): Tracked<&mut PointsTo<LinkedList>>,
         Tracked(cur_perm): Tracked<&mut PointsTo<Link>>,
         Tracked(prev_perm): Tracked<&mut PointsTo<Link>>,
-        Tracked(next_perm): Tracked<&mut PointsTo<Link>>,
-    ) -> Option<UniqueFrameLink> {
+        Tracked(next_perm): Tracked<&mut PointsTo<Link>>) -> Option<UniqueFrameLink>
+        requires
+            old(self).list == old(list_perm).pptr(),
+            old(list_perm).is_init(),
+            old(list_perm).mem_contents().value().size > 0,
+            old(self).current.unwrap() == old(cur_perm).pptr(),
+            old(cur_perm).is_init(),
+            old(cur_perm).mem_contents().value().prev == Some(old(prev_perm).pptr()),
+            old(cur_perm).mem_contents().value().next == Some(old(next_perm).pptr()),
+            old(prev_perm).is_init(),
+    {
         let current = self.current?;
 
         let mut frame = {
             let meta_ptr = current.borrow(Tracked(&*cur_perm)).meta.to_vaddr();
+            assert(FRAME_METADATA_RANGE().start <= meta_ptr < FRAME_METADATA_RANGE().end) by { admit() };
+            assert(meta_ptr % META_SLOT_SIZE() == 0) by { admit() };
+
             let paddr = mapping::meta_to_frame(meta_ptr);
             // SAFETY: The frame was forgotten when inserted into the linked list.
             unsafe { UniqueFrameLink::from_raw(paddr) }
         };
 
-        let next_ptr = frame.meta().next;
+        let next_ptr = frame.meta(Tracked(&*cur_perm)).next;
 
-        if let Some(prev) = frame.meta_mut().borrow(Tracked(&*cur_perm)).prev {
+        if let Some(prev) = frame.meta_mut(Tracked(cur_perm)).borrow(Tracked(&*cur_perm)).prev {
             // SAFETY: We own the previous node by `&mut self` and the node is
             // initialized.
+//            assert(prev == prev_perm.pptr()) by { admit() };
+//            assert(prev_perm.is_init()) by { admit() };
+
             update_field!(prev => next <- next_ptr, prev_perm);
         } else {
             update_field!(self.list => front <- next_ptr, list_perm);
         }
-        let prev_ptr = frame.meta().prev;
-        if let Some(next) = frame.meta_mut().borrow(Tracked(&*cur_perm)).next {
+        let prev_ptr = frame.meta(Tracked(&*cur_perm)).prev;
+        if let Some(next) = frame.meta_mut(Tracked(cur_perm)).borrow(Tracked(&*cur_perm)).next {
             // SAFETY: We own the next node by `&mut self` and the node is
             // initialized.
+            assert(next == next_perm.pptr()) by { admit() };
+            assert(next_perm.is_init()) by { admit() };
+
             update_field!(next => prev <- prev_ptr, next_perm);
             self.current = Some(next);
         } else {
@@ -371,8 +389,8 @@ impl CursorMut
             self.current = None;
         }
 
-        update_field!(frame.meta_mut() => next <- None, cur_perm);
-        update_field!(frame.meta_mut() => prev <- None, cur_perm);
+        update_field!(frame.meta_mut(Tracked(cur_perm)) => next <- None, cur_perm);
+        update_field!(frame.meta_mut(Tracked(cur_perm)) => prev <- None, cur_perm);
 
 //        frame.slot().in_list.store(0, Ordering::Relaxed);
 //        frame.slot().in_list_store(0);
@@ -387,20 +405,32 @@ impl CursorMut
     /// If the cursor is pointing at the "ghost" non-element then the new
     /// element is inserted at the back of the [`LinkedList`].
     pub fn insert_before(&mut self, mut frame: UniqueFrameLink,
-        Tracked(list_perm): Tracked<&mut PointsTo<LinkedList>>,
-        Tracked(frame_perm): Tracked<&mut PointsTo<Link>>,
-        Tracked(cur_perm): Tracked<&mut PointsTo<Link>>,
-        Tracked(prev_perm): Tracked<&mut PointsTo<Link>>,
-        Tracked(next_perm): Tracked<&mut PointsTo<Link>>,
-        Tracked(back_perm): Tracked<&mut PointsTo<Link>>,
-    ) {
+            Tracked(list_perm): Tracked<&mut PointsTo<LinkedList>>,
+            Tracked(frame_perm): Tracked<&mut PointsTo<Link>>,
+            Tracked(cur_perm): Tracked<&mut PointsTo<Link>>,
+            Tracked(prev_perm): Tracked<&mut PointsTo<Link>>,
+            Tracked(next_perm): Tracked<&mut PointsTo<Link>>,
+            Tracked(back_perm): Tracked<&mut PointsTo<Link>>)
+        requires
+            old(self).list == old(list_perm).pptr(),
+            old(list_perm).is_init(),
+            old(list_perm).mem_contents().value().size < usize::MAX,
+            old(list_perm).mem_contents().value().back.unwrap() == old(back_perm).pptr(),
+            old(self).current.unwrap() == old(cur_perm).pptr(),
+            old(cur_perm).is_init(),
+            old(cur_perm).mem_contents().value().prev == Some(old(prev_perm).pptr()),
+            old(cur_perm).mem_contents().value().next == Some(old(next_perm).pptr()),
+            old(back_perm).is_init(),
+            old(frame_perm).is_init(),
+            old(prev_perm).is_init(),
+    {
         // The frame can't possibly be in any linked lists since the list will
         // own the frame so there can't be any unique pointers to it.
 //        debug_assert!(frame.meta_mut().next.is_none());
 //        debug_assert!(frame.meta_mut().prev.is_none());
 //        debug_assert_eq!(frame.slot().in_list.load(Ordering::Relaxed), 0);
 
-        let frame_ptr = frame.meta_mut();
+        let frame_ptr = frame.meta_mut(Tracked(frame_perm));
 
         if let Some(current) = self.current {
             // SAFETY: We own the current node by `&mut self` and the node is
