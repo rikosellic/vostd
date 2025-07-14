@@ -3,7 +3,7 @@
 //! The unique frame pointer that is not shared with others.
 
 use vstd::prelude::*;
-use vstd::simple_pptr::PPtr;
+use vstd::simple_pptr::*;
 
 pub use aster_common::prelude::{UniqueFrameLink, Link};
 use aster_common::prelude::{mapping, FrameMeta, PAGE_SIZE};
@@ -44,7 +44,10 @@ impl UniqueFrameLink {
     /// Gets the metadata of this page.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn meta(&self) -> &Link {
+    pub fn meta(&self, Tracked(perm): Tracked<&PointsTo<Link>>) -> (l: &Link)
+        ensures
+            perm.mem_contents().value() == l,
+    {
         unimplemented!()
         // SAFETY: The type is tracked by the type system.
 //        unsafe { &*self.slot().as_meta_ptr() }
@@ -53,7 +56,11 @@ impl UniqueFrameLink {
     /// Gets the mutable metadata of this page.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn meta_mut(&mut self) -> PPtr<Link> {
+    pub fn meta_mut(&mut self, Tracked(perm): Tracked<&mut PointsTo<Link>>) -> (ptr: PPtr<Link>)
+        ensures
+            ptr == perm.pptr(),
+            perm.mem_contents() == old(perm).mem_contents()
+    {
         unimplemented!()
         // SAFETY: The type is tracked by the type system.
         // And we have the exclusive access to the metadata.
