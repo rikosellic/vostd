@@ -385,7 +385,7 @@ impl<V, const N: usize> PointsTo<V, N> {
     /// #[verifier::type_invariant]
     pub closed spec fn wf(&self) -> bool {
         /// The pointer is not a slice, so it is still thin
-        &&& self.points_to.ptr()@.metadata == raw_ptr::Metadata::Thin
+        &&& self.points_to.ptr()@.metadata == ()
         &&& self.points_to.ptr()@.provenance == self.exposed.provenance()
         &&& match self.dealloc {
             Some(dealloc) => {

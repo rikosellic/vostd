@@ -2,11 +2,13 @@ use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
 use super::super::Page;
+use super::frame_to_meta;
 use super::PageUsage;
 
 verus! {
 
 use crate::prelude::MetaSlot;
+use crate::prelude::PagingConstsTrait;
 
 #[allow(non_snake_case)]
 pub trait PageMeta: Sync + Sized {
@@ -56,7 +58,6 @@ impl PageMeta for FrameMeta {
     }
 
     #[inline(always)]
-    #[verifier::when_used_as_spec(USAGE_spec)]
     fn USAGE() -> (res: PageUsage)
         ensures
             res == Self::USAGE_spec(),
@@ -91,7 +92,7 @@ pub struct Link {
 
 #[rustc_has_incoherent_inherent_impls]
 pub struct UniqueFrameLink {
-    pub ptr: *const MetaSlot,
+    pub ptr: PPtr<MetaSlot>,
     pub _marker: PhantomData<Link>,
 }
 
@@ -161,7 +162,6 @@ impl PageMeta for PageTablePageMeta {
     }
 
     #[inline(always)]
-    #[verifier::when_used_as_spec(USAGE_spec)]
     fn USAGE() -> (res: PageUsage)
         ensures
             res == Self::USAGE_spec(),
@@ -242,7 +242,6 @@ impl PageMeta for MetaPageMeta {
     }
 
     #[inline(always)]
-    #[verifier::when_used_as_spec(USAGE_spec)]
     fn USAGE() -> (res: PageUsage)
         ensures
             res == Self::USAGE_spec(),
@@ -280,7 +279,6 @@ impl PageMeta for KernelMeta {
     }
 
     #[inline(always)]
-    #[verifier::when_used_as_spec(USAGE_spec)]
     fn USAGE() -> (res: PageUsage)
         ensures
             res == Self::USAGE_spec(),

@@ -50,8 +50,7 @@ macro_rules! impl_map_forward {
             }
 
             #[verifier::external_body]
-            #[verifier::when_used_as_spec(map_forward_spec)]
-            fn map_forward(self, bm: &[BitMapping<Self, $dst>]) -> (res: $dst)
+            exec fn map_forward(self, bm: &[BitMapping<Self, $dst>]) -> (res: $dst)
             {
                 bm.iter().fold(0 as $dst, |acc, m| {
                     if self & m.src == m.src {
@@ -112,8 +111,7 @@ macro_rules! impl_map_invert_forward {
             }
 
             #[verifier::external_body]
-            #[verifier::when_used_as_spec(map_invert_forward_spec)]
-            fn map_invert_forward(self, bm: &[BitMapping<Self, $dst>]) -> (res: $dst)
+            exec fn map_invert_forward(self, bm: &[BitMapping<Self, $dst>]) -> (res: $dst)
                 ensures res == self.map_invert_forward_spec(bm)
             {
                 let inv_src = !self;
@@ -176,8 +174,7 @@ macro_rules! impl_map_backward {
             }
 
             #[verifier::external_body]
-            #[verifier::when_used_as_spec(map_backward_spec)]
-            fn map_backward(self, bm: &[BitMapping<$src, Self>]) -> (res: $src)
+            exec fn map_backward(self, bm: &[BitMapping<$src, Self>]) -> (res: $src)
                 ensures res == self.map_backward_spec(bm)
             {
                 bm.iter().fold(0 as $src, |acc, m| {
@@ -240,8 +237,7 @@ macro_rules! impl_map_invert_backward {
             }
 
             #[verifier::external_body]
-            #[verifier::when_used_as_spec(map_invert_backward_spec)]
-            fn map_invert_backward(self, bm: &[BitMapping<$src, Self>]) -> (res: $src)
+            exec fn map_invert_backward(self, bm: &[BitMapping<$src, Self>]) -> (res: $src)
                 ensures res == self.map_invert_backward_spec(bm)
             {
                 let inv_src = !self;

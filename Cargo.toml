@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "scripts",
     "vstd_extra",
     "aster_common",
 #    "code/sample",
