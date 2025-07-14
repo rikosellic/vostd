@@ -219,7 +219,8 @@ impl MetaSlot {
         paddr: Paddr,
         metadata: FrameMeta,
         as_unique_ptr: bool,
-    ) -> Result<*const Self, GetFrameError> {
+    ) -> Result<PPtr<Self>, GetFrameError>
+    {
         unimplemented!()
         /*
         let slot = get_slot(paddr)?;
