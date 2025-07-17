@@ -36,44 +36,34 @@ impl PageTableNode {
     pub fn meta<'a>(
         &'a self,
         Tracked(p_slot): Tracked<&'a simple_pptr::PointsTo<MetaSlot>>,
-        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>,
-    ) -> (res: &PageTablePageMeta)
+        owner: MetaSlotOwner,
+    ) -> (res: &PageTablePageMetaInner)
         requires
             self.inv(),
             p_slot.pptr() == self.page.ptr,
             p_slot.is_init(),
-            p_slot.value().wf(),
-            p_inner.id() == p_slot.value()._inner.id(),
-            p_inner.is_init(),
-            is_variant(p_inner.value(), "_pt"),
+            p_slot.value().wf(&owner),
+            is_variant(owner.view().storage.value(), "Node"),
     {
-        self.page.meta_pt(Tracked(p_slot), Tracked(p_inner))
+        self.page.meta_pt(Tracked(p_slot), owner)
     }
 
     pub fn level(
         &self,
         Tracked(p_slot): Tracked<&simple_pptr::PointsTo<MetaSlot>>,
-        Tracked(p_inner): Tracked<&cell::PointsTo<MetaSlotInner>>,
-        Tracked(pt_inner): Tracked<&cell::PointsTo<PageTablePageMetaInner>>,
+        owner: MetaSlotOwner,
     ) -> (res: PagingLevel)
         requires
             self.inv(),
             p_slot.pptr() == self.page.ptr,
             p_slot.is_init(),
-            p_slot.value().wf(),
-            p_inner.id() == p_slot.value()._inner.id(),
-            p_inner.is_init(),
-            is_variant(p_inner.value(), "_pt"),
-            pt_inner.id() == p_slot.value().borrow_pt_spec(p_inner).inner.id(),
-            pt_inner.is_init(),
+            p_slot.value().wf(&owner),
+            is_variant(owner.view().storage.value(), "Node"),
     {
-        let meta = self.meta(Tracked(p_slot), Tracked(p_inner));
-        assume(meta.inner.id() == pt_inner.id());
-        let inner = meta.inner.borrow(Tracked(pt_inner));
-        inner.level
+        self.meta(Tracked(p_slot), owner).level
     }
 
-    pub fn is_tracked(
+/*    pub fn is_tracked(
         &self,
         Tracked(p_slot): Tracked<&simple_pptr::PointsTo<MetaSlot>>,
         Tracked(p_inner): Tracked<&cell::PointsTo<MetaSlotInner>>,
@@ -94,7 +84,7 @@ impl PageTableNode {
         assume(meta.inner.id() == pt_inner.id());
         let inner = meta.inner.borrow(Tracked(pt_inner));
         inner.is_tracked
-    }
+    }*/
 }
 
 } // verus!

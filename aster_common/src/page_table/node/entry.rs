@@ -3,9 +3,11 @@ use vstd::simple_pptr;
 use vstd::cell;
 
 use crate::prelude::{
-    PageTableEntry, PageTableEntryTrait, PageTableNode, MetaSlot, MetaSlotInner,
-    PageTablePageMetaInner,
+    PageTableEntry, PageTableEntryTrait, PageTableNode, MetaSlot, PageTablePageMetaInner,
+    MetaSlotOwner, OwnerOf
 };
+
+use crate::page::meta::exp_models::InvView;
 
 verus! {
 
@@ -38,22 +40,17 @@ impl<'a> Entry<'a> {
     pub fn is_node(
         &self,
         Tracked(p_slot): Tracked<&simple_pptr::PointsTo<MetaSlot>>,
-        Tracked(p_inner): Tracked<&cell::PointsTo<MetaSlotInner>>,
-        Tracked(pt_inner): Tracked<&cell::PointsTo<PageTablePageMetaInner>>,
+        owner: MetaSlotOwner,
     ) -> bool
         requires
             self.node.inv(),
             p_slot.pptr() == self.node.page.ptr,
             p_slot.is_init(),
-            p_slot.value().wf(),
-            p_inner.id() == p_slot.value()._inner.id(),
-            p_inner.is_init(),
-            is_variant(p_inner.value(), "_pt"),
-            pt_inner.id() == p_slot.value().borrow_pt_spec(p_inner).inner.id(),
-            pt_inner.is_init(),
+            p_slot.value().wf(&owner),
+            is_variant(owner.view().storage.value(), "Node"),
     {
         self.pte.is_present() && !self.pte.is_last(
-            self.node.level(Tracked(p_slot), Tracked(p_inner), Tracked(pt_inner)),
+            self.node.level(Tracked(p_slot), owner),
         )
     }
 }

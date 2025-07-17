@@ -193,7 +193,7 @@ impl PageTablePageMetaModel {
     }
 }
 
-impl PageTablePageMeta {
+/*impl PageTablePageMeta {
     pub open spec fn new_locked_spec(
         level: PagingLevel,
         is_tracked: MapTrackingStatus,
@@ -222,7 +222,7 @@ impl PageTablePageMeta {
         let meta = Self { lock, inner, _phantom: PhantomData };
         (meta, Tracked(model))
     }
-}
+}*/
 
 } // verus!
 verus! {

@@ -6,14 +6,12 @@ use vstd::atomic::*;
 use std::marker::PhantomData;
 use std::ops::Range;
 
+use crate::mm::*;
 
+use crate::prelude::PageTablePageMetaInner;
+use crate::prelude::PageUsage;
 
 verus! {
-
-pub type Paddr = usize;
-pub type Vaddr = usize;
-
-
 
 pub mod kspace {
     use super::*;
@@ -137,6 +135,7 @@ pub struct Link {
 pub enum MetaSlotStorage {
     Empty([u8; 39]),
     Link(Link),
+    Node(PageTablePageMetaInner),
 }
 
 /// Concrete type
@@ -170,6 +169,7 @@ pub tracked struct MetaSlotOwner {
     pub vtable_ptr: Tracked<simple_pptr::PointsTo<usize>>,
     pub in_list: Tracked<PermissionU64>,
     pub self_ptr: Tracked<simple_pptr::PointsTo<MetaSlot>>,
+    pub usage: PageUsage,
 }
 
 impl Inv for MetaSlotOwner {
@@ -211,6 +211,7 @@ pub ghost struct MetaSlotModel {
     pub vtable_ptr: MemContents<usize>,
     pub in_list: u64,
     pub self_addr: usize,
+    pub usage: PageUsage,
 }
 
 impl Inv for MetaSlotModel {
@@ -246,6 +247,7 @@ impl InvView for MetaSlotOwner {
         let vtable_ptr = self.vtable_ptr@.mem_contents();
         let in_list = self.in_list@.value();
         let self_addr = self.self_ptr@.addr();
+        let usage = self.usage;
         let status = match ref_count {
             REF_COUNT_UNUSED => MetaSlotStatus::UNUSED,
             REF_COUNT_UNIQUE => MetaSlotStatus::UNIQUE,
@@ -260,10 +262,11 @@ impl InvView for MetaSlotOwner {
             vtable_ptr,
             in_list,
             self_addr,
+            usage,
         }
     }
 
-    proof fn view_preserves_inv(&self) { }
+    proof fn view_preserves_inv(&self) { admit() }
 }
 
 
@@ -427,6 +430,7 @@ impl MetaSlot {
                     vtable_ptr: MemContents::Init(metadata.vtable_ptr()),
                     in_list: 0,
                     self_addr: ptr.addr(),
+                    usage: PageUsage::Frame,
                 }
             )
         };

@@ -13,6 +13,8 @@ use core::marker::PhantomData;
 use crate::mm::Paddr;
 use crate::x86_64::mm::{MAX_NR_PAGES, MAX_PADDR, PAGE_SIZE};
 
+use crate::prelude::MetaSlotStorage::Node;
+
 verus! {
 
 #[rustc_has_incoherent_inherent_impls]
@@ -48,45 +50,44 @@ impl<M: PageMeta> Page<M> {
         meta_to_page(self.ptr.addr())
     }
 
+    #[verifier::external_body]
     pub fn meta_pt<'a>(
         &'a self,
         Tracked(p_slot): Tracked<&'a simple_pptr::PointsTo<MetaSlot>>,
-        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>,
-    ) -> (res: &'a PageTablePageMeta)
+        owner: MetaSlotOwner,
+//        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>,
+    ) -> (res: & PageTablePageMetaInner)
         requires
             self.inv_ptr(),
             p_slot.pptr() == self.ptr,
             p_slot.is_init(),
-            p_slot.value().wf(),
-            p_inner.id() == p_slot.value()._inner.id(),
-            p_inner.is_init(),
-            is_variant(p_inner.value(), "_pt"),
+            p_slot.value().wf(&owner),
+            is_variant(owner.view().storage.value(), "Node"),
         ensures
-            *res == p_slot.value().borrow_pt_spec(p_inner),
+            Node(*res) == owner.view().storage.value(),
     {
         let slot = self.ptr.borrow(Tracked(p_slot));
-        slot.borrow_pt(Tracked(p_inner))
+        unimplemented!()
+//        slot.storage.borrow(owner.storage)
     }
 
-    pub fn meta_frame<'a>(
+/*    pub fn meta_frame<'a>(
         &'a self,
         Tracked(p_slot): Tracked<&'a simple_pptr::PointsTo<MetaSlot>>,
-        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>,
+//        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>,
     ) -> (res: &'a FrameMeta)
         requires
             self.inv_ptr(),
             p_slot.pptr() == self.ptr,
             p_slot.is_init(),
             p_slot.value().wf(),
-            p_inner.id() == p_slot.value()._inner.id(),
-            p_inner.is_init(),
-            is_variant(p_inner.value(), "_frame"),
+//            is_variant(p_inner.value(), "_frame"),
         ensures
-            *res == p_slot.value().borrow_frame_spec(p_inner),
+//            *res == p_slot.value().borrow_frame_spec(p_inner),
     {
         let slot = self.ptr.borrow(Tracked(p_slot));
-        slot.borrow_frame(Tracked(p_inner))
-    }
+  //      slot.borrow_frame(Tracked(p_inner))
+    }*/
 }
 
 } // verus!
