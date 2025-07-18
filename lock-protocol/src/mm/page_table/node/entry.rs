@@ -106,7 +106,6 @@ impl<'a, C: PageTableConfig, PTL: PageTableLockTrait<C>> Entry<'a, C, PTL> {
         Tracked(alloc_model): Tracked<&mut AllocatorModel>,
     ) -> (res: Child<C>)
         requires
-            !old(spt).ptes@.value().contains_key(self.pte.pte_paddr() as int),
             old(spt).wf(),
             old(alloc_model).invariants(),
             self.idx < nr_subpage_per_huge::<C>(),
