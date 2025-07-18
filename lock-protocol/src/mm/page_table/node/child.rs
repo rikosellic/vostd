@@ -31,7 +31,7 @@ verus! {
 /// either a page table node or a page, it holds a reference count to the
 /// corresponding page.
 // #[derive(Debug)] // TODO: Debug for Child
-pub(in crate::mm) enum Child<C: PageTableConfig> {
+pub enum Child<C: PageTableConfig> {
     /// A owning handle to a raw page table node.
     PageTable(PageTableNode),
     /// A reference of a child page table node, in the form of a physical
@@ -47,16 +47,11 @@ pub(in crate::mm) enum Child<C: PageTableConfig> {
 
 // impl Child {
 impl<C: PageTableConfig> Child<C> {
-    #[verifier::inline]
-    pub open spec fn is_none_spec(&self) -> bool {
-        match self {
-            Child::None => true,
-            _ => false,
-        }
-    }
-
-    #[verifier::when_used_as_spec(is_none_spec)]
-    pub fn is_none(&self) -> bool {
+    #[verifier::allow_in_spec]
+    pub fn is_none(&self) -> bool
+        returns
+            self is None,
+    {
         match self {
             Child::None => true,
             _ => false,
@@ -72,24 +67,7 @@ impl<C: PageTableConfig> Child<C> {
     /// Usually this is for recording the PTE into a page table node. When the
     /// child is needed again by reading the PTE of a page table node, extra
     /// information should be provided using the [`Child::from_pte`] method.
-    pub(super) fn into_pte(self, spt: &mut exec::SubPageTable, ghost_index: usize) -> (res: C::E)
-        requires
-            old(spt).wf(),
-            spec_helpers::mpt_not_contains_not_allocated_frames(
-                old(spt),
-                ghost_index,
-            ),  // TODO: can we remove this?
-
-        ensures
-            spt.wf(),
-            spt.ptes@.instance_id() == old(spt).ptes@.instance_id(),
-            spt.frames@.instance_id() == old(spt).frames@.instance_id(),
-            spec_helpers::frame_keys_do_not_change(spt, old(spt)),
-            spec_helpers::mpt_not_contains_not_allocated_frames(
-                spt,
-                ghost_index,
-            ),  // TODO: can we remove this?
-    {
+    pub(super) fn into_pte(self) -> (res: C::E) {
         match self {
             Child::PageTable(pt) => {
                 // let pt = ManuallyDrop::new(pt);
@@ -102,9 +80,9 @@ impl<C: PageTableConfig> Child<C> {
             },
             Child::Frame(page, prop) => {
                 let level = page.map_level();
-                C::E::new_page(page.into_raw(), level, prop, spt, ghost_index)
+                C::E::new_page(page.into_raw(), level, prop)
             },
-            Child::Untracked(pa, level, prop) => C::E::new_page(pa, level, prop, spt, ghost_index),
+            Child::Untracked(pa, level, prop) => C::E::new_page(pa, level, prop),
             Child::None => C::E::new_absent(),
             Child::Token(token, _) => C::E::new_token(token),
         }

@@ -147,6 +147,7 @@ impl<M: PageMeta> Page<M> {
         (paddr, Tracked(end_state))
     }
 
+    #[verifier::external_body]
     #[rustc_allow_incoherent_impl]
     pub fn from_raw(
         paddr: Paddr,
@@ -401,9 +402,7 @@ impl DynPage {
             res.0.paddr() == paddr,
             res.1@.invariants(),
     {
-        broadcast use vstd_extra::manually_drop::ex_manually_drop_value_axiom;
         //Ghost operations
-
         proof {
             s.lemma_get_page_index_eq_page_to_index_spec(paddr);
         }

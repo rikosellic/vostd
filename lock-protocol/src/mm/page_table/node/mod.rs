@@ -20,14 +20,14 @@ use crate::mm::PageTableEntryTrait;
 use crate::mm::PagingConstsTrait;
 use crate::mm::PagingConsts;
 
-use crate::mm::frame::Frame;
+use crate::mm::frame::{Frame, allocator::AllocatorModel};
 use crate::mm::PagingLevel;
 
 use crate::sync::spin;
 // TODO: Use a generic style?
 use crate::x86_64::paddr_to_vaddr;
 
-use crate::exec;
+use crate::exec::{self, SubPageTable};
 use crate::spec::sub_page_table;
 
 use crate::mm::NR_ENTRIES;
@@ -44,6 +44,12 @@ pub type PageTableNode = Frame;
 // Originally, it is just a struct that holds a frame.
 // TODO: Can we also change the source code?
 pub trait PageTableLockTrait<C: PageTableConfig>: Sized {
+    #[verifier::inline]
+    open spec fn wf(&self) -> bool {
+        &&& self.paddr() < exec::PHYSICAL_BASE_ADDRESS_SPEC() + exec::SIZEOF_FRAME
+            * exec::MAX_FRAME_NUM
+    }
+
     // fn entry(&self, idx: usize) -> Entry<'_, E, C, Self>
     // requires
     //     idx < nr_subpage_per_huge();
@@ -65,56 +71,12 @@ pub trait PageTableLockTrait<C: PageTableConfig>: Sized {
     fn alloc(
         level: PagingLevel,
         is_tracked: MapTrackingStatus,
-        spt: &mut exec::SubPageTable,
-        cur_alloc_index: usize,
-        used_addr: usize,
-        used_addr_token: Tracked<sub_page_table::SubPageTableStateMachine::unused_addrs>,
+        Tracked(alloc_model): Tracked<&mut AllocatorModel>,
     ) -> (res: Self) where Self: Sized
         requires
-            old(spt).mem@.contains_key(cur_alloc_index),
-            old(spt).mem@[cur_alloc_index].1@.mem_contents().is_uninit(),  // this means !spt.frames@.contains_key(used_addr) because spt is wf.
-            forall|i: int|
-                old(spt).ptes@.value().contains_key(i) ==> (#[trigger] old(
-                    spt,
-                ).ptes@.value()[i]).frame_pa != used_addr,
-            forall|i: int|
-                0 <= i < NR_ENTRIES ==> !#[trigger] old(spt).ptes@.value().contains_key(
-                    used_addr + i * exec::SIZEOF_PAGETABLEENTRY as int,
-                ),
-            used_addr_token@.element() == used_addr as int,
-            old(spt).wf(),
-            cur_alloc_index < exec::MAX_FRAME_NUM,
-            cur_alloc_index < usize::MAX - 1,  // this is just for cur_alloc_index + 1 to be safe for the post condition
-            used_addr_token@.instance_id() == old(spt).instance@.id(),
-            used_addr == exec::frame_index_to_addr(cur_alloc_index),
-            spec_helpers::mpt_not_contains_not_allocated_frames(old(spt), cur_alloc_index),
-            used_addr == exec::frame_index_to_addr(cur_alloc_index) as usize,
+            old(alloc_model).invariants(),
         ensures
-            spt.instance@.id() == old(spt).instance@.id(),
-            res.paddr() == used_addr as usize,
-            spt.wf(),
-            forall|i: int|
-                spt.ptes@.value().contains_key(i) ==> (#[trigger] spt.ptes@.value()[i]).frame_pa
-                    != used_addr,
-            forall|i: int|
-                0 <= i < NR_ENTRIES ==> !#[trigger] spt.ptes@.value().contains_key(
-                    used_addr + i * exec::SIZEOF_PAGETABLEENTRY as int,
-                ),
-            spt.frames@.value().contains_key(used_addr as int),
-            spt.mem@.contains_key(cur_alloc_index),
-            spt.mem@[cur_alloc_index].1@.mem_contents().is_init(),
-            // all frame_pa of allocated pte are 0
-            forall|i: int|
-                0 <= i < NR_ENTRIES
-                    ==> #[trigger] spt.mem@[cur_alloc_index].1@.value().ptes[i].frame_pa == 0,
-            // spt still contains the old frames
-            forall|i|
-                old(spt).frames@.value().contains_key(i) ==> spt.frames@.value().contains_key(i),
-            spec_helpers::mpt_not_contains_not_allocated_frames(
-                spt,
-                (cur_alloc_index + 1) as usize,
-            ),
-            spec_helpers::pte_keys_do_not_change(spt, old(spt)),
+            alloc_model.invariants(),
     ;
 
     fn unlock(&mut self) -> PageTableNode;
@@ -127,13 +89,14 @@ pub trait PageTableLockTrait<C: PageTableConfig>: Sized {
     fn from_raw_paddr(paddr: Paddr) -> (res: Self) where Self: Sized
         ensures
             res.paddr() == paddr,
+            res.wf(),
     ;
 
     fn nr_children(&self) -> u16;
 
     fn read_pte(&self, idx: usize, spt: &exec::SubPageTable) -> (res: C::E)
         requires
-            idx < nr_subpage_per_huge(),
+            idx < nr_subpage_per_huge::<C>(),
             spt.wf(),
         ensures
             spt.wf(),
@@ -152,24 +115,20 @@ pub trait PageTableLockTrait<C: PageTableConfig>: Sized {
         &self,
         idx: usize,
         pte: C::E,
-        spt: &mut exec::SubPageTable,
         level: PagingLevel,
-        ghost_index: usize,
-        used_pte_addr_token: Tracked<sub_page_table::SubPageTableStateMachine::unused_pte_addrs>,
+        spt: &mut SubPageTable,
+        Tracked(alloc_model): Tracked<&mut AllocatorModel>,
     )
         requires
-            idx < nr_subpage_per_huge(),
+            idx < nr_subpage_per_huge::<C>(),
             old(spt).wf(),
-            spec_helpers::mpt_not_contains_not_allocated_frames(old(spt), ghost_index),
-            used_pte_addr_token@.instance_id() == old(spt).instance@.id(),
-            used_pte_addr_token@.element() == self.paddr() + idx
-                * exec::SIZEOF_PAGETABLEENTRY as int,
+            old(alloc_model).invariants(),
         ensures
             spt.wf(),
+            alloc_model.invariants(),
             spt.ptes@.instance_id() == old(spt).ptes@.instance_id(),
             spt.frames@.instance_id() == old(spt).frames@.instance_id(),
             spec_helpers::frame_keys_do_not_change(spt, old(spt)),
-            spec_helpers::mpt_not_contains_not_allocated_frames(spt, ghost_index),
     ;
 
     // fn nr_children_mut(&mut self) -> &mut u16;
@@ -219,8 +178,6 @@ pub enum MapTrackingStatus {
 }
 
 impl<C: PageTableConfig> PageTablePageMeta<C> {
-    // TODO: Implement
-    #[verifier::external_body]
     pub fn new_locked(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
         Self {
             // nr_children: SyncUnsafeCell::new(0),

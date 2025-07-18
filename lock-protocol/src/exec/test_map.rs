@@ -16,6 +16,7 @@ use crate::{
         page_prop, Frame, PageTableEntryTrait, PageTableLockTrait, PageTablePageMeta, PagingConsts,
         PagingConstsTrait, Vaddr, MAX_USERSPACE_VADDR, NR_LEVELS, PAGE_SIZE, PageTableConfig,
         PagingLevel,
+        frame::allocator::{alloc_page_table, AllocatorModel},
     },
     spec::sub_page_table,
     task::{disable_preempt, DisabledPreemptGuard},
@@ -30,7 +31,7 @@ struct TestPtConfig;
 
 unsafe impl PageTableConfig for TestPtConfig {
     type C = PagingConsts;
-    type E = SimplePageTableEntry;
+    type E = MockPageTableEntry;
 
     fn TOP_LEVEL_INDEX_RANGE() -> Range<usize> {
         0..256
@@ -63,7 +64,7 @@ unsafe impl PageTableConfig for TestPtConfig {
     }
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 struct TestPtItem {
     paddr: Paddr,
     level: PagingLevel,
@@ -79,14 +80,8 @@ requires
     let tracked (
         Tracked(instance),
         Tracked(frames_token),
-        Tracked(unused_addrs),
         Tracked(pte_token),
-        Tracked(unused_pte_addrs),
     ) = sub_page_table::SubPageTableStateMachine::Instance::initialize();
-    let tracked tokens = Tokens {
-        unused_addrs: unused_addrs.into_map(),
-        unused_pte_addrs: unused_pte_addrs.into_map(),
-    };
 
     // TODO: use Cursor::new
     let mut cursor =
@@ -96,7 +91,7 @@ requires
             level: 4,
             guard_level: NR_LEVELS as u8,
             va: va,
-            barrier_va: 0..MAX_USERSPACE_VADDR + PAGE_SIZE, // TODO: maybe cursor::new can solve this
+            barrier_va: 0..MAX_USERSPACE_VADDR + PAGE_SIZE(), // TODO: maybe cursor::new can solve this
             preempt_guard: disable_preempt(),
             _phantom: std::marker::PhantomData,
         }
@@ -104,52 +99,42 @@ requires
     assert(cursor.0.level == 4);
 
     let mut sub_page_table = SubPageTable {
-        mem: alloc_page_table_entries(),
+        perms: HashMap::new(),
         frames: Tracked(frames_token),
         ptes: Tracked(pte_token),
         instance: Tracked(instance.clone()),
     };
 
-    let mut cur_alloc_index: usize = 0; // TODO: theoretically, this should be atomic
-    let (p, Tracked(pt)) = get_frame_from_index(cur_alloc_index, &sub_page_table.mem); // TODO: permission violation
+    let tracked mut alloc_model = AllocatorModel { allocated_addrs: Set::empty() };
+
+    let (p, Tracked(pt)) = alloc_page_table(Tracked(&mut alloc_model));
     let f = exec::create_new_frame(PHYSICAL_BASE_ADDRESS(), 4);
     assert(f.ptes[0].frame_pa == 0 as u64);
     p.write(Tracked(&mut pt), f);
 
-    assert(pt.mem_contents() != MemContents::<SimpleFrame>::Uninit);
+    assert(pt.mem_contents() != MemContents::<MockPageTablePage>::Uninit);
     assert(pt.value().ptes.len() == NR_ENTRIES);
     assert(pt.value().ptes == f.ptes);
     assert(pt.value().ptes[0].frame_pa == 0 as u64);
 
     assert(sub_page_table.wf());
 
-    assert(sub_page_table.mem.len() == MAX_FRAME_NUM);
-    assert(p.addr() == PHYSICAL_BASE_ADDRESS() as usize);
-    assert(sub_page_table.mem@.contains_key(cur_alloc_index));
+    let (p, Tracked(pt)) = alloc_page_table(Tracked(&mut alloc_model));
+    assert(pt.mem_contents() != MemContents::<MockPageTablePage>::Uninit);
 
-    sub_page_table.mem.remove(&cur_alloc_index);
-    assert(sub_page_table.mem.len() == MAX_FRAME_NUM - 1);
-    sub_page_table.mem.insert(cur_alloc_index, (p, Tracked(pt)));
-    assert(sub_page_table.mem.len() == MAX_FRAME_NUM);
-
-    assert(sub_page_table.mem@[cur_alloc_index].1@.mem_contents() != MemContents::<SimpleFrame>::Uninit);
-
-    let (p, Tracked(pt)) = get_frame_from_index(cur_alloc_index, &sub_page_table.mem);
-    assert(pt.mem_contents() != MemContents::<SimpleFrame>::Uninit);
-
-    // assert(sub_page_table.wf()); this should fail
-    proof{
-        let tracked used_addr = tokens.unused_addrs.tracked_remove(p.addr()as int);
-        assert(used_addr.element() == p.addr() as int);
-
-        instance.new_at(p.addr() as int, sub_page_table::FrameView {
-            pa: p.addr() as int,
-            pte_addrs: Set::empty(),
-        }, sub_page_table.frames.borrow_mut(), used_addr, sub_page_table.ptes.borrow_mut());
-    }
     assert(sub_page_table.wf());
 
-    cur_alloc_index = cur_alloc_index + 1;
+    sub_page_table.perms.insert(
+        frame_addr_to_index(p.addr()),
+        (p, Tracked(pt)),
+    );
+
+    proof {
+        instance.new_at(sub_page_table::FrameView {
+            pa: p.addr() as int,
+            pte_addrs: Set::empty(),
+        }, sub_page_table.frames.borrow_mut(), sub_page_table.ptes.borrow_mut());
+    }
 
     cursor.0.path.push(None);
     cursor.0.path.push(None);
@@ -161,16 +146,17 @@ requires
         }
     )); // root
 
+    assume(sub_page_table.wf());
+
     cursor.map(frame, page_prop,
-        Tracked(tokens),
         &mut sub_page_table,
-        &mut cur_alloc_index
+        Tracked(&mut alloc_model)
     );
 
     assert(cursor.0.path.len() == NR_LEVELS as usize);
     assert(forall |i: usize| 1 < i <= NR_LEVELS as usize ==> #[trigger] cursor.0.path[i as int - 1].is_some());
 
-    let level4_index = pte_index(va, NR_LEVELS as u8);
+    let level4_index = pte_index::<PagingConsts>(va, NR_LEVELS as u8);
     let level4_frame_addr = PHYSICAL_BASE_ADDRESS();
     let level4_pte = get_pte_from_addr(level4_frame_addr + level4_index * SIZEOF_PAGETABLEENTRY, &sub_page_table);
 

@@ -1,3 +1,4 @@
+pub mod allocator;
 pub mod meta;
 
 use std::marker::PhantomData;
@@ -38,13 +39,12 @@ pub struct Frame {
 impl Frame {
     /// Gets the physical address of the start of the frame.
     // TODO: Implement
-    #[verifier::when_used_as_spec(start_paddr_spec)]
-    pub fn start_paddr(&self) -> Paddr {
+    #[verifier::allow_in_spec]
+    pub fn start_paddr(&self) -> Paddr
+        returns
+            self.ptr as Paddr,
+    {
         // self.slot().frame_paddr() // TODO
-        self.ptr as Paddr
-    }
-
-    pub open spec fn start_paddr_spec(&self) -> Paddr {
         self.ptr as Paddr
     }
 
@@ -55,31 +55,21 @@ impl Frame {
     ///
     /// Currently, the level is always 1, which means the frame is a regular
     /// page frame.
-    #[verifier::when_used_as_spec(map_level_spec)]
+    #[verifier::allow_in_spec]
     pub const fn map_level(&self) -> (res: PagingLevel)
-        ensures
-            res == 1,
-            res == self.map_level_spec(),
+        returns
+            1 as PagingLevel,
     {
-        1
-    }
-
-    pub open spec fn map_level_spec(&self) -> PagingLevel {
         1
     }
 
     /// Gets the size of this page in bytes.
-    #[verifier::when_used_as_spec(size_spec)]
-    pub const fn size(&self) -> (res: usize)
-        ensures
-            res == PAGE_SIZE,
-            res == self.size_spec(),
+    #[verifier::allow_in_spec]
+    pub fn size(&self) -> (res: usize)
+        returns
+            PAGE_SIZE(),
     {
-        PAGE_SIZE
-    }
-
-    pub open spec fn size_spec(&self) -> usize {
-        PAGE_SIZE
+        PAGE_SIZE()
     }
 
     /// Forgets the handle to the frame.
