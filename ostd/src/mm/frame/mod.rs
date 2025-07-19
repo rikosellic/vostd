@@ -37,6 +37,7 @@ pub mod meta;
 pub mod segment;
 pub mod unique;
 pub mod untyped;
+pub mod ptr_extra;
 
 mod frame_ref;
 pub use frame_ref::FrameRef;

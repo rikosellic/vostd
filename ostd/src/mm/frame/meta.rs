@@ -111,6 +111,7 @@ pub(in crate::mm) struct MetaSlot {
     // See initialization in `alloc_meta_frames`.
     pub(super) ref_count: AtomicU64,
     /// The virtual table that indicates the type of the metadata.
+//    pub(super) vtable_ptr: ptr_type!(UnsafeCell, MaybeUninit, FrameMetaVtablePtr),
     pub(super) vtable_ptr: UnsafeCell<MaybeUninit<FrameMetaVtablePtr>>,
     /// This is only accessed by [`crate::mm::frame::linked_list`].
     /// It stores 0 if the frame is not in any list, otherwise it stores the
