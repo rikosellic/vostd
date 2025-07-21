@@ -21,8 +21,3 @@ macro_rules! update_field {
         $ptr.$field = $ptr.$field - $val;
     }
 }
-
-#[macro_export]
-macro_rules! ptr_type {
-    (UnsafeCell, MaybeUninit. $t:ty) => { UnsafeCell<MaybeUninit<$t>> }
-}
