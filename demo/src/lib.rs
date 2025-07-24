@@ -3,15 +3,13 @@
 use core::cell::UnsafeCell;
 
 pub struct DataCell<'a> {
-    data: &'a mut usize,
+    a: &'a mut u32,
+    b: &'a mut u32,
 }
 
 impl DataCell<'_> {
-    pub fn set(self, data: usize) {
-        *self.data = data;
-    }
-
-    pub fn as_ptr(self) -> *const usize {
-        self.data as *const usize
+    pub fn a_to_b(self, i: u32) {
+        *self.a -= i;
+        *self.b += i;
     }
 }
