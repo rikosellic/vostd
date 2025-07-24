@@ -1,0 +1,9 @@
+[package]
+name = "demo"
+version = "0.0.1"
+edition = "2021"
+description = "Example of Rust development"
+license = "MPL-2.0"
+
+[target.x86_64-unknown-none.dependencies]
+x86_64 = "0.14.13"
