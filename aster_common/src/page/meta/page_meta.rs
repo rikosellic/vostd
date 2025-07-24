@@ -9,6 +9,7 @@ verus! {
 
 use crate::prelude::MetaSlot;
 use crate::prelude::PagingConstsTrait;
+use crate::prelude::Link;
 
 #[allow(non_snake_case)]
 pub trait PageMeta: Sync + Sized {
@@ -78,16 +79,6 @@ impl PageMeta for FrameMeta {
         // Nothing should be done so far since dropping the page would
         // have all taken care of.
     }
-}
-
-/// The metadata of linked list frames.
-///
-/// Linked list frames can be contained in a [`LinkedList`].
-#[rustc_has_incoherent_inherent_impls]
-pub struct Link {
-    pub next: Option<PPtr<Link>>, // Previously `NonNull`, so needs invariant
-    pub prev: Option<PPtr<Link>>, // Likewise
-    pub meta: FrameMeta,
 }
 
 #[rustc_has_incoherent_inherent_impls]

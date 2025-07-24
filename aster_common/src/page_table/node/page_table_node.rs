@@ -43,7 +43,7 @@ impl PageTableNode {
             p_slot.pptr() == self.page.ptr,
             p_slot.is_init(),
             p_slot.value().wf(&owner),
-            is_variant(owner.view().storage.value(), "Node"),
+            is_variant(owner.view().storage.value(), "PTNode"),
     {
         self.page.meta_pt(Tracked(p_slot), owner)
     }
@@ -58,7 +58,7 @@ impl PageTableNode {
             p_slot.pptr() == self.page.ptr,
             p_slot.is_init(),
             p_slot.value().wf(&owner),
-            is_variant(owner.view().storage.value(), "Node"),
+            is_variant(owner.view().storage.value(), "PTNode"),
     {
         self.meta(Tracked(p_slot), owner).level
     }

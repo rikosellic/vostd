@@ -47,7 +47,7 @@ impl<'a> Entry<'a> {
             p_slot.pptr() == self.node.page.ptr,
             p_slot.is_init(),
             p_slot.value().wf(&owner),
-            is_variant(owner.view().storage.value(), "Node"),
+            is_variant(owner.view().storage.value(), "PTNode"),
     {
         self.pte.is_present() && !self.pte.is_last(
             self.node.level(Tracked(p_slot), owner),

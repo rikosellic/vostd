@@ -13,7 +13,7 @@ use core::marker::PhantomData;
 use crate::mm::Paddr;
 use crate::x86_64::mm::{MAX_NR_PAGES, MAX_PADDR, PAGE_SIZE};
 
-use crate::prelude::MetaSlotStorage::Node;
+use crate::prelude::MetaSlotStorage::PTNode;
 
 verus! {
 
@@ -62,9 +62,9 @@ impl<M: PageMeta> Page<M> {
             p_slot.pptr() == self.ptr,
             p_slot.is_init(),
             p_slot.value().wf(&owner),
-            is_variant(owner.view().storage.value(), "Node"),
+            is_variant(owner.view().storage.value(), "PTNode"),
         ensures
-            Node(*res) == owner.view().storage.value(),
+            PTNode(*res) == owner.view().storage.value(),
     {
         let slot = self.ptr.borrow(Tracked(p_slot));
         unimplemented!()

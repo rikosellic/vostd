@@ -120,7 +120,7 @@ pub trait ModelOf: OwnerOf {
     }
 }
 
-
+ 
 
 pub const REF_COUNT_UNUSED: u64 = u64::MAX;
 pub const REF_COUNT_UNIQUE: u64 = u64::MAX - 1;
@@ -134,11 +134,12 @@ pub struct Link {
 
 pub enum MetaSlotStorage {
     Empty([u8; 39]),
-    Link(Link),
-    Node(PageTablePageMetaInner),
+    FrameLink(Link),
+    PTNode(PageTablePageMetaInner),
 }
 
 /// Concrete type
+#[rustc_has_incoherent_inherent_impls]
 pub struct MetaSlot {
     pub storage: cell::PCell<MetaSlotStorage>,
     pub ref_count: PAtomicU64,

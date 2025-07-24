@@ -59,7 +59,7 @@ mod tests {
 
     #[test]
     fn test_counter_wrap() {
-        let mut counter: Counter = Counter::new();
+        let mut counter = Counter::new();
         counter.set_step(u64::MAX);
         counter.increment();
         assert_eq!(counter.count, u64::MAX);

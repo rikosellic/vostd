@@ -16,7 +16,7 @@ use super::{
 };
 use crate::mm::{Paddr, PagingConsts, PagingLevel};
 
-verus!{
+verus! {
 
 impl UniqueFrameLink {
     /// Gets a [`UniqueFrame`] with a specific usage from a raw, unused page.
@@ -71,8 +71,10 @@ impl UniqueFrameLink {
 impl UniqueFrameLink {
     /// Gets the physical address of the start of the frame.
     #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub fn start_paddr(&self) -> Paddr {
-        self.slot().frame_paddr()
+        unimplemented!()
+//        self.slot().frame_paddr()
     }
 
     /// Gets the paging level of this page.

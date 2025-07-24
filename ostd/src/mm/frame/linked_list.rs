@@ -21,8 +21,9 @@ use super::{
     MetaSlot,
 };
 
-use vstd_extra::update_field;
+use vstd_extra::{borrow_field, update_field};
 use aster_common::prelude::{meta, mapping, Link, UniqueFrameLink, FrameMeta, FRAME_METADATA_RANGE, META_SLOT_SIZE};
+use aster_common::prelude::frame_list_model::*;
 
 use crate::{
     arch::mm::PagingConsts,
@@ -276,6 +277,7 @@ pub struct CursorMut
 {
     pub list: PPtr<LinkedList>,
     pub current: Option<PPtr<Link>>,
+    pub index: usize,
 }
 
 impl FrameMeta {
@@ -340,7 +342,10 @@ impl CursorMut
         Tracked(list_perm): Tracked<&mut PointsTo<LinkedList>>,
         Tracked(cur_perm): Tracked<&mut PointsTo<Link>>,
         Tracked(prev_perm): Tracked<&mut PointsTo<Link>>,
-        Tracked(next_perm): Tracked<&mut PointsTo<Link>>) -> Option<UniqueFrameLink>
+        Tracked(next_perm): Tracked<&mut PointsTo<Link>>,
+        list_model: Ghost<LinkedListModel>,
+        cursor_model: Ghost<CursorModel>)
+        -> (res: Option<(UniqueFrameLink, Ghost<CursorModel>, Ghost<LinkedListModel>)>)
         requires
             old(self).list == old(list_perm).pptr(),
             old(list_perm).is_init(),
@@ -350,6 +355,10 @@ impl CursorMut
             old(cur_perm).mem_contents().value().prev == Some(old(prev_perm).pptr()),
             old(cur_perm).mem_contents().value().next == Some(old(next_perm).pptr()),
             old(prev_perm).is_init(),
+            old(next_perm).is_init(),
+        ensures
+            res.is_some() ==>
+                (res.unwrap().1@, res.unwrap().2@) == cursor_model@.remove(list_model@)
     {
         let current = self.current?;
 
@@ -368,8 +377,6 @@ impl CursorMut
         if let Some(prev) = frame.meta_mut(Tracked(cur_perm)).borrow(Tracked(&*cur_perm)).prev {
             // SAFETY: We own the previous node by `&mut self` and the node is
             // initialized.
-//            assert(prev == prev_perm.pptr()) by { admit() };
-//            assert(prev_perm.is_init()) by { admit() };
 
             update_field!(prev => next <- next_ptr, prev_perm);
         } else {
@@ -379,8 +386,6 @@ impl CursorMut
         if let Some(next) = frame.meta_mut(Tracked(cur_perm)).borrow(Tracked(&*cur_perm)).next {
             // SAFETY: We own the next node by `&mut self` and the node is
             // initialized.
-            assert(next == next_perm.pptr()) by { admit() };
-            assert(next_perm.is_init()) by { admit() };
 
             update_field!(next => prev <- prev_ptr, next_perm);
             self.current = Some(next);
@@ -397,7 +402,8 @@ impl CursorMut
 
         update_field!(self.list => size -= 1, list_perm);
 
-        Some(frame)
+        let ghost (cursor_model, list_model) = cursor_model@.remove(list_model@);
+        Some((frame, Ghost(cursor_model), Ghost(list_model)))
     }
 
     /// Inserts a frame before the current frame.
@@ -436,17 +442,14 @@ impl CursorMut
             // SAFETY: We own the current node by `&mut self` and the node is
             // initialized.
 
-            if let Some(prev) = current.borrow(Tracked(&*cur_perm)).prev {
+            if let Some(prev) = borrow_field!(current => prev, &*cur_perm) {
                 // SAFETY: We own the previous node by `&mut self` and the node
                 // is initialized.
                 update_field!(prev => next <- Some(frame_ptr), prev_perm);
-
-//                debug_assert_eq!(prev_mut.next, Some(*current));
                 update_field!(frame_ptr => prev <- Some(prev), frame_perm);
                 update_field!(frame_ptr => next <- Some(current), frame_perm);
                 update_field!(current => prev <- Some(frame_ptr), cur_perm);
             } else {
-//                debug_assert_eq!(self.list.front, Some(*current));
                 update_field!(frame_ptr => next <- Some(current), frame_perm);
                 update_field!(current => prev <- Some(frame_ptr), cur_perm);
                 
@@ -478,7 +481,7 @@ impl CursorMut
 
 
         // Forget the frame to transfer the ownership to the list.
-        let _ = frame.into_raw();
+//        let _ = frame.into_raw();
 
         update_field!(self.list => size += 1, list_perm);
     }
