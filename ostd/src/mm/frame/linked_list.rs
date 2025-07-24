@@ -21,6 +21,7 @@ use crate::{
     arch::mm::PagingConsts,
     mm::{Paddr, Vaddr},
     panic::abort,
+    update_field, borrow_field
 };
 
 /// A linked list of frames.
@@ -295,33 +296,29 @@ where
         if let Some(prev) = &mut frame.meta_mut().prev {
             // SAFETY: We own the previous node by `&mut self` and the node is
             // initialized.
-            let prev_mut = unsafe { prev.as_mut() };
 
-            debug_assert_eq!(prev_mut.next, Some(current));
-            prev_mut.next = next_ptr;
+            update_field!(prev => next <- next_ptr, NonNull);
         } else {
-            self.list.front = next_ptr;
+            update_field!(self.list => front <- next_ptr);
         }
         let prev_ptr = frame.meta().prev;
         if let Some(next) = &mut frame.meta_mut().next {
             // SAFETY: We own the next node by `&mut self` and the node is
             // initialized.
-            let next_mut = unsafe { next.as_mut() };
 
-            debug_assert_eq!(next_mut.prev, Some(current));
-            next_mut.prev = prev_ptr;
-            self.current = Some(NonNull::from(next_mut));
+            update_field!(next => prev <- prev_ptr, NonNull);
+            self.current = Some(*next);
         } else {
-            self.list.back = prev_ptr;
+            update_field!(self.list => back <- prev_ptr);
             self.current = None;
         }
 
-        frame.meta_mut().next = None;
-        frame.meta_mut().prev = None;
+        update_field!(frame.meta_mut() => next <- None);
+        update_field!(frame.meta_mut() => prev <- None);
 
         frame.slot().in_list.store(0, Ordering::Relaxed);
 
-        self.list.size -= 1;
+        update_field!(self.list => size -= 1);
 
         Some(frame)
     }
@@ -333,48 +330,36 @@ where
     pub fn insert_before(&mut self, mut frame: UniqueFrame<Link<M>>) {
         // The frame can't possibly be in any linked lists since the list will
         // own the frame so there can't be any unique pointers to it.
-        debug_assert!(frame.meta_mut().next.is_none());
-        debug_assert!(frame.meta_mut().prev.is_none());
-        debug_assert_eq!(frame.slot().in_list.load(Ordering::Relaxed), 0);
 
         let frame_ptr = NonNull::from(frame.meta_mut());
 
         if let Some(current) = &mut self.current {
             // SAFETY: We own the current node by `&mut self` and the node is
             // initialized.
-            let current_mut = unsafe { current.as_mut() };
-
-            if let Some(prev) = &mut current_mut.prev {
+            if let Some(mut prev) = borrow_field!(current => prev, NonNull) {
                 // SAFETY: We own the previous node by `&mut self` and the node
                 // is initialized.
-                let prev_mut = unsafe { prev.as_mut() };
 
-                debug_assert_eq!(prev_mut.next, Some(*current));
-                prev_mut.next = Some(frame_ptr);
+                update_field!(prev => next <- Some(frame_ptr), NonNull);
 
-                frame.meta_mut().prev = Some(*prev);
-                frame.meta_mut().next = Some(*current);
-                *prev = frame_ptr;
+                update_field!(frame.meta_mut() => prev <- Some(prev));
+                update_field!(frame.meta_mut() => next <- Some(*current));
+                update_field!(current => prev <- Some(frame_ptr), NonNull);
             } else {
-                debug_assert_eq!(self.list.front, Some(*current));
-                frame.meta_mut().next = Some(*current);
-                current_mut.prev = Some(frame_ptr);
-                self.list.front = Some(frame_ptr);
+                update_field!(frame.meta_mut() => next <- Some(*current));
+                update_field!(current => prev <- Some(frame_ptr), NonNull);
+                update_field!(self.list => front <- Some(frame_ptr));
             }
         } else {
             // We are at the "ghost" non-element.
             if let Some(back) = &mut self.list.back {
                 // SAFETY: We have ownership of the links via `&mut self`.
-                unsafe {
-                    debug_assert!(back.as_mut().next.is_none());
-                    back.as_mut().next = Some(frame_ptr);
-                }
-                frame.meta_mut().prev = Some(*back);
-                self.list.back = Some(frame_ptr);
+                update_field!(back => next <- Some(frame_ptr), NonNull);
+                update_field!(frame.meta_mut() => prev <- Some(*back));
+                update_field!(self.list => back <- Some(frame_ptr));
             } else {
-                debug_assert_eq!(self.list.front, None);
-                self.list.front = Some(frame_ptr);
-                self.list.back = Some(frame_ptr);
+                update_field!(self.list => front <- Some(frame_ptr));
+                update_field!(self.list => back <- Some(frame_ptr));
             }
         }
 
@@ -386,7 +371,7 @@ where
         // Forget the frame to transfer the ownership to the list.
         let _ = frame.into_raw();
 
-        self.list.size += 1;
+        update_field!(self.list => size += 1);
     }
 
     /// Provides a reference to the linked list.

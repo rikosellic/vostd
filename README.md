@@ -1,11 +1,12 @@
-# Mainline
+# Next-gen
 
 ## Description
 
-Mainline is a mirror of the codebase that is under formal verification. You should sync the codebase with mainline without making any changes.
+Next-gen is the refactoring of the original *mainline* codebase, towards the 
+easier of formal verification. It removes the complexity of the original code and
+enable the use of formal methods to verify the correctness of the code.
 
 ## Rules of Mainline
 
-1. **Mirror Only**.
-2. **Compilable**: The code in the mainline should be always buildable.
-
+1. **Compilable**.
+2. **Simple**: no complex data structures and algorithms.
