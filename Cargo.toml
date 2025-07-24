@@ -5,6 +5,7 @@ members = [
     "ostd/libs/ostd-macros",
     "ostd/libs/ostd-test",
     "kernel/libs/int-to-c-enum",
+    "demo",
 ]
 exclude = [
     "osdk",
