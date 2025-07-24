@@ -21,12 +21,12 @@ macro_rules! update_field {
         $ptr.$field = $ptr.$field - $val;
     };
     ($ptr:expr => $field:tt <- $val:expr, &mut) => {
-        *$ptr.$field = $val;
+        $ptr.$field = $val;
     };
     ($ptr:expr => $field:tt += $val:expr, &mut) => {
-        *$ptr.$field = *$ptr.$field + $val;
+        $ptr.$field = $ptr.$field + $val;
     };
     ($ptr:expr => $field:tt -= $val:expr, &mut) => {
-        *$ptr.$field = *$ptr.$field - $val;
+        $ptr.$field = $ptr.$field - $val;
     }
 }
