@@ -3,6 +3,8 @@
 pub struct DataCell<'a> {
     a: &'a mut u32,
     b: &'a mut u32,
+
+    total: u32,
 }
 
 impl DataCell<'_> {
