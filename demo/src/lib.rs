@@ -1,7 +1,5 @@
 #![no_std]
 
-use core::cell::UnsafeCell;
-
 pub struct DataCell<'a> {
     a: &'a mut u32,
     b: &'a mut u32,
