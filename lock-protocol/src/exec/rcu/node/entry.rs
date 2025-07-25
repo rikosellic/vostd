@@ -31,6 +31,10 @@ impl Entry {
         &&& node.guard is Some ==> node.guard->Some_0.perms@.relate_pte(self.pte, self.idx as nat)
     }
 
+    pub open spec fn nid(&self, node: PageTableGuard) -> NodeId {
+        NodeHelper::get_child(node.nid(), self.idx as nat)
+    }
+
     pub open spec fn is_none_spec(&self) -> bool {
         self.pte.is_none()
     }
@@ -81,12 +85,19 @@ impl Entry {
             old(self).wf(*old(node)),
             new_child.wf(),
             new_child.wf_with_node(old(self).idx as nat, *old(node)),
+            !(new_child is PageTable),
             old(node).wf(),
+            old(node).guard->Some_0.stray_perm@.value() == false,
         ensures
             self.wf(*node),
             new_child.wf_into_pte(self.pte),
             self.idx == old(self).idx,
-            node.wf(),
+            if res is PageTable {
+                &&& node.wf_except(self.idx as nat)
+                &&& node.guard->Some_0.pte_token@->Some_0.value().is_alive(self.idx as nat)
+            } else {
+                node.wf()
+            },
             node.inst_id() == old(node).inst_id(),
             node.nid() == old(node).nid(),
             node.inner.deref().level_spec() == old(node).inner.deref().level_spec(),
@@ -94,10 +105,8 @@ impl Entry {
     {
         let old_child = Child::from_pte(self.pte, node.inner.deref().level());
 
-        let pte = new_child.into_pte();
-        node.write_pte(self.idx, pte);
-
-        self.pte = pte;
+        self.pte = new_child.into_pte();
+        node.write_pte(self.idx, self.pte);
 
         old_child
     }
@@ -106,8 +115,7 @@ impl Entry {
     ///
     /// If the old entry is not none, the operation will fail and return `None`.
     /// Otherwise, the lock guard of the new child page table node is returned.
-    #[verifier::external_body]
-    pub fn alloc_if_none<'rcu>(
+    pub fn normal_alloc_if_none<'rcu>(
         &mut self,
         guard: &'rcu (),  // TODO
         node: &mut PageTableGuard<'rcu>,
@@ -115,6 +123,8 @@ impl Entry {
         requires
             old(self).wf(*old(node)),
             old(node).wf(),
+            old(node).guard->Some_0.stray_perm@.value() == false,
+            old(node).guard->Some_0.in_protocol@ == false,
         ensures
             self.wf(*node),
             self.idx == old(self).idx,
@@ -128,30 +138,81 @@ impl Entry {
                 &&& res->Some_0.inst_id() == node.inst_id()
                 &&& res->Some_0.nid() == NodeHelper::get_child(node.nid(), self.idx as nat)
                 &&& res->Some_0.inner.deref().level_spec() + 1 == node.inner.deref().level_spec()
+                &&& res->Some_0.guard->Some_0.stray_perm@.value() == false
                 &&& res->Some_0.guard->Some_0.in_protocol@ == false
             },
     {
-        // if !(self.is_none() && node.deref().deref().level() > 1) {
-        //     return None;
-        // }
-        // let level = self.node.level();
-        // let new_page = RcuDrop::new(PageTableNode::<C>::alloc(level - 1));
-        // let paddr = new_page.start_paddr();
-        // // SAFETY: The page table won't be dropped before the RCU grace period
-        // // ends, so it outlives `'rcu`.
-        // let pt_ref = PageTableNodeRef::borrow_paddr(
-        //     paddr
-        // );
-        // // Lock before writing the PTE, so no one else can operate on it.
-        // let pt_lock_guard = pt_ref.lock(guard);
-        // // SAFETY:
-        // //  1. The index is within the bounds.
-        // //  2. The new PTE is a child in `C` and at the correct paging level.
-        // //  3. The ownership of the child is passed to the page table node.
-        // self.node
-        //     .write_pte(self.idx, Child::PageTable(new_page).into_pte());
-        // Some(pt_lock_guard)
-        unimplemented!()
+        if !(self.is_none() && node.inner.deref().level() > 1) {
+            return None;
+        }
+        let level = node.inner.deref().level();
+        let ghost cur_nid = self.nid(*node);
+        let mut lock_guard = node.guard.take().unwrap();
+        let tracked node_token = lock_guard.node_token.get().tracked_unwrap();
+        let tracked mut pte_token = lock_guard.pte_token.get().tracked_unwrap();
+        assert(node_token.value() is LockedOutside);
+        assert(pte_token.value().is_void(self.idx as nat));
+        assert(node.nid() == NodeHelper::get_parent(cur_nid)) by {
+            admit();
+        };
+        assert(self.idx as nat == NodeHelper::get_offset(cur_nid)) by {
+            admit();
+        };
+        let tracked new_node_token;
+        let tracked new_pte_token;
+        proof {
+            assert(cur_nid != NodeHelper::root_id()) by {
+                admit();
+            }
+            assert(NodeHelper::valid_nid(cur_nid)) by {
+                admit();
+            }  // TODO
+            let tracked res = node.tracked_pt_inst().normal_allocate(
+                cur_nid,
+                &node_token,
+                pte_token,
+            );
+            new_node_token = res.0.get();
+            pte_token = res.1.get();
+            new_pte_token = res.2.get();
+        }
+        lock_guard.node_token = Tracked(Some(node_token));
+        lock_guard.pte_token = Tracked(Some(pte_token));
+        node.guard = Some(lock_guard);
+        assert(level - 1 == NodeHelper::nid_to_level(cur_nid)) by {
+            admit();
+        }
+        // let new_page = RcuDrop::new(PageTableNode::alloc(level - 1));
+        let new_page = PageTableNode::alloc(
+            level - 1,
+            Ghost(cur_nid),
+            Ghost(node.inst_id()),
+            Tracked(new_node_token),
+            Tracked(new_pte_token),
+        );
+        let paddr = new_page.start_paddr();
+
+        let pt_ref = PageTableNodeRef::borrow_paddr(
+            paddr,
+            Ghost(new_page.nid@),
+            Ghost(new_page.inst@.id()),
+            Ghost(new_page.level_spec()),
+        );
+        // Lock before writing the PTE, so no one else can operate on it.
+        let pt_lock_guard = pt_ref.normal_lock(guard);
+
+        self.pte = Child::PageTable(new_page).into_pte();
+
+        node.write_pte(self.idx, self.pte);
+
+        // *self.node.nr_children_mut() += 1;
+
+        // TODO
+        assert(pt_lock_guard.guard->Some_0.stray_perm@.value() == false) by {
+            admit();
+        };
+
+        Some(pt_lock_guard)
     }
 
     /// Create a new entry at the node with guard.
