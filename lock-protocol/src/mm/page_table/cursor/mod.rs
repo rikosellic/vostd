@@ -698,6 +698,7 @@ impl<'a, C: PageTableConfig> CursorMut<'a, C> {
 
             // the post condition
             assert(!spt.i_ptes.value().contains_key(old_pte_paddr as int));
+
             let item = match old {
                 Child::Frame(page, level, prop) => PageTableItem::Mapped {
                     va: self.0.va,
