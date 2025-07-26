@@ -1,6 +1,7 @@
 pub mod child;
 pub mod entry;
 pub mod spinlock;
+pub mod stray;
 
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
@@ -381,6 +382,7 @@ impl<'rcu> PageTableGuard<'rcu> {
             self.inner =~= old(self).inner,
             self.guard->Some_0.perms@.relate_pte(pte, idx as nat),
             self.guard->Some_0.pte_token =~= old(self).guard->Some_0.pte_token,
+            self.guard->Some_0.in_protocol == old(self).guard->Some_0.in_protocol,
     {
         let va = paddr_to_vaddr(self.inner.deref().start_paddr());
         let ptr: ArrayPtr<Pte, PTE_NUM> = ArrayPtr::from_addr(va);
@@ -497,6 +499,7 @@ impl PageTableGuard<'_> {
 struct_with_invariants! {
     pub struct PageTablePageMeta {
         pub lock: PageTablePageSpinLock,
+        // The stray flag indicates whether this frame is a page table node.
         pub stray: PCell<bool>, // TODO
         pub level: PagingLevel,
         pub frame_paddr: Paddr,
