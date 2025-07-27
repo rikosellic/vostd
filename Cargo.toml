@@ -2,10 +2,7 @@
 members = [
     "vstd_extra",
     "aster_common",
-#    "code/sample",
-#    "specs/sample",
-#    "code/ostd",
-#    "specs/ostd",
+    "demo",
     "ostd"
 #    "ostd/libs/ostd-macros",
 #    "ostd/libs/ostd-test",
