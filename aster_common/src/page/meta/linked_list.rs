@@ -82,4 +82,16 @@ impl Default for LinkedList
     }
 }
 
+/// A cursor that can mutate the linked list links.
+///
+/// The cursor points to either a frame or the "ghost" non-element. It points
+/// to the "ghost" non-element when the cursor surpasses the back of the list.
+#[rustc_has_incoherent_inherent_impls]
+pub struct CursorMut
+{
+    pub list: PPtr<LinkedList>,
+    pub current: Option<PPtr<Link>>,
+    pub index: usize,
+}
+
 }

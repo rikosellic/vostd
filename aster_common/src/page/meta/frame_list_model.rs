@@ -1,5 +1,6 @@
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
+//use vstd::
 use crate::prelude::*;
 use crate::prelude::MetaSlotStorage::FrameLink;
 use crate::prelude::LinkedList;
@@ -86,68 +87,21 @@ impl LinkedListModel {
         links.insert(p, new_link)
     }
 
-/*    pub open spec fn insert(self, i: int, perm: PointsTo<Link>, model: LinkModel) -> Self {
-        let list = self.list.insert(i, model.paddr);
-        let links = self.links.insert(model.paddr, model);
-        let links = if 0 < i { Self::update_next(links, list[i-1], Some(perm)) } else { links };
-        let links = if i < list.len() - 1 { Self::update_prev(links, list[i+1], Some(perm)) } else { links };
-        Self {
-            list: list,
-            links: links,
-            ..self
-        }
-    }
-
-    pub proof fn insert_len(self, i: int, perm: PointsTo<Link>, model: LinkModel)
-        requires
-            0 <= i <= self.list.len()
-        ensures
-            self.insert(i, perm, model).list.len() == self.list.len() + 1
-    {}
-
-    pub proof fn insert_preserves_inv(self, i: int, perm: PointsTo<Link>, model: LinkModel)
-        requires
-            self.wf(),
-            0 <= i <= self.list.len(),
-            0 < i ==> model.prev_perm.is_some() && model.prev_perm.unwrap().pptr().addr() == self.list[i-1],
-            i < self.list.len() ==> model.next_perm.is_some() && model.next_perm.unwrap().pptr().addr() == self.list[i],
-        ensures
-            self.insert(i,perm,model).wf()
-    {
-        admit()
-    }
-
-    pub open spec fn remove(self, i: int) -> Self {
-        let p = self.list[i];
-        let model = self.links[p];
-        let list = self.list.remove(i);
-        let links = self.links.remove(p);
-        let links = if 0 < i { Self::update_next(links, list[i-1], model.next_perm) } else { links };
-        let links = if i < list.len() - 1 { Self::update_prev(links, list[i], model.prev_perm) } else { links };
-        Self {
-            list: list,
-            links: links,
-        }
-    }
-
-    pub proof fn remove_preserves_inv(self, i: int)
-        requires
-            self.wf(),
-            0 <= i <= self.list.len(),
-        ensures
-            self.remove(i).wf()
-    {
-        admit()
-    }*/
 }
 
 pub ghost struct CursorModel {
     pub ghost front: Seq<Paddr>,
     pub ghost back: Seq<Paddr>,
-    pub ghost cur_perm: Option<PointsTo<Link>>
+    pub ghost cur_perm: Option<PointsTo<Link>>,
+    pub ghost list_model: LinkedListModel
 }
 
 impl CursorModel {
+
+    pub open spec fn relate(self, cursor: CursorMut) -> bool {
+        true
+    }
+
     pub open spec fn current(self) -> Option<Paddr> {
         if self.back.len() > 0 {
             Some(self.back[0])
@@ -156,52 +110,91 @@ impl CursorModel {
         }
     }
 
-    pub open spec fn remove(self, list_model: LinkedListModel) -> (Self, LinkedListModel) {
-        let paddr = self.current().unwrap();
-        let link_model = list_model.links[self.back[0]];
-        let cursor = Self {
-            front: self.front,
-            back: self.back.remove(0),
-            cur_perm: link_model.next_perm,
-        };
-        let list = cursor.front.add(cursor.back);
-        let links = list_model.links.remove(paddr);
-        let idx = self.front.len();
-        let links = if idx > 0 { LinkedListModel::update_next(links, self.front[idx-1], link_model.next_perm) } else { links };
-        let links = if self.back.len() > 0 { LinkedListModel::update_prev(links, self.back[0], link_model.prev_perm) } else { links };
-        let front = if idx == 0 { link_model.next_perm } else { list_model.front };
-        let back = if self.back.len() == 0 { link_model.prev_perm } else { list_model.back };
-        (cursor,
-            LinkedListModel {
-                list: list,
-                links: links,
-                front: front,
-                back: back,
-        })
+    pub open spec fn move_next_spec(self) -> Self {
+        if self.back.len() > 0 {
+            let cur = self.back[0];
+            Self {
+                front: self.front.insert(self.front.len() as int, cur),
+                back: self.back.remove(0),
+                cur_perm: self.list_model.links[cur].next_perm,
+                list_model: self.list_model
+            }
+        } else {
+            Self {
+                front: Seq::<Paddr>::empty(),
+                back: self.front,
+                cur_perm: self.list_model.front,
+                list_model: self.list_model
+            }
+        }
     }
 
-    pub open spec fn insert(self, link_model: LinkModel, list_model: LinkedListModel) -> (Self, LinkedListModel) {
-        let p = link_model.paddr;
-        let cursor = Self {
-            front: self.front.insert(self.front.len() as int, p),
-            back: self.back,
-            cur_perm: self.cur_perm,
-        };
-        let list = cursor.front.add(cursor.back);
-        let links = list_model.links.insert(p, link_model);
-        let idx = self.front.len();
-        let links = if idx > 0 { LinkedListModel::update_next(links, self.front[idx-1], link_model.next_perm) } else { links };
-        let links = if self.back.len() > 0 { LinkedListModel::update_prev(links, self.back[0], link_model.prev_perm) } else { links };
-        let front = if idx == 0 { link_model.next_perm } else { list_model.front };
-        let back = if self.back.len() == 0 { link_model.prev_perm } else { list_model.back };
-        (cursor,
-            LinkedListModel {
-                list: list,
-                links: list_model.links.insert(p, link_model),
-                back: list_model.back,
-                front: list_model.front,
+    pub open spec fn move_prev_spec(self) -> Self {
+        if self.front.len() > 0 {
+            let cur = self.front[self.front.len()-1];
+            Self {
+                front: self.front.remove(self.front.len()-1),
+                back: self.back.insert(0, cur),
+                cur_perm: self.list_model.links[cur].prev_perm,
+                list_model: self.list_model
             }
-        )
+        } else {
+            Self {
+                front: self.back,
+                back: Seq::<Paddr>::empty(),
+                cur_perm: self.list_model.back,
+                list_model: self.list_model
+            }
+        }
+    }
+
+    pub open spec fn remove(self) -> Self {
+        let paddr = self.current().unwrap();
+        let link_model = self.list_model.links[self.back[0]];
+        let links = self.list_model.links.remove(paddr);
+        let links = if self.front.len() > 0  { LinkedListModel::update_next(links, self.front[self.front.len()-1], link_model.next_perm) } else { links };
+        let links = if self.back.len()  > 0  { LinkedListModel::update_prev(links, self.back[0], link_model.prev_perm) } else { links };
+        let front_perm = if self.front.len() == 0 { link_model.next_perm } else { self.list_model.front };
+        let back_perm  = if self.back.len()  == 0 { link_model.prev_perm } else { self.list_model.back };
+        let back_list = self.back.remove(0);
+
+        let list_model = LinkedListModel {
+            list: self.front.add(back_list),
+            links: links,
+            front: front_perm,
+            back: back_perm,
+        };
+
+        Self {
+            front: self.front,
+            back: back_list,
+            cur_perm: link_model.next_perm,
+            list_model: list_model,
+        }
+    }
+
+    pub open spec fn insert(self, link_model: LinkModel) -> Self {
+        let p = link_model.paddr;
+        let links = self.list_model.links.insert(p, link_model);
+        let links = if self.front.len() > 0 { LinkedListModel::update_next(links, self.front[self.front.len()-1], link_model.next_perm) } else { links };
+        let links = if self.back.len() > 0 { LinkedListModel::update_prev(links, self.back[0], link_model.prev_perm) } else { links };
+        let front_perm = if self.front.len() == 0 { link_model.next_perm } else { self.list_model.front };
+        let back_perm = if self.back.len() == 0 { link_model.prev_perm } else { self.list_model.back };
+        let front_list = self.front.insert(self.front.len() as int, p);
+
+        let list_model = LinkedListModel {
+            list: front_list.add(self.back),
+            links: links,
+            front: front_perm,
+            back: back_perm,
+        };
+
+        Self {
+            front: front_list,
+            back: self.back,
+            cur_perm: link_model.next_perm,
+            list_model: list_model,
+        }
     }
 }
 

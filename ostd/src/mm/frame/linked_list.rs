@@ -22,8 +22,9 @@ use super::{
 };
 
 use vstd_extra::{borrow_field, update_field};
-use aster_common::prelude::{meta, mapping, Link, UniqueFrameLink, FrameMeta, FRAME_METADATA_RANGE, META_SLOT_SIZE};
+use aster_common::prelude::{meta, mapping, Link, LinkedList, CursorMut, UniqueFrameLink, FrameMeta, FRAME_METADATA_RANGE, META_SLOT_SIZE};
 use aster_common::prelude::frame_list_model::*;
+use aster_common::prelude::MetaRegionModel;
 
 use crate::{
     arch::mm::PagingConsts,
@@ -46,93 +47,22 @@ impl MetaSlot {
     }
 }
 
-/// A linked list of frames.
-///
-/// Two key features that [`LinkedList`] is different from
-/// [`alloc::collections::LinkedList`] is that:
-///  1. It is intrusive, meaning that the links are part of the frame metadata.
-///     This allows the linked list to be used without heap allocation. But it
-///     disallows a frame to be in multiple linked lists at the same time.
-///  2. The linked list exclusively own the frames, meaning that it takes
-///     unique pointers [`UniqueFrame`]. And other bodies cannot
-///     [`from_in_use`] a frame that is inside a linked list.
-///  3. We also allow creating cursors at a specific frame, allowing $O(1)$
-///     removal without iterating through the list at a cost of some checks.
-///
-/// # Example
-///
-/// To create metadata types that allows linked list links, wrap the metadata
-/// type in [`Link`]:
-///
-/// ```rust
-/// use ostd::{
-///     mm::{frame::{linked_list::{Link, LinkedList}, Frame}, FrameAllocOptions},
-///     impl_untyped_frame_meta_for,
-/// };
-///
-/// #[derive(Debug)]
-/// struct MyMeta { mark: usize }
-///
-/// type MyFrame = Frame<Link<MyMeta>>;
-///
-/// impl_untyped_frame_meta_for!(MyMeta);
-///
-/// let alloc_options = FrameAllocOptions::new();
-/// let frame1 = alloc_options.alloc_frame_with(Link::new(MyMeta { mark: 1 })).unwrap();
-/// let frame2 = alloc_options.alloc_frame_with(Link::new(MyMeta { mark: 2 })).unwrap();
-///
-/// let mut list = LinkedList::new();
-/// list.push_front(frame1.try_into().unwrap());
-/// list.push_front(frame2.try_into().unwrap());
-///
-/// let mut cursor = list.cursor_front_mut();
-/// assert_eq!(cursor.current_meta().unwrap().mark, 2);
-/// cursor.move_next();
-/// assert_eq!(cursor.current_meta().unwrap().mark, 1);
-/// ```
-///
-/// [`from_in_use`]: Frame::from_in_use
-pub struct LinkedList
-{
-    pub front: Option<PPtr<Link>>,
-    pub back: Option<PPtr<Link>>,
-    /// The number of frames in the list.
-    pub size: usize,
-    /// A lazily initialized ID, used to check whether a frame is in the list.
-    /// 0 means uninitialized.
-    pub list_id: u64,
-}
-
 // SAFETY: Only the pointers are not `Send` and `Sync`. But our interfaces
 // enforces that only with `&mut` references can we access with the pointers.
 //unsafe impl<M> Send for LinkedList<M> where Link<M>: AnyFrameMeta {}
 //unsafe impl<M> Sync for LinkedList<M> where Link<M>: AnyFrameMeta {}
 
-impl Default for LinkedList
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl LinkedList
 {
-    /// Creates a new linked list.
-    pub const fn new() -> Self {
-        Self {
-            front: None,
-            back: None,
-            size: 0,
-            list_id: 0,
-        }
-    }
 
     /// Gets the number of frames in the linked list.
+    #[rustc_allow_incoherent_impl]
     pub fn size(&self) -> usize {
         self.size
     }
 
     /// Tells if the linked list is empty.
+    #[rustc_allow_incoherent_impl]
     pub fn is_empty(&self) -> bool {
         let is_empty = self.size == 0;
 //        debug_assert_eq!(is_empty, self.front.is_none());
@@ -140,35 +70,40 @@ impl LinkedList
         is_empty
     }
 
-    #[verifier::external_body]
     /// Pushes a frame to the front of the linked list.
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub fn push_front(&mut self, frame: UniqueFrameLink) {
         unimplemented!()
 //        self.cursor_front_mut().insert_before(frame);
     }
 
-    #[verifier::external_body]
     /// Pops a frame from the front of the linked list.
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub fn pop_front(&mut self) -> Option<UniqueFrameLink> {
         unimplemented!()
 //        self.cursor_front_mut().take_current()
     }
 
-    #[verifier::external_body]
     /// Pushes a frame to the back of the linked list.
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub fn push_back(&mut self, frame: UniqueFrameLink) {
         unimplemented!()
 //        self.cursor_at_ghost_mut().insert_before(frame);
     }
 
-    #[verifier::external_body]
     /// Pops a frame from the back of the linked list.
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub fn pop_back(&mut self) -> Option<UniqueFrameLink> {
         unimplemented!()
 //        self.cursor_back_mut().take_current()
     }
 
     /// Tells if a frame is in the list.
+    #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
     pub fn contains(&mut self, frame: Paddr) -> bool {
         unimplemented!()
@@ -179,10 +114,11 @@ impl LinkedList
         slot.in_list_load() == self.lazy_get_id()*/
     }
 
-    #[verifier::external_body]
     /// Gets a cursor at the specified frame if the frame is in the list.
     ///
     /// This method fail if [`Self::contains`] returns `false`.
+    #[verifier::external_body]
+    #[rustc_allow_incoherent_impl]
     pub fn cursor_mut_at(&mut self, frame: Paddr) -> Option<CursorMut> {
         unimplemented!()
         /*
@@ -201,10 +137,11 @@ impl LinkedList
         }*/
     }
 
-    #[verifier::external_body]
     /// Gets a cursor at the front that can mutate the linked list links.
     ///
     /// If the list is empty, the cursor points to the "ghost" non-element.
+    #[verifier::external_body]
+    #[rustc_allow_incoherent_impl]
     pub fn cursor_front_mut(&mut self) -> CursorMut {
         unimplemented!()
         /*
@@ -216,10 +153,11 @@ impl LinkedList
         */
     }
 
-    #[verifier::external_body]
     /// Gets a cursor at the back that can mutate the linked list links.
     ///
     /// If the list is empty, the cursor points to the "ghost" non-element.
+    #[verifier::external_body]
+    #[rustc_allow_incoherent_impl]
     pub fn cursor_back_mut(&mut self) -> CursorMut {
         unimplemented!()
         /*
@@ -231,8 +169,9 @@ impl LinkedList
         */
     }
 
-    #[verifier::external_body]
     /// Gets a cursor at the "ghost" non-element that can mutate the linked list links.
+    #[verifier::external_body]
+    #[rustc_allow_incoherent_impl]
     fn cursor_at_ghost_mut(&mut self) -> CursorMut {
         unimplemented!()
         /*
@@ -244,6 +183,7 @@ impl LinkedList
     }
 
     #[verifier::external_body]
+    #[rustc_allow_incoherent_impl]
     fn lazy_get_id(&mut self) -> u64 {
         // FIXME: Self-incrementing IDs may overflow, while `core::pin::Pin`
         // is not compatible with locks. Think about a better solution.
@@ -269,17 +209,6 @@ impl LinkedList
 
 verus!{
 
-/// A cursor that can mutate the linked list links.
-///
-/// The cursor points to either a frame or the "ghost" non-element. It points
-/// to the "ghost" non-element when the cursor surpasses the back of the list.
-pub struct CursorMut
-{
-    pub list: PPtr<LinkedList>,
-    pub current: Option<PPtr<Link>>,
-    pub index: usize,
-}
-
 impl FrameMeta {
     #[verifier::external_body]
     #[rustc_allow_incoherent_impl]
@@ -290,17 +219,26 @@ impl FrameMeta {
 
 impl CursorMut
 {
-/*    /// Moves the cursor to the next frame towards the back.
+    /// Moves the cursor to the next frame towards the back.
     ///
     /// If the cursor is pointing to the "ghost" non-element then this will
     /// move it to the first element of the [`LinkedList`]. If it is pointing
     /// to the last element of the LinkedList then this will move it to the
     /// "ghost" non-element.
-    pub fn move_next(&mut self) {
+    #[rustc_allow_incoherent_impl]
+    pub fn move_next(&mut self,
+        Tracked(next_perm): Tracked<&mut PointsTo<Link>>,
+        Tracked(list_perm): Tracked<&mut PointsTo<LinkedList>>,
+        model: CursorModel)
+    requires
+        model.relate(*old(self))
+    ensures
+        model.move_next_spec().relate(*self)
+    {
         self.current = match self.current {
             // SAFETY: The cursor is pointing to a valid element.
-            Some(current) => unsafe { current.as_ref().next },
-            None => self.list.front,
+            Some(current) => borrow_field!(current => next, &*next_perm),
+            None => borrow_field!(self.list => front, list_perm),
         };
     }
 
@@ -310,13 +248,22 @@ impl CursorMut
     /// move it to the last element of the [`LinkedList`]. If it is pointing
     /// to the first element of the LinkedList then this will move it to the
     /// "ghost" non-element.
-    pub fn move_prev(&mut self) {
+    #[rustc_allow_incoherent_impl]
+    pub fn move_prev(&mut self,
+        Tracked(prev_perm): Tracked<&mut PointsTo<Link>>,
+        Tracked(list_perm): Tracked<&mut PointsTo<LinkedList>>,
+        model: CursorModel)
+    requires
+        model.relate(*old(self))
+    ensures
+        model.move_prev_spec().relate(*self)
+    {
         self.current = match self.current {
             // SAFETY: The cursor is pointing to a valid element.
-            Some(current) => unsafe { current.as_ref().prev },
-            None => self.list.back,
+            Some(current) => borrow_field!(current => prev, &*prev_perm),
+            None => borrow_field!(self.list => front, list_perm),
         };
-    }*/
+    }
 
     /*
     /// Gets the mutable reference to the current frame's metadata.
@@ -338,32 +285,35 @@ impl CursorMut
     /// If successful, the frame is returned and the cursor is moved to the
     /// next frame. If the cursor is pointing to the back of the list then it
     /// is moved to the "ghost" non-element.
+    #[rustc_allow_incoherent_impl]
     pub fn take_current(&mut self,
         Tracked(list_perm): Tracked<&mut PointsTo<LinkedList>>,
         Tracked(cur_perm): Tracked<&mut PointsTo<Link>>,
         Tracked(prev_perm): Tracked<&mut PointsTo<Link>>,
         Tracked(next_perm): Tracked<&mut PointsTo<Link>>,
-        list_model: Ghost<LinkedListModel>,
-        cursor_model: Ghost<CursorModel>)
-        -> (res: Option<(UniqueFrameLink, Ghost<CursorModel>, Ghost<LinkedListModel>)>)
+        cursor_model: Ghost<CursorModel>,
+        meta_model: Ghost<MetaRegionModel>,
+    )
+        -> (res: Option<UniqueFrameLink>)
         requires
             old(self).list == old(list_perm).pptr(),
             old(list_perm).is_init(),
             old(list_perm).mem_contents().value().size > 0,
             old(self).current.unwrap() == old(cur_perm).pptr(),
+            cursor_model@.cur_perm.unwrap() == *old(cur_perm),
             old(cur_perm).is_init(),
             old(cur_perm).mem_contents().value().prev == Some(old(prev_perm).pptr()),
             old(cur_perm).mem_contents().value().next == Some(old(next_perm).pptr()),
             old(prev_perm).is_init(),
             old(next_perm).is_init(),
         ensures
-            res.is_some() ==>
-                (res.unwrap().1@, res.unwrap().2@) == cursor_model@.remove(list_model@)
+            res.is_some() ==> cursor_model@.remove().list_model.relate(list_perm.mem_contents().value(), meta_model@),
+            res.is_some() ==> res.unwrap() == cursor_model@.current()
     {
         let current = self.current?;
 
         let mut frame = {
-            let meta_ptr = current.borrow(Tracked(&*cur_perm)).meta.to_vaddr();
+            let meta_ptr = current.addr();
             assert(FRAME_METADATA_RANGE().start <= meta_ptr < FRAME_METADATA_RANGE().end) by { admit() };
             assert(meta_ptr % META_SLOT_SIZE() == 0) by { admit() };
 
@@ -402,21 +352,25 @@ impl CursorMut
 
         update_field!(self.list => size -= 1, list_perm);
 
-        let ghost (cursor_model, list_model) = cursor_model@.remove(list_model@);
-        Some((frame, Ghost(cursor_model), Ghost(list_model)))
+        Some(frame)
     }
 
     /// Inserts a frame before the current frame.
     ///
     /// If the cursor is pointing at the "ghost" non-element then the new
     /// element is inserted at the back of the [`LinkedList`].
+    #[rustc_allow_incoherent_impl]
     pub fn insert_before(&mut self, mut frame: UniqueFrameLink,
             Tracked(list_perm): Tracked<&mut PointsTo<LinkedList>>,
             Tracked(frame_perm): Tracked<&mut PointsTo<Link>>,
             Tracked(cur_perm): Tracked<&mut PointsTo<Link>>,
             Tracked(prev_perm): Tracked<&mut PointsTo<Link>>,
             Tracked(next_perm): Tracked<&mut PointsTo<Link>>,
-            Tracked(back_perm): Tracked<&mut PointsTo<Link>>)
+            Tracked(back_perm): Tracked<&mut PointsTo<Link>>,
+            link_model: Ghost<LinkModel>,
+            cursor_model: Ghost<CursorModel>,
+            meta_model: Ghost<MetaRegionModel>,)
+//            -> (res: Ghost<LinkedListModel>)
         requires
             old(self).list == old(list_perm).pptr(),
             old(list_perm).is_init(),
@@ -429,6 +383,8 @@ impl CursorMut
             old(back_perm).is_init(),
             old(frame_perm).is_init(),
             old(prev_perm).is_init(),
+        ensures
+            cursor_model@.insert(link_model@).list_model.relate(list_perm.mem_contents().value(), meta_model@),
     {
         // The frame can't possibly be in any linked lists since the list will
         // own the frame so there can't be any unique pointers to it.
@@ -484,6 +440,9 @@ impl CursorMut
 //        let _ = frame.into_raw();
 
         update_field!(self.list => size += 1, list_perm);
+
+//        let ghost (cursor_model, list_model) = cursor_model@.remove(list_model@);
+//        Ghost(list_model)
     }
 
 /*    /// Provides a reference to the linked list.
@@ -527,7 +486,7 @@ impl Link {
         Self {
             next: None,
             prev: None,
-            meta,
+//            meta,
         }
     }
 }
