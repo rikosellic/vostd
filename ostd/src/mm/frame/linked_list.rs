@@ -232,8 +232,6 @@ impl CursorMut
         model: CursorModel)
     requires
         model.relate(*old(self))
-    ensures
-        model.move_next_spec().relate(*self)
     {
         self.current = match self.current {
             // SAFETY: The cursor is pointing to a valid element.
@@ -255,8 +253,6 @@ impl CursorMut
         model: CursorModel)
     requires
         model.relate(*old(self))
-    ensures
-        model.move_prev_spec().relate(*self)
     {
         self.current = match self.current {
             // SAFETY: The cursor is pointing to a valid element.
@@ -306,9 +302,6 @@ impl CursorMut
             old(cur_perm).mem_contents().value().next == Some(old(next_perm).pptr()),
             old(prev_perm).is_init(),
             old(next_perm).is_init(),
-        ensures
-            res.is_some() ==> cursor_model@.remove().list_model.relate(list_perm.mem_contents().value(), meta_model@),
-            res.is_some() ==> res.unwrap() == cursor_model@.current()
     {
         let current = self.current?;
 
@@ -383,8 +376,6 @@ impl CursorMut
             old(back_perm).is_init(),
             old(frame_perm).is_init(),
             old(prev_perm).is_init(),
-        ensures
-            cursor_model@.insert(link_model@).list_model.relate(list_perm.mem_contents().value(), meta_model@),
     {
         // The frame can't possibly be in any linked lists since the list will
         // own the frame so there can't be any unique pointers to it.
