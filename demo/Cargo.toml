@@ -24,3 +24,4 @@ default = ["verify", "alloc"]
 vstd = { path = "../tools/verus/source/vstd" }
 builtin_macros = { path = "../tools/verus/source/builtin_macros" }
 vstd_extra = { path = "../vstd_extra" }
+aster_common = { path = "../aster_common" }
