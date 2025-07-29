@@ -27,11 +27,6 @@ impl Data {
             cell_perm.mem_contents().value().a + cell_perm.mem_contents().value().b ==
             old(cell_perm).mem_contents().value().a + old(cell_perm).mem_contents().value().b
     {
-        let cell = self.cell.take(Tracked(cell_perm));
-        cell.a = cell.a - i;
-        cell.b = cell.b + i;
-        self.cell.put(Tracked(cell_perm));
-
         update_field!(self.cell => a -= i, cell_perm);
         update_field!(self.cell => b += i, cell_perm);
     }
