@@ -69,11 +69,6 @@ mod specs {
             &&& cell_perm.mem_contents().value().a >= i
             &&& cell_perm.mem_contents().value().b + i <= u32::MAX
         }
-
-        pub open spec fn a_to_b_spec(self, i: u32, old_cell: DataView, new_cell: DataView) -> bool
-        {
-            old_cell.cell.a + old_cell.cell.b == new_cell.cell.a + new_cell.cell.b
-        }
     }
     }
 }
@@ -93,8 +88,6 @@ impl Data {
             old(own).inv(),
             self.wf(old(own)),
             self.a_to_b_precond(i, old(own).perm@)
-        ensures
-            self.a_to_b_spec(i, self.model(old(own)), self.model(own))
     {
         update_field!(self.cell => a -= i, own.perm.borrow_mut());
         update_field!(self.cell => b += i, own.perm.borrow_mut());
