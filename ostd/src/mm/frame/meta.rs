@@ -14,29 +14,8 @@
 //! address in the kernel space. So finding the metadata of a frame often
 //! comes with no costs since the translation is a simple arithmetic operation.
 
-pub(crate) mod mapping {
-    //! The metadata of each physical page is linear mapped to fixed virtual addresses
-    //! in [`FRAME_METADATA_RANGE`].
-
-    use core::mem::size_of;
-
-    use super::MetaSlot;
-    use crate::mm::{kspace::FRAME_METADATA_RANGE, Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE};
-
-    /// Converts a physical address of a base frame to the virtual address of the metadata slot.
-    pub(crate) const fn frame_to_meta<C: PagingConstsTrait>(paddr: Paddr) -> Vaddr {
-        let base = FRAME_METADATA_RANGE.start;
-        let offset = paddr / PAGE_SIZE;
-        base + offset * size_of::<MetaSlot>()
-    }
-
-    /// Converts a virtual address of the metadata slot to the physical address of the frame.
-    pub(crate) const fn meta_to_frame<C: PagingConstsTrait>(vaddr: Vaddr) -> Paddr {
-        let base = FRAME_METADATA_RANGE.start;
-        let offset = (vaddr - base) / size_of::<MetaSlot>();
-        offset * PAGE_SIZE
-    }
-}
+use vstd::prelude::*;
+use vstd::simple_pptr::*;
 
 use core::{
     alloc::Layout,
@@ -48,36 +27,39 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use align_ext::AlignExt;
-use log::info;
+
+//use align_ext::AlignExt;
+//use log::info;
 
 use crate::{
     arch::mm::PagingConsts,
-    boot::memory_region::MemoryRegionType,
-    const_assert,
+//    boot::memory_region::MemoryRegionType,
+//    const_assert,
     mm::{
-        frame::allocator::{self, EarlyAllocatedFrameMeta},
-        kspace::LINEAR_MAPPING_BASE_VADDR,
+//        frame::allocator::{self, EarlyAllocatedFrameMeta},
+//        kspace::LINEAR_MAPPING_BASE_VADDR,
         paddr_to_vaddr, page_size,
-        page_table::boot_pt,
-        CachePolicy, Infallible, Paddr, PageFlags, PageProperty, PrivilegedPageFlags, Segment,
-        Vaddr, VmReader, PAGE_SIZE,
+//        page_table::boot_pt,
+        CachePolicy, /*Infallible,*/ Paddr, PageFlags, PageProperty, PrivilegedPageFlags, //Segment,
+        Vaddr, /*VmReader,*/ PAGE_SIZE,
     },
-    panic::abort,
-    util::ops::range_difference,
+//    panic::abort,
+//    util::ops::range_difference,
 };
 
+pub use aster_common::prelude::{mapping, MetaSlot, META_SLOT_SIZE, FrameMeta, Link};
+
 /// The maximum number of bytes of the metadata of a frame.
-pub const FRAME_METADATA_MAX_SIZE: usize = META_SLOT_SIZE
+pub const FRAME_METADATA_MAX_SIZE: usize = META_SLOT_SIZE()
     - size_of::<AtomicU64>()
-    - size_of::<FrameMetaVtablePtr>()
+//    - size_of::<FrameMetaVtablePtr>()
     - size_of::<AtomicU64>();
 /// The maximum alignment in bytes of the metadata of a frame.
-pub const FRAME_METADATA_MAX_ALIGN: usize = META_SLOT_SIZE;
+pub const FRAME_METADATA_MAX_ALIGN: usize = META_SLOT_SIZE();
 
-const META_SLOT_SIZE: usize = 64;
+//const META_SLOT_SIZE: usize = 64;
 
-#[repr(C)]
+/*#[repr(C)]
 pub(in crate::mm) struct MetaSlot {
     /// The metadata of a frame.
     ///
@@ -111,7 +93,7 @@ pub(in crate::mm) struct MetaSlot {
     // See initialization in `alloc_meta_frames`.
     pub(super) ref_count: AtomicU64,
     /// The virtual table that indicates the type of the metadata.
-    pub(super) vtable_ptr: UnsafeCell<MaybeUninit<FrameMetaVtablePtr>>,
+//    pub(super) vtable_ptr: UnsafeCell<MaybeUninit<FrameMetaVtablePtr>>,
     /// This is only accessed by [`crate::mm::frame::linked_list`].
     /// It stores 0 if the frame is not in any list, otherwise it stores the
     /// ID of the list.
@@ -121,16 +103,16 @@ pub(in crate::mm) struct MetaSlot {
     /// we would have to ensure that the type is correct before the read, which
     /// costs a synchronization.
     pub(super) in_list: AtomicU64,
-}
+}*/
 
-pub(super) const REF_COUNT_UNUSED: u64 = u64::MAX;
-pub(super) const REF_COUNT_UNIQUE: u64 = u64::MAX - 1;
-pub(super) const REF_COUNT_MAX: u64 = i64::MAX as u64;
+pub(super) const REF_COUNT_UNUSED: u32 = u32::MAX;
+pub(super) const REF_COUNT_UNIQUE: u32 = u32::MAX - 1;
+pub(super) const REF_COUNT_MAX: u32 = i32::MAX as u32;
 
-type FrameMetaVtablePtr = core::ptr::DynMetadata<dyn AnyFrameMeta>;
+//type FrameMetaVtablePtr = core::ptr::DynMetadata<dyn AnyFrameMeta>;
 
-const_assert!(PAGE_SIZE % META_SLOT_SIZE == 0);
-const_assert!(size_of::<MetaSlot>() == META_SLOT_SIZE);
+//const_assert!(PAGE_SIZE % META_SLOT_SIZE == 0);
+//const_assert!(size_of::<MetaSlot>() == META_SLOT_SIZE);
 
 /// All frame metadata types must implement this trait.
 ///
@@ -150,7 +132,7 @@ const_assert!(size_of::<MetaSlot>() == META_SLOT_SIZE);
 /// implementer must ensure that the frame is safe to read.
 pub unsafe trait AnyFrameMeta: Any + Send + Sync {
     /// Called when the last handle to the frame is dropped.
-    fn on_drop(&mut self, _reader: &mut VmReader<Infallible>) {}
+//    fn on_drop(&mut self, _reader: &mut VmReader<Infallible>) {}
 
     /// Whether the metadata's associated frame is untyped.
     ///
@@ -171,16 +153,18 @@ macro_rules! impl_frame_meta_for {
         // SAFETY: `on_drop` won't read the page.
         unsafe impl $crate::mm::frame::meta::AnyFrameMeta for $t {}
 
-        $crate::const_assert!(
+/*        $crate::const_assert!(
             core::mem::size_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_SIZE
         );
         $crate::const_assert!(
             $crate::mm::frame::meta::FRAME_METADATA_MAX_ALIGN % core::mem::align_of::<$t>() == 0
-        );
+        );*/
     };
 }
 
 pub use impl_frame_meta_for;
+
+verus!{
 
 /// The error type for getting the frame from a physical address.
 #[derive(Debug)]
@@ -202,8 +186,10 @@ pub enum GetFrameError {
 }
 
 /// Gets the reference to a metadata slot.
+#[verifier::external_body]
 pub(super) fn get_slot(paddr: Paddr) -> Result<&'static MetaSlot, GetFrameError> {
-    if paddr % PAGE_SIZE != 0 {
+    unimplemented!()
+/*    if paddr % PAGE_SIZE != 0 {
         return Err(GetFrameError::NotAligned);
     }
     if paddr >= super::max_paddr() {
@@ -215,10 +201,13 @@ pub(super) fn get_slot(paddr: Paddr) -> Result<&'static MetaSlot, GetFrameError>
 
     // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
     // mutably borrowed, so taking an immutable reference to it is safe.
-    Ok(unsafe { &*ptr })
+    Ok(unsafe { &*ptr })*/
 }
 
 impl MetaSlot {
+
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     /// Initializes the metadata slot of a frame assuming it is unused.
     ///
     /// If successful, the function returns a pointer to the metadata slot.
@@ -226,11 +215,14 @@ impl MetaSlot {
     ///
     /// The resulting reference count held by the returned pointer is
     /// [`REF_COUNT_UNIQUE`] if `as_unique_ptr` is `true`, otherwise `1`.
-    pub(super) fn get_from_unused<M: AnyFrameMeta>(
+    pub(super) fn get_from_unused(
         paddr: Paddr,
-        metadata: M,
+        metadata: FrameMeta,
         as_unique_ptr: bool,
-    ) -> Result<*const Self, GetFrameError> {
+    ) -> Result<PPtr<Self>, GetFrameError>
+    {
+        unimplemented!()
+        /*
         let slot = get_slot(paddr)?;
 
         // `Acquire` pairs with the `Release` in `drop_last_in_place` and ensures the metadata
@@ -258,11 +250,15 @@ impl MetaSlot {
         }
 
         Ok(slot as *const MetaSlot)
+        */
     }
 
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     /// Gets another owning pointer to the metadata slot from the given page.
     pub(super) fn get_from_in_use(paddr: Paddr) -> Result<*const Self, GetFrameError> {
-        let slot = get_slot(paddr)?;
+        unimplemented!()
+/*        let slot = get_slot(paddr)?;
 
         // Try to increase the reference count for an in-use frame. Otherwise fail.
         loop {
@@ -273,7 +269,8 @@ impl MetaSlot {
                 last_ref_cnt => {
                     if last_ref_cnt >= REF_COUNT_MAX {
                         // See `Self::inc_ref_count` for the explanation.
-                        abort();
+//                        abort();
+                        unimplemented!()
                     }
                     // Using `Acquire` here to pair with `get_from_unused` or
                     // `<Frame<M> as From<UniqueFrame<M>>>::from` (who must be
@@ -295,7 +292,7 @@ impl MetaSlot {
                 }
             }
             core::hint::spin_loop();
-        }
+        }*/
     }
 
     /// Increases the frame reference count by one.
@@ -303,7 +300,11 @@ impl MetaSlot {
     /// # Safety
     ///
     /// The caller must have already held a reference to the frame.
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub(super) unsafe fn inc_ref_count(&self) {
+        unimplemented!()
+        /*
         let last_ref_cnt = self.ref_count.fetch_add(1, Ordering::Relaxed);
         debug_assert!(last_ref_cnt != 0 && last_ref_cnt != REF_COUNT_UNUSED);
 
@@ -311,13 +312,16 @@ impl MetaSlot {
             // This follows the same principle as the `Arc::clone` implementation to prevent the
             // reference count from overflowing. See also
             // <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.clone>.
-            abort();
-        }
+//            abort();
+            unimplemented!()
+        }*/
     }
 
     /// Gets the corresponding frame's physical address.
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub(super) fn frame_paddr(&self) -> Paddr {
-        mapping::meta_to_frame::<PagingConsts>(self as *const MetaSlot as Vaddr)
+        mapping::meta_to_frame(self as *const MetaSlot as Vaddr)
     }
 
     /// Gets a dynamically typed pointer to the stored metadata.
@@ -329,7 +333,11 @@ impl MetaSlot {
     ///
     /// The returned pointer should not be dereferenced as mutable unless having
     /// exclusive access to the metadata slot.
-    pub(super) unsafe fn dyn_meta_ptr(&self) -> *mut dyn AnyFrameMeta {
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
+    pub(super) unsafe fn dyn_meta_ptr(&self) -> *mut FrameMeta {
+        unimplemented!()
+        /*
         // SAFETY: The page metadata is valid to be borrowed immutably, since
         // it will never be borrowed mutably after initialization.
         let vtable_ptr = unsafe { *self.vtable_ptr.get() };
@@ -340,7 +348,7 @@ impl MetaSlot {
         let meta_ptr: *mut dyn AnyFrameMeta =
             core::ptr::from_raw_parts_mut(self as *const MetaSlot as *mut MetaSlot, vtable_ptr);
 
-        meta_ptr
+        meta_ptr*/
     }
 
     /// Gets the stored metadata as type `M`.
@@ -352,8 +360,11 @@ impl MetaSlot {
     ///  - the initialized metadata is of type `M`;
     ///  - the returned pointer should not be dereferenced as mutable unless
     ///    having exclusive access to the metadata slot.
-    pub(super) fn as_meta_ptr<M: AnyFrameMeta>(&self) -> *mut M {
-        self.storage.get() as *mut M
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
+    pub(super) fn as_meta_ptr(&self) -> PPtr<Link> {
+        unimplemented!()
+//        self.storage.get() as *mut M
     }
 
     /// Writes the metadata to the slot without reading or dropping the previous value.
@@ -361,7 +372,11 @@ impl MetaSlot {
     /// # Safety
     ///
     /// The caller should have exclusive access to the metadata slot's fields.
-    pub(super) unsafe fn write_meta<M: AnyFrameMeta>(&self, metadata: M) {
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
+    pub(super) unsafe fn write_meta(&self, metadata: FrameMeta) {
+        unimplemented!()
+        /*
         const { assert!(size_of::<M>() <= FRAME_METADATA_MAX_SIZE) };
         const { assert!(align_of::<M>() <= FRAME_METADATA_MAX_ALIGN) };
 
@@ -376,8 +391,10 @@ impl MetaSlot {
         //    (guaranteed by the const assertions above).
         // 3. We have exclusive access to the metadata storage (guaranteed by the caller).
         unsafe { ptr.cast::<M>().write(metadata) };
+        */
     }
 
+    /*
     /// Drops the metadata and deallocates the frame.
     ///
     /// # Safety
@@ -395,8 +412,9 @@ impl MetaSlot {
         // `Release` pairs with the `Acquire` in `Frame::from_unused` and ensures
         // `drop_meta_in_place` won't be reordered after this memory store.
         self.ref_count.store(REF_COUNT_UNUSED, Ordering::Release);
-    }
+    }*/
 
+    /*
     /// Drops the metadata of a slot in place.
     ///
     /// After this operation, the metadata becomes uninitialized. Any access to the
@@ -432,7 +450,7 @@ impl MetaSlot {
             // Drop the frame metadata.
             core::ptr::drop_in_place(meta_ptr);
         }
-    }
+    } */
 }
 
 /// The metadata of frames that holds metadata of frames.
@@ -440,7 +458,7 @@ impl MetaSlot {
 pub struct MetaPageMeta {}
 
 impl_frame_meta_for!(MetaPageMeta);
-
+/*
 /// Initializes the metadata of all physical frames.
 ///
 /// The function returns a list of `Frame`s containing the metadata.
@@ -630,4 +648,6 @@ fn add_temp_linear_mapping(max_paddr: Paddr) {
         })
         .unwrap();
     }
+}
+*/
 }

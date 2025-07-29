@@ -1,33 +1,29 @@
 [workspace]
-resolver = "2"
 members = [
-    "ostd",
-    "ostd/libs/ostd-macros",
-    "ostd/libs/ostd-test",
-    "kernel/libs/int-to-c-enum",
+    "vstd_extra",
+    "aster_common",
+    "demo",
+    "ostd"
+#    "ostd/libs/ostd-macros",
+#    "ostd/libs/ostd-test",
+#    "kernel/libs/int-to-c-enum",
 ]
 exclude = [
+    "scripts",
+    "dv",
+    "tools/verus",
+    "tools/verus-analyzer",
+    "tests",
     "osdk",
 ]
-
-
-[workspace.lints.rust]
-unsafe_op_in_unsafe_fn = "warn"
-
-[workspace.lints.clippy]
-allow_attributes = "warn"
-
-[profile.dev]
-panic = "unwind"
+resolver = "2"
 
 [profile.release]
-lto = "thin"
-panic = "unwind"
+overflow-checks = true
+lto = "fat"
+codegen-units = 1
 
-[profile.release-lto]
-inherits = "release"
-lto = true
-# lto can only be enabled when panic strategy is abort
-panic = "abort"
-# set codegen-units as the smallest number
+[profile.release.build-override]
+opt-level = 3
+incremental = false
 codegen-units = 1

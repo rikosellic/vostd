@@ -8,15 +8,15 @@ pub type Vaddr = usize;
 /// Physical addresses.
 pub type Paddr = usize;
 
-pub(crate) mod dma;
+//pub(crate) mod dma;
 pub mod frame;
-pub mod heap;
-mod io;
-pub(crate) mod kspace;
+//pub mod heap;
+//mod io;
+//pub(crate) mod kspace;
 pub(crate) mod page_prop;
-pub(crate) mod page_table;
-pub mod tlb;
-pub mod vm_space;
+//pub(crate) mod page_table;
+//pub mod tlb;
+//pub mod vm_space;
 
 #[cfg(ktest)]
 mod test;
@@ -24,7 +24,7 @@ mod test;
 use core::{fmt::Debug, ops::Range};
 
 pub use self::{
-    dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
+/*    dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
     frame::{
         allocator::FrameAllocOptions,
         segment::{Segment, USegment},
@@ -35,12 +35,12 @@ pub use self::{
     io::{
         Fallible, FallibleVmRead, FallibleVmWrite, Infallible, PodOnce, VmIo, VmIoOnce, VmReader,
         VmWriter,
-    },
+    },*/
     page_prop::{CachePolicy, PageFlags, PageProperty},
-    vm_space::VmSpace,
+//    vm_space::VmSpace,
 };
-pub(crate) use self::{
-    kspace::paddr_to_vaddr, page_prop::PrivilegedPageFlags, page_table::PageTable,
+pub(crate) use aster_common::prelude::{
+    paddr_to_vaddr, PrivilegedPageFlags, PageTable,
 };
 use crate::arch::mm::PagingConsts;
 

@@ -4,10 +4,11 @@
 
 use core::fmt::Debug;
 
-use bitflags::bitflags;
+pub use aster_common::prelude::PageFlags;
+pub use aster_common::prelude::PrivilegedPageFlags;
 
 /// The property of a mapped virtual memory page.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, /*Debug,*/ PartialEq, Eq)]
 pub struct PageProperty {
     /// The flags associated with the page,
     pub flags: PageFlags,
@@ -22,7 +23,7 @@ impl PageProperty {
         Self {
             flags,
             cache,
-            priv_flags: PrivilegedPageFlags::USER,
+            priv_flags: PrivilegedPageFlags::USER(),
         }
     }
 
@@ -94,47 +95,4 @@ pub enum CachePolicy {
     /// This type of memory provides the highest-possible performance
     /// and is useful for most software and data stored in system memory (DRAM).
     Writeback,
-}
-
-bitflags! {
-    /// Page protection permissions and access status.
-    pub struct PageFlags: u8 {
-        /// Readable.
-        const R = 0b00000001;
-        /// Writable.
-        const W = 0b00000010;
-        /// Executable.
-        const X = 0b00000100;
-        /// Readable + writable.
-        const RW = Self::R.bits | Self::W.bits;
-        /// Readable + executable.
-        const RX = Self::R.bits | Self::X.bits;
-        /// Readable + writable + executable.
-        const RWX = Self::R.bits | Self::W.bits | Self::X.bits;
-
-        /// Has the memory page been read or written.
-        const ACCESSED  = 0b00001000;
-        /// Has the memory page been written.
-        const DIRTY     = 0b00010000;
-
-        /// The first bit available for software use.
-        const AVAIL1    = 0b01000000;
-        /// The second bit available for software use.
-        const AVAIL2    = 0b10000000;
-    }
-}
-
-bitflags! {
-    /// Page property that are only accessible in OSTD.
-    pub(crate) struct PrivilegedPageFlags: u8 {
-        /// Accessible from user mode.
-        const USER      = 0b00000001;
-        /// Global page that won't be evicted from TLB with normal TLB flush.
-        const GLOBAL    = 0b00000010;
-
-        /// (TEE only) If the page is shared with the host.
-        /// Otherwise the page is ensured confidential and not visible outside the guest.
-        #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
-        const SHARED    = 0b10000000;
-    }
 }

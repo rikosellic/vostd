@@ -6,16 +6,16 @@ use super::{
     meta::{AnyFrameMeta, MetaSlot},
     Frame,
 };
-use crate::{mm::Paddr, sync::non_null::NonNullPtr};
+use crate::{mm::Paddr/*, sync::non_null::NonNullPtr*/};
 
 /// A struct that can work as `&'a Frame<M>`.
 #[derive(Debug)]
-pub struct FrameRef<'a, M: AnyFrameMeta + ?Sized> {
-    inner: ManuallyDrop<Frame<M>>,
-    _marker: PhantomData<&'a Frame<M>>,
+pub struct FrameRef<'a> {
+    inner: ManuallyDrop<Frame>,
+    _marker: PhantomData<&'a Frame>,
 }
-
-impl<M: AnyFrameMeta + ?Sized> FrameRef<'_, M> {
+/*
+impl FrameRef<'_> {
     /// Borrows the [`Frame`] at the physical address as a [`FrameRef`].
     ///
     /// # Safety
@@ -24,17 +24,19 @@ impl<M: AnyFrameMeta + ?Sized> FrameRef<'_, M> {
     ///  - the frame outlives the created reference, so that the reference can
     ///    be seen as borrowed from that frame.
     ///  - the type of the [`FrameRef`] (`M`) matches the borrowed frame.
+    #[verifier::external_body]
     pub(in crate::mm) unsafe fn borrow_paddr(raw: Paddr) -> Self {
-        Self {
+        unimplemented!()
+/*        Self {
             // SAFETY: The caller ensures the safety.
             inner: ManuallyDrop::new(unsafe { Frame::from_raw(raw) }),
             _marker: PhantomData,
-        }
+        }*/
     }
-}
+}*/
 
-impl<M: AnyFrameMeta + ?Sized> Deref for FrameRef<'_, M> {
-    type Target = Frame<M>;
+impl Deref for FrameRef<'_> {
+    type Target = Frame;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
@@ -43,7 +45,7 @@ impl<M: AnyFrameMeta + ?Sized> Deref for FrameRef<'_, M> {
 
 // SAFETY: `Frame` is essentially a `*const MetaSlot` that could be used as a non-null
 // `*const` pointer.
-unsafe impl<M: AnyFrameMeta + ?Sized> NonNullPtr for Frame<M> {
+/*unsafe impl<M: AnyFrameMeta + ?Sized> NonNullPtr for Frame<M> {
     type Target = PhantomData<Self>;
 
     type Ref<'a>
@@ -79,4 +81,4 @@ unsafe impl<M: AnyFrameMeta + ?Sized> NonNullPtr for Frame<M> {
     fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> core::ptr::NonNull<Self::Target> {
         NonNull::new(ptr_ref.inner.ptr.cast_mut()).unwrap().cast()
     }
-}
+}*/

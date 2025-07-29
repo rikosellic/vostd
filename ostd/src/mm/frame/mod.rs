@@ -31,10 +31,10 @@
 //! as well, leaving the handle only a pointer to the metadata slot. Users
 //! can create custom metadata types by implementing the [`AnyFrameMeta`] trait.
 
-pub mod allocator;
+//pub mod allocator;
 pub mod linked_list;
 pub mod meta;
-pub mod segment;
+//pub mod segment;
 pub mod unique;
 pub mod untyped;
 
@@ -44,16 +44,18 @@ pub use frame_ref::FrameRef;
 #[cfg(ktest)]
 mod test;
 
+use vstd::prelude::*;
+
 use core::{
     marker::PhantomData,
     mem::ManuallyDrop,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-pub use allocator::GlobalFrameAllocator;
-use meta::{mapping, AnyFrameMeta, GetFrameError, MetaSlot, REF_COUNT_UNUSED};
-pub use segment::Segment;
-use untyped::{AnyUFrameMeta, UFrame};
+//pub use allocator::GlobalFrameAllocator;
+use meta::{mapping, FrameMeta, GetFrameError, MetaSlot, REF_COUNT_UNUSED};
+//pub use segment::Segment;
+use untyped::{/*AnyUFrameMeta,*/ UFrame};
 
 use super::{PagingLevel, PAGE_SIZE};
 use crate::mm::{Paddr, PagingConsts, Vaddr};
@@ -67,6 +69,8 @@ pub(in crate::mm) fn max_paddr() -> Paddr {
     max_paddr
 }
 
+verus! {
+
 /// A smart pointer to a frame.
 ///
 /// A frame is a contiguous range of bytes in physical memory. The [`Frame`]
@@ -76,11 +80,13 @@ pub(in crate::mm) fn max_paddr() -> Paddr {
 /// determines the kind of the frame. If `M` implements [`AnyUFrameMeta`], the
 /// frame is a untyped frame. Otherwise, it is a typed frame.
 #[repr(transparent)]
-pub struct Frame<M: AnyFrameMeta + ?Sized> {
+#[derive(Debug)]
+pub struct Frame {
     ptr: *const MetaSlot,
-    _marker: PhantomData<M>,
+    _marker: PhantomData<FrameMeta>,
 }
-
+}
+/*
 unsafe impl<M: AnyFrameMeta + ?Sized> Send for Frame<M> {}
 
 unsafe impl<M: AnyFrameMeta + ?Sized> Sync for Frame<M> {}
@@ -134,7 +140,7 @@ impl Frame<dyn AnyFrameMeta> {
     }
 }
 
-impl<M: AnyFrameMeta + ?Sized> Frame<M> {
+impl Frame<FrameMeta> {
     /// Gets the physical address of the start of the frame.
     pub fn start_paddr(&self) -> Paddr {
         self.slot().frame_paddr()
@@ -159,11 +165,12 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     /// Gets the dyncamically-typed metadata of this frame.
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
-    pub fn dyn_meta(&self) -> &dyn AnyFrameMeta {
+    pub fn dyn_meta(&self) -> FrameMeta {
         // SAFETY: The metadata is initialized and valid.
         unsafe { &*self.slot().dyn_meta_ptr() }
     }
 
+    #[verifier::external_body]
     /// Gets the reference count of the frame.
     ///
     /// It returns the number of all references to the frame, including all the
@@ -176,13 +183,15 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     /// reference count can be changed by other threads at any time including
     /// potentially between calling this method and acting on the result.
     pub fn reference_count(&self) -> u64 {
-        let refcnt = self.slot().ref_count.load(Ordering::Relaxed);
-        debug_assert!(refcnt < meta::REF_COUNT_MAX);
-        refcnt
+        unimplemented!()
+/*        let refcnt = self.slot().ref_count.load(Ordering::Relaxed);
+//        debug_assert!(refcnt < meta::REF_COUNT_MAX);
+        refcnt*/
     }
+    
 
     /// Borrows a reference from the given frame.
-    pub fn borrow(&self) -> FrameRef<'_, M> {
+    pub fn borrow(&self) -> FrameRef<'_, FrameMeta> {
         // SAFETY: Both the lifetime and the type matches `self`.
         unsafe { FrameRef::borrow_paddr(self.start_paddr()) }
     }
@@ -242,6 +251,7 @@ impl<M: AnyFrameMeta + ?Sized> Clone for Frame<M> {
     }
 }
 
+/*
 impl<M: AnyFrameMeta + ?Sized> Drop for Frame<M> {
     fn drop(&mut self) {
         let last_ref_cnt = self.slot().ref_count.fetch_sub(1, Ordering::Release);
@@ -259,7 +269,9 @@ impl<M: AnyFrameMeta + ?Sized> Drop for Frame<M> {
         }
     }
 }
+*/
 
+/*
 impl<M: AnyFrameMeta> TryFrom<Frame<dyn AnyFrameMeta>> for Frame<M> {
     type Error = Frame<dyn AnyFrameMeta>;
 
@@ -275,7 +287,7 @@ impl<M: AnyFrameMeta> TryFrom<Frame<dyn AnyFrameMeta>> for Frame<M> {
             Err(dyn_frame)
         }
     }
-}
+}*/
 
 impl<M: AnyFrameMeta> From<Frame<M>> for Frame<dyn AnyFrameMeta> {
     fn from(frame: Frame<M>) -> Self {
@@ -291,24 +303,24 @@ impl<M: AnyUFrameMeta> From<Frame<M>> for UFrame {
     }
 }
 
-impl From<UFrame> for Frame<dyn AnyFrameMeta> {
+impl From<UFrame> for Frame<FrameMeta> {
     fn from(frame: UFrame) -> Self {
         // SAFETY: The metadata is coerceable and the struct is transmutable.
         unsafe { core::mem::transmute(frame) }
     }
 }
 
-impl TryFrom<Frame<dyn AnyFrameMeta>> for UFrame {
-    type Error = Frame<dyn AnyFrameMeta>;
+impl TryFrom<Frame<FrameMeta>> for UFrame {
+    type Error = Frame<FrameMeta>;
 
     /// Tries converting a [`Frame<dyn AnyFrameMeta>`] into [`UFrame`].
     ///
     /// If the usage of the frame is not the same as the expected usage, it will
     /// return the dynamic frame itself as is.
-    fn try_from(dyn_frame: Frame<dyn AnyFrameMeta>) -> Result<Self, Self::Error> {
+    fn try_from(dyn_frame: Frame<FrameMeta>) -> Result<Self, Self::Error> {
         if dyn_frame.dyn_meta().is_untyped() {
             // SAFETY: The metadata is coerceable and the struct is transmutable.
-            Ok(unsafe { core::mem::transmute::<Frame<dyn AnyFrameMeta>, UFrame>(dyn_frame) })
+            Ok(unsafe { core::mem::transmute::<Frame<FrameMeta>, UFrame>(dyn_frame) })
         } else {
             Err(dyn_frame)
         }
@@ -334,3 +346,4 @@ pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) {
     // SAFETY: We have already held a reference to the frame.
     unsafe { slot.inc_ref_count() };
 }
+*/

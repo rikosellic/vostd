@@ -5,18 +5,21 @@
 use alloc::fmt;
 use core::ops::Range;
 
-use cfg_if::cfg_if;
-pub(crate) use util::{__memcpy_fallible, __memset_fallible};
-use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
+//use cfg_if::cfg_if;
+//pub(crate) use util::{__memcpy_fallible, __memset_fallible};
+//use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
+
+use aster_common::prelude::PageTableEntryTrait;
+use aster_common::prelude::PageTableEntry;
 
 use crate::{
     mm::{
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
-        page_table::PageTableEntryTrait,
-        Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr, PAGE_SIZE,
+//        page_table::PageTableEntryTrait,
+        Paddr, PagingConstsTrait, PagingLevel, /*PodOnce,*/ Vaddr, PAGE_SIZE,
     },
-    util::marker::SameSizeAs,
-    Pod,
+//    util::marker::SameSizeAs,
+//    Pod,
 };
 
 mod util;
@@ -34,7 +37,7 @@ impl PagingConstsTrait for PagingConsts {
     const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 2;
     const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
 }
-
+/*
 bitflags::bitflags! {
     #[derive(Pod)]
     #[repr(C)]
@@ -298,3 +301,4 @@ impl fmt::Debug for PageTableEntry {
             .finish()
     }
 }
+*/

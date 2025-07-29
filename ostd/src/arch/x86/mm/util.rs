@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-core::arch::global_asm!(include_str!("memcpy_fallible.S"));
-core::arch::global_asm!(include_str!("memset_fallible.S"));
+//core::arch::global_asm!(include_str!("memcpy_fallible.S"));
+//core::arch::global_asm!(include_str!("memset_fallible.S"));
 
 extern "C" {
     /// Copies `size` bytes from `src` to `dst`. This function works with exception handling
