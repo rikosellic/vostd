@@ -126,7 +126,7 @@ pub const REF_COUNT_UNUSED: u64 = u64::MAX;
 pub const REF_COUNT_UNIQUE: u64 = u64::MAX - 1;
 pub const REF_COUNT_MAX: u64 = i64::MAX as u64;
 
-
+#[rustc_has_incoherent_inherent_impls]
 pub struct Link {
     pub next: Option<PPtr<Link>>,
     pub prev: Option<PPtr<Link>>,

@@ -2,6 +2,7 @@ use vstd::prelude::*;
 use vstd::simple_pptr::*;
 use crate::prelude::*;
 use crate::prelude::MetaSlotStorage::FrameLink;
+use crate::prelude::LinkedList;
 
 verus! {
 
@@ -23,6 +24,8 @@ impl LinkModel {
 pub ghost struct LinkedListModel {
     pub list: Seq<Paddr>,
     pub links: Map<Paddr, LinkModel>,
+    pub front: Option<PointsTo<Link>>,
+    pub back: Option<PointsTo<Link>>,
 }
 
 impl LinkedListModel {
@@ -34,16 +37,35 @@ impl LinkedListModel {
     }
 
     pub open spec fn wf(self) -> bool {
-        forall |i:int|
-            0 <= i < self.list.len() ==>
-            self.wf_at(i)
+        &&& self.front.unwrap().pptr().addr() == self.list[0]
+        &&& self.back.unwrap().pptr().addr() == self.list[self.list.len() - 1]
+        &&& forall |i:int|
+                0 <= i < self.list.len() ==>
+                self.wf_at(i)
     }
 
-    pub open spec fn relate_at(self, i: int, link: Link, /*linked_list: LinkedList,*/ meta_region: MetaRegionModel) -> bool {
-        let p = self.list[i];
+    pub open spec fn relate_help(self, i: usize, link: Link, meta_region: MetaRegionModel) -> bool
+        decreases i
+    {
+        let p = self.list[(self.list.len() - i) as int];
         let slot = meta_region.slots[p];
-        &&& slot.self_addr == p
-        &&& slot.storage.value() == FrameLink(link)
+        let link_model = self.links[p];
+        if let FrameLink(link) = slot.storage.value() {
+            if i == 0 {
+                link_model.relate(link)
+            } else {
+                link_model.relate(link) &&
+                self.relate_help((i-1) as usize, link_model.next_perm.unwrap().mem_contents().value(), meta_region)
+            }
+        } else {
+            false
+        }
+    }
+
+    pub open spec fn relate(self, linked_list: LinkedList, meta_region: MetaRegionModel) -> bool {
+        &&& self.front.unwrap().pptr() == linked_list.front.unwrap()
+        &&& self.list.len() == linked_list.size
+        &&& self.relate_help(self.list.len() as usize, self.front.unwrap().mem_contents().value(), meta_region)
     }
 
     pub open spec fn update_prev(links: Map<Paddr, LinkModel>, p: Paddr, perm: Option<PointsTo<Link>>) -> Map<Paddr, LinkModel> {
@@ -64,7 +86,7 @@ impl LinkedListModel {
         links.insert(p, new_link)
     }
 
-    pub open spec fn insert(self, i: int, perm: PointsTo<Link>, model: LinkModel) -> Self {
+/*    pub open spec fn insert(self, i: int, perm: PointsTo<Link>, model: LinkModel) -> Self {
         let list = self.list.insert(i, model.paddr);
         let links = self.links.insert(model.paddr, model);
         let links = if 0 < i { Self::update_next(links, list[i-1], Some(perm)) } else { links };
@@ -72,6 +94,7 @@ impl LinkedListModel {
         Self {
             list: list,
             links: links,
+            ..self
         }
     }
 
@@ -115,12 +138,13 @@ impl LinkedListModel {
             self.remove(i).wf()
     {
         admit()
-    }
+    }*/
 }
 
 pub ghost struct CursorModel {
     pub ghost front: Seq<Paddr>,
-    pub ghost back: Seq<Paddr>
+    pub ghost back: Seq<Paddr>,
+    pub ghost cur_perm: Option<PointsTo<Link>>
 }
 
 impl CursorModel {
@@ -138,16 +162,21 @@ impl CursorModel {
         let cursor = Self {
             front: self.front,
             back: self.back.remove(0),
+            cur_perm: link_model.next_perm,
         };
         let list = cursor.front.add(cursor.back);
         let links = list_model.links.remove(paddr);
         let idx = self.front.len();
         let links = if idx > 0 { LinkedListModel::update_next(links, self.front[idx-1], link_model.next_perm) } else { links };
         let links = if self.back.len() > 0 { LinkedListModel::update_prev(links, self.back[0], link_model.prev_perm) } else { links };
+        let front = if idx == 0 { link_model.next_perm } else { list_model.front };
+        let back = if self.back.len() == 0 { link_model.prev_perm } else { list_model.back };
         (cursor,
             LinkedListModel {
                 list: list,
                 links: links,
+                front: front,
+                back: back,
         })
     }
 
@@ -156,12 +185,21 @@ impl CursorModel {
         let cursor = Self {
             front: self.front.insert(self.front.len() as int, p),
             back: self.back,
+            cur_perm: self.cur_perm,
         };
         let list = cursor.front.add(cursor.back);
+        let links = list_model.links.insert(p, link_model);
+        let idx = self.front.len();
+        let links = if idx > 0 { LinkedListModel::update_next(links, self.front[idx-1], link_model.next_perm) } else { links };
+        let links = if self.back.len() > 0 { LinkedListModel::update_prev(links, self.back[0], link_model.prev_perm) } else { links };
+        let front = if idx == 0 { link_model.next_perm } else { list_model.front };
+        let back = if self.back.len() == 0 { link_model.prev_perm } else { list_model.back };
         (cursor,
             LinkedListModel {
                 list: list,
                 links: list_model.links.insert(p, link_model),
+                back: list_model.back,
+                front: list_model.front,
             }
         )
     }
