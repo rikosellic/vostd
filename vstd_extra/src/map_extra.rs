@@ -223,12 +223,15 @@ pub proof fn lemma_value_filter_contains_key<K, V>(m: Map<K, V>, f: spec_fn(V) -
 pub broadcast proof fn lemma_value_filter_choose<K, V>(m: Map<K, V>, f: spec_fn(V) -> bool)
     requires
         value_filter(m, f).len() != 0,
-        value_filter(m, f).dom().finite(),
     ensures
         value_filter(m, f).contains_key(#[trigger] value_filter_choose(m, f)),
         f(m[value_filter_choose(m, f)]),
 {
-    axiom_set_choose_len(value_filter(m, f).dom());
+    if value_filter(m, f).dom().finite() {
+        axiom_set_choose_len(value_filter(m, f).dom());
+    } else {
+        axiom_set_choose_finite(value_filter(m, f).dom());
+    }
 }
 
 } // verus!
@@ -362,6 +365,51 @@ pub broadcast proof fn lemma_forall_map_values_remove<K, V>(
         assert(m =~= m.remove(k));
     }
 
+}
+
+/// Returns a new map that projects the first key of a pair `(K1, K2)`,
+/// keeping the values associated with the second key `K2`.
+pub open spec fn project_first_key<K1, K2, V>(m: Map<(K1, K2), V>, k1: K1) -> Map<K2, V> {
+    Map::new(|k2: K2| m.contains_key((k1, k2)), |k2: K2| m[(k1, k2)])
+}
+
+/// Returns a new map that projects the second key of a pair `(K1, K2)`,
+/// keeping the values associated with the first key `K1`.
+pub open spec fn project_second_key<K1, K2, V>(m: Map<(K1, K2), V>, k2: K2) -> Map<K1, V> {
+    Map::new(|k1: K1| m.contains_key((k1, k2)), |k1: K1| m[(k1, k2)])
+}
+
+/// A lemma showing that `project_first_key`` is sound.
+/// There is no need to actually use this lemma in practice at most of the time because Verus can automatically prove it.
+pub proof fn lemma_project_first_key_sound<K1, K2, V>(m: Map<(K1, K2), V>, k1: K1)
+    ensures
+        forall|k2: K2|
+            {
+                &&& #[trigger] project_first_key(m, k1).contains_key(k2) <==> m.contains_key(
+                    (k1, k2),
+                )
+                &&& project_first_key(m, k1).contains_key(k2) ==> project_first_key(m, k1)[k2]
+                    == m[(k1, k2)]
+            },
+{
+}
+
+/// If the value filter of the projected map is non-empty, then there exists a key `k2`
+/// such that the original map contains the pair `(k1, k2)` and `m[(k1, k2)]` satisfies the predicate `f`.
+pub proof fn lemma_project_first_key_value_filter_non_empty<K1, K2, V>(
+    m: Map<(K1, K2), V>,
+    k1: K1,
+    f: spec_fn(V) -> bool,
+)
+    requires
+        value_filter(project_first_key(m, k1), f).len() != 0,
+    ensures
+        exists|k2: K2| #[trigger]
+            project_first_key(m, k1).contains_key(k2) && f(project_first_key(m, k1)[k2]),
+{
+    lemma_value_filter_choose(project_first_key(m, k1), f);
+    let k2 = value_filter_choose(project_first_key(m, k1), f);
+    assert(project_first_key(m, k1).contains_key(k2) && f(m[(k1, k2)]));
 }
 
 } // verus!
