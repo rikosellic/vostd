@@ -100,13 +100,13 @@ pub proof fn next_refines_next(pre: StateC, post: StateC) {
             AtomicSpec::show::no_op(interp(pre), interp(post));
         }
 
-        protocol_allocate(nid, paddr) => {
+        protocol_allocate(cpu, nid, paddr) => {
             assert(interp(pre).cursors =~= interp(post).cursors) by { admit(); };
             admit();
             AtomicSpec::show::no_op(interp(pre), interp(post));
         }
 
-        protocol_deallocate(nid) => {
+        protocol_deallocate(cpu, nid) => {
             assert_maps_equal!(interp(pre).cursors, interp(post).cursors);
             AtomicSpec::show::no_op(interp(pre), interp(post));
         }
