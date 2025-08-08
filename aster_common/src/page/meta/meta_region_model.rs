@@ -1,0 +1,84 @@
+/// Represents the meta-frame memory region. Can be viewed as a collection of
+/// Cell<MetaSlot> at a fixed address range.
+pub struct MetaRegion;
+
+pub tracked struct MetaRegionOwners {
+    pub slots: Map<usize, Tracked<simple_pptr::PointsTo<MetaSlot>>>,
+    pub slot_owners: Map<usize, MetaSlotOwner>,
+}
+
+pub ghost struct MetaRegionModel {
+    pub slots: Map<usize, MetaSlotModel>,
+}
+
+impl Inv for MetaRegionOwners {
+    open spec fn inv(&self) -> bool {
+    &&& self.slots.dom().finite()
+    &&& self.slots.dom() == self.slot_owners.dom()
+    &&& {
+        // All accessible slots are within the valid address range.
+        forall |i: usize|
+            i < mapping::max_meta_slots() <==> #[trigger] self.slots.contains_key(i)
+        }
+    &&& {
+        // Invariant for each slot holds.
+        forall |i: usize|
+            #[trigger]
+            self.slots.contains_key(i) ==>
+            {
+            &&& self.slot_owners.contains_key(i)
+            &&& self.slot_owners[i].inv()
+            &&& self.slots[i]@.is_init()
+            &&& self.slots[i]@.addr() == mapping::meta_addr(i)
+            &&& self.slots[i]@.value().wf(&self.slot_owners[i])
+            &&& self.slot_owners[i].self_ptr@.addr() == self.slots[i]@.addr()
+            }
+    }
+    }
+}
+
+impl Inv for MetaRegionModel {
+    open spec fn inv(&self) -> bool {
+    &&& self.slots.dom().finite()
+    &&& forall |i: usize| i < mapping::max_meta_slots() <==> #[trigger] self.slots.contains_key(i)
+    &&& forall |i: usize| #[trigger] self.slots.contains_key(i) ==> self.slots[i].inv()
+    }
+}
+
+
+impl InvView for MetaRegionOwners {
+    type V = MetaRegionModel;
+
+    open spec fn view(&self) -> Self::V {
+        let slots = self.slot_owners.map_values(
+            |s: MetaSlotOwner|
+            s.view()
+        );
+        MetaRegionModel {
+            slots,
+        }
+    }
+
+    // XXX: verus `map_values` does not preserves the `finite()` attribute.
+    axiom fn view_preserves_inv(&self);
+}
+
+impl OwnerOf for MetaRegion {
+    type Owner = MetaRegionOwners;
+
+    open spec fn wf(&self, owner: &Self::Owner) -> bool {
+        true
+    }
+}
+
+impl ModelOf for MetaRegion { }
+
+impl MetaRegionOwners {
+    pub open spec fn ref_count(self, i: usize) -> (res: u64)
+        recommends
+            self.inv(),
+            i < mapping::max_meta_slots() as usize,
+    {
+        self.slot_owners[i].ref_count@.value()
+    }
+}

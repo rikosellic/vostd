@@ -1,199 +1,383 @@
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
-//use vstd::
+use vstd::seq_lib::*;
+
 use crate::prelude::*;
 use crate::prelude::MetaSlotStorage::FrameLink;
 use crate::prelude::LinkedList;
+use crate::prelude::exp_models::*;
 
 verus! {
 
 pub ghost struct LinkModel {
     pub paddr: Paddr,
-    pub ghost prev_perm: Option<PointsTo<Link>>,
-    pub ghost next_perm: Option<PointsTo<Link>>
+    pub prev: Option<Link>,
+    pub next: Option<Link>,
 }
 
-impl LinkModel {
-    pub open spec fn relate(self, link: Link) -> bool {
-        &&& self.prev_perm.is_some() <==> link.prev.is_some()
-        &&& self.prev_perm.unwrap().pptr() == link.prev.unwrap()
-        &&& self.next_perm.is_some() <==> link.next.is_some()
-        &&& self.next_perm.unwrap().pptr() == link.next.unwrap()
-    }
+impl Inv for LinkModel {
+    open spec fn inv(&self) -> bool { true }
 }
 
-pub ghost struct LinkedListModel {
-    pub list: Seq<Paddr>,
-    pub links: Map<Paddr, LinkModel>,
-    pub front: Option<PointsTo<Link>>,
-    pub back: Option<PointsTo<Link>>,
+pub tracked struct LinkOwner {
+    pub paddr: Paddr,
+    pub prev_perm: Option<Tracked<PointsTo<Link>>>,
+    pub next_perm: Option<Tracked<PointsTo<Link>>>
 }
 
-impl LinkedListModel {
-    pub open spec fn wf_at(self, i: int) -> bool {
-        let p = self.list[i];
-        let model = self.links[p];
-        &&& i > 0 ==> (model.prev_perm.is_some() && model.prev_perm.unwrap().pptr().addr() == self.list[i-1])
-        &&& i < self.list.len() - 1 ==> (model.next_perm.is_some() && model.next_perm.unwrap().pptr().addr() == self.list[i+1])
-    }
+impl LinkOwner {
 
-    pub open spec fn wf(self) -> bool {
-        &&& self.front.unwrap().pptr().addr() == self.list[0]
-        &&& self.back.unwrap().pptr().addr() == self.list[self.list.len() - 1]
-        &&& forall |i:int|
-                0 <= i < self.list.len() ==>
-                self.wf_at(i)
-    }
-
-    pub open spec fn relate_help(self, i: usize, link: Link, meta_region: MetaRegionModel) -> bool
-        decreases i
+    pub fn get_next(self) -> Tracked<PointsTo<Link>>
+        requires
+            self.next_perm.is_some()
     {
-        let p = self.list[(self.list.len() - i) as int];
-        let slot = meta_region.slots[p];
-        let link_model = self.links[p];
-        if let FrameLink(link) = slot.storage.value() {
-            if i == 0 {
-                link_model.relate(link)
-            } else {
-                link_model.relate(link) &&
-                self.relate_help((i-1) as usize, link_model.next_perm.unwrap().mem_contents().value(), meta_region)
-            }
-        } else {
-            false
+        self.next_perm.unwrap()
+    }
+
+    pub fn get_prev(self) -> Tracked<PointsTo<Link>>
+        requires
+            self.next_perm.is_some()
+    {
+        self.next_perm.unwrap()
+    }
+}
+
+impl Inv for LinkOwner {
+    open spec fn inv(&self) -> bool { true }
+}
+
+impl InvView for LinkOwner {
+    type V = LinkModel;
+
+    open spec fn view(&self) -> Self::V {
+        let prev = if let Some(prev_perm) = self.prev_perm { Some(prev_perm@.mem_contents().value()) } else { None };
+        let next = if let Some(next_perm) = self.next_perm { Some(next_perm@.mem_contents().value()) } else { None };
+        LinkModel {
+            paddr: self.paddr,
+            prev: prev,
+            next: next,
         }
     }
 
-    pub open spec fn relate(self, linked_list: LinkedList, meta_region: MetaRegionModel) -> bool {
-        &&& self.front.unwrap().pptr() == linked_list.front.unwrap()
-        &&& self.list.len() == linked_list.size
-        &&& self.relate_help(self.list.len() as usize, self.front.unwrap().mem_contents().value(), meta_region)
+    proof fn view_preserves_inv(&self) { }
+}
+
+impl OwnerOf for Link {
+    type Owner = LinkOwner;
+
+    open spec fn wf(&self, owner: &Self::Owner) -> bool {
+        &&& owner.prev_perm.is_some() ==>
+            self.prev.is_some() &&
+            owner.prev_perm.unwrap()@.pptr() == self.prev.unwrap()
+        &&& owner.next_perm.is_some() ==>
+            self.next.is_some() &&
+            owner.next_perm.unwrap()@.pptr() == self.next.unwrap()
+        &&& owner.prev_perm.is_none() ==> self.prev.is_none()
+        &&& owner.next_perm.is_none() ==> self.next.is_none()
+    }
+}
+
+impl ModelOf for Link { }
+
+pub ghost struct LinkedListModel {
+    pub list: Seq<LinkModel>,
+//    pub links: Map<Paddr, LinkModel>,
+}
+
+impl LinkedListModel {
+    pub open spec fn front(&self) -> Option<LinkModel> {
+        if self.list.len() > 0 {
+            Some(self.list[0])
+        } else {
+            None
+        }
     }
 
-    pub open spec fn update_prev(links: Map<Paddr, LinkModel>, p: Paddr, perm: Option<PointsTo<Link>>) -> Map<Paddr, LinkModel> {
-        let link = links[p];
+    pub open spec fn back(&self) -> Option<LinkModel> {
+        if self.list.len() > 0 {
+            Some(self.list[self.list.len() - 1])
+        } else {
+            None
+        }
+    }
+
+}
+
+impl Inv for LinkedListModel {
+    open spec fn inv(&self) -> bool { true }
+}
+
+pub tracked struct LinkedListOwner {
+    pub list: Seq<LinkOwner>,
+    pub front_perm: Option<Tracked<PointsTo<Link>>>,
+    pub back_perm: Option<Tracked<PointsTo<Link>>>,
+}
+
+impl Inv for LinkedListOwner {
+    open spec fn inv(&self) -> bool
+    {
+        forall |i:int|
+            0 <= i < self.list.len() ==>
+            Self::inv_at(self.list, i)
+    }
+}
+
+impl LinkedListOwner {
+    pub open spec fn inv_at(owners: Seq<LinkOwner>, i: int) -> bool
+    {
+        &&& owners[i].prev_perm.is_some() ==>
+            owners[i].prev_perm.unwrap()@.is_init() &&
+            owners[i].prev_perm.unwrap()@.mem_contents().value().wf(&owners[i-1])
+        &&& owners[i].next_perm.is_some() ==>
+            owners[i].next_perm.unwrap()@.is_init() &&
+            owners[i].next_perm.unwrap()@.mem_contents().value().wf(&owners[i+1])
+    }
+
+    pub open spec fn view_helper(owners: Seq<LinkOwner>) -> Seq<LinkModel>
+        decreases owners.len()
+    {
+        if owners.len() == 0 {
+            Seq::<LinkModel>::empty()
+        } else {
+            seq![owners[0].view()].add(Self::view_helper(owners.remove(0)))
+        }
+    }
+
+    pub proof fn view_preserves_len(owners: Seq<LinkOwner>)
+        ensures Self::view_helper(owners).len() == owners.len()
+        decreases owners.len()
+    {
+        if owners.len() == 0 {
+
+        } else {
+            Self::view_preserves_len(owners.remove(0))
+        }
+    }
+}
+
+impl InvView for LinkedListOwner {
+    type V = LinkedListModel;
+
+    open spec fn view(&self) -> Self::V {
+        LinkedListModel {
+            list: Self::view_helper(self.list)
+        }
+    }
+
+    proof fn view_preserves_inv(&self) { }
+}
+
+impl OwnerOf for LinkedList {
+    type Owner = LinkedListOwner;
+
+    open spec fn wf(&self, owner: &Self::Owner) -> bool { true }
+}
+
+impl ModelOf for LinkedList { }
+
+impl LinkedListModel {
+    pub open spec fn update_prev(links: Seq<LinkModel>, i: int, prev: Option<Link>) -> Seq<LinkModel> {
+        let link = links[i];
         let new_link = LinkModel {
-            prev_perm: perm,
+            prev: prev,
             ..link
         };
-        links.insert(p, new_link)
+        links.update(i, new_link)
     }
 
-    pub open spec fn update_next(links: Map<Paddr, LinkModel>, p: Paddr, perm: Option<PointsTo<Link>>) -> Map<Paddr, LinkModel> {
-        let link = links[p];
+    pub open spec fn update_next(links: Seq<LinkModel>, i: int, next: Option<Link>) -> Seq<LinkModel> {
+        let link = links[i];
         let new_link = LinkModel {
-            next_perm: perm,
+            next: next,
             ..link
         };
-        links.insert(p, new_link)
+        links.update(i, new_link)
     }
-
 }
 
 pub ghost struct CursorModel {
-    pub ghost front: Seq<Paddr>,
-    pub ghost back: Seq<Paddr>,
-    pub ghost cur_perm: Option<PointsTo<Link>>,
+    pub ghost fore: Seq<LinkModel>,
+    pub ghost rear: Seq<LinkModel>,
     pub ghost list_model: LinkedListModel
 }
 
-impl CursorModel {
+impl Inv for CursorModel {
+    open spec fn inv(&self) -> bool { self.list_model.inv() }
+}
 
-    pub open spec fn relate(self, cursor: CursorMut) -> bool {
-        true
+pub tracked struct CursorOwner {
+    pub cur_own: LinkOwner,
+    pub list_own: LinkedListOwner,
+
+    pub cur_perm: Option<Tracked<PointsTo<Link>>>,
+    pub prev_perm: Option<Tracked<PointsTo<Link>>>,
+    pub next_perm: Option<Tracked<PointsTo<Link>>>,
+    pub list_perm: Tracked<PointsTo<LinkedList>>,
+
+    pub length: int,
+    pub index: int,
+    pub remaining: int,
+}
+
+impl Inv for CursorOwner {
+    open spec fn inv(&self) -> bool {
+        &&& self.length == self.list_own.list.len()
+        &&& self.length == self.index + self.remaining
+        &&& 0 <= self.index <= self.length
+        &&& 0 <= self.remaining <= self.length
+        &&& 0 <= self.length
+        &&& self.list_own.inv()
+        &&& self.next_perm.is_some() ==>
+            self.cur_perm.is_some() &&
+            self.cur_perm.unwrap()@.mem_contents().value().next == Some(self.next_perm.unwrap()@.pptr())
+    }
+}
+
+impl InvView for CursorOwner {
+    type V = CursorModel;
+
+    open spec fn view(&self) -> Self::V {
+        let list = self.list_own.view();
+        CursorModel {
+            fore: list.list.take(self.index),
+            rear: list.list.skip(self.index),
+            list_model: list,
+        }
     }
 
-    pub open spec fn current(self) -> Option<Paddr> {
-        if self.back.len() > 0 {
-            Some(self.back[0])
+    proof fn view_preserves_inv(&self) { }
+}
+
+impl OwnerOf for CursorMut {
+    type Owner = CursorOwner;
+
+    open spec fn wf(&self, owner: &Self::Owner) -> bool
+    {
+        &&& owner.cur_perm.is_some() ==>
+                self.current.is_some() &&
+                owner.cur_perm.unwrap()@.pptr() == self.current.unwrap() &&
+                owner.cur_perm.unwrap()@.is_init() &&
+                owner.next_perm == owner.list_own.list[owner.index].next_perm &&
+                owner.remaining > 0
+        &&& owner.cur_perm.is_none() ==>
+                self.current.is_none() &&
+                owner.remaining == 0
+        &&& owner.list_perm@.pptr() == self.list
+        &&& owner.list_perm@.is_init()
+    }
+}
+
+impl ModelOf for CursorMut { }
+
+impl CursorModel {
+
+    pub open spec fn current(self) -> Option<LinkModel> {
+        if self.rear.len() > 0 {
+            Some(self.rear[0])
         } else {
             None
         }
     }
 
     pub open spec fn move_next_spec(self) -> Self {
-        if self.back.len() > 0 {
-            let cur = self.back[0];
+        if self.rear.len() > 0 {
+            let cur = self.rear[0];
             Self {
-                front: self.front.insert(self.front.len() as int, cur),
-                back: self.back.remove(0),
-                cur_perm: self.list_model.links[cur].next_perm,
+                fore: self.fore.insert(self.fore.len() as int, cur),
+                rear: self.rear.remove(0),
                 list_model: self.list_model
             }
         } else {
             Self {
-                front: Seq::<Paddr>::empty(),
-                back: self.front,
-                cur_perm: self.list_model.front,
+                fore: Seq::<LinkModel>::empty(),
+                rear: self.fore,
                 list_model: self.list_model
             }
         }
     }
 
     pub open spec fn move_prev_spec(self) -> Self {
-        if self.front.len() > 0 {
-            let cur = self.front[self.front.len()-1];
+        if self.fore.len() > 0 {
+            let cur = self.fore[self.fore.len()-1];
             Self {
-                front: self.front.remove(self.front.len()-1),
-                back: self.back.insert(0, cur),
-                cur_perm: self.list_model.links[cur].prev_perm,
+                fore: self.fore.remove(self.fore.len()-1),
+                rear: self.rear.insert(0, cur),
                 list_model: self.list_model
             }
         } else {
             Self {
-                front: self.back,
-                back: Seq::<Paddr>::empty(),
-                cur_perm: self.list_model.back,
+                fore: self.rear,
+                rear: Seq::<LinkModel>::empty(),
                 list_model: self.list_model
             }
         }
     }
 
     pub open spec fn remove(self) -> Self {
-        let paddr = self.current().unwrap();
-        let link_model = self.list_model.links[self.back[0]];
-        let links = self.list_model.links.remove(paddr);
-        let links = if self.front.len() > 0  { LinkedListModel::update_next(links, self.front[self.front.len()-1], link_model.next_perm) } else { links };
-        let links = if self.back.len()  > 0  { LinkedListModel::update_prev(links, self.back[0], link_model.prev_perm) } else { links };
-        let front_perm = if self.front.len() == 0 { link_model.next_perm } else { self.list_model.front };
-        let back_perm  = if self.back.len()  == 0 { link_model.prev_perm } else { self.list_model.back };
-        let back_list = self.back.remove(0);
-
-        let list_model = LinkedListModel {
-            list: self.front.add(back_list),
-            links: links,
-            front: front_perm,
-            back: back_perm,
-        };
+        let cur = self.current().unwrap();
+        let rear = self.rear.remove(0);
+        let rear = if rear.len() > 0 { LinkedListModel::update_prev(rear, 0, cur.prev) } else { rear };
+        let fore = if self.fore.len() > 0 { LinkedListModel::update_next(self.fore, self.fore.len() - 1, cur.next) } else { self.fore };        
 
         Self {
-            front: self.front,
-            back: back_list,
-            cur_perm: link_model.next_perm,
-            list_model: list_model,
+            fore: fore,
+            rear: rear,
+            list_model: LinkedListModel { list: fore.add(rear) }
         }
     }
 
-    pub open spec fn insert(self, link_model: LinkModel) -> Self {
-        let p = link_model.paddr;
-        let links = self.list_model.links.insert(p, link_model);
-        let links = if self.front.len() > 0 { LinkedListModel::update_next(links, self.front[self.front.len()-1], link_model.next_perm) } else { links };
-        let links = if self.back.len() > 0 { LinkedListModel::update_prev(links, self.back[0], link_model.prev_perm) } else { links };
-        let front_perm = if self.front.len() == 0 { link_model.next_perm } else { self.list_model.front };
-        let back_perm = if self.back.len() == 0 { link_model.prev_perm } else { self.list_model.back };
-        let front_list = self.front.insert(self.front.len() as int, p);
-
-        let list_model = LinkedListModel {
-            list: front_list.add(self.back),
-            links: links,
-            front: front_perm,
-            back: back_perm,
-        };
-
+    pub open spec fn insert(self, link: LinkModel) -> Self {
+        let fore = self.fore.insert(self.fore.len() - 1, link);
+        let rear = if self.rear.len() > 0 { LinkedListModel::update_prev(self.rear, 0, link.prev) } else { self.rear };
+        let fore = if fore.len() > 0 { LinkedListModel::update_next(self.fore, self.fore.len() - 1, link.next) } else { fore };        
+        
         Self {
-            front: front_list,
-            back: self.back,
-            cur_perm: link_model.next_perm,
-            list_model: list_model,
+            fore: fore,
+            rear: rear,
+            list_model: self.list_model
+        }
+    }
+}
+
+impl CursorOwner {
+    /*
+    pub cur_own: LinkOwner,
+    pub list_own: LinkedListOwner,
+
+    pub cur_perm: Option<Tracked<PointsTo<Link>>>,
+    pub prev_perm: Tracked<PointsTo<Link>>,
+    pub next_perm: Tracked<PointsTo<Link>>,
+    pub list_perm: Tracked<PointsTo<LinkedList>>,
+
+    pub length: int,
+    pub index: int,
+    pub remaining: int,
+    */
+    pub open spec fn move_next_owner_spec(self) -> Self {
+        if self.remaining > 0 {
+            Self {
+                cur_own: self.list_own.list[self.index+1],
+                list_own: self.list_own,
+                cur_perm: self.next_perm,
+                prev_perm: self.cur_perm,
+                next_perm: self.list_own.list[self.index+1].next_perm,
+                list_perm: self.list_perm,
+                length: self.length,
+                index: self.index+1,
+                remaining: self.remaining-1,
+            }
+        } else {
+            Self {
+                cur_own: self.list_own.list[0],
+                list_own: self.list_own,
+                cur_perm: self.list_own.front_perm,
+                prev_perm: None,
+                next_perm: self.list_own.list[0].next_perm,
+                list_perm: self.list_perm,
+                length: self.length,
+                index: 0,
+                remaining: self.length,
+            }
         }
     }
 }
