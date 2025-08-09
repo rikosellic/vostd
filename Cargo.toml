@@ -3,7 +3,8 @@ members = [
     "vstd_extra",
     "aster_common",
     "demo",
-    "ostd"
+    "ostd",
+    "specs/ostd",
 #    "ostd/libs/ostd-macros",
 #    "ostd/libs/ostd-test",
 #    "kernel/libs/int-to-c-enum",

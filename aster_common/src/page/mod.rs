@@ -35,7 +35,7 @@ impl<M: PageMeta> Page<M> {
         recommends
             self.inv_ptr(),
     {
-        meta_to_page(self.ptr.addr())
+        meta_to_frame(self.ptr.addr())
     }
 
     #[verifier::when_used_as_spec(paddr_spec)]
@@ -47,7 +47,7 @@ impl<M: PageMeta> Page<M> {
             res % PAGE_SIZE() == 0,
             res < MAX_PADDR(),
     {
-        meta_to_page(self.ptr.addr())
+        meta_to_frame(self.ptr.addr())
     }
 
     #[verifier::external_body]

@@ -3,35 +3,106 @@
 //! - The invariants for both MetaSlot and MetaSlotModel.
 //! - The primitives for MetaSlot.
 use vstd::prelude::*;
-use vstd::cell::*;
+use vstd::cell;
+use vstd::simple_pptr;
 use vstd::atomic::*;
 
 use crate::prelude::*;
 
 verus! {
 
-/// Internal state of the MetaSlot.
+pub enum MetaSlotStatus {
+    UNUSED,
+    UNIQUE,
+    SHARED,
+    OVERFLOW,
+    UNDER_CONSTRUCTION,
+}
+
+/* Phase I version; TODO: check conversions
 #[derive(PartialEq)]
 pub ghost enum MetaSlotState {
     Unused,
     Claimed,
     Used,
     Finalizing,
-}
+} */
+
+pub const REF_COUNT_UNUSED: u64 = u64::MAX;
+pub const REF_COUNT_UNIQUE: u64 = u64::MAX - 1;
+pub const REF_COUNT_MAX: u64 = i64::MAX as u64;
+
 
 } // verus!
+
 verus! {
 
-#[rustc_has_incoherent_inherent_impls]
-/// The logical model of a metadata slot.
-pub tracked struct MetaSlotModel {
-    pub tracked ref_count_perm: Tracked<PermissionU32>,
-    pub tracked inner_perm: Option<Tracked<PointsTo<MetaSlotInner>>>,
-    pub ghost address: u64,
-    pub ghost ref_count: u32,
-    pub ghost state: MetaSlotState,
-    pub ghost usage: PageUsage,
+pub tracked struct MetaSlotOwner {
+    pub storage: Tracked<cell::PointsTo<MetaSlotStorage>>,
+    pub ref_count: Tracked<PermissionU64>,
+    pub vtable_ptr: Tracked<simple_pptr::PointsTo<usize>>,
+    pub in_list: Tracked<PermissionU64>,
+    pub self_ptr: Tracked<simple_pptr::PointsTo<MetaSlot>>,
+    pub usage: PageUsage,
 }
+
+impl Inv for MetaSlotOwner {
+    open spec fn inv(&self) -> bool {
+    &&& self.ref_count@.value() == REF_COUNT_UNUSED ==> {
+        &&& self.vtable_ptr@.is_uninit()
+        &&& self.in_list@.value() == 0
+        }
+    &&& self.ref_count@.value() == REF_COUNT_UNIQUE ==> {
+        &&& self.vtable_ptr@.is_init()
+        }
+    &&& 0 < self.ref_count@.value() < REF_COUNT_MAX ==> {
+        &&& self.vtable_ptr@.is_init()
+        }
+    &&& REF_COUNT_MAX <= self.ref_count@.value() < REF_COUNT_UNUSED ==> {
+        false
+        }
+    &&& self.ref_count@.value() == 0 ==> {
+        &&& self.vtable_ptr@.is_uninit()
+        &&& self.in_list@.value() == 0
+        }
+    }
+}
+
+pub ghost struct MetaSlotModel {
+    pub status: MetaSlotStatus,
+    pub storage: cell::MemContents<MetaSlotStorage>,
+    pub ref_count: u64,
+    pub vtable_ptr: simple_pptr::MemContents<usize>,
+    pub in_list: u64,
+    pub self_addr: usize,
+    pub usage: PageUsage,
+}
+
+impl Inv for MetaSlotModel {
+    open spec fn inv(&self) -> bool {
+    match self.ref_count {
+        REF_COUNT_UNUSED => {
+        &&& self.vtable_ptr.is_uninit()
+        &&& self.in_list == 0
+        },
+        REF_COUNT_UNIQUE => {
+        &&& self.vtable_ptr.is_init()
+        },
+        0 => {
+        &&& self.vtable_ptr.is_uninit()
+        &&& self.in_list == 0
+        },
+        _ if self.ref_count < REF_COUNT_MAX => {
+        &&& self.vtable_ptr.is_init()
+        },
+        _ => {
+        false
+        },
+    }
+    }
+}
+
+/* Phase 1 version; TODO: check that we don't need any of it!
 
 impl MetaSlotModel {
     pub open spec fn invariants(&self) -> bool {
@@ -58,10 +129,54 @@ impl MetaSlotModel {
             &&& self.usage != PageUsage::Unused
         }
     }
+}*/
+
+impl InvView for MetaSlotOwner {
+    type V = MetaSlotModel;
+
+    open spec fn view(&self) -> Self::V {
+        let storage = self.storage@.mem_contents();
+        let ref_count = self.ref_count@.value();
+        let vtable_ptr = self.vtable_ptr@.mem_contents();
+        let in_list = self.in_list@.value();
+        let self_addr = self.self_ptr@.addr();
+        let usage = self.usage;
+        let status = match ref_count {
+            REF_COUNT_UNUSED => MetaSlotStatus::UNUSED,
+            REF_COUNT_UNIQUE => MetaSlotStatus::UNIQUE,
+            0 => MetaSlotStatus::UNDER_CONSTRUCTION,
+            _ if ref_count < REF_COUNT_MAX => MetaSlotStatus::SHARED,
+            _ => MetaSlotStatus::OVERFLOW,
+        };
+        MetaSlotModel {
+            status,
+            storage,
+            ref_count,
+            vtable_ptr,
+            in_list,
+            self_addr,
+            usage,
+        }
+    }
+
+    proof fn view_preserves_inv(&self) { admit() }
 }
 
+impl OwnerOf for MetaSlot {
+    type Owner = MetaSlotOwner;
+
+    open spec fn wf(&self, owner: &Self::Owner) -> bool {
+    &&& self.storage.id() == owner.storage@.id()
+    &&& self.ref_count.id() == owner.ref_count@.id()
+    &&& self.vtable_ptr == owner.vtable_ptr@.pptr()
+    &&& self.in_list.id() == owner.in_list@.id()
+    }
+}
+
+impl ModelOf for MetaSlot { }
+
 } // verus!
-verus! {
+/*verus! {
 
 impl MetaSlot {
     #[rustc_allow_incoherent_impl]
@@ -239,3 +354,4 @@ impl MetaSlot {
 }
 
 } // verus!
+*/

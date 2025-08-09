@@ -1,9 +1,13 @@
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
-use crate::prelude::Link;
-
 verus! {
+
+#[rustc_has_incoherent_inherent_impls]
+pub struct Link {
+    pub next: Option<PPtr<Link>>,
+    pub prev: Option<PPtr<Link>>,
+}
 
 /// A linked list of frames.
 ///
@@ -91,7 +95,6 @@ pub struct CursorMut
 {
     pub list: PPtr<LinkedList>,
     pub current: Option<PPtr<Link>>,
-    pub index: usize,
 }
 
 }

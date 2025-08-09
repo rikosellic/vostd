@@ -142,12 +142,12 @@ pub broadcast proof fn lemma_meta_frame_vaddr_properties(meta: Vaddr)
         FRAME_METADATA_RANGE().start <= meta < FRAME_METADATA_RANGE().start + MAX_NR_PAGES()
             * META_SLOT_SIZE(),
     ensures
-        LINEAR_MAPPING_BASE_VADDR() <= #[trigger] paddr_to_vaddr(meta_to_page(meta))
+        LINEAR_MAPPING_BASE_VADDR() <= #[trigger] paddr_to_vaddr(meta_to_frame(meta))
             < VMALLOC_BASE_VADDR(),
-        #[trigger] paddr_to_vaddr(meta_to_page(meta)) % PAGE_SIZE() == 0,
+        #[trigger] paddr_to_vaddr(meta_to_frame(meta)) % PAGE_SIZE() == 0,
 {
-    let pa = meta_to_page(meta);
-    lemma_meta_to_page_soundness(meta);
+    let pa = meta_to_frame(meta);
+    lemma_meta_to_frame_soundness(meta);
     assert(pa < MAX_PADDR());
     assert(pa % PAGE_SIZE() == 0);
     lemma_max_paddr_range();

@@ -449,7 +449,7 @@ impl<M: PageMeta> Page<M> {
             self.inv_ptr() ==> self.has_valid_paddr(),
     {
         if self.inv_ptr() {
-            lemma_meta_to_page_soundness(self.ptr.addr() as Vaddr);
+            lemma_meta_to_frame_soundness(self.ptr.addr() as Vaddr);
         }
     }
 

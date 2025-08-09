@@ -1,7 +1,8 @@
 use vstd::prelude::*;
-use vstd::cell::{PointsTo, PCell};
+use vstd::cell::{PCell};
+use vstd::simple_pptr::{PPtr};
 use vstd::atomic_ghost::*;
-use vstd::atomic::PAtomicU32;
+use vstd::atomic::PAtomicU64;
 
 use super::*;
 
@@ -13,46 +14,44 @@ use vstd_extra::manually_drop::*;
 
 verus! {
 
-#[repr(C)]
-#[rustc_has_incoherent_inherent_impls]
-pub union MetaSlotInner {
-    pub _frame: ManuallyDrop<FrameMeta>,
-    pub _pt: ManuallyDrop<PageTablePageMeta>,
+pub enum MetaSlotStorage {
+    Empty([u8; 39]),
+    FrameLink(Link),
+    PTNode(PageTablePageMetaInner),
 }
 
-pub tracked enum ActualUsage {
-    Unused(PointsTo<MetaSlotInner>),
-    Used(PageUsage),
-}
-
-struct_with_invariants! {
 #[rustc_has_incoherent_inherent_impls]
-#[repr(C, align(16))]
 pub struct MetaSlot {
-    pub _inner: PCell<MetaSlotInner>,
-    pub usage: AtomicU8<_, ActualUsage, _>,
-    pub ref_count: PAtomicU32,
+    pub storage: PCell<MetaSlotStorage>,
+    pub ref_count: PAtomicU64,
+    pub vtable_ptr: PPtr<usize>,
+    pub in_list: PAtomicU64,
 }
 
-pub open spec fn wf(&self) -> bool {
-    invariant on usage with (_inner) is (v: u8, g: ActualUsage) {
-        match g {
-            ActualUsage::Unused(perm) => {
-            &&& v == 0
-            &&& perm.id() == _inner.id()
-            &&& perm.is_uninit()
-            },
-            ActualUsage::Used(usage) => {
-            &&& v == usage.as_u8()
-            &&& v != 0
-            },
-        }
-    }
+
+global layout MetaSlot is size == 64, align == 8;
+
+
+pub broadcast proof fn lemma_meta_slot_size()
+    ensures
+        #[trigger] size_of::<MetaSlot>() == META_SLOT_SIZE(),
+{ }
+
+pub proof fn size_of_meta_slot()
+    ensures
+        size_of::<MetaSlot>() == 64,
+        align_of::<MetaSlot>() == 8,
+{ }
+
+#[inline(always)]
+#[verifier::allow_in_spec]
+pub const fn meta_slot_size() -> (res: usize)
+    returns 64usize
+{
+    size_of::<MetaSlot>()
 }
 
-}
-
-impl MetaSlotInner {
+/*impl MetaSlotInner {
 
     pub open spec fn borrow_pt_spec(& self) -> & PageTablePageMeta
     {
@@ -149,5 +148,5 @@ impl Default for MetaSlotInner {
             _frame: ManuallyDrop::new(FrameMeta::default()),
         }
     }
-}
+}*/
 }

@@ -10,7 +10,7 @@ verus! {
 
 /// A page with a dynamically-known usage.
 ///
-/// It can also be used when the user don't care about the usage of the page.
+/// It can also be used when the user doesn't care about the usage of the page.
 #[rustc_has_incoherent_inherent_impls]
 pub struct DynPage {
     pub ptr: PPtr<MetaSlot>,
@@ -39,7 +39,7 @@ impl DynPage {
             self.inv_ptr(),
     {
         let addr = self.ptr.addr();
-        meta_to_page(addr)
+        meta_to_frame(addr)
     }
 
     #[verifier::when_used_as_spec(paddr_spec)]
@@ -51,7 +51,7 @@ impl DynPage {
             res == self.paddr_spec(),
             res % PAGE_SIZE() == 0,
     {
-        meta_to_page(self.ptr.addr())
+        meta_to_frame(self.ptr.addr())
     }
 }
 
