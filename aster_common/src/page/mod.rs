@@ -15,6 +15,8 @@ use crate::x86_64::mm::{MAX_NR_PAGES, MAX_PADDR, PAGE_SIZE};
 
 use crate::prelude::MetaSlotStorage::PTNode;
 
+use vstd_extra::ownership::*;
+
 verus! {
 
 #[rustc_has_incoherent_inherent_impls]

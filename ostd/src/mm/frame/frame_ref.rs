@@ -9,7 +9,6 @@ use super::{
 use crate::{mm::Paddr/*, sync::non_null::NonNullPtr*/};
 
 /// A struct that can work as `&'a Frame<M>`.
-#[derive(Debug)]
 pub struct FrameRef<'a> {
     inner: ManuallyDrop<Frame>,
     _marker: PhantomData<&'a Frame>,

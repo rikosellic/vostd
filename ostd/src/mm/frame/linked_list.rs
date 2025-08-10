@@ -23,7 +23,9 @@ use super::{
 };
 
 use vstd_extra::{borrow_field, update_field};
-use aster_common::prelude::{OwnerOf, ModelOf, Inv, InvView, meta, mapping, Link, LinkedList, CursorMut, UniqueFrameLink, FrameMeta, FRAME_METADATA_RANGE, META_SLOT_SIZE};
+use vstd_extra::ownership::*;
+
+use aster_common::prelude::{meta, mapping, Link, LinkedList, CursorMut, UniqueFrameLink, FrameMeta, FRAME_METADATA_RANGE, META_SLOT_SIZE};
 use aster_common::prelude::frame_list_model::*;
 
 use crate::{

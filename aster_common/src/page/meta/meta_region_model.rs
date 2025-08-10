@@ -1,3 +1,14 @@
+use vstd::prelude::*;
+use vstd::simple_pptr::{self, *};
+use vstd::cell;
+use vstd::atomic::*;
+
+use vstd_extra::ownership::*;
+
+use crate::prelude::*;
+
+verus!{
+
 /// Represents the meta-frame memory region. Can be viewed as a collection of
 /// Cell<MetaSlot> at a fixed address range.
 pub struct MetaRegion;
@@ -18,7 +29,7 @@ impl Inv for MetaRegionOwners {
     &&& {
         // All accessible slots are within the valid address range.
         forall |i: usize|
-            i < mapping::max_meta_slots() <==> #[trigger] self.slots.contains_key(i)
+            i < max_meta_slots() <==> #[trigger] self.slots.contains_key(i)
         }
     &&& {
         // Invariant for each slot holds.
@@ -29,7 +40,7 @@ impl Inv for MetaRegionOwners {
             &&& self.slot_owners.contains_key(i)
             &&& self.slot_owners[i].inv()
             &&& self.slots[i]@.is_init()
-            &&& self.slots[i]@.addr() == mapping::meta_addr(i)
+            &&& self.slots[i]@.addr() == meta_addr(i)
             &&& self.slots[i]@.value().wf(&self.slot_owners[i])
             &&& self.slot_owners[i].self_ptr@.addr() == self.slots[i]@.addr()
             }
@@ -40,7 +51,7 @@ impl Inv for MetaRegionOwners {
 impl Inv for MetaRegionModel {
     open spec fn inv(&self) -> bool {
     &&& self.slots.dom().finite()
-    &&& forall |i: usize| i < mapping::max_meta_slots() <==> #[trigger] self.slots.contains_key(i)
+    &&& forall |i: usize| i < max_meta_slots() <==> #[trigger] self.slots.contains_key(i)
     &&& forall |i: usize| #[trigger] self.slots.contains_key(i) ==> self.slots[i].inv()
     }
 }
@@ -81,4 +92,5 @@ impl MetaRegionOwners {
     {
         self.slot_owners[i].ref_count@.value()
     }
+}
 }

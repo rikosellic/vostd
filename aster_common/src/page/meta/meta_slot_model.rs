@@ -4,8 +4,10 @@
 //! - The primitives for MetaSlot.
 use vstd::prelude::*;
 use vstd::cell;
-use vstd::simple_pptr;
+use vstd::simple_pptr::{self, PPtr};
 use vstd::atomic::*;
+
+use vstd_extra::ownership::*;
 
 use crate::prelude::*;
 
