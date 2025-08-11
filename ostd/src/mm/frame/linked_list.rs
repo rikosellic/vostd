@@ -332,8 +332,6 @@ impl CursorMut
             old(self).current.unwrap() == old(cur_perm).pptr(),
             old(cur_perm).is_init(),
             old(cur_perm).mem_contents().value().prev == Some(old(prev_perm).pptr()),
-//            old(back_perm).is_init(),
-//            old(frame_own).perm@.is_init(),
             old(prev_perm).is_init(),
 //            old(next_perm).pptr() == meta_region_model.get_the_thing(current.addr).next,
             old(next_perm).is_init(),
