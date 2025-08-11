@@ -245,7 +245,7 @@ where
     pub fn move_next(&mut self) {
         self.current = match self.current {
             // SAFETY: The cursor is pointing to a valid element.
-            Some(current) => unsafe { current.as_ref().next },
+            Some(current) => borrow_field!(& current => next, NonNull),
             None => self.list.front,
         };
     }
@@ -259,7 +259,7 @@ where
     pub fn move_prev(&mut self) {
         self.current = match self.current {
             // SAFETY: The cursor is pointing to a valid element.
-            Some(current) => unsafe { current.as_ref().prev },
+            Some(current) => borrow_field!(& current => prev, NonNull),
             None => self.list.back,
         };
     }
@@ -293,7 +293,7 @@ where
         };
 
         let next_ptr = frame.meta().next;
-        if let Some(prev) = &mut frame.meta_mut().prev {
+        if let Some(prev) = borrow_field!(&mut frame.meta_mut() => prev) {
             // SAFETY: We own the previous node by `&mut self` and the node is
             // initialized.
 
@@ -333,10 +333,10 @@ where
 
         let frame_ptr = NonNull::from(frame.meta_mut());
 
-        if let Some(current) = &mut self.current {
+        if let Some(current) = borrow_field!(&mut self.current) {
             // SAFETY: We own the current node by `&mut self` and the node is
             // initialized.
-            if let Some(mut prev) = borrow_field!(current => prev, NonNull) {
+            if let Some(mut prev) = borrow_field!(&mut current => prev, NonNull) {
                 // SAFETY: We own the previous node by `&mut self` and the node
                 // is initialized.
 
@@ -352,7 +352,7 @@ where
             }
         } else {
             // We are at the "ghost" non-element.
-            if let Some(back) = &mut self.list.back {
+            if let Some(back) = borrow_field!(&mut self.list => back) {
                 // SAFETY: We have ownership of the links via `&mut self`.
                 update_field!(back => next <- Some(frame_ptr), NonNull);
                 update_field!(frame.meta_mut() => prev <- Some(*back));
