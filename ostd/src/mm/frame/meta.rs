@@ -416,7 +416,10 @@ impl MetaSlot {
     #[verus_spec(
         with Tracked(rc_perm): Tracked<&mut PermissionU64>
     )]
-    pub(super) unsafe fn drop_last_in_place(&self) {
+    pub(super) unsafe fn drop_last_in_place(&self)
+        requires
+            self.ref_count.id() == old(rc_perm)@.patomic
+    {
         // This should be guaranteed as a safety requirement.
 //        debug_assert_eq!(self.ref_count.load(Tracked(&*rc_perm)), 0);
 

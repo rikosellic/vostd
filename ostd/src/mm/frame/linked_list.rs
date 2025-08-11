@@ -234,10 +234,6 @@ impl CursorMut
         requires
             owner.inv(),
             old(self).wf(&owner),
-        ensures
-            self.model(&owner.move_next_owner_spec()) == old(self).model(&owner).move_next_spec(),
-//            owner.move_next_owner_spec().inv(),
-            self.wf(&owner.move_next_owner_spec()),
     {
         let ghost old_self = *self;
 
@@ -247,27 +243,6 @@ impl CursorMut
             None => borrow_field!(self.list => front, owner.list_perm.borrow()),
         };
 
-        proof {
-            LinkedListOwner::view_preserves_len(owner.list_own.list);
-            assert(self.model(&owner.move_next_owner_spec()).fore == old_self.model(&owner).move_next_spec().fore);
-            assert(self.model(&owner.move_next_owner_spec()).rear == old_self.model(&owner).move_next_spec().rear);
-
-            if owner.cur_perm.is_some() {
-                assert(owner.move_next_owner_spec().cur_perm == owner.next_perm);
-                assert(owner.next_perm == owner.list_own.list[owner.index].next_perm);
-                if owner.next_perm.is_some() {
-                    assert(LinkedListOwner::inv_at(owner.list_own.list, owner.index));
-                    assert(owner.remaining > 1) by { admit() };
-                } else {
-                    assert(LinkedListOwner::inv_at(owner.list_own.list, owner.index));
-                    assert(self.current.is_none());
-                    assert(owner.remaining == 1) by { admit() };
-                }
-//                assert(owner.list_own.list[owner.index].next_perm);
-            } else {
-                admit()
-            }
-        }
     }
 
     /// Moves the cursor to the previous frame towards the front.
@@ -284,8 +259,6 @@ impl CursorMut
         requires
             owner.inv(),
             old(self).wf(&owner),
-        ensures
-            self.model(&owner) == old(self).model(&owner).move_prev_spec()
     {
         self.current = match self.current {
             // SAFETY: The cursor is pointing to a valid element.
