@@ -1,7 +1,3 @@
-use vstd::prelude::*;
-use vstd_extra::prelude::*;
-use aster_common::prelude::*;
+mod linked_list_specs;
 
-verus! {
-
-}
+pub use linked_list_specs::*;

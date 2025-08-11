@@ -28,6 +28,8 @@ use vstd_extra::ownership::*;
 use aster_common::prelude::{meta, mapping, Link, LinkedList, CursorMut, UniqueFrameOwner, UniqueFrame, UniqueFrameLink, FrameMeta, FRAME_METADATA_RANGE, META_SLOT_SIZE};
 use aster_common::prelude::frame_list_model::*;
 
+use ostd_specs::*;
+
 use crate::{
     arch::mm::PagingConsts,
     mm::{Paddr, Vaddr},

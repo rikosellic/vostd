@@ -195,6 +195,7 @@ impl LinkedListModel {
     }
 }
 
+#[rustc_has_incoherent_inherent_impls]
 pub ghost struct CursorModel {
     pub ghost fore: Seq<LinkModel>,
     pub ghost rear: Seq<LinkModel>,
@@ -205,6 +206,7 @@ impl Inv for CursorModel {
     open spec fn inv(&self) -> bool { self.list_model.inv() }
 }
 
+#[rustc_has_incoherent_inherent_impls]
 pub tracked struct CursorOwner {
     pub cur_own: LinkOwner,
     pub list_own: LinkedListOwner,
@@ -276,108 +278,6 @@ impl CursorModel {
             Some(self.rear[0])
         } else {
             None
-        }
-    }
-
-    pub open spec fn move_next_spec(self) -> Self {
-        if self.rear.len() > 0 {
-            let cur = self.rear[0];
-            Self {
-                fore: self.fore.insert(self.fore.len() as int, cur),
-                rear: self.rear.remove(0),
-                list_model: self.list_model
-            }
-        } else {
-            Self {
-                fore: Seq::<LinkModel>::empty(),
-                rear: self.fore,
-                list_model: self.list_model
-            }
-        }
-    }
-
-    pub open spec fn move_prev_spec(self) -> Self {
-        if self.fore.len() > 0 {
-            let cur = self.fore[self.fore.len()-1];
-            Self {
-                fore: self.fore.remove(self.fore.len()-1),
-                rear: self.rear.insert(0, cur),
-                list_model: self.list_model
-            }
-        } else {
-            Self {
-                fore: self.rear,
-                rear: Seq::<LinkModel>::empty(),
-                list_model: self.list_model
-            }
-        }
-    }
-
-    pub open spec fn remove(self) -> Self {
-        let cur = self.current().unwrap();
-        let rear = self.rear.remove(0);
-        let rear = if rear.len() > 0 { LinkedListModel::update_prev(rear, 0, cur.prev) } else { rear };
-        let fore = if self.fore.len() > 0 { LinkedListModel::update_next(self.fore, self.fore.len() - 1, cur.next) } else { self.fore };        
-
-        Self {
-            fore: fore,
-            rear: rear,
-            list_model: LinkedListModel { list: fore.add(rear) }
-        }
-    }
-
-    pub open spec fn insert(self, link: LinkModel) -> Self {
-        let fore = self.fore.insert(self.fore.len() - 1, link);
-        let rear = if self.rear.len() > 0 { LinkedListModel::update_prev(self.rear, 0, link.prev) } else { self.rear };
-        let fore = if fore.len() > 0 { LinkedListModel::update_next(self.fore, self.fore.len() - 1, link.next) } else { fore };        
-        
-        Self {
-            fore: fore,
-            rear: rear,
-            list_model: self.list_model
-        }
-    }
-}
-
-impl CursorOwner {
-    /*
-    pub cur_own: LinkOwner,
-    pub list_own: LinkedListOwner,
-
-    pub cur_perm: Option<Tracked<PointsTo<Link>>>,
-    pub prev_perm: Tracked<PointsTo<Link>>,
-    pub next_perm: Tracked<PointsTo<Link>>,
-    pub list_perm: Tracked<PointsTo<LinkedList>>,
-
-    pub length: int,
-    pub index: int,
-    pub remaining: int,
-    */
-    pub open spec fn move_next_owner_spec(self) -> Self {
-        if self.remaining > 0 {
-            Self {
-                cur_own: self.list_own.list[self.index+1],
-                list_own: self.list_own,
-                cur_perm: self.next_perm,
-                prev_perm: self.cur_perm,
-                next_perm: self.list_own.list[self.index+1].next_perm,
-                list_perm: self.list_perm,
-                length: self.length,
-                index: self.index+1,
-                remaining: self.remaining-1,
-            }
-        } else {
-            Self {
-                cur_own: self.list_own.list[0],
-                list_own: self.list_own,
-                cur_perm: self.list_own.front_perm,
-                prev_perm: None,
-                next_perm: self.list_own.list[0].next_perm,
-                list_perm: self.list_perm,
-                length: self.length,
-                index: 0,
-                remaining: self.length,
-            }
         }
     }
 }
