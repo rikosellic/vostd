@@ -26,20 +26,22 @@ pub trait AnyFrameMeta {
     spec fn write_as(&self) -> MetaSlotStorage;
 }
 
+#[rustc_has_incoherent_inherent_impls]
 pub struct UniqueFrame<M: AnyFrameMeta> {
     pub ptr: PPtr<MetaSlot>,
     pub _marker: PhantomData<M>,
 }
 
-pub tracked struct UniqueFrameOwner {
+pub tracked struct UniqueFrameOwner<M: AnyFrameMeta> {
     pub slot: Tracked<MetaSlotOwner>,
+    pub perm: Tracked<PointsTo<M>>,
 }
 
 pub ghost struct UniqueFrameModel {
     pub slot: MetaSlotModel,
 }
 
-impl Inv for UniqueFrameOwner {
+impl<M: AnyFrameMeta> Inv for UniqueFrameOwner<M> {
     open spec fn inv(&self) -> bool {
     &&& self.slot@.inv()
     &&& self.slot@.ref_count@.value() == REF_COUNT_UNIQUE
@@ -58,7 +60,7 @@ impl Inv for UniqueFrameModel {
     }
 }
 
-impl InvView for UniqueFrameOwner {
+impl<M: AnyFrameMeta> InvView for UniqueFrameOwner<M> {
     type V = UniqueFrameModel;
 
     open spec fn view(&self) -> Self::V {
@@ -71,7 +73,7 @@ impl InvView for UniqueFrameOwner {
 }
 
 impl <M: AnyFrameMeta> OwnerOf for UniqueFrame<M> {
-    type Owner = UniqueFrameOwner;
+    type Owner = UniqueFrameOwner<M>;
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool {
     &&& self.ptr == owner.slot@.self_ptr@.pptr()
@@ -125,7 +127,19 @@ impl <M: AnyFrameMeta> UniqueFrame<M> {
             }
         }
     }
+}
 
+impl AnyFrameMeta for Link
+{
+    fn on_drop(&mut self) { }
+
+    fn is_untyped(&self) -> bool { false }
+
+    spec fn vtable_ptr(&self) -> usize;
+
+    spec fn cast_to(x: &MetaSlotStorage) -> &Self;
+
+    spec fn write_as(&self) -> MetaSlotStorage;
 }
 
 }

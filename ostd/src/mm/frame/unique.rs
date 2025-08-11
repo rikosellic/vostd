@@ -6,7 +6,7 @@ use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
 pub use aster_common::prelude::{UniqueFrameLink, Link};
-use aster_common::prelude::{mapping, FrameMeta, PAGE_SIZE};
+use aster_common::prelude::{mapping, FrameMeta, PAGE_SIZE, UniqueFrame};
 
 use core::{marker::PhantomData, mem::ManuallyDrop, sync::atomic::Ordering};
 
@@ -18,7 +18,7 @@ use crate::mm::{Paddr, PagingConsts, PagingLevel};
 
 verus! {
 
-impl UniqueFrameLink {
+impl UniqueFrame<Link> {
     /// Gets a [`UniqueFrame`] with a specific usage from a raw, unused page.
     ///
     /// The caller should provide the initial metadata of the page.
@@ -68,7 +68,7 @@ impl UniqueFrameLink {
     }
 }
 
-impl UniqueFrameLink {
+impl UniqueFrame<Link> {
     /// Gets the physical address of the start of the frame.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
