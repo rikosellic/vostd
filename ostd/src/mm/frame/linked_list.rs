@@ -8,6 +8,7 @@
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 use vstd::seq_lib::*;
+use vstd::atomic::PermissionU64;
 
 use core::{
     ops::{Deref, DerefMut},
@@ -239,8 +240,8 @@ impl CursorMut
 
         self.current = match self.current {
             // SAFETY: The cursor is pointing to a valid element.
-            Some(current) => borrow_field!(current => next, owner.cur_perm.tracked_unwrap().borrow()),
-            None => borrow_field!(self.list => front, owner.list_perm.borrow()),
+            Some(current) => borrow_field!(& current => next, owner.cur_perm.tracked_unwrap().borrow()),
+            None => borrow_field!(& self.list => front, owner.list_perm.borrow()),
         };
 
     }
@@ -262,8 +263,8 @@ impl CursorMut
     {
         self.current = match self.current {
             // SAFETY: The cursor is pointing to a valid element.
-            Some(current) => borrow_field!(current => prev, owner.cur_perm.tracked_unwrap().borrow()),
-            None => borrow_field!(self.list => front, owner.list_perm.borrow()),
+            Some(current) => borrow_field!(& current => prev, owner.cur_perm.tracked_unwrap().borrow()),
+            None => borrow_field!(& self.list => front, owner.list_perm.borrow()),
         };
     }
 
@@ -320,7 +321,7 @@ impl CursorMut
 
         let next_ptr = frame.meta(Tracked(&*cur_perm)).next;
 
-        if let Some(prev) = frame.meta_mut(Tracked(cur_perm)).borrow(Tracked(&*cur_perm)).prev {
+        if let Some(prev) = borrow_field!(&mut frame.meta_mut(Tracked(cur_perm)) => prev, &*cur_perm) {
             // SAFETY: We own the previous node by `&mut self` and the node is
             // initialized.
 
@@ -329,7 +330,7 @@ impl CursorMut
             update_field!(self.list => front <- next_ptr, owner.list_perm.borrow_mut());
         }
         let prev_ptr = frame.meta(Tracked(cur_perm)).prev;
-        if let Some(next) = frame.meta_mut(Tracked(cur_perm)).borrow(Tracked(cur_perm)).next {
+        if let Some(next) = borrow_field!(&mut frame.meta_mut(Tracked(cur_perm)) => next, cur_perm) {
             // SAFETY: We own the next node by `&mut self` and the node is
             // initialized.
 
@@ -363,7 +364,8 @@ impl CursorMut
             Tracked(back_perm): Tracked<&mut PointsTo<Link>>,
             Tracked(prev_perm): Tracked<&mut PointsTo<Link>>,
             Tracked(cur_perm): Tracked<&mut PointsTo<Link>>,
-            Tracked(frame_own): Tracked<&mut UniqueFrameOwner<Link>>
+            Tracked(frame_own): Tracked<&mut UniqueFrameOwner<Link>>,
+            Tracked(in_list_perm): Tracked<&mut PermissionU64>
     )]
     pub fn insert_before(&mut self, mut frame: UniqueFrame<Link>)
 //            -> (res: Ghost<LinkedListModel>)
@@ -387,11 +389,11 @@ impl CursorMut
 
         let frame_ptr = frame.meta_mut(Tracked(frame_own.perm.borrow_mut()));
 
-        if let Some(current) = self.current {
+        if let Some(current) = borrow_field!(&mut self.current) {
             // SAFETY: We own the current node by `&mut self` and the node is
             // initialized.
 
-            if let Some(prev) = borrow_field!(current => prev, &*cur_perm) {
+            if let Some(prev) = borrow_field!(& current => prev, &*cur_perm) {
                 // SAFETY: We own the previous node by `&mut self` and the node
                 // is initialized.
                 update_field!(prev => next <- Some(frame_ptr), prev_perm);
@@ -406,7 +408,7 @@ impl CursorMut
             }
         } else {
             // We are at the "ghost" non-element.
-            if let Some(back) = self.list.borrow(Tracked(&*owner.list_perm.borrow())).back {
+            if let Some(back) = borrow_field!(&mut self.list => back, &owner.list_perm.borrow_mut()) {
                 // SAFETY: We have ownership of the links via `&mut self`.
 //                    debug_assert!(back.as_mut().next.is_none());
                 update_field!(back => next <- Some(frame_ptr), back_perm);
@@ -419,12 +421,10 @@ impl CursorMut
             }
         }
 
-        /*
-        frame
-            .slot()
-            .in_list
-            .store(self.list.lazy_get_id(), Ordering::Relaxed);
-        */
+//        frame
+//            .slot()
+//            .in_list
+//            .store(in_list_perm, borrow_field!(& self.list, owner.list_perm).lazy_get_id());
 
 //        frame.slot().in_list_store(self.list.borrow(Tracked(&*list_perm)).lazy_get_id());
 
@@ -434,8 +434,6 @@ impl CursorMut
 
         update_field!(self.list => size += 1, owner.list_perm.borrow_mut());
 
-//        let ghost (cursor_model, list_model) = cursor_model@.remove(list_model@);
-//        Ghost(list_model)
     }
 
 /*    /// Provides a reference to the linked list.

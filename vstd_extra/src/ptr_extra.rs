@@ -5,8 +5,18 @@ verus! {
 
 #[macro_export]
 macro_rules! borrow_field {
-
-    ($ptr:expr => $field:tt, $perm:expr) => {
+    (& $ptr:expr) => {
+        ::builtin_macros::verus_exec_expr!(
+        $ptr
+    )};
+    (&mut $ptr:expr) => {
+        ::builtin_macros::verus_exec_expr!(
+        $ptr
+    )};    (& $ptr:expr => $field:tt, $perm:expr) => {
+        ::builtin_macros::verus_exec_expr!(
+        $ptr.borrow(Tracked($perm)).$field
+    )};
+    (&mut $ptr:expr => $field:tt, $perm:expr) => {
         ::builtin_macros::verus_exec_expr!(
         $ptr.borrow(Tracked($perm)).$field
     )}
