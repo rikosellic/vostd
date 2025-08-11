@@ -6,5 +6,6 @@ pub mod ghost_tree;
 pub mod manually_drop;
 pub mod seq_extra;
 pub mod ptr_extra;
+pub mod ownership;
 
 pub mod prelude;

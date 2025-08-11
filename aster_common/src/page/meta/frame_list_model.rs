@@ -1,11 +1,11 @@
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 use vstd::seq_lib::*;
+use vstd_extra::ownership::*;
 
 use crate::prelude::*;
 use crate::prelude::MetaSlotStorage::FrameLink;
 use crate::prelude::LinkedList;
-use crate::prelude::exp_models::*;
 
 verus! {
 

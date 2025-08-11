@@ -40,7 +40,7 @@ pub use self::{
 //    vm_space::VmSpace,
 };
 pub(crate) use aster_common::prelude::{
-    paddr_to_vaddr, PrivilegedPageFlags, PageTable,
+    paddr_to_vaddr, PrivilegedPageFlags, PageTable, PAGE_SIZE
 };
 use crate::arch::mm::PagingConsts;
 
@@ -86,9 +86,6 @@ pub(crate) trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
     const VA_SIGN_EXT: bool;
 }
 
-/// The page size
-pub const PAGE_SIZE: usize = page_size::<PagingConsts>(1);
-
 /// The page size at a given level.
 pub(crate) const fn page_size<C: PagingConstsTrait>(level: PagingLevel) -> usize {
     C::BASE_PAGE_SIZE << (nr_subpage_per_huge::<C>().ilog2() as usize * (level as usize - 1))
@@ -115,7 +112,7 @@ pub(crate) const fn nr_base_per_page<C: PagingConstsTrait>(level: PagingLevel) -
 /// for some x86_64 CPUs' bugs. See
 /// <https://github.com/torvalds/linux/blob/480e035fc4c714fb5536e64ab9db04fedc89e910/arch/x86/include/asm/page_64.h#L68-L78>
 /// for the rationale.
-pub const MAX_USERSPACE_VADDR: Vaddr = 0x0000_8000_0000_0000 - PAGE_SIZE;
+pub const MAX_USERSPACE_VADDR: Vaddr = 0x0000_8000_0000_0000 - PAGE_SIZE();
 
 /// The kernel address space.
 ///
@@ -131,5 +128,5 @@ pub trait HasPaddr {
 
 /// Checks if the given address is page-aligned.
 pub const fn is_page_aligned(p: usize) -> bool {
-    (p & (PAGE_SIZE - 1)) == 0
+    (p & (PAGE_SIZE() - 1)) == 0
 }

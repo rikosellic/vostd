@@ -16,6 +16,8 @@
 
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
+use vstd::atomic::PermissionU64;
+use aster_common::prelude::*;
 
 use core::{
     alloc::Layout,
@@ -52,7 +54,7 @@ pub use aster_common::prelude::{mapping, MetaSlot, META_SLOT_SIZE, FrameMeta, Li
 /// The maximum number of bytes of the metadata of a frame.
 pub const FRAME_METADATA_MAX_SIZE: usize = META_SLOT_SIZE()
     - size_of::<AtomicU64>()
-//    - size_of::<FrameMetaVtablePtr>()
+    - size_of::<FrameMetaVtablePtr>()
     - size_of::<AtomicU64>();
 /// The maximum alignment in bytes of the metadata of a frame.
 pub const FRAME_METADATA_MAX_ALIGN: usize = META_SLOT_SIZE();
@@ -105,11 +107,15 @@ pub(in crate::mm) struct MetaSlot {
     pub(super) in_list: AtomicU64,
 }*/
 
-pub(super) const REF_COUNT_UNUSED: u32 = u32::MAX;
-pub(super) const REF_COUNT_UNIQUE: u32 = u32::MAX - 1;
-pub(super) const REF_COUNT_MAX: u32 = i32::MAX as u32;
+verus! {
 
-//type FrameMetaVtablePtr = core::ptr::DynMetadata<dyn AnyFrameMeta>;
+pub(super) const REF_COUNT_UNUSED: u64 = u64::MAX;
+pub(super) const REF_COUNT_UNIQUE: u64 = u64::MAX - 1;
+pub(super) const REF_COUNT_MAX: u64 = i64::MAX as u64;
+
+type FrameMetaVtablePtr = core::ptr::DynMetadata<dyn AnyFrameMeta>;
+
+}
 
 //const_assert!(PAGE_SIZE % META_SLOT_SIZE == 0);
 //const_assert!(size_of::<MetaSlot>() == META_SLOT_SIZE);
@@ -186,28 +192,24 @@ pub enum GetFrameError {
 }
 
 /// Gets the reference to a metadata slot.
-#[verifier::external_body]
-pub(super) fn get_slot(paddr: Paddr) -> Result<&'static MetaSlot, GetFrameError> {
-    unimplemented!()
-/*    if paddr % PAGE_SIZE != 0 {
+pub(super) fn get_slot(paddr: Paddr) -> Result<PPtr<MetaSlot>, GetFrameError> {
+    if paddr % PAGE_SIZE() != 0 {
         return Err(GetFrameError::NotAligned);
     }
-    if paddr >= super::max_paddr() {
+    if paddr >= MAX_PADDR() {
         return Err(GetFrameError::OutOfBound);
     }
 
-    let vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
-    let ptr = vaddr as *mut MetaSlot;
+    let vaddr = mapping::frame_to_meta(paddr);
+    let ptr = PPtr::<MetaSlot>::from_addr(vaddr);
 
     // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
     // mutably borrowed, so taking an immutable reference to it is safe.
-    Ok(unsafe { &*ptr })*/
+    Ok(ptr)
 }
 
 impl MetaSlot {
 
-    #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
     /// Initializes the metadata slot of a frame assuming it is unused.
     ///
     /// If successful, the function returns a pointer to the metadata slot.
@@ -215,20 +217,24 @@ impl MetaSlot {
     ///
     /// The resulting reference count held by the returned pointer is
     /// [`REF_COUNT_UNIQUE`] if `as_unique_ptr` is `true`, otherwise `1`.
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
+    #[verus_spec(
+        with Tracked(perm): Tracked<PointsTo<MetaSlot>>,
+        Tracked(rc_perm): Tracked<&mut PermissionU64>
+    )]
     pub(super) fn get_from_unused(
         paddr: Paddr,
         metadata: FrameMeta,
         as_unique_ptr: bool,
     ) -> Result<PPtr<Self>, GetFrameError>
     {
-        unimplemented!()
-        /*
         let slot = get_slot(paddr)?;
 
         // `Acquire` pairs with the `Release` in `drop_last_in_place` and ensures the metadata
         // initialization won't be reordered before this memory compare-and-exchange.
-        slot.ref_count
-            .compare_exchange(REF_COUNT_UNUSED, 0, Ordering::Acquire, Ordering::Relaxed)
+        slot.borrow(Tracked(&perm)).ref_count
+            .compare_exchange(Tracked(rc_perm), REF_COUNT_UNUSED, 0)
             .map_err(|val| match val {
                 REF_COUNT_UNIQUE => GetFrameError::Unique,
                 0 => GetFrameError::Busy,
@@ -237,32 +243,36 @@ impl MetaSlot {
 
         // SAFETY: The slot now has a reference count of `0`, other threads will
         // not access the metadata slot so it is safe to have a mutable reference.
-        unsafe { slot.write_meta(metadata) };
+//        unsafe { slot.write_meta(metadata) };
 
         if as_unique_ptr {
             // No one can create a `Frame` instance directly from the page
             // address, so `Relaxed` is fine here.
-            slot.ref_count.store(REF_COUNT_UNIQUE, Ordering::Relaxed);
+            slot.borrow(Tracked(&perm)).ref_count.store(Tracked(rc_perm), REF_COUNT_UNIQUE);
         } else {
             // `Release` is used to ensure that the metadata initialization
             // won't be reordered after this memory store.
-            slot.ref_count.store(1, Ordering::Release);
+            slot.borrow(Tracked(&perm)).ref_count.store(Tracked(rc_perm), 1);
         }
 
-        Ok(slot as *const MetaSlot)
-        */
+        Ok(slot)
+
     }
 
+    /// Gets another owning pointer to the metadata slot from the given page.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    /// Gets another owning pointer to the metadata slot from the given page.
-    pub(super) fn get_from_in_use(paddr: Paddr) -> Result<*const Self, GetFrameError> {
-        unimplemented!()
-/*        let slot = get_slot(paddr)?;
+    #[verus_spec(
+        with Tracked(perm): Tracked<PointsTo<MetaSlot>>,
+        Tracked(rc_perm): Tracked<&mut PermissionU64>
+    )]
+    pub(super) fn get_from_in_use(paddr: Paddr) -> Result<PPtr<Self>, GetFrameError>
+    {
+        let slot = get_slot(paddr)?;
 
         // Try to increase the reference count for an in-use frame. Otherwise fail.
         loop {
-            match slot.ref_count.load(Ordering::Relaxed) {
+            match slot.borrow(Tracked(&perm)).ref_count.load(Tracked(rc_perm)) {
                 REF_COUNT_UNUSED => return Err(GetFrameError::Unused),
                 REF_COUNT_UNIQUE => return Err(GetFrameError::Unique),
                 0 => return Err(GetFrameError::Busy),
@@ -278,21 +288,21 @@ impl MetaSlot {
                     //
                     // It ensures that the written metadata will be visible to us.
                     if slot
+                        .borrow(Tracked(&perm))
                         .ref_count
                         .compare_exchange_weak(
+                            Tracked(rc_perm),
                             last_ref_cnt,
                             last_ref_cnt + 1,
-                            Ordering::Acquire,
-                            Ordering::Relaxed,
                         )
                         .is_ok()
                     {
-                        return Ok(slot as *const MetaSlot);
+                        return Ok(slot);
                     }
                 }
             }
             core::hint::spin_loop();
-        }*/
+        }
     }
 
     /// Increases the frame reference count by one.
@@ -302,10 +312,11 @@ impl MetaSlot {
     /// The caller must have already held a reference to the frame.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
+    #[verus_spec(
+        with Tracked(rc_perm): Tracked<&mut PermissionU64>
+    )]
     pub(super) unsafe fn inc_ref_count(&self) {
-        unimplemented!()
-        /*
-        let last_ref_cnt = self.ref_count.fetch_add(1, Ordering::Relaxed);
+        let last_ref_cnt = self.ref_count.fetch_add(Tracked(rc_perm), 1/*, Ordering::Relaxed*/);
         debug_assert!(last_ref_cnt != 0 && last_ref_cnt != REF_COUNT_UNUSED);
 
         if last_ref_cnt >= REF_COUNT_MAX {
@@ -314,7 +325,7 @@ impl MetaSlot {
             // <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.clone>.
 //            abort();
             unimplemented!()
-        }*/
+        }
     }
 
     /// Gets the corresponding frame's physical address.
@@ -394,7 +405,6 @@ impl MetaSlot {
         */
     }
 
-    /*
     /// Drops the metadata and deallocates the frame.
     ///
     /// # Safety
@@ -402,19 +412,22 @@ impl MetaSlot {
     /// The caller should ensure that:
     ///  - the reference count is `0` (so we are the sole owner of the frame);
     ///  - the metadata is initialized;
+    #[rustc_allow_incoherent_impl]
+    #[verus_spec(
+        with Tracked(rc_perm): Tracked<&mut PermissionU64>
+    )]
     pub(super) unsafe fn drop_last_in_place(&self) {
         // This should be guaranteed as a safety requirement.
-        debug_assert_eq!(self.ref_count.load(Ordering::Relaxed), 0);
+//        debug_assert_eq!(self.ref_count.load(Tracked(&*rc_perm)), 0);
 
         // SAFETY: The caller ensures safety.
         unsafe { self.drop_meta_in_place() };
 
         // `Release` pairs with the `Acquire` in `Frame::from_unused` and ensures
         // `drop_meta_in_place` won't be reordered after this memory store.
-        self.ref_count.store(REF_COUNT_UNUSED, Ordering::Release);
-    }*/
+        self.ref_count.store(Tracked(rc_perm), REF_COUNT_UNUSED);
+    }
 
-    /*
     /// Drops the metadata of a slot in place.
     ///
     /// After this operation, the metadata becomes uninitialized. Any access to the
@@ -425,8 +438,11 @@ impl MetaSlot {
     /// The caller should ensure that:
     ///  - the reference count is `0` (so we are the sole owner of the frame);
     ///  - the metadata is initialized;
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub(super) unsafe fn drop_meta_in_place(&self) {
-        let paddr = self.frame_paddr();
+        unimplemented!()
+/*        let paddr = self.frame_paddr();
 
         // SAFETY: We have exclusive access to the frame metadata.
         let vtable_ptr = unsafe { &mut *self.vtable_ptr.get() };
@@ -449,8 +465,8 @@ impl MetaSlot {
             (*meta_ptr).on_drop(&mut reader);
             // Drop the frame metadata.
             core::ptr::drop_in_place(meta_ptr);
-        }
-    } */
+        }*/
+    }
 }
 
 /// The metadata of frames that holds metadata of frames.

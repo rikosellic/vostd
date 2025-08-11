@@ -46,6 +46,8 @@ mod test;
 
 use vstd::prelude::*;
 
+use vstd::simple_pptr::PPtr;
+
 use core::{
     marker::PhantomData,
     mem::ManuallyDrop,
@@ -59,6 +61,8 @@ use untyped::{/*AnyUFrameMeta,*/ UFrame};
 
 use super::{PagingLevel, PAGE_SIZE};
 use crate::mm::{Paddr, PagingConsts, Vaddr};
+
+use aster_common::prelude::AnyFrameMeta;
 
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 
@@ -80,9 +84,8 @@ verus! {
 /// determines the kind of the frame. If `M` implements [`AnyUFrameMeta`], the
 /// frame is a untyped frame. Otherwise, it is a typed frame.
 #[repr(transparent)]
-#[derive(Debug)]
 pub struct Frame {
-    ptr: *const MetaSlot,
+    ptr: PPtr<MetaSlot>,
     _marker: PhantomData<FrameMeta>,
 }
 }
@@ -103,8 +106,8 @@ impl<M: AnyFrameMeta + ?Sized> PartialEq for Frame<M> {
     }
 }
 impl<M: AnyFrameMeta + ?Sized> Eq for Frame<M> {}
-
-impl<M: AnyFrameMeta> Frame<M> {
+*/
+impl/*<M: AnyFrameMeta>*/ Frame/*<M>*/ {
     /// Gets a [`Frame`] with a specific usage from a raw, unused page.
     ///
     /// The caller should provide the initial metadata of the page.
@@ -112,21 +115,21 @@ impl<M: AnyFrameMeta> Frame<M> {
     /// If the provided frame is not truly unused at the moment, it will return
     /// an error. If wanting to acquire a frame that is already in use, use
     /// [`Frame::from_in_use`] instead.
-    pub fn from_unused(paddr: Paddr, metadata: M) -> Result<Self, GetFrameError> {
+    pub fn from_unused(paddr: Paddr, metadata: /*M*/ FrameMeta) -> Result<Self, GetFrameError> {
         Ok(Self {
             ptr: MetaSlot::get_from_unused(paddr, metadata, false)?,
             _marker: PhantomData,
         })
     }
 
-    /// Gets the metadata of this page.
-    pub fn meta(&self) -> &M {
+/*    /// Gets the metadata of this page.
+    pub fn meta(&self) -> &/*M*/ FrameMeta {
         // SAFETY: The type is tracked by the type system.
-        unsafe { &*self.slot().as_meta_ptr::<M>() }
-    }
+        unsafe { &*self.slot().as_meta_ptr/*::<M>*/() }
+    }*/
 }
 
-impl Frame<dyn AnyFrameMeta> {
+impl Frame/*<dyn AnyFrameMeta>*/ {
     /// Gets a dynamically typed [`Frame`] from a raw, in-use page.
     ///
     /// If the provided frame is not in use at the moment, it will return an error.
@@ -140,10 +143,12 @@ impl Frame<dyn AnyFrameMeta> {
     }
 }
 
-impl Frame<FrameMeta> {
+impl Frame/*<FrameMeta>*/ {
     /// Gets the physical address of the start of the frame.
+    #[verifier::external_body]
     pub fn start_paddr(&self) -> Paddr {
-        self.slot().frame_paddr()
+        unimplemented!()
+//        self.slot().frame_paddr()
     }
 
     /// Gets the map level of this page.
@@ -159,16 +164,16 @@ impl Frame<FrameMeta> {
 
     /// Gets the size of this page in bytes.
     pub const fn size(&self) -> usize {
-        PAGE_SIZE
+        PAGE_SIZE()
     }
 
-    /// Gets the dyncamically-typed metadata of this frame.
+/*    /// Gets the dyncamically-typed metadata of this frame.
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
     pub fn dyn_meta(&self) -> FrameMeta {
         // SAFETY: The metadata is initialized and valid.
         unsafe { &*self.slot().dyn_meta_ptr() }
-    }
+    }*/
 
     #[verifier::external_body]
     /// Gets the reference count of the frame.
@@ -191,10 +196,10 @@ impl Frame<FrameMeta> {
     
 
     /// Borrows a reference from the given frame.
-    pub fn borrow(&self) -> FrameRef<'_, FrameMeta> {
+/*    pub fn borrow(&self) -> FrameRef<'_, FrameMeta> {
         // SAFETY: Both the lifetime and the type matches `self`.
         unsafe { FrameRef::borrow_paddr(self.start_paddr()) }
-    }
+    }*/
 
     /// Forgets the handle to the frame.
     ///
@@ -223,8 +228,8 @@ impl Frame<FrameMeta> {
     pub(in crate::mm) unsafe fn from_raw(paddr: Paddr) -> Self {
         debug_assert!(paddr < max_paddr());
 
-        let vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
-        let ptr = vaddr as *const MetaSlot;
+        let vaddr = mapping::frame_to_meta(paddr);
+        let ptr = PPtr::from_addr(vaddr);
 
         Self {
             ptr,
@@ -232,13 +237,14 @@ impl Frame<FrameMeta> {
         }
     }
 
-    fn slot(&self) -> &MetaSlot {
+/*    fn slot(&self) -> &MetaSlot {
         // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
         // mutably borrowed, so taking an immutable reference to it is safe.
         unsafe { &*self.ptr }
-    }
+    }*/
 }
 
+/*
 impl<M: AnyFrameMeta + ?Sized> Clone for Frame<M> {
     fn clone(&self) -> Self {
         // SAFETY: We have already held a reference to the frame.
@@ -249,7 +255,7 @@ impl<M: AnyFrameMeta + ?Sized> Clone for Frame<M> {
             _marker: PhantomData,
         }
     }
-}
+}*/
 
 /*
 impl<M: AnyFrameMeta + ?Sized> Drop for Frame<M> {
@@ -289,28 +295,28 @@ impl<M: AnyFrameMeta> TryFrom<Frame<dyn AnyFrameMeta>> for Frame<M> {
     }
 }*/
 
-impl<M: AnyFrameMeta> From<Frame<M>> for Frame<dyn AnyFrameMeta> {
+/*impl<M: AnyFrameMeta> From<Frame<M>> for Frame<dyn AnyFrameMeta> {
     fn from(frame: Frame<M>) -> Self {
         // SAFETY: The metadata is coerceable and the struct is transmutable.
         unsafe { core::mem::transmute(frame) }
     }
-}
+}*/
 
-impl<M: AnyUFrameMeta> From<Frame<M>> for UFrame {
+/*impl<M: AnyUFrameMeta> From<Frame<M>> for UFrame {
     fn from(frame: Frame<M>) -> Self {
         // SAFETY: The metadata is coerceable and the struct is transmutable.
         unsafe { core::mem::transmute(frame) }
     }
-}
+}*/
 
-impl From<UFrame> for Frame<FrameMeta> {
+/*impl From<UFrame> for Frame<FrameMeta> {
     fn from(frame: UFrame) -> Self {
         // SAFETY: The metadata is coerceable and the struct is transmutable.
         unsafe { core::mem::transmute(frame) }
     }
-}
+}*/
 
-impl TryFrom<Frame<FrameMeta>> for UFrame {
+/*impl TryFrom<Frame<FrameMeta>> for UFrame {
     type Error = Frame<FrameMeta>;
 
     /// Tries converting a [`Frame<dyn AnyFrameMeta>`] into [`UFrame`].
@@ -325,7 +331,7 @@ impl TryFrom<Frame<FrameMeta>> for UFrame {
             Err(dyn_frame)
         }
     }
-}
+}*/
 
 /// Increases the reference count of the frame by one.
 ///
@@ -335,10 +341,10 @@ impl TryFrom<Frame<FrameMeta>> for UFrame {
 ///  1. The physical address must represent a valid frame;
 ///  2. The caller must have already held a reference to the frame.
 pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) {
-    debug_assert!(paddr % PAGE_SIZE == 0);
+    debug_assert!(paddr % PAGE_SIZE() == 0);
     debug_assert!(paddr < max_paddr());
 
-    let vaddr: Vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
+    let vaddr: Vaddr = mapping::frame_to_meta(paddr);
     // SAFETY: `vaddr` points to a valid `MetaSlot` that will never be mutably borrowed, so taking
     // an immutable reference to it is always safe.
     let slot = unsafe { &*(vaddr as *const MetaSlot) };
@@ -346,4 +352,3 @@ pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) {
     // SAFETY: We have already held a reference to the frame.
     unsafe { slot.inc_ref_count() };
 }
-*/

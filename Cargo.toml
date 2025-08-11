@@ -4,7 +4,6 @@ members = [
     "aster_common",
     "demo",
     "ostd",
-    "specs/ostd",
 #    "ostd/libs/ostd-macros",
 #    "ostd/libs/ostd-test",
 #    "kernel/libs/int-to-c-enum",

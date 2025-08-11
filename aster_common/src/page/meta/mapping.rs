@@ -22,21 +22,30 @@ extern_const!(
 pub META_SLOT_SIZE [META_SLOT_SIZE_SPEC, CONST_META_SLOT_SIZE]: usize = 64
 );
 
+pub open spec fn max_meta_slots() -> int {
+        (FRAME_METADATA_RANGE().end - FRAME_METADATA_RANGE().start) / META_SLOT_SIZE() as int
+}
+
+pub open spec fn meta_addr(i: usize) -> (res: usize)
+    recommends
+        0 <= i < max_meta_slots() as usize,
+{
+    (FRAME_METADATA_RANGE().start + i * super::meta_slot_size()) as usize
+}
+
 #[allow(non_snake_case)]
 pub broadcast proof fn lemma_FRAME_METADATA_RANGE_is_page_aligned()
     ensures
         #[trigger] FRAME_METADATA_RANGE().start % PAGE_SIZE() == 0,
         FRAME_METADATA_RANGE().end % PAGE_SIZE() == 0,
-{
-}
+{ }
 
 #[allow(non_snake_case)]
 pub broadcast proof fn lemma_FRAME_METADATA_RANGE_is_large_enough()
     ensures
         #[trigger] FRAME_METADATA_RANGE().end >= FRAME_METADATA_RANGE().start + MAX_NR_PAGES()
             * META_SLOT_SIZE(),
-{
-}
+{ }
 
 } // verus!
 verus! {

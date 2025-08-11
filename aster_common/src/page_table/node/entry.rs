@@ -3,11 +3,10 @@ use vstd::simple_pptr;
 use vstd::cell;
 
 use crate::prelude::{
-    PageTableEntry, PageTableEntryTrait, PageTableNode, MetaSlot, PageTablePageMetaInner,
-    MetaSlotOwner, OwnerOf
+    PageTableEntry, PageTableEntryTrait, PageTableNode, MetaSlot, PageTablePageMetaInner, MetaSlotOwner
 };
 
-use crate::page::meta::exp_models::InvView;
+use vstd_extra::ownership::{InvView, OwnerOf};
 
 verus! {
 

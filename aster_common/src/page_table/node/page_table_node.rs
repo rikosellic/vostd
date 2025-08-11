@@ -2,6 +2,8 @@ use vstd::prelude::*;
 use vstd::simple_pptr;
 use vstd::cell;
 
+use vstd_extra::ownership::*;
+
 use crate::prelude::*;
 
 verus! {
