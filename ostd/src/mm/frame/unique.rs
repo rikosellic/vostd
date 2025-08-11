@@ -23,6 +23,7 @@ impl UniqueFrame<Link> {
     ///
     /// The caller should provide the initial metadata of the page.
     #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub fn from_unused(paddr: Paddr, metadata: FrameMeta) -> Result<Self, GetFrameError> {
         Ok(Self {
             ptr: MetaSlot::get_from_unused(paddr, metadata, true)?,

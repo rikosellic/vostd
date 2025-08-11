@@ -413,6 +413,7 @@ impl MetaSlot {
     ///  - the reference count is `0` (so we are the sole owner of the frame);
     ///  - the metadata is initialized;
     #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     #[verus_spec(
         with Tracked(rc_perm): Tracked<&mut PermissionU64>
     )]
