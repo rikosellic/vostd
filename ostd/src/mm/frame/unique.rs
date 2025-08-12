@@ -16,6 +16,8 @@ use super::{
 };
 use crate::mm::{Paddr, PagingConsts, PagingLevel};
 
+use vstd::atomic::PermissionU64;
+
 verus! {
 
 impl UniqueFrame<Link> {
@@ -23,10 +25,15 @@ impl UniqueFrame<Link> {
     ///
     /// The caller should provide the initial metadata of the page.
     #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
+    #[verus_spec(
+        with Tracked(perm): Tracked<PointsTo<MetaSlot>>,
+        Tracked(rc_perm): Tracked<&mut PermissionU64>
+    )]
     pub fn from_unused(paddr: Paddr, metadata: FrameMeta) -> Result<Self, GetFrameError> {
+        #[verus_spec(with Tracked(perm), Tracked(rc_perm))]
+        let from_unused = MetaSlot::get_from_unused(paddr, metadata, true);
         Ok(Self {
-            ptr: MetaSlot::get_from_unused(paddr, metadata, true)?,
+            ptr: from_unused?,
             _marker: PhantomData,
         })
     }
