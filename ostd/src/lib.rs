@@ -23,6 +23,7 @@
 #![expect(internal_features)]
 #![no_std]
 #![warn(missing_docs)]
+#![feature(proc_macro_hygiene)]
 
 extern crate alloc;
 
