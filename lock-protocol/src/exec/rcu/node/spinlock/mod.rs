@@ -338,13 +338,6 @@ impl SpinGuard {
         self.perms@
     }
 
-    pub open spec fn wf_trans_lock_protocol(&self, old: &Self) -> bool {
-        &&& self.handle =~= old.handle
-        &&& self.pte_token =~= old.pte_token
-        &&& self.stray_perm =~= old.stray_perm
-        &&& self.perms =~= old.perms
-    }
-
     pub proof fn tracked_borrow_node_token(tracked &self) -> (tracked res: &NodeToken)
         requires
             self.node_token@ is Some,
@@ -363,61 +356,48 @@ impl SpinGuard {
         self.pte_token.borrow().tracked_borrow()
     }
 
-    pub fn trans_lock_protocol(
-        self,
-        spinlock: &PageTablePageSpinLock,
-        m: Tracked<LockProtocolModel>,
-    ) -> (res: (Self, Tracked<LockProtocolModel>))
+    pub fn take_node_token(&mut self) -> (res: Tracked<NodeToken>)
         requires
-            self.wf(spinlock),
-            self.stray_perm@.value() == false,
-            self.in_protocol@ == false,
-            spinlock.wf(),
-            m@.inv(),
-            m@.inst_id() == spinlock.pt_inst@.id(),
-            m@.state() is Locking,
-            m@.cur_node() == spinlock.nid@,
-            NodeHelper::in_subtree_range(m@.sub_tree_rt(), spinlock.nid@),
+            old(self).node_token@ is Some,
         ensures
-            res.0.wf(spinlock),
-            res.0.stray_perm@.value() == false,
-            res.0.in_protocol@ == true,
-            res.0.wf_trans_lock_protocol(&self),
-            res.1@.inv(),
-            res.1@.inst_id() == spinlock.pt_inst@.id(),
-            res.1@.state() is Locking,
-            res.1@.sub_tree_rt() == m@.sub_tree_rt(),
-            res.1@.cur_node() == spinlock.nid@ + 1,
+            res == old(self).node_token@->Some_0,
+            self.node_token@ == None::<NodeToken>,
+            self.pte_token == old(self).pte_token,
+            self.stray_perm == old(self).stray_perm,
+            self.perms == old(self).perms,
+            self.in_protocol == old(self).in_protocol,
+            self.handle == old(self).handle,
     {
-        let tracked m = m.get();
-        let tracked handle = self.handle.get();
-        let tracked mut node_token: Option<NodeToken> = self.node_token.get();
-        let tracked pte_token: Option<PteArrayToken> = self.pte_token.get();
-        let tracked stray_perm: StrayPerm = self.stray_perm.get();
-        let tracked perms: PageTableEntryPerms = self.perms.get();
-        proof {
-            let tracked mut node_token_inner = node_token.tracked_unwrap();
-            node_token_inner =
-            spinlock.pt_inst.borrow().normal_unlock(spinlock.nid(), node_token_inner);
-            let tracked res = spinlock.pt_inst.borrow().protocol_lock(
-                m.cpu,
-                spinlock.nid(),
-                node_token_inner,
-                m.token,
-            );
-            node_token_inner = res.0.get();
-            m.token = res.1.get();
-            node_token = Some(node_token_inner);
-        }
-        let guard = SpinGuard {
-            handle: Tracked(handle),
-            node_token: Tracked(node_token),
-            pte_token: Tracked(pte_token),
-            stray_perm: Tracked(stray_perm),
-            perms: Tracked(perms),
-            in_protocol: Ghost(true),
-        };
-        (guard, Tracked(m))
+        let tracked res = self.node_token.borrow_mut().tracked_take();
+        Tracked(res)
+    }
+
+    #[verifier::external_body]
+    pub fn put_node_token(&mut self, token: Tracked<NodeToken>)
+        requires
+            old(self).node_token@ is None,
+        ensures
+            self.node_token@ == Option::Some(token@),
+            self.pte_token == old(self).pte_token,
+            self.stray_perm == old(self).stray_perm,
+            self.perms == old(self).perms,
+            self.in_protocol == old(self).in_protocol,
+            self.handle == old(self).handle,
+    {
+        unimplemented!()
+    }
+
+    //Although this function has mode exec, its operations are pure logical
+    pub fn update_in_protocol(&mut self, in_protocol: Ghost<bool>)
+        ensures
+            self.in_protocol@ == in_protocol,
+            self.node_token == old(self).node_token,
+            self.pte_token == old(self).pte_token,
+            self.stray_perm == old(self).stray_perm,
+            self.perms == old(self).perms,
+            self.handle == old(self).handle,
+    {
+        self.in_protocol = in_protocol;
     }
 }
 
