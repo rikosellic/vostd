@@ -29,9 +29,14 @@ pub open spec fn get_slot_spec(paddr: Paddr) -> (res: PPtr<MetaSlot>)
     PPtr(slot, PhantomData::<MetaSlot>)
 }
 
+pub struct LinkOuter {
+    pub next: Option<PPtr<LinkOuter>>,
+    pub prev: Option<PPtr<LinkOuter>>,
+}
+
 pub enum MetaSlotStorage {
     Empty([u8; 39]),
-    FrameLink(Link),
+    FrameLink(LinkOuter),
     PTNode(PageTablePageMetaInner),
 }
 

@@ -7,7 +7,7 @@
 //! the declaration of untyped frames and segments, and the implementation of
 //! extra functionalities (such as [`VmIo`]) for them.
 
-use super::{meta::AnyFrameMeta, Frame/*, Segment*/};
+use super::{Frame/*, Segment*/};
 use crate::{
     mm::{
 //        io::{FallibleVmRead, FallibleVmWrite, VmIo, VmReader, VmWriter},

@@ -81,12 +81,6 @@ impl PageMeta for FrameMeta {
     }
 }
 
-#[rustc_has_incoherent_inherent_impls]
-pub struct UniqueFrameLink {
-    pub ptr: PPtr<MetaSlot>,
-    pub _marker: PhantomData<Link>,
-}
-
 } // verus!
 verus! {
 

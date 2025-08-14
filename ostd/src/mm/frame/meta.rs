@@ -54,7 +54,7 @@ pub use aster_common::prelude::{mapping, MetaSlot, META_SLOT_SIZE, FrameMeta, Li
 /// The maximum number of bytes of the metadata of a frame.
 pub const FRAME_METADATA_MAX_SIZE: usize = META_SLOT_SIZE()
     - size_of::<AtomicU64>()
-    - size_of::<FrameMetaVtablePtr>()
+//    - size_of::<FrameMetaVtablePtr>()
     - size_of::<AtomicU64>();
 /// The maximum alignment in bytes of the metadata of a frame.
 pub const FRAME_METADATA_MAX_ALIGN: usize = META_SLOT_SIZE();
@@ -120,38 +120,8 @@ type FrameMetaVtablePtr = core::ptr::DynMetadata<dyn AnyFrameMeta>;
 //const_assert!(PAGE_SIZE % META_SLOT_SIZE == 0);
 //const_assert!(size_of::<MetaSlot>() == META_SLOT_SIZE);
 
-/// All frame metadata types must implement this trait.
-///
-/// If a frame type needs specific drop behavior, it should specify
-/// when implementing this trait. When we drop the last handle to
-/// this frame, the `on_drop` method will be called. The `on_drop`
-/// method is called with the physical address of the frame.
-///
-/// The implemented structure should have a size less than or equal to
-/// [`FRAME_METADATA_MAX_SIZE`] and an alignment less than or equal to
-/// [`FRAME_METADATA_MAX_ALIGN`]. Otherwise, the metadata type cannot
-/// be used because storing it will fail compile-time assertions.
-///
-/// # Safety
-///
-/// If `on_drop` reads the page using the provided `VmReader`, the
-/// implementer must ensure that the frame is safe to read.
-pub unsafe trait AnyFrameMeta: Any + Send + Sync {
-    /// Called when the last handle to the frame is dropped.
-//    fn on_drop(&mut self, _reader: &mut VmReader<Infallible>) {}
 
-    /// Whether the metadata's associated frame is untyped.
-    ///
-    /// If a type implements [`AnyUFrameMeta`], this should be `true`.
-    /// Otherwise, it should be `false`.
-    ///
-    /// [`AnyUFrameMeta`]: super::untyped::AnyUFrameMeta
-    fn is_untyped(&self) -> bool {
-        false
-    }
-}
-
-/// Makes a structure usable as a frame metadata.
+/*/// Makes a structure usable as a frame metadata.
 #[macro_export]
 macro_rules! impl_frame_meta_for {
     // Implement without specifying the drop behavior.
@@ -169,7 +139,7 @@ macro_rules! impl_frame_meta_for {
 }
 
 pub use impl_frame_meta_for;
-
+*/
 verus!{
 
 /// The error type for getting the frame from a physical address.
@@ -346,7 +316,7 @@ impl MetaSlot {
     /// exclusive access to the metadata slot.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub(super) unsafe fn dyn_meta_ptr(&self) -> *mut FrameMeta {
+    pub(super) unsafe fn dyn_meta_ptr<M: AnyFrameMeta>(&self) -> *mut M {
         unimplemented!()
         /*
         // SAFETY: The page metadata is valid to be borrowed immutably, since
@@ -373,7 +343,7 @@ impl MetaSlot {
     ///    having exclusive access to the metadata slot.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub(super) fn as_meta_ptr(&self) -> PPtr<Link> {
+    pub(super) fn as_meta_ptr<M: AnyFrameMeta>(&self) -> PPtr<M> {
         unimplemented!()
 //        self.storage.get() as *mut M
     }
@@ -385,7 +355,7 @@ impl MetaSlot {
     /// The caller should have exclusive access to the metadata slot's fields.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub(super) unsafe fn write_meta(&self, metadata: FrameMeta) {
+    pub(super) unsafe fn write_meta<M: AnyFrameMeta>(&self, metadata: M) {
         unimplemented!()
         /*
         const { assert!(size_of::<M>() <= FRAME_METADATA_MAX_SIZE) };
@@ -476,7 +446,7 @@ impl MetaSlot {
 #[derive(Debug, Default)]
 pub struct MetaPageMeta {}
 
-impl_frame_meta_for!(MetaPageMeta);
+//impl_frame_meta_for!(MetaPageMeta);
 /*
 /// Initializes the metadata of all physical frames.
 ///

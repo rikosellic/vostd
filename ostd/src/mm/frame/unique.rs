@@ -5,8 +5,7 @@
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
-pub use aster_common::prelude::{UniqueFrameLink, Link};
-use aster_common::prelude::{mapping, FrameMeta, PAGE_SIZE, UniqueFrame};
+use aster_common::prelude::{mapping, FrameMeta, PAGE_SIZE, AnyFrameMeta, UniqueFrame, Link};
 
 use core::{marker::PhantomData, mem::ManuallyDrop, sync::atomic::Ordering};
 
@@ -20,7 +19,7 @@ use vstd::atomic::PermissionU64;
 
 verus! {
 
-impl UniqueFrame<Link> {
+impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
     /// Gets a [`UniqueFrame`] with a specific usage from a raw, unused page.
     ///
     /// The caller should provide the initial metadata of the page.
@@ -52,7 +51,7 @@ impl UniqueFrame<Link> {
     /// Gets the metadata of this page.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn meta(&self, Tracked(perm): Tracked<&PointsTo<Link>>) -> (l: &Link)
+    pub fn meta(&self, Tracked(perm): Tracked<&PointsTo<Link<M>>>) -> (l: &Link<M>)
         ensures
             perm.mem_contents().value() == l,
     {
@@ -64,7 +63,7 @@ impl UniqueFrame<Link> {
     /// Gets the mutable metadata of this page.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn meta_mut(&mut self, Tracked(perm): Tracked<&mut PointsTo<Link>>) -> (ptr: PPtr<Link>)
+    pub fn meta_mut(&mut self, Tracked(perm): Tracked<&mut PointsTo<Link<M>>>) -> (ptr: PPtr<Link<M>>)
         ensures
             ptr == perm.pptr(),
             perm.mem_contents() == old(perm).mem_contents()
@@ -76,7 +75,7 @@ impl UniqueFrame<Link> {
     }
 }
 
-impl UniqueFrame<Link> {
+impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
     /// Gets the physical address of the start of the frame.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
@@ -103,17 +102,17 @@ impl UniqueFrame<Link> {
         PAGE_SIZE()
     }
 
-    /// Gets the dyncamically-typed metadata of this frame.
+    /// Gets the dynamically-typed metadata of this frame.
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn dyn_meta(&self) -> &FrameMeta {
+    pub fn dyn_meta(&self) -> &M {
         // SAFETY: The metadata is initialized and valid.
-        unsafe { &*self.slot().dyn_meta_ptr() }
+        unsafe { &*self.slot().dyn_meta_ptr::<M>() }
     }
 /*
-    /// Gets the dyncamically-typed metadata of this frame.
+    /// Gets the dynamically-typed metadata of this frame.
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
     #[rustc_allow_incoherent_impl]
@@ -193,9 +192,9 @@ impl UniqueFrame<Link> {
     }
 }*/
 
-impl From<UniqueFrameLink> for Frame {
+impl<M: AnyFrameMeta> From<UniqueFrame<Link<M>>> for Frame {
     #[verifier::external_body]
-    fn from(unique: UniqueFrameLink) -> Self {
+    fn from(unique: UniqueFrame<Link<M>>) -> Self {
         unimplemented!()
         /*
         // The `Release` ordering make sure that previous writes are visible
@@ -207,7 +206,7 @@ impl From<UniqueFrameLink> for Frame {
     }
 }
 
-impl TryFrom<Frame> for UniqueFrameLink {
+impl<M: AnyFrameMeta> TryFrom<Frame> for UniqueFrame<Link<M>> {
     type Error = Frame;
 
     #[verifier::external_body]

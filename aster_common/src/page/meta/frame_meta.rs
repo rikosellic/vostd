@@ -129,7 +129,7 @@ impl <M: AnyFrameMeta> UniqueFrame<M> {
     }
 }
 
-impl AnyFrameMeta for Link
+impl<M: AnyFrameMeta> AnyFrameMeta for Link<M>
 {
     fn on_drop(&mut self) { }
 
