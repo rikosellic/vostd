@@ -45,8 +45,8 @@ pub use frame_ref::FrameRef;
 mod test;
 
 use vstd::prelude::*;
-
 use vstd::simple_pptr::PPtr;
+use vstd::atomic::PermissionU64;
 
 use core::{
     marker::PhantomData,
@@ -62,16 +62,8 @@ use untyped::{/*AnyUFrameMeta,*/ UFrame};
 use super::{PagingLevel, PAGE_SIZE};
 use crate::mm::{Paddr, PagingConsts, Vaddr};
 
-use aster_common::prelude::AnyFrameMeta;
-
-static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
-
-/// Returns the maximum physical address that is tracked by frame metadata.
-pub(in crate::mm) fn max_paddr() -> Paddr {
-    let max_paddr = MAX_PADDR.load(Ordering::Relaxed) as Paddr;
-    debug_assert_ne!(max_paddr, 0);
-    max_paddr
-}
+use aster_common::prelude::*;
+use vstd_extra::ownership::*;
 
 verus! {
 
@@ -84,11 +76,11 @@ verus! {
 /// determines the kind of the frame. If `M` implements [`AnyUFrameMeta`], the
 /// frame is a untyped frame. Otherwise, it is a typed frame.
 #[repr(transparent)]
-pub struct Frame {
+pub struct Frame<M: AnyFrameMeta> {
     ptr: PPtr<MetaSlot>,
-    _marker: PhantomData<FrameMeta>,
+    _marker: PhantomData<M>,
 }
-}
+
 /*
 unsafe impl<M: AnyFrameMeta + ?Sized> Send for Frame<M> {}
 
@@ -107,7 +99,7 @@ impl<M: AnyFrameMeta + ?Sized> PartialEq for Frame<M> {
 }
 impl<M: AnyFrameMeta + ?Sized> Eq for Frame<M> {}
 */
-impl/*<M: AnyFrameMeta>*/ Frame/*<M>*/ {
+impl<M: AnyFrameMeta> Frame<M> {
     /// Gets a [`Frame`] with a specific usage from a raw, unused page.
     ///
     /// The caller should provide the initial metadata of the page.
@@ -115,9 +107,27 @@ impl/*<M: AnyFrameMeta>*/ Frame/*<M>*/ {
     /// If the provided frame is not truly unused at the moment, it will return
     /// an error. If wanting to acquire a frame that is already in use, use
     /// [`Frame::from_in_use`] instead.
-    pub fn from_unused(paddr: Paddr, metadata: /*M*/ FrameMeta) -> Result<Self, GetFrameError> {
+    #[verus_spec(
+        with Ghost(region): Ghost<MetaRegion>,
+        Tracked(owner): Tracked<&mut MetaRegionOwners>,
+        Tracked(perm): Tracked<vstd::simple_pptr::PointsTo<MetaSlot>>,
+        Tracked(rc_perm): Tracked<&mut PermissionU64>
+    )]
+    pub fn from_unused(paddr: Paddr, metadata: M) -> (res:Result<Self, GetFrameError>)
+        requires
+            old(owner).inv(),
+            paddr < MAX_PADDR(),
+            paddr % PAGE_SIZE() == 0,
+            old(owner).slots[frame_to_index(paddr)] == perm,
+            old(owner).slot_owners[frame_to_index(paddr)].ref_count == *old(rc_perm),
+        ensures
+//            res.is_ok() ==>
+//            UniqueFrame::<M>::from_unused_spec(paddr, metadata, old(owner).view()).1 == owner.view(),
+    {
+        #[verus_spec(with Tracked(owner), Tracked(perm), Tracked(rc_perm))]
+        let from_unused = MetaSlot::get_from_unused(paddr, metadata, false);
         Ok(Self {
-            ptr: MetaSlot::get_from_unused(paddr, metadata, false)?,
+            ptr: from_unused?,
             _marker: PhantomData,
         })
     }
@@ -128,8 +138,9 @@ impl/*<M: AnyFrameMeta>*/ Frame/*<M>*/ {
         unsafe { &*self.slot().as_meta_ptr/*::<M>*/() }
     }*/
 }
+}
 
-impl Frame/*<dyn AnyFrameMeta>*/ {
+impl<M: AnyFrameMeta> Frame<M> {
     /// Gets a dynamically typed [`Frame`] from a raw, in-use page.
     ///
     /// If the provided frame is not in use at the moment, it will return an error.
@@ -143,7 +154,7 @@ impl Frame/*<dyn AnyFrameMeta>*/ {
     }
 }
 
-impl Frame/*<FrameMeta>*/ {
+impl<M: AnyFrameMeta> Frame<M> {
     /// Gets the physical address of the start of the frame.
     #[verifier::external_body]
     pub fn start_paddr(&self) -> Paddr {
@@ -226,7 +237,6 @@ impl Frame/*<FrameMeta>*/ {
     /// Also, the caller ensures that the usage of the frame is correct. There's
     /// no checking of the usage in this function.
     pub(in crate::mm) unsafe fn from_raw(paddr: Paddr) -> Self {
-        debug_assert!(paddr < max_paddr());
 
         let vaddr = mapping::frame_to_meta(paddr);
         let ptr = PPtr::from_addr(vaddr);
@@ -342,7 +352,6 @@ impl<M: AnyFrameMeta> TryFrom<Frame<dyn AnyFrameMeta>> for Frame<M> {
 ///  2. The caller must have already held a reference to the frame.
 pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) {
     debug_assert!(paddr % PAGE_SIZE() == 0);
-    debug_assert!(paddr < max_paddr());
 
     let vaddr: Vaddr = mapping::frame_to_meta(paddr);
     // SAFETY: `vaddr` points to a valid `MetaSlot` that will never be mutably borrowed, so taking

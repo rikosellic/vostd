@@ -9,32 +9,32 @@ use crate::prelude::LinkedList;
 
 verus! {
 
-pub ghost struct LinkModel {
+pub ghost struct LinkModel<M: AnyFrameMeta> {
     pub paddr: Paddr,
-    pub prev: Option<Link>,
-    pub next: Option<Link>,
+    pub prev: Option<Link<M>>,
+    pub next: Option<Link<M>>,
 }
 
-impl Inv for LinkModel {
+impl<M: AnyFrameMeta> Inv for LinkModel<M> {
     open spec fn inv(&self) -> bool { true }
 }
 
-pub tracked struct LinkOwner {
+pub tracked struct LinkOwner<M: AnyFrameMeta> {
     pub paddr: Paddr,
-    pub prev_perm: Option<Tracked<PointsTo<Link>>>,
-    pub next_perm: Option<Tracked<PointsTo<Link>>>
+    pub prev_perm: Option<Tracked<PointsTo<Link<M>>>>,
+    pub next_perm: Option<Tracked<PointsTo<Link<M>>>>
 }
 
-impl LinkOwner {
+impl<M: AnyFrameMeta> LinkOwner<M> {
 
-    pub fn get_next(self) -> Tracked<PointsTo<Link>>
+    pub fn get_next(self) -> Tracked<PointsTo<Link<M>>>
         requires
             self.next_perm.is_some()
     {
         self.next_perm.unwrap()
     }
 
-    pub fn get_prev(self) -> Tracked<PointsTo<Link>>
+    pub fn get_prev(self) -> Tracked<PointsTo<Link<M>>>
         requires
             self.next_perm.is_some()
     {
@@ -42,12 +42,12 @@ impl LinkOwner {
     }
 }
 
-impl Inv for LinkOwner {
+impl<M: AnyFrameMeta> Inv for LinkOwner<M> {
     open spec fn inv(&self) -> bool { true }
 }
 
-impl InvView for LinkOwner {
-    type V = LinkModel;
+impl<M: AnyFrameMeta> InvView for LinkOwner<M> {
+    type V = LinkModel<M>;
 
     open spec fn view(&self) -> Self::V {
         let prev = if let Some(prev_perm) = self.prev_perm { Some(prev_perm@.mem_contents().value()) } else { None };
@@ -62,8 +62,8 @@ impl InvView for LinkOwner {
     proof fn view_preserves_inv(&self) { }
 }
 
-impl OwnerOf for Link {
-    type Owner = LinkOwner;
+impl<M: AnyFrameMeta> OwnerOf for Link<M> {
+    type Owner = LinkOwner<M>;
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool {
         &&& owner.prev_perm.is_some() ==>
@@ -77,15 +77,15 @@ impl OwnerOf for Link {
     }
 }
 
-impl ModelOf for Link { }
+impl<M: AnyFrameMeta> ModelOf for Link<M> { }
 
-pub ghost struct LinkedListModel {
-    pub list: Seq<LinkModel>,
+pub ghost struct LinkedListModel<M: AnyFrameMeta> {
+    pub list: Seq<LinkModel<M>>,
 //    pub links: Map<Paddr, LinkModel>,
 }
 
-impl LinkedListModel {
-    pub open spec fn front(&self) -> Option<LinkModel> {
+impl<M: AnyFrameMeta> LinkedListModel<M> {
+    pub open spec fn front(&self) -> Option<LinkModel<M>> {
         if self.list.len() > 0 {
             Some(self.list[0])
         } else {
@@ -93,7 +93,7 @@ impl LinkedListModel {
         }
     }
 
-    pub open spec fn back(&self) -> Option<LinkModel> {
+    pub open spec fn back(&self) -> Option<LinkModel<M>> {
         if self.list.len() > 0 {
             Some(self.list[self.list.len() - 1])
         } else {
@@ -103,17 +103,17 @@ impl LinkedListModel {
 
 }
 
-impl Inv for LinkedListModel {
+impl<M: AnyFrameMeta> Inv for LinkedListModel<M> {
     open spec fn inv(&self) -> bool { true }
 }
 
-pub tracked struct LinkedListOwner {
-    pub list: Seq<LinkOwner>,
-    pub front_perm: Option<Tracked<PointsTo<Link>>>,
-    pub back_perm: Option<Tracked<PointsTo<Link>>>,
+pub tracked struct LinkedListOwner<M: AnyFrameMeta> {
+    pub list: Seq<LinkOwner<M>>,
+    pub front_perm: Option<Tracked<PointsTo<Link<M>>>>,
+    pub back_perm: Option<Tracked<PointsTo<Link<M>>>>,
 }
 
-impl Inv for LinkedListOwner {
+impl<M: AnyFrameMeta> Inv for LinkedListOwner<M> {
     open spec fn inv(&self) -> bool
     {
         forall |i:int|
@@ -122,8 +122,8 @@ impl Inv for LinkedListOwner {
     }
 }
 
-impl LinkedListOwner {
-    pub open spec fn inv_at(owners: Seq<LinkOwner>, i: int) -> bool
+impl<M: AnyFrameMeta> LinkedListOwner<M> {
+    pub open spec fn inv_at(owners: Seq<LinkOwner<M>>, i: int) -> bool
     {
         &&& owners[i].prev_perm.is_some() ==>
             owners[i].prev_perm.unwrap()@.is_init() &&
@@ -133,17 +133,17 @@ impl LinkedListOwner {
             owners[i].next_perm.unwrap()@.mem_contents().value().wf(&owners[i+1])
     }
 
-    pub open spec fn view_helper(owners: Seq<LinkOwner>) -> Seq<LinkModel>
+    pub open spec fn view_helper(owners: Seq<LinkOwner<M>>) -> Seq<LinkModel<M>>
         decreases owners.len()
     {
         if owners.len() == 0 {
-            Seq::<LinkModel>::empty()
+            Seq::<LinkModel<M>>::empty()
         } else {
             seq![owners[0].view()].add(Self::view_helper(owners.remove(0)))
         }
     }
 
-    pub proof fn view_preserves_len(owners: Seq<LinkOwner>)
+    pub proof fn view_preserves_len(owners: Seq<LinkOwner<M>>)
         ensures Self::view_helper(owners).len() == owners.len()
         decreases owners.len()
     {
@@ -155,11 +155,11 @@ impl LinkedListOwner {
     }
 }
 
-impl InvView for LinkedListOwner {
-    type V = LinkedListModel;
+impl<M: AnyFrameMeta> InvView for LinkedListOwner<M> {
+    type V = LinkedListModel<M>;
 
     open spec fn view(&self) -> Self::V {
-        LinkedListModel {
+        LinkedListModel::<M> {
             list: Self::view_helper(self.list)
         }
     }
@@ -167,27 +167,27 @@ impl InvView for LinkedListOwner {
     proof fn view_preserves_inv(&self) { }
 }
 
-impl OwnerOf for LinkedList {
-    type Owner = LinkedListOwner;
+impl<M: AnyFrameMeta> OwnerOf for LinkedList<M> {
+    type Owner = LinkedListOwner<M>;
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool { true }
 }
 
-impl ModelOf for LinkedList { }
+impl<M: AnyFrameMeta> ModelOf for LinkedList<M> { }
 
-impl LinkedListModel {
-    pub open spec fn update_prev(links: Seq<LinkModel>, i: int, prev: Option<Link>) -> Seq<LinkModel> {
+impl<M: AnyFrameMeta> LinkedListModel<M> {
+    pub open spec fn update_prev(links: Seq<LinkModel<M>>, i: int, prev: Option<Link<M>>) -> Seq<LinkModel<M>> {
         let link = links[i];
-        let new_link = LinkModel {
+        let new_link = LinkModel::<M> {
             prev: prev,
             ..link
         };
         links.update(i, new_link)
     }
 
-    pub open spec fn update_next(links: Seq<LinkModel>, i: int, next: Option<Link>) -> Seq<LinkModel> {
+    pub open spec fn update_next(links: Seq<LinkModel<M>>, i: int, next: Option<Link<M>>) -> Seq<LinkModel<M>> {
         let link = links[i];
-        let new_link = LinkModel {
+        let new_link = LinkModel::<M> {
             next: next,
             ..link
         };
@@ -195,33 +195,31 @@ impl LinkedListModel {
     }
 }
 
-#[rustc_has_incoherent_inherent_impls]
-pub ghost struct CursorModel {
-    pub ghost fore: Seq<LinkModel>,
-    pub ghost rear: Seq<LinkModel>,
-    pub ghost list_model: LinkedListModel
+pub ghost struct CursorModel<M: AnyFrameMeta> {
+    pub ghost fore: Seq<LinkModel<M>>,
+    pub ghost rear: Seq<LinkModel<M>>,
+    pub ghost list_model: LinkedListModel<M>
 }
 
-impl Inv for CursorModel {
+impl<M: AnyFrameMeta> Inv for CursorModel<M> {
     open spec fn inv(&self) -> bool { self.list_model.inv() }
 }
 
-#[rustc_has_incoherent_inherent_impls]
-pub tracked struct CursorOwner {
-    pub cur_own: LinkOwner,
-    pub list_own: LinkedListOwner,
+pub tracked struct CursorOwner<M: AnyFrameMeta> {
+    pub cur_own: LinkOwner<M>,
+    pub list_own: LinkedListOwner<M>,
 
-    pub cur_perm: Option<Tracked<PointsTo<Link>>>,
-    pub prev_perm: Option<Tracked<PointsTo<Link>>>,
-    pub next_perm: Option<Tracked<PointsTo<Link>>>,
-    pub list_perm: Tracked<PointsTo<LinkedList>>,
+    pub cur_perm: Option<Tracked<PointsTo<Link<M>>>>,
+    pub prev_perm: Option<Tracked<PointsTo<Link<M>>>>,
+    pub next_perm: Option<Tracked<PointsTo<Link<M>>>>,
+    pub list_perm: Tracked<PointsTo<LinkedList<M>>>,
 
     pub length: int,
     pub index: int,
     pub remaining: int,
 }
 
-impl Inv for CursorOwner {
+impl<M: AnyFrameMeta> Inv for CursorOwner<M> {
     open spec fn inv(&self) -> bool {
         &&& self.length == self.list_own.list.len()
         &&& self.length == self.index + self.remaining
@@ -235,12 +233,12 @@ impl Inv for CursorOwner {
     }
 }
 
-impl InvView for CursorOwner {
-    type V = CursorModel;
+impl<M: AnyFrameMeta> InvView for CursorOwner<M> {
+    type V = CursorModel<M>;
 
     open spec fn view(&self) -> Self::V {
         let list = self.list_own.view();
-        CursorModel {
+        CursorModel::<M> {
             fore: list.list.take(self.index),
             rear: list.list.skip(self.index),
             list_model: list,
@@ -250,8 +248,8 @@ impl InvView for CursorOwner {
     proof fn view_preserves_inv(&self) { }
 }
 
-impl OwnerOf for CursorMut {
-    type Owner = CursorOwner;
+impl<M: AnyFrameMeta> OwnerOf for CursorMut<M> {
+    type Owner = CursorOwner<M>;
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool
     {
@@ -269,11 +267,11 @@ impl OwnerOf for CursorMut {
     }
 }
 
-impl ModelOf for CursorMut { }
+impl<M: AnyFrameMeta> ModelOf for CursorMut<M> { }
 
-impl CursorModel {
+impl<M: AnyFrameMeta> CursorModel<M> {
 
-    pub open spec fn current(self) -> Option<LinkModel> {
+    pub open spec fn current(self) -> Option<LinkModel<M>> {
         if self.rear.len() > 0 {
             Some(self.rear[0])
         } else {

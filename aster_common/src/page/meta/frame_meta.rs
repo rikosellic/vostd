@@ -21,7 +21,7 @@ pub trait AnyFrameMeta {
 
     spec fn vtable_ptr(&self) -> usize;
 
-    spec fn cast_to(x: &MetaSlotStorage) -> &Self;
+    spec fn cast_to(x: &MetaSlotStorage) -> PPtr<Self> where Self: std::marker::Sized;
 
     spec fn write_as(&self) -> MetaSlotStorage;
 }
@@ -90,7 +90,7 @@ impl <M: AnyFrameMeta> UniqueFrame<M> {
             paddr % PAGE_SIZE() == 0,
             paddr < MAX_PADDR(),
             pre.inv(),
-            pre.slots[paddr / 4096].ref_count == REF_COUNT_UNUSED,
+            pre.slots[frame_to_index(paddr)].ref_count == REF_COUNT_UNUSED,
     {
         let (ptr, post) = MetaSlot::get_from_unused_spec(paddr, metadata, true, pre);
         (UniqueFrame { ptr, _marker: PhantomData }, post)
@@ -107,7 +107,7 @@ impl <M: AnyFrameMeta> UniqueFrame<M> {
             UniqueFrame::from_unused_spec(paddr, metadata, pre).1.inv(),
     { }
 
-    pub open spec fn meta_spec(&self, pre: UniqueFrameModel) -> &M 
+    pub open spec fn meta_spec(&self, pre: UniqueFrameModel) -> PPtr<M>
         recommends
             pre.inv(),
     {
@@ -129,7 +129,7 @@ impl <M: AnyFrameMeta> UniqueFrame<M> {
     }
 }
 
-impl AnyFrameMeta for Link
+impl<M: AnyFrameMeta> AnyFrameMeta for Link<M>
 {
     fn on_drop(&mut self) { }
 
@@ -137,7 +137,7 @@ impl AnyFrameMeta for Link
 
     spec fn vtable_ptr(&self) -> usize;
 
-    spec fn cast_to(x: &MetaSlotStorage) -> &Self;
+    spec fn cast_to(x: &MetaSlotStorage) -> PPtr<Self>;
 
     spec fn write_as(&self) -> MetaSlotStorage;
 }

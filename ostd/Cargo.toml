@@ -28,6 +28,8 @@ default-target = "x86_64-unknown-none"
 targets = ["x86_64-unknown-none"]
 
 [dependencies]
+builtin = { path = "../tools/verus/source/builtin" }
+verus_builtin_macros = { path = "../tools/verus/source/builtin_macros" }
 vstd_extra = { path = "../vstd_extra" }
 aster_common = { path = "../aster_common" }
 ostd_specs = { path = "../specs/ostd" }

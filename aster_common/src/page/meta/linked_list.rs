@@ -1,12 +1,15 @@
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
+use crate::prelude::AnyFrameMeta;
+
 verus! {
 
 #[rustc_has_incoherent_inherent_impls]
-pub struct Link {
-    pub next: Option<PPtr<Link>>,
-    pub prev: Option<PPtr<Link>>,
+pub struct Link<M: AnyFrameMeta> {
+    pub next: Option<PPtr<Link<M>>>,
+    pub prev: Option<PPtr<Link<M>>>,
+    pub meta: M,
 }
 
 /// A linked list of frames.
@@ -56,10 +59,10 @@ pub struct Link {
 ///
 /// [`from_in_use`]: Frame::from_in_use
 #[rustc_has_incoherent_inherent_impls]
-pub struct LinkedList
+pub struct LinkedList<M: AnyFrameMeta>
 {
-    pub front: Option<PPtr<Link>>,
-    pub back: Option<PPtr<Link>>,
+    pub front: Option<PPtr<Link<M>>>,
+    pub back: Option<PPtr<Link<M>>>,
     /// The number of frames in the list.
     pub size: usize,
     /// A lazily initialized ID, used to check whether a frame is in the list.
@@ -67,7 +70,7 @@ pub struct LinkedList
     pub list_id: u64,
 }
 
-impl LinkedList {
+impl<M: AnyFrameMeta> LinkedList<M> {
     /// Creates a new linked list.
     pub const fn new() -> Self {
         Self {
@@ -79,7 +82,7 @@ impl LinkedList {
     }
 }
 
-impl Default for LinkedList
+impl<M: AnyFrameMeta> Default for LinkedList<M>
 {
     fn default() -> Self {
         Self::new()
@@ -91,10 +94,10 @@ impl Default for LinkedList
 /// The cursor points to either a frame or the "ghost" non-element. It points
 /// to the "ghost" non-element when the cursor surpasses the back of the list.
 #[rustc_has_incoherent_inherent_impls]
-pub struct CursorMut
+pub struct CursorMut<M: AnyFrameMeta>
 {
-    pub list: PPtr<LinkedList>,
-    pub current: Option<PPtr<Link>>,
+    pub list: PPtr<LinkedList<M>>,
+    pub current: Option<PPtr<Link<M>>>,
 }
 
 }

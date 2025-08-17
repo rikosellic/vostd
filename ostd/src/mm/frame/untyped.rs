@@ -7,7 +7,7 @@
 //! the declaration of untyped frames and segments, and the implementation of
 //! extra functionalities (such as [`VmIo`]) for them.
 
-use super::{meta::AnyFrameMeta, Frame/*, Segment*/};
+use super::{Frame/*, Segment*/};
 use crate::{
     mm::{
 //        io::{FallibleVmRead, FallibleVmWrite, VmIo, VmReader, VmWriter},
@@ -15,6 +15,8 @@ use crate::{
     },
 //    Error, Result,
 };
+
+ use aster_common::prelude::AnyFrameMeta;
 
 /// The metadata of untyped frame.
 ///
@@ -30,7 +32,7 @@ use crate::{
 /// untyped frame metadata.
 ///
 /// The usage of this frame will not be changed while this object is alive.
-pub type UFrame = Frame;
+pub type UFrame = Frame<dyn AnyFrameMeta>;
 
 /*
 /// Makes a structure usable as untyped frame metadata.

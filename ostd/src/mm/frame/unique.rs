@@ -4,9 +4,11 @@
 
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
+use vstd::atomic::PermissionU64;
 
-pub use aster_common::prelude::{UniqueFrameLink, Link};
-use aster_common::prelude::{mapping, FrameMeta, PAGE_SIZE, UniqueFrame};
+use aster_common::prelude::*;
+
+use vstd_extra::ownership::*;
 
 use core::{marker::PhantomData, mem::ManuallyDrop, sync::atomic::Ordering};
 
@@ -16,21 +18,27 @@ use super::{
 };
 use crate::mm::{Paddr, PagingConsts, PagingLevel};
 
-use vstd::atomic::PermissionU64;
-
 verus! {
 
-impl UniqueFrame<Link> {
+impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
     /// Gets a [`UniqueFrame`] with a specific usage from a raw, unused page.
     ///
     /// The caller should provide the initial metadata of the page.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(perm): Tracked<PointsTo<MetaSlot>>,
+        with Tracked(owner): Tracked<&mut MetaRegionOwners>,
+        Tracked(perm): Tracked<PointsTo<MetaSlot>>,
         Tracked(rc_perm): Tracked<&mut PermissionU64>
     )]
-    pub fn from_unused(paddr: Paddr, metadata: FrameMeta) -> Result<Self, GetFrameError> {
-        #[verus_spec(with Tracked(perm), Tracked(rc_perm))]
+    pub fn from_unused(paddr: Paddr, metadata: M) -> Result<Self, GetFrameError>
+        requires
+            paddr < MAX_PADDR(),
+            paddr % PAGE_SIZE() == 0,
+            old(owner).slots.contains_key(frame_to_meta(paddr)),
+            old(owner).inv(),
+            old(owner).slots[frame_to_meta(paddr)] == perm,
+    {
+        #[verus_spec(with Tracked(owner), Tracked(perm), Tracked(rc_perm))]
         let from_unused = MetaSlot::get_from_unused(paddr, metadata, true);
         Ok(Self {
             ptr: from_unused?,
@@ -52,7 +60,7 @@ impl UniqueFrame<Link> {
     /// Gets the metadata of this page.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn meta(&self, Tracked(perm): Tracked<&PointsTo<Link>>) -> (l: &Link)
+    pub fn meta(&self, Tracked(perm): Tracked<&PointsTo<Link<M>>>) -> (l: &Link<M>)
         ensures
             perm.mem_contents().value() == l,
     {
@@ -64,7 +72,7 @@ impl UniqueFrame<Link> {
     /// Gets the mutable metadata of this page.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn meta_mut(&mut self, Tracked(perm): Tracked<&mut PointsTo<Link>>) -> (ptr: PPtr<Link>)
+    pub fn meta_mut(&mut self, Tracked(perm): Tracked<&mut PointsTo<Link<M>>>) -> (ptr: PPtr<Link<M>>)
         ensures
             ptr == perm.pptr(),
             perm.mem_contents() == old(perm).mem_contents()
@@ -76,7 +84,7 @@ impl UniqueFrame<Link> {
     }
 }
 
-impl UniqueFrame<Link> {
+impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
     /// Gets the physical address of the start of the frame.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
@@ -103,17 +111,17 @@ impl UniqueFrame<Link> {
         PAGE_SIZE()
     }
 
-    /// Gets the dyncamically-typed metadata of this frame.
+    /// Gets the dynamically-typed metadata of this frame.
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn dyn_meta(&self) -> &FrameMeta {
+    pub fn dyn_meta(&self) -> &M {
         // SAFETY: The metadata is initialized and valid.
-        unsafe { &*self.slot().dyn_meta_ptr() }
+        unsafe { &*self.slot().dyn_meta_ptr::<M>() }
     }
 /*
-    /// Gets the dyncamically-typed metadata of this frame.
+    /// Gets the dynamically-typed metadata of this frame.
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
     #[rustc_allow_incoherent_impl]
@@ -193,9 +201,9 @@ impl UniqueFrame<Link> {
     }
 }*/
 
-impl From<UniqueFrameLink> for Frame {
+impl<M: AnyFrameMeta> From<UniqueFrame<Link<M>>> for Frame<M> {
     #[verifier::external_body]
-    fn from(unique: UniqueFrameLink) -> Self {
+    fn from(unique: UniqueFrame<Link<M>>) -> Self {
         unimplemented!()
         /*
         // The `Release` ordering make sure that previous writes are visible
@@ -207,14 +215,14 @@ impl From<UniqueFrameLink> for Frame {
     }
 }
 
-impl TryFrom<Frame> for UniqueFrameLink {
-    type Error = Frame;
+impl<M: AnyFrameMeta> TryFrom<Frame<M>> for UniqueFrame<Link<M>> {
+    type Error = Frame<M>;
 
     #[verifier::external_body]
     /// Tries to get a unique frame from a shared frame.
     ///
     /// If the reference count is not 1, the frame is returned back.
-    fn try_from(frame: Frame) -> Result<Self, Self::Error> {
+    fn try_from(frame: Frame<M>) -> Result<Self, Self::Error> {
         unimplemented!()
 /*        match frame.slot().ref_count.compare_exchange(
             1,

@@ -8,6 +8,7 @@
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 use vstd::seq_lib::*;
+use vstd::atomic::PermissionU64;
 
 use core::{
     ops::{Deref, DerefMut},
@@ -25,7 +26,7 @@ use super::{
 use vstd_extra::{borrow_field, update_field};
 use vstd_extra::ownership::*;
 
-use aster_common::prelude::{meta, mapping, Link, LinkedList, CursorMut, UniqueFrameOwner, UniqueFrame, UniqueFrameLink, FrameMeta, FRAME_METADATA_RANGE, META_SLOT_SIZE};
+use aster_common::prelude::{meta, mapping, Link, LinkedList, CursorMut, AnyFrameMeta, UniqueFrameOwner, UniqueFrame, FrameMeta, FRAME_METADATA_RANGE, META_SLOT_SIZE};
 use aster_common::prelude::frame_list_model::*;
 
 use ostd_specs::*;
@@ -56,7 +57,7 @@ impl MetaSlot {
 //unsafe impl<M> Send for LinkedList<M> where Link<M>: AnyFrameMeta {}
 //unsafe impl<M> Sync for LinkedList<M> where Link<M>: AnyFrameMeta {}
 
-impl LinkedList
+impl<M: AnyFrameMeta> LinkedList<M>
 {
 
     /// Gets the number of frames in the linked list.
@@ -77,14 +78,14 @@ impl LinkedList
     /// Pushes a frame to the front of the linked list.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn push_front(&mut self, frame: UniqueFrameLink) {
+    pub fn push_front(&mut self, frame: UniqueFrame<Link<M>>) {
 //        self.cursor_front_mut().insert_before(frame);
     }
 
     /// Pops a frame from the front of the linked list.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn pop_front(&mut self) -> Option<UniqueFrameLink> {
+    pub fn pop_front(&mut self) -> Option<UniqueFrame<Link<M>>> {
         unimplemented!()
 //        self.cursor_front_mut().take_current()
     }
@@ -92,7 +93,7 @@ impl LinkedList
     /// Pushes a frame to the back of the linked list.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn push_back(&mut self, frame: UniqueFrameLink) {
+    pub fn push_back(&mut self, frame: UniqueFrame<Link<M>>) {
         unimplemented!()
 //        self.cursor_at_ghost_mut().insert_before(frame);
     }
@@ -100,7 +101,7 @@ impl LinkedList
     /// Pops a frame from the back of the linked list.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn pop_back(&mut self) -> Option<UniqueFrameLink> {
+    pub fn pop_back(&mut self) -> Option<UniqueFrame<Link<M>>> {
         unimplemented!()
 //        self.cursor_back_mut().take_current()
     }
@@ -122,7 +123,7 @@ impl LinkedList
     /// This method fail if [`Self::contains`] returns `false`.
     #[verifier::external_body]
     #[rustc_allow_incoherent_impl]
-    pub fn cursor_mut_at(&mut self, frame: Paddr) -> Option<CursorMut> {
+    pub fn cursor_mut_at(&mut self, frame: Paddr) -> Option<CursorMut<M>> {
         unimplemented!()
         /*
         let Ok(slot) = get_slot(frame) else {
@@ -145,7 +146,7 @@ impl LinkedList
     /// If the list is empty, the cursor points to the "ghost" non-element.
     #[verifier::external_body]
     #[rustc_allow_incoherent_impl]
-    pub fn cursor_front_mut(&mut self) -> CursorMut {
+    pub fn cursor_front_mut(&mut self) -> CursorMut<M> {
         unimplemented!()
         /*
         let current = self.front;
@@ -161,7 +162,7 @@ impl LinkedList
     /// If the list is empty, the cursor points to the "ghost" non-element.
     #[verifier::external_body]
     #[rustc_allow_incoherent_impl]
-    pub fn cursor_back_mut(&mut self) -> CursorMut {
+    pub fn cursor_back_mut(&mut self) -> CursorMut<M> {
         unimplemented!()
         /*
         let current = self.back;
@@ -175,7 +176,7 @@ impl LinkedList
     /// Gets a cursor at the "ghost" non-element that can mutate the linked list links.
     #[verifier::external_body]
     #[rustc_allow_incoherent_impl]
-    fn cursor_at_ghost_mut(&mut self) -> CursorMut {
+    fn cursor_at_ghost_mut(&mut self) -> CursorMut<M> {
         unimplemented!()
         /*
         CursorMut {
@@ -212,15 +213,7 @@ impl LinkedList
 
 verus!{
 
-impl FrameMeta {
-    #[verifier::external_body]
-    #[rustc_allow_incoherent_impl]
-    pub fn to_vaddr(&self) -> Vaddr {
-        unimplemented!()
-    }
-}
-
-impl CursorMut
+impl<M: AnyFrameMeta> CursorMut<M>
 {
     /// Moves the cursor to the next frame towards the back.
     ///
@@ -230,7 +223,7 @@ impl CursorMut
     /// "ghost" non-element.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner): Tracked<CursorOwner>
+        with Tracked(owner): Tracked<CursorOwner<M>>
     )]
     pub fn move_next(&mut self)
         requires
@@ -245,8 +238,8 @@ impl CursorMut
 
         self.current = match self.current {
             // SAFETY: The cursor is pointing to a valid element.
-            Some(current) => borrow_field!(current => next, owner.cur_perm.tracked_unwrap().borrow()),
-            None => borrow_field!(self.list => front, owner.list_perm.borrow()),
+            Some(current) => borrow_field!(& current => next, owner.cur_perm.tracked_unwrap().borrow()),
+            None => borrow_field!(& self.list => front, owner.list_perm.borrow()),
         };
 
         proof {
@@ -280,7 +273,7 @@ impl CursorMut
     /// "ghost" non-element.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner): Tracked<CursorOwner>
+        with Tracked(owner): Tracked<CursorOwner<M>>
     )]
     pub fn move_prev(&mut self)
         requires
@@ -291,8 +284,8 @@ impl CursorMut
     {
         self.current = match self.current {
             // SAFETY: The cursor is pointing to a valid element.
-            Some(current) => borrow_field!(current => prev, owner.cur_perm.tracked_unwrap().borrow()),
-            None => borrow_field!(self.list => front, owner.list_perm.borrow()),
+            Some(current) => borrow_field!(& current => prev, owner.cur_perm.tracked_unwrap().borrow()),
+            None => borrow_field!(& self.list => front, owner.list_perm.borrow()),
         };
     }
 
@@ -318,12 +311,12 @@ impl CursorMut
     /// is moved to the "ghost" non-element.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<&mut CursorOwner>,
-            Tracked(cur_perm): Tracked<&mut PointsTo<Link>>,
-            Tracked(prev_perm): Tracked<&mut PointsTo<Link>>,
-            Tracked(next_perm): Tracked<&mut PointsTo<Link>>
+        with Tracked(owner) : Tracked<&mut CursorOwner<M>>,
+            Tracked(cur_perm): Tracked<&mut PointsTo<Link<M>>>,
+            Tracked(prev_perm): Tracked<&mut PointsTo<Link<M>>>,
+            Tracked(next_perm): Tracked<&mut PointsTo<Link<M>>>
     )]
-    pub fn take_current(&mut self) -> (res: Option<UniqueFrame<Link>>)
+    pub fn take_current(&mut self) -> (res: Option<UniqueFrame<Link<M>>>)
         requires
             FRAME_METADATA_RANGE().start <= old(self).current.unwrap().addr() < FRAME_METADATA_RANGE().end,
             old(self).current.unwrap().addr() % META_SLOT_SIZE() == 0,
@@ -344,12 +337,12 @@ impl CursorMut
             let meta_ptr = current.addr();
             let paddr = mapping::meta_to_frame(meta_ptr);
             // SAFETY: The frame was forgotten when inserted into the linked list.
-            unsafe { UniqueFrame::<Link>::from_raw(paddr) }
+            unsafe { UniqueFrame::<Link<M>>::from_raw(paddr) }
         };
 
         let next_ptr = frame.meta(Tracked(&*cur_perm)).next;
 
-        if let Some(prev) = frame.meta_mut(Tracked(cur_perm)).borrow(Tracked(&*cur_perm)).prev {
+        if let Some(prev) = borrow_field!(&mut frame.meta_mut(Tracked(cur_perm)) => prev, &*cur_perm) {
             // SAFETY: We own the previous node by `&mut self` and the node is
             // initialized.
 
@@ -358,7 +351,7 @@ impl CursorMut
             update_field!(self.list => front <- next_ptr, owner.list_perm.borrow_mut());
         }
         let prev_ptr = frame.meta(Tracked(cur_perm)).prev;
-        if let Some(next) = frame.meta_mut(Tracked(cur_perm)).borrow(Tracked(cur_perm)).next {
+        if let Some(next) = borrow_field!(&mut frame.meta_mut(Tracked(cur_perm)) => next, cur_perm) {
             // SAFETY: We own the next node by `&mut self` and the node is
             // initialized.
 
@@ -388,13 +381,14 @@ impl CursorMut
     /// element is inserted at the back of the [`LinkedList`].
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner): Tracked<&mut CursorOwner>,
-            Tracked(back_perm): Tracked<&mut PointsTo<Link>>,
-            Tracked(prev_perm): Tracked<&mut PointsTo<Link>>,
-            Tracked(cur_perm): Tracked<&mut PointsTo<Link>>,
-            Tracked(frame_own): Tracked<&mut UniqueFrameOwner<Link>>
+        with Tracked(owner): Tracked<&mut CursorOwner<M>>,
+            Tracked(back_perm): Tracked<&mut PointsTo<Link<M>>>,
+            Tracked(prev_perm): Tracked<&mut PointsTo<Link<M>>>,
+            Tracked(cur_perm): Tracked<&mut PointsTo<Link<M>>>,
+            Tracked(frame_own): Tracked<&mut UniqueFrameOwner<Link<M>>>,
+            Tracked(in_list_perm): Tracked<&mut PermissionU64>
     )]
-    pub fn insert_before(&mut self, mut frame: UniqueFrame<Link>)
+    pub fn insert_before(&mut self, mut frame: UniqueFrame<Link<M>>)
 //            -> (res: Ghost<LinkedListModel>)
         requires
             old(self).list == old(owner).list_perm@.pptr(),
@@ -416,11 +410,11 @@ impl CursorMut
 
         let frame_ptr = frame.meta_mut(Tracked(frame_own.perm.borrow_mut()));
 
-        if let Some(current) = self.current {
+        if let Some(current) = borrow_field!(&mut self.current) {
             // SAFETY: We own the current node by `&mut self` and the node is
             // initialized.
 
-            if let Some(prev) = borrow_field!(current => prev, &*cur_perm) {
+            if let Some(prev) = borrow_field!(& current => prev, &*cur_perm) {
                 // SAFETY: We own the previous node by `&mut self` and the node
                 // is initialized.
                 update_field!(prev => next <- Some(frame_ptr), prev_perm);
@@ -435,7 +429,7 @@ impl CursorMut
             }
         } else {
             // We are at the "ghost" non-element.
-            if let Some(back) = self.list.borrow(Tracked(&*owner.list_perm.borrow())).back {
+            if let Some(back) = borrow_field!(&mut self.list => back, &owner.list_perm.borrow_mut()) {
                 // SAFETY: We have ownership of the links via `&mut self`.
 //                    debug_assert!(back.as_mut().next.is_none());
                 update_field!(back => next <- Some(frame_ptr), back_perm);
@@ -448,12 +442,10 @@ impl CursorMut
             }
         }
 
-        /*
-        frame
-            .slot()
-            .in_list
-            .store(self.list.lazy_get_id(), Ordering::Relaxed);
-        */
+//        frame
+//            .slot()
+//            .in_list
+//            .store(in_list_perm, borrow_field!(& self.list, owner.list_perm).lazy_get_id());
 
 //        frame.slot().in_list_store(self.list.borrow(Tracked(&*list_perm)).lazy_get_id());
 
@@ -463,8 +455,6 @@ impl CursorMut
 
         update_field!(self.list => size += 1, owner.list_perm.borrow_mut());
 
-//        let ghost (cursor_model, list_model) = cursor_model@.remove(list_model@);
-//        Ghost(list_model)
     }
 
 /*    /// Provides a reference to the linked list.
@@ -500,15 +490,15 @@ impl DerefMut for Link {
     }
 }
 */
-impl Link {
+impl<M: AnyFrameMeta> Link<M> {
 
     #[rustc_allow_incoherent_impl]
     /// Creates a new linked list metadata.
-    pub const fn new(meta: FrameMeta) -> Self {
+    pub const fn new(meta: M) -> Self {
         Self {
             next: None,
             prev: None,
-//            meta,
+            meta,
         }
     }
 }

@@ -29,9 +29,14 @@ pub open spec fn get_slot_spec(paddr: Paddr) -> (res: PPtr<MetaSlot>)
     PPtr(slot, PhantomData::<MetaSlot>)
 }
 
+pub struct LinkOuter {
+    pub next: Option<PPtr<LinkOuter>>,
+    pub prev: Option<PPtr<LinkOuter>>,
+}
+
 pub enum MetaSlotStorage {
     Empty([u8; 39]),
-    FrameLink(Link),
+    FrameLink(LinkOuter),
     PTNode(PageTablePageMetaInner),
 }
 
@@ -78,10 +83,10 @@ impl MetaSlot {
             paddr % 4096 == 0,
             paddr < MAX_PADDR(),
             pre.inv(),
-            pre.slots[paddr / 4096].ref_count == REF_COUNT_UNUSED,
+            pre.slots[frame_to_index(paddr)].ref_count == REF_COUNT_UNUSED,
     {
         let ptr = get_slot_spec(paddr);
-        let idx = paddr / 4096;
+        let idx = frame_to_index(paddr);
         let (rc, status) = if as_unique_ptr {
             (REF_COUNT_UNIQUE, MetaSlotStatus::UNIQUE)
         } else {
@@ -102,6 +107,40 @@ impl MetaSlot {
         };
         (ptr, post)
     }
+
+/*    pub open spec fn get_from_in_use_owner_spec<M: AnyFrameMeta>(
+        paddr: Paddr,
+        metadata: M,
+        as_unique_ptr: bool,
+        // -- ghost parameters --
+        pre: MetaRegionOwners,
+    ) -> MetaRegionOwners
+        recommends
+            paddr % 4096 == 0,
+            paddr < MAX_PADDR(),
+            pre.inv(),
+    {
+        let ptr = get_slot_spec(paddr);
+        let idx = frame_to_index(paddr);
+        let (rc, status) = if as_unique_ptr {
+            (REF_COUNT_UNIQUE, MetaSlotStatus::UNIQUE)
+        } else {
+            (1, MetaSlotStatus::SHARED)
+        };
+        MetaRegionModel {
+            slot_owners: pre.slots.insert(
+                idx, MetaSlotOwner {
+                    status,
+                    storage: cell::MemContents::Init(metadata.write_as()),
+                    ref_count: rc,
+                    vtable_ptr: simple_pptr::MemContents::Init(metadata.vtable_ptr()),
+                    in_list: 0,
+                    self_addr: ptr.addr(),
+                    usage: PageUsage::Frame,
+                }
+            )
+        }
+    }*/
 
     /// All other slots remain unchanged.
     pub open spec fn update_index_tracked(idx: usize, pre: MetaRegionOwners, post: MetaRegionOwners)

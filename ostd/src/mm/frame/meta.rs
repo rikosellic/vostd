@@ -15,9 +15,11 @@
 //! comes with no costs since the translation is a simple arithmetic operation.
 
 use vstd::prelude::*;
-use vstd::simple_pptr::*;
+use vstd::simple_pptr::{self, PPtr};
+use vstd::cell::{self, PCell};
 use vstd::atomic::PermissionU64;
 use aster_common::prelude::*;
+use vstd_extra::ownership::*;
 
 use core::{
     alloc::Layout,
@@ -54,7 +56,7 @@ pub use aster_common::prelude::{mapping, MetaSlot, META_SLOT_SIZE, FrameMeta, Li
 /// The maximum number of bytes of the metadata of a frame.
 pub const FRAME_METADATA_MAX_SIZE: usize = META_SLOT_SIZE()
     - size_of::<AtomicU64>()
-    - size_of::<FrameMetaVtablePtr>()
+//    - size_of::<FrameMetaVtablePtr>()
     - size_of::<AtomicU64>();
 /// The maximum alignment in bytes of the metadata of a frame.
 pub const FRAME_METADATA_MAX_ALIGN: usize = META_SLOT_SIZE();
@@ -120,38 +122,8 @@ type FrameMetaVtablePtr = core::ptr::DynMetadata<dyn AnyFrameMeta>;
 //const_assert!(PAGE_SIZE % META_SLOT_SIZE == 0);
 //const_assert!(size_of::<MetaSlot>() == META_SLOT_SIZE);
 
-/// All frame metadata types must implement this trait.
-///
-/// If a frame type needs specific drop behavior, it should specify
-/// when implementing this trait. When we drop the last handle to
-/// this frame, the `on_drop` method will be called. The `on_drop`
-/// method is called with the physical address of the frame.
-///
-/// The implemented structure should have a size less than or equal to
-/// [`FRAME_METADATA_MAX_SIZE`] and an alignment less than or equal to
-/// [`FRAME_METADATA_MAX_ALIGN`]. Otherwise, the metadata type cannot
-/// be used because storing it will fail compile-time assertions.
-///
-/// # Safety
-///
-/// If `on_drop` reads the page using the provided `VmReader`, the
-/// implementer must ensure that the frame is safe to read.
-pub unsafe trait AnyFrameMeta: Any + Send + Sync {
-    /// Called when the last handle to the frame is dropped.
-//    fn on_drop(&mut self, _reader: &mut VmReader<Infallible>) {}
 
-    /// Whether the metadata's associated frame is untyped.
-    ///
-    /// If a type implements [`AnyUFrameMeta`], this should be `true`.
-    /// Otherwise, it should be `false`.
-    ///
-    /// [`AnyUFrameMeta`]: super::untyped::AnyUFrameMeta
-    fn is_untyped(&self) -> bool {
-        false
-    }
-}
-
-/// Makes a structure usable as a frame metadata.
+/*/// Makes a structure usable as a frame metadata.
 #[macro_export]
 macro_rules! impl_frame_meta_for {
     // Implement without specifying the drop behavior.
@@ -169,7 +141,7 @@ macro_rules! impl_frame_meta_for {
 }
 
 pub use impl_frame_meta_for;
-
+*/
 verus!{
 
 /// The error type for getting the frame from a physical address.
@@ -192,7 +164,10 @@ pub enum GetFrameError {
 }
 
 /// Gets the reference to a metadata slot.
-pub(super) fn get_slot(paddr: Paddr) -> Result<PPtr<MetaSlot>, GetFrameError> {
+pub(super) fn get_slot(paddr: Paddr) -> (res: Result<PPtr<MetaSlot>, GetFrameError>)
+    ensures
+        res.is_ok() ==> res.unwrap().addr() == frame_to_meta(paddr)
+{
     if paddr % PAGE_SIZE() != 0 {
         return Err(GetFrameError::NotAligned);
     }
@@ -218,18 +193,27 @@ impl MetaSlot {
     /// The resulting reference count held by the returned pointer is
     /// [`REF_COUNT_UNIQUE`] if `as_unique_ptr` is `true`, otherwise `1`.
     #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
     #[verus_spec(
-        with Tracked(perm): Tracked<PointsTo<MetaSlot>>,
+        with Tracked(owner): Tracked<&mut MetaRegionOwners>,
+        Tracked(perm): Tracked<vstd::simple_pptr::PointsTo<MetaSlot>>,
         Tracked(rc_perm): Tracked<&mut PermissionU64>
     )]
-    pub(super) fn get_from_unused(
+    pub(super) fn get_from_unused<M: AnyFrameMeta>(
         paddr: Paddr,
-        metadata: FrameMeta,
+        metadata: M,
         as_unique_ptr: bool,
-    ) -> Result<PPtr<Self>, GetFrameError>
+    ) -> (res: Result<PPtr<Self>, GetFrameError>)
+        requires
+            paddr < MAX_PADDR(),
+            paddr % PAGE_SIZE() == 0,
+            old(owner).inv(),
+            old(owner).slots[frame_to_index(paddr)] == perm,
+            old(owner).slot_owners[frame_to_index(paddr)].ref_count == *old(rc_perm),
     {
         let slot = get_slot(paddr)?;
+
+        let ghost old_owner = *owner;
+        proof { owner.inv_implies_correct_addr(paddr); }
 
         // `Acquire` pairs with the `Release` in `drop_last_in_place` and ensures the metadata
         // initialization won't be reordered before this memory compare-and-exchange.
@@ -263,7 +247,7 @@ impl MetaSlot {
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
     #[verus_spec(
-        with Tracked(perm): Tracked<PointsTo<MetaSlot>>,
+        with Tracked(perm): Tracked<simple_pptr::PointsTo<MetaSlot>>,
         Tracked(rc_perm): Tracked<&mut PermissionU64>
     )]
     pub(super) fn get_from_in_use(paddr: Paddr) -> Result<PPtr<Self>, GetFrameError>
@@ -317,7 +301,7 @@ impl MetaSlot {
     )]
     pub(super) unsafe fn inc_ref_count(&self) {
         let last_ref_cnt = self.ref_count.fetch_add(Tracked(rc_perm), 1/*, Ordering::Relaxed*/);
-        debug_assert!(last_ref_cnt != 0 && last_ref_cnt != REF_COUNT_UNUSED);
+//        debug_assert!(last_ref_cnt != 0 && last_ref_cnt != REF_COUNT_UNUSED);
 
         if last_ref_cnt >= REF_COUNT_MAX {
             // This follows the same principle as the `Arc::clone` implementation to prevent the
@@ -346,7 +330,7 @@ impl MetaSlot {
     /// exclusive access to the metadata slot.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub(super) unsafe fn dyn_meta_ptr(&self) -> *mut FrameMeta {
+    pub(super) unsafe fn dyn_meta_ptr<M: AnyFrameMeta>(&self) -> *mut M {
         unimplemented!()
         /*
         // SAFETY: The page metadata is valid to be borrowed immutably, since
@@ -373,9 +357,11 @@ impl MetaSlot {
     ///    having exclusive access to the metadata slot.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub(super) fn as_meta_ptr(&self) -> PPtr<Link> {
-        unimplemented!()
-//        self.storage.get() as *mut M
+    #[verus_spec(
+        with Tracked(perm): Tracked<& cell::PointsTo<MetaSlotStorage>>
+    )]
+    pub(super) fn as_meta_ptr<M: AnyFrameMeta>(&self) -> PPtr<M> {
+        M::cast_to(self.storage.borrow(Tracked(perm)))
     }
 
     /// Writes the metadata to the slot without reading or dropping the previous value.
@@ -385,7 +371,7 @@ impl MetaSlot {
     /// The caller should have exclusive access to the metadata slot's fields.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub(super) unsafe fn write_meta(&self, metadata: FrameMeta) {
+    pub(super) unsafe fn write_meta<M: AnyFrameMeta>(&self, metadata: M) {
         unimplemented!()
         /*
         const { assert!(size_of::<M>() <= FRAME_METADATA_MAX_SIZE) };
@@ -416,7 +402,10 @@ impl MetaSlot {
     #[verus_spec(
         with Tracked(rc_perm): Tracked<&mut PermissionU64>
     )]
-    pub(super) unsafe fn drop_last_in_place(&self) {
+    pub(super) unsafe fn drop_last_in_place(&self)
+        requires
+            self.ref_count.id() == old(rc_perm)@.patomic
+    {
         // This should be guaranteed as a safety requirement.
 //        debug_assert_eq!(self.ref_count.load(Tracked(&*rc_perm)), 0);
 
@@ -473,7 +462,7 @@ impl MetaSlot {
 #[derive(Debug, Default)]
 pub struct MetaPageMeta {}
 
-impl_frame_meta_for!(MetaPageMeta);
+//impl_frame_meta_for!(MetaPageMeta);
 /*
 /// Initializes the metadata of all physical frames.
 ///
