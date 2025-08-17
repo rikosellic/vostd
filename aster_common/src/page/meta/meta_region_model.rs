@@ -77,9 +77,7 @@ impl InvView for MetaRegionOwners {
 impl OwnerOf for MetaRegion {
     type Owner = MetaRegionOwners;
 
-    open spec fn wf(&self, owner: &Self::Owner) -> bool {
-        true
-    }
+    open spec fn wf(&self, owner: &Self::Owner) -> bool { true }
 }
 
 impl ModelOf for MetaRegion { }
@@ -92,5 +90,30 @@ impl MetaRegionOwners {
     {
         self.slot_owners[i].ref_count@.value()
     }
+
+    pub proof fn inv_implies_correct_addr(self, paddr: usize)
+        requires
+            paddr < MAX_PADDR(),
+            paddr % PAGE_SIZE() == 0,
+            self.inv(),
+        ensures
+            self.slots.contains_key(frame_to_index_spec(paddr) as usize),
+            self.slots[frame_to_index_spec(paddr) as usize]@.addr() == frame_to_meta(paddr),
+            self.slots[frame_to_index_spec(paddr) as usize]@.is_init(),
+    {
+        assert((frame_to_index_spec(paddr)) < max_meta_slots() as usize);
+    }
+
+/*    pub proof fn wf_helper(self, region: MetaRegion, i: usize)
+        requires
+            self.inv(),
+            region.wf(&self),
+            i < MAX_PADDR(),
+            i % PAGE_SIZE() == 0,
+        ensures
+            self.slots.dom().contains(frame_to_meta(i)),
+            self.slots[frame_to_meta(i)]@.is_init(),
+            self.slots[frame_to_meta(i)]@.addr() == frame_to_meta(i)
+    { }*/
 }
 }

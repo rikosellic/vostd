@@ -30,7 +30,7 @@ pub open spec fn meta_addr(i: usize) -> (res: usize)
     recommends
         0 <= i < max_meta_slots() as usize,
 {
-    (FRAME_METADATA_RANGE().start + i * super::meta_slot_size()) as usize
+    (FRAME_METADATA_RANGE().start + i * META_SLOT_SIZE()) as usize
 }
 
 #[allow(non_snake_case)]
@@ -53,10 +53,10 @@ verus! {
 #[verifier::inline]
 pub open spec fn frame_to_meta_spec(paddr: Paddr) -> (res: Vaddr)
     recommends
-        paddr % 4096 == 0,
+        paddr % PAGE_SIZE() == 0,
         paddr < MAX_PADDR(),
 {
-    (FRAME_METADATA_RANGE().start + (paddr / 4096) * super::meta_slot_size()) as usize
+    (FRAME_METADATA_RANGE().start + (paddr / PAGE_SIZE()) * super::meta_slot_size()) as usize
 }
 
 #[verifier::inline]
@@ -65,28 +65,28 @@ pub open spec fn meta_to_frame_spec(vaddr: Vaddr) -> Paddr
         vaddr % size_of::<super::MetaSlot>() == 0,
         FRAME_METADATA_RANGE().start <= vaddr < FRAME_METADATA_RANGE().end,
 {
-    ((vaddr - FRAME_METADATA_RANGE().start) / META_SLOT_SIZE() as int * 4096) as usize
+    ((vaddr - FRAME_METADATA_RANGE().start) / META_SLOT_SIZE() as int * PAGE_SIZE()) as usize
 }
 
 #[verifier::inline]
-pub open spec fn page_to_index_spec(paddr: int) -> int {
-    paddr / (PAGE_SIZE() as int)
+pub open spec fn frame_to_index_spec(paddr: Paddr) -> usize {
+    paddr / PAGE_SIZE()
 }
 
 #[verifier::inline]
-pub open spec fn index_to_page_spec(index: int) -> int {
-    index * (PAGE_SIZE() as int)
+pub open spec fn index_to_frame_spec(index: usize) -> Paddr {
+    (index * PAGE_SIZE()) as usize
 }
 
-pub proof fn page_to_index(paddr: Paddr) -> (res: int)
+#[verifier::when_used_as_spec(frame_to_index_spec)]
+pub fn frame_to_index(paddr: Paddr) -> (res: usize)
     requires
-        paddr as int % PAGE_SIZE() as int == 0,
+        paddr % PAGE_SIZE() == 0,
     ensures
-        res == page_to_index_spec(paddr as int),
+        res == frame_to_index_spec(paddr),
 {
-    paddr as int / PAGE_SIZE() as int
+    paddr / PAGE_SIZE()
 }
-
 } // verus!
 verus! {
 

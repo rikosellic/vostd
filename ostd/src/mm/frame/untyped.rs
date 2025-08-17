@@ -16,6 +16,8 @@ use crate::{
 //    Error, Result,
 };
 
+ use aster_common::prelude::AnyFrameMeta;
+
 /// The metadata of untyped frame.
 ///
 /// If a structure `M` implements [`AnyUFrameMeta`], it can be used as the
@@ -30,7 +32,7 @@ use crate::{
 /// untyped frame metadata.
 ///
 /// The usage of this frame will not be changed while this object is alive.
-pub type UFrame = Frame;
+pub type UFrame = Frame<dyn AnyFrameMeta>;
 
 /*
 /// Makes a structure usable as untyped frame metadata.

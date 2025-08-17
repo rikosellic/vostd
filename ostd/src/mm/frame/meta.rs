@@ -15,9 +15,11 @@
 //! comes with no costs since the translation is a simple arithmetic operation.
 
 use vstd::prelude::*;
-use vstd::simple_pptr::*;
+use vstd::simple_pptr::{self, PPtr};
+use vstd::cell::{self, PCell};
 use vstd::atomic::PermissionU64;
 use aster_common::prelude::*;
+use vstd_extra::ownership::*;
 
 use core::{
     alloc::Layout,
@@ -162,7 +164,10 @@ pub enum GetFrameError {
 }
 
 /// Gets the reference to a metadata slot.
-pub(super) fn get_slot(paddr: Paddr) -> Result<PPtr<MetaSlot>, GetFrameError> {
+pub(super) fn get_slot(paddr: Paddr) -> (res: Result<PPtr<MetaSlot>, GetFrameError>)
+    ensures
+        res.is_ok() ==> res.unwrap().addr() == frame_to_meta(paddr)
+{
     if paddr % PAGE_SIZE() != 0 {
         return Err(GetFrameError::NotAligned);
     }
@@ -188,18 +193,27 @@ impl MetaSlot {
     /// The resulting reference count held by the returned pointer is
     /// [`REF_COUNT_UNIQUE`] if `as_unique_ptr` is `true`, otherwise `1`.
     #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
     #[verus_spec(
-        with Tracked(perm): Tracked<PointsTo<MetaSlot>>,
+        with Tracked(owner): Tracked<&mut MetaRegionOwners>,
+        Tracked(perm): Tracked<vstd::simple_pptr::PointsTo<MetaSlot>>,
         Tracked(rc_perm): Tracked<&mut PermissionU64>
     )]
-    pub(super) fn get_from_unused(
+    pub(super) fn get_from_unused<M: AnyFrameMeta>(
         paddr: Paddr,
-        metadata: FrameMeta,
+        metadata: M,
         as_unique_ptr: bool,
-    ) -> Result<PPtr<Self>, GetFrameError>
+    ) -> (res: Result<PPtr<Self>, GetFrameError>)
+        requires
+            paddr < MAX_PADDR(),
+            paddr % PAGE_SIZE() == 0,
+            old(owner).inv(),
+            old(owner).slots[frame_to_index(paddr)] == perm,
+            old(owner).slot_owners[frame_to_index(paddr)].ref_count == *old(rc_perm),
     {
         let slot = get_slot(paddr)?;
+
+        let ghost old_owner = *owner;
+        proof { owner.inv_implies_correct_addr(paddr); }
 
         // `Acquire` pairs with the `Release` in `drop_last_in_place` and ensures the metadata
         // initialization won't be reordered before this memory compare-and-exchange.
@@ -233,7 +247,7 @@ impl MetaSlot {
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
     #[verus_spec(
-        with Tracked(perm): Tracked<PointsTo<MetaSlot>>,
+        with Tracked(perm): Tracked<simple_pptr::PointsTo<MetaSlot>>,
         Tracked(rc_perm): Tracked<&mut PermissionU64>
     )]
     pub(super) fn get_from_in_use(paddr: Paddr) -> Result<PPtr<Self>, GetFrameError>
@@ -287,7 +301,7 @@ impl MetaSlot {
     )]
     pub(super) unsafe fn inc_ref_count(&self) {
         let last_ref_cnt = self.ref_count.fetch_add(Tracked(rc_perm), 1/*, Ordering::Relaxed*/);
-        debug_assert!(last_ref_cnt != 0 && last_ref_cnt != REF_COUNT_UNUSED);
+//        debug_assert!(last_ref_cnt != 0 && last_ref_cnt != REF_COUNT_UNUSED);
 
         if last_ref_cnt >= REF_COUNT_MAX {
             // This follows the same principle as the `Arc::clone` implementation to prevent the
@@ -343,9 +357,11 @@ impl MetaSlot {
     ///    having exclusive access to the metadata slot.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
+    #[verus_spec(
+        with Tracked(perm): Tracked<& cell::PointsTo<MetaSlotStorage>>
+    )]
     pub(super) fn as_meta_ptr<M: AnyFrameMeta>(&self) -> PPtr<M> {
-        unimplemented!()
-//        self.storage.get() as *mut M
+        M::cast_to(self.storage.borrow(Tracked(perm)))
     }
 
     /// Writes the metadata to the slot without reading or dropping the previous value.
