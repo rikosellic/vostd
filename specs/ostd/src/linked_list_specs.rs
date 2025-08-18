@@ -5,7 +5,7 @@ use aster_common::prelude::frame_list_model::*;
 
 verus! {
 
-impl CursorModel {
+impl<M: AnyFrameMeta> CursorModel<M> {
 
     #[rustc_allow_incoherent_impl]
     pub open spec fn move_next_spec(self) -> Self {
@@ -18,7 +18,7 @@ impl CursorModel {
             }
         } else {
             Self {
-                fore: Seq::<LinkModel>::empty(),
+                fore: Seq::<LinkModel<M>>::empty(),
                 rear: self.fore,
                 list_model: self.list_model
             }
@@ -37,7 +37,7 @@ impl CursorModel {
         } else {
             Self {
                 fore: self.rear,
-                rear: Seq::<LinkModel>::empty(),
+                rear: Seq::<LinkModel<M>>::empty(),
                 list_model: self.list_model
             }
         }
@@ -58,7 +58,7 @@ impl CursorModel {
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn insert(self, link: LinkModel) -> Self {
+    pub open spec fn insert(self, link: LinkModel<M>) -> Self {
         let fore = self.fore.insert(self.fore.len() - 1, link);
         let rear = if self.rear.len() > 0 { LinkedListModel::update_prev(self.rear, 0, link.prev) } else { self.rear };
         let fore = if fore.len() > 0 { LinkedListModel::update_next(self.fore, self.fore.len() - 1, link.next) } else { fore };        
@@ -71,7 +71,7 @@ impl CursorModel {
     }
 }
 
-impl CursorOwner {
+impl<M: AnyFrameMeta> CursorOwner<M> {
 
     #[rustc_allow_incoherent_impl]
     pub open spec fn move_next_owner_spec(self) -> Self {

@@ -195,6 +195,7 @@ impl<M: AnyFrameMeta> LinkedListModel<M> {
     }
 }
 
+#[rustc_has_incoherent_inherent_impls]
 pub ghost struct CursorModel<M: AnyFrameMeta> {
     pub ghost fore: Seq<LinkModel<M>>,
     pub ghost rear: Seq<LinkModel<M>>,
@@ -205,6 +206,7 @@ impl<M: AnyFrameMeta> Inv for CursorModel<M> {
     open spec fn inv(&self) -> bool { self.list_model.inv() }
 }
 
+#[rustc_has_incoherent_inherent_impls]
 pub tracked struct CursorOwner<M: AnyFrameMeta> {
     pub cur_own: LinkOwner<M>,
     pub list_own: LinkedListOwner<M>,
