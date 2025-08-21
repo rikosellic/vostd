@@ -11,6 +11,7 @@ verus! {
 
 pub ghost struct LinkModel<M: AnyFrameMeta> {
     pub paddr: Paddr,
+    pub slot: MetaSlotModel,
     pub prev: Option<Link<M>>,
     pub next: Option<Link<M>>,
 }
@@ -21,6 +22,7 @@ impl<M: AnyFrameMeta> Inv for LinkModel<M> {
 
 pub tracked struct LinkOwner<M: AnyFrameMeta> {
     pub paddr: Paddr,
+    pub slot: MetaSlotOwner,
     pub prev_perm: Option<Tracked<PointsTo<Link<M>>>>,
     pub next_perm: Option<Tracked<PointsTo<Link<M>>>>
 }
@@ -54,6 +56,7 @@ impl<M: AnyFrameMeta> InvView for LinkOwner<M> {
         let next = if let Some(next_perm) = self.next_perm { Some(next_perm@.mem_contents().value()) } else { None };
         LinkModel {
             paddr: self.paddr,
+            slot: self.slot.view(),
             prev: prev,
             next: next,
         }

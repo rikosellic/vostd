@@ -209,6 +209,9 @@ impl MetaSlot {
             old(owner).inv(),
             old(owner).slots[frame_to_index(paddr)] == perm,
             old(owner).slot_owners[frame_to_index(paddr)].ref_count == *old(rc_perm),
+        ensures
+            res.is_ok() ==>
+            MetaSlot::get_from_unused_spec::<M>(paddr, metadata, as_unique_ptr, old(owner).view()) == (res.unwrap(), owner.view()),
     {
         let slot = get_slot(paddr)?;
 
@@ -217,8 +220,14 @@ impl MetaSlot {
 
         // `Acquire` pairs with the `Release` in `drop_last_in_place` and ensures the metadata
         // initialization won't be reordered before this memory compare-and-exchange.
-        slot.borrow(Tracked(&perm)).ref_count
-            .compare_exchange(Tracked(rc_perm), REF_COUNT_UNUSED, 0)
+        slot.borrow(Tracked(
+            &perm
+//            (proof { owner.slots.tracked_borrow(frame_to_index(paddr)).borrow() })
+        )).ref_count
+            .compare_exchange(Tracked(
+                rc_perm
+//                (proof { owner.slot_owners.tracked_borrow(frame_to_index(paddr)).ref_count.borrow_mut() })
+            ), REF_COUNT_UNUSED, 0)
             .map_err(|val| match val {
                 REF_COUNT_UNIQUE => GetFrameError::Unique,
                 0 => GetFrameError::Busy,
@@ -233,10 +242,12 @@ impl MetaSlot {
             // No one can create a `Frame` instance directly from the page
             // address, so `Relaxed` is fine here.
             slot.borrow(Tracked(&perm)).ref_count.store(Tracked(rc_perm), REF_COUNT_UNIQUE);
+            assert(owner.slot_owners[frame_to_index(paddr)].ref_count@.points_to(REF_COUNT_UNIQUE)) by { admit() };
         } else {
             // `Release` is used to ensure that the metadata initialization
             // won't be reordered after this memory store.
             slot.borrow(Tracked(&perm)).ref_count.store(Tracked(rc_perm), 1);
+            assert(owner.slot_owners[frame_to_index(paddr)].ref_count@.points_to(REF_COUNT_UNIQUE)) by { admit() };
         }
 
         Ok(slot)

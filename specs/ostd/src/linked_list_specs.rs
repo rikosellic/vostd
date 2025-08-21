@@ -74,6 +74,24 @@ impl<M: AnyFrameMeta> CursorModel<M> {
 impl<M: AnyFrameMeta> CursorOwner<M> {
 
     #[rustc_allow_incoherent_impl]
+    pub open spec fn remove_owner_spec(self) -> Self
+        recommends
+            self.remaining > 0
+    {
+        Self {
+            cur_own: self.list_own.list[self.index+1],
+            list_own: self.list_own,
+            cur_perm: self.next_perm,
+            prev_perm: self.prev_perm,
+            next_perm: self.list_own.list[self.index+1].next_perm,
+            list_perm: self.list_perm,
+            length: self.length-1,
+            index: self.index,
+            remaining: self.remaining-1,
+        }
+    }
+
+    #[rustc_allow_incoherent_impl]
     pub open spec fn move_next_owner_spec(self) -> Self {
         if self.remaining > 0 {
             Self {

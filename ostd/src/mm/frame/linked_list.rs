@@ -26,7 +26,7 @@ use super::{
 use vstd_extra::{borrow_field, update_field};
 use vstd_extra::ownership::*;
 
-use aster_common::prelude::{meta, mapping, Link, LinkedList, CursorMut, AnyFrameMeta, UniqueFrameOwner, UniqueFrame, FrameMeta, FRAME_METADATA_RANGE, META_SLOT_SIZE};
+use aster_common::prelude::*;
 use aster_common::prelude::frame_list_model::*;
 
 use ostd_specs::*;
@@ -311,12 +311,14 @@ impl<M: AnyFrameMeta> CursorMut<M>
     /// is moved to the "ghost" non-element.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<&mut CursorOwner<M>>,
+        with Tracked(region) : Tracked<MetaRegionOwners>,
+            Tracked(owner) : Tracked<&mut CursorOwner<M>>,
+            Tracked(frame_owner) : Tracked<UniqueFrameOwner<Link<M>>>,
             Tracked(cur_perm): Tracked<&mut PointsTo<Link<M>>>,
             Tracked(prev_perm): Tracked<&mut PointsTo<Link<M>>>,
             Tracked(next_perm): Tracked<&mut PointsTo<Link<M>>>
     )]
-    pub fn take_current(&mut self) -> (res: Option<UniqueFrame<Link<M>>>)
+    pub fn take_current(&mut self) -> (res: Option<(UniqueFrame<Link<M>>, Tracked<UniqueFrameOwner<Link<M>>>)>)
         requires
             FRAME_METADATA_RANGE().start <= old(self).current.unwrap().addr() < FRAME_METADATA_RANGE().end,
             old(self).current.unwrap().addr() % META_SLOT_SIZE() == 0,
@@ -328,17 +330,30 @@ impl<M: AnyFrameMeta> CursorMut<M>
             old(cur_perm).is_init(),
             old(cur_perm).mem_contents().value().prev == Some(old(prev_perm).pptr()),
             old(prev_perm).is_init(),
+            frame_owner == UniqueFrameOwner::<Link<M>>::from_raw_owner(region, old(self).current.unwrap().addr()),
 //            old(next_perm).pptr() == meta_region_model.get_the_thing(current.addr).next,
             old(next_perm).is_init(),
-        {
+        ensures
+            res.is_some() ==>
+                res.unwrap().0.model(&res.unwrap().1@).slot == owner.view().current().unwrap().slot,
+            res.is_some() ==>
+                owner == old(owner).remove_owner_spec(),
+            res.is_some() ==>
+                self.model(&*owner) == old(self).model(&old(owner)).remove(),
+    {
+        let ghost old_owner = *owner;
+
         let current = self.current?;
 
-        let mut frame = {
-            let meta_ptr = current.addr();
-            let paddr = mapping::meta_to_frame(meta_ptr);
-            // SAFETY: The frame was forgotten when inserted into the linked list.
-            unsafe { UniqueFrame::<Link<M>>::from_raw(paddr) }
-        };
+        let meta_ptr = current.addr();
+        let paddr = mapping::meta_to_frame(meta_ptr);
+
+        assert(paddr < MAX_PADDR()) by { admit() };
+
+        #[verus_spec(with Tracked(region))]
+        let mut frame = UniqueFrame::<Link<M>>::from_raw(paddr);
+
+        assert(frame.model(&frame_owner).slot == owner@.current().unwrap().slot) by { admit() };
 
         let next_ptr = frame.meta(Tracked(&*cur_perm)).next;
 
@@ -372,7 +387,10 @@ impl<M: AnyFrameMeta> CursorMut<M>
 
         update_field!(self.list => size -= 1, owner.list_perm.borrow_mut());
 
-        Some(frame)
+        assert(*owner == old_owner.remove_owner_spec()) by { admit() };
+        assert(self.model(&*owner) == old(self).model(&old_owner).remove());
+
+        Some((frame, Tracked(frame_owner)))
     }
 
     /// Inserts a frame before the current frame.
