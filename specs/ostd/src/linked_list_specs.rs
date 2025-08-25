@@ -9,37 +9,45 @@ impl<M: AnyFrameMeta> CursorModel<M> {
 
     #[rustc_allow_incoherent_impl]
     pub open spec fn move_next_spec(self) -> Self {
-        if self.rear.len() > 0 {
-            let cur = self.rear[0];
-            Self {
-                fore: self.fore.insert(self.fore.len() as int, cur),
-                rear: self.rear.remove(0),
-                list_model: self.list_model
+        if self.list_model.list.len() > 0 {
+            if self.rear.len() > 0 {
+                let cur = self.rear[0];
+                Self {
+                    fore: self.fore.insert(self.fore.len() as int, cur),
+                    rear: self.rear.remove(0),
+                    list_model: self.list_model
+                }
+            } else {
+                Self {
+                    fore: Seq::<LinkModel<M>>::empty(),
+                    rear: self.fore,
+                    list_model: self.list_model
+                }
             }
         } else {
-            Self {
-                fore: Seq::<LinkModel<M>>::empty(),
-                rear: self.fore,
-                list_model: self.list_model
-            }
+            self
         }
     }
 
     #[rustc_allow_incoherent_impl]
     pub open spec fn move_prev_spec(self) -> Self {
-        if self.fore.len() > 0 {
-            let cur = self.fore[self.fore.len()-1];
-            Self {
-                fore: self.fore.remove(self.fore.len()-1),
-                rear: self.rear.insert(0, cur),
-                list_model: self.list_model
-            }
+        if self.list_model.list.len() > 0 {
+            if self.fore.len() > 0 {
+                let cur = self.fore[self.fore.len()-1];
+                Self {
+                    fore: self.fore.remove(self.fore.len()-1),
+                    rear: self.rear.insert(0, cur),
+                    list_model: self.list_model
+                }
+            } else {
+                Self {
+                    fore: self.rear,
+                    rear: Seq::<LinkModel<M>>::empty(),
+                    list_model: self.list_model
+                }
+            } 
         } else {
-            Self {
-                fore: self.rear,
-                rear: Seq::<LinkModel<M>>::empty(),
-                list_model: self.list_model
-            }
+            self
         }
     }
 
@@ -70,7 +78,7 @@ impl<M: AnyFrameMeta> CursorModel<M> {
         }
     }
 }
-
+ 
 impl<M: AnyFrameMeta> CursorOwner<M> {
 
     #[rustc_allow_incoherent_impl]
@@ -79,47 +87,75 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
             self.remaining > 0
     {
         Self {
-            cur_own: self.list_own.list[self.index+1],
             list_own: self.list_own,
-            cur_perm: self.next_perm,
-            prev_perm: self.prev_perm,
-            next_perm: self.list_own.list[self.index+1].next_perm,
-            list_perm: self.list_perm,
+            cur_perm: Some(self.list_own.list[self.index+1].self_perm),
             length: self.length-1,
             index: self.index,
             remaining: self.remaining-1,
         }
     }
-
+ 
     #[rustc_allow_incoherent_impl]
     pub open spec fn move_next_owner_spec(self) -> Self {
-        if self.remaining > 0 {
+        if self.length == 0 {
+            self
+        } else if self.remaining == 0 {
             Self {
-                cur_own: self.list_own.list[self.index+1],
                 list_own: self.list_own,
-                cur_perm: self.next_perm,
-                prev_perm: self.cur_perm,
-                next_perm: self.list_own.list[self.index+1].next_perm,
-                list_perm: self.list_perm,
+                cur_perm: self.list_own.front_perm,
+                length: self.length,
+                index: 0,
+                remaining: self.length,
+            }
+        } else if self.remaining == 1 {
+            Self {
+                list_own: self.list_own,
+                cur_perm: None,
                 length: self.length,
                 index: self.index+1,
                 remaining: self.remaining-1,
             }
         } else {
             Self {
-                cur_own: self.list_own.list[0],
                 list_own: self.list_own,
-                cur_perm: self.list_own.front_perm,
-                prev_perm: None,
-                next_perm: self.list_own.list[0].next_perm,
-                list_perm: self.list_perm,
+                cur_perm: Some(self.list_own.list[self.index+1].self_perm),
                 length: self.length,
-                index: 0,
-                remaining: self.length,
+                index: self.index+1,
+                remaining: self.remaining-1,
+            }
+        }
+    }
+
+    #[rustc_allow_incoherent_impl]
+    pub open spec fn move_prev_owner_spec(self) -> Self {
+        if self.length == 0 {
+            self
+        } else if self.remaining == 0 {
+            Self {
+                list_own: self.list_own,
+                cur_perm: Some(self.list_own.list[self.length-1].self_perm),
+                length: self.length,
+                index: self.index-1,
+                remaining: self.remaining+1,
+            }
+        } else if self.index == 0 {
+            Self {
+                list_own: self.list_own,
+                cur_perm: None,
+                length: self.length,
+                index: self.length,
+                remaining: 0,
+            }
+        } else {
+            Self {
+                list_own: self.list_own,
+                cur_perm: Some(self.list_own.list[self.index-1].self_perm),
+                length: self.length,
+                index: self.index-1,
+                remaining: self.remaining+1,
             }
         }
     }
 }
-
 
 }
