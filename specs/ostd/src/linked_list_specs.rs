@@ -88,7 +88,6 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
     {
         Self {
             list_own: self.list_own,
-            cur_perm: Some(self.list_own.list[self.index+1].self_perm),
             length: self.length-1,
             index: self.index,
             remaining: self.remaining-1,
@@ -102,7 +101,6 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         } else if self.remaining == 0 {
             Self {
                 list_own: self.list_own,
-                cur_perm: self.list_own.front_perm,
                 length: self.length,
                 index: 0,
                 remaining: self.length,
@@ -110,7 +108,6 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         } else if self.remaining == 1 {
             Self {
                 list_own: self.list_own,
-                cur_perm: None,
                 length: self.length,
                 index: self.index+1,
                 remaining: self.remaining-1,
@@ -118,14 +115,13 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         } else {
             Self {
                 list_own: self.list_own,
-                cur_perm: Some(self.list_own.list[self.index+1].self_perm),
                 length: self.length,
                 index: self.index+1,
                 remaining: self.remaining-1,
             }
         }
     }
-
+ 
     #[rustc_allow_incoherent_impl]
     pub open spec fn move_prev_owner_spec(self) -> Self {
         if self.length == 0 {
@@ -133,7 +129,6 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         } else if self.remaining == 0 {
             Self {
                 list_own: self.list_own,
-                cur_perm: Some(self.list_own.list[self.length-1].self_perm),
                 length: self.length,
                 index: self.index-1,
                 remaining: self.remaining+1,
@@ -141,7 +136,6 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         } else if self.index == 0 {
             Self {
                 list_own: self.list_own,
-                cur_perm: None,
                 length: self.length,
                 index: self.length,
                 remaining: 0,
@@ -149,7 +143,6 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         } else {
             Self {
                 list_own: self.list_own,
-                cur_perm: Some(self.list_own.list[self.index-1].self_perm),
                 length: self.length,
                 index: self.index-1,
                 remaining: self.remaining+1,
