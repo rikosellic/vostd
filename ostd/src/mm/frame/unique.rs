@@ -170,15 +170,23 @@ impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
     /// a forgotten frame that was previously casted by [`Self::into_raw`].
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub(crate) unsafe fn from_raw(paddr: Paddr) -> Self {
-        unimplemented!()
-/*        let vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
-        let ptr = vaddr as *const MetaSlot;
+    #[verus_spec(
+        with Tracked(region) : Tracked<MetaRegionOwners>
+    )]
+    pub(crate) /*unsafe*/ fn from_raw(paddr: Paddr) -> (res: Self)
+        requires
+            paddr < MAX_PADDR(),
+            paddr % PAGE_SIZE() == 0,
+        ensures
+            res.model(&UniqueFrameOwner::<Link<M>>::from_raw_owner(region, paddr)) == UniqueFrameModel::from_raw_spec(region@, paddr)
+    {
+        let vaddr = mapping::frame_to_meta(paddr);
+        let ptr = PPtr::<MetaSlot>::from_addr(vaddr);
 
-        Self {
-            ptr,
-            _marker: PhantomData,
-        }*/
+         Self {
+             ptr,
+             _marker: PhantomData,
+        }
     }
 
     #[rustc_allow_incoherent_impl]

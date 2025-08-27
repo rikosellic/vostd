@@ -129,6 +129,24 @@ impl <M: AnyFrameMeta> UniqueFrame<M> {
     }
 }
 
+impl UniqueFrameModel {
+    pub open spec fn from_raw_spec(region: MetaRegionModel, paddr: Paddr) -> Self {
+        Self {
+            slot: region.slots[frame_to_index(paddr)],
+        }
+    }
+}
+
+impl<M: AnyFrameMeta> UniqueFrameOwner<M> {
+    pub closed spec fn from_raw_owner(region: MetaRegionOwners, paddr: Paddr) -> Self;
+
+//    pub open spec fn from_raw_spec(region: MetaRegionOwners, paddr: Paddr) -> Self {
+//        Self {
+//            slot: Tracked(region.slot_owners[frame_to_index(paddr)]),
+//        }
+//    }
+}
+
 impl<M: AnyFrameMeta> AnyFrameMeta for Link<M>
 {
     fn on_drop(&mut self) { }
