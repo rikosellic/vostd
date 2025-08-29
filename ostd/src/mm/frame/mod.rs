@@ -77,8 +77,8 @@ verus! {
 /// frame is a untyped frame. Otherwise, it is a typed frame.
 #[repr(transparent)]
 pub struct Frame<M: AnyFrameMeta> {
-    ptr: PPtr<MetaSlot>,
-    _marker: PhantomData<M>,
+    pub ptr: PPtr<MetaSlot>,
+    pub _marker: PhantomData<M>,
 }
 
 /*
@@ -99,7 +99,7 @@ impl<M: AnyFrameMeta + ?Sized> PartialEq for Frame<M> {
 }
 impl<M: AnyFrameMeta + ?Sized> Eq for Frame<M> {}
 */
-impl<M: AnyFrameMeta> Frame<M> {
+impl<'a, M: AnyFrameMeta> Frame<M> {
     /// Gets a [`Frame`] with a specific usage from a raw, unused page.
     ///
     /// The caller should provide the initial metadata of the page.
@@ -108,23 +108,16 @@ impl<M: AnyFrameMeta> Frame<M> {
     /// an error. If wanting to acquire a frame that is already in use, use
     /// [`Frame::from_in_use`] instead.
     #[verus_spec(
-        with Ghost(region): Ghost<MetaRegion>,
-        Tracked(owner): Tracked<&mut MetaRegionOwners>,
-        Tracked(perm): Tracked<vstd::simple_pptr::PointsTo<MetaSlot>>,
-        Tracked(rc_perm): Tracked<&mut PermissionU64>
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
     pub fn from_unused(paddr: Paddr, metadata: M) -> (res:Result<Self, GetFrameError>)
         requires
-            old(owner).inv(),
+            old(regions).inv(),
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
-            old(owner).slots[frame_to_index(paddr)] == perm,
-            old(owner).slot_owners[frame_to_index(paddr)].ref_count == *old(rc_perm),
         ensures
-//            res.is_ok() ==>
-//            UniqueFrame::<M>::from_unused_spec(paddr, metadata, old(owner).view()).1 == owner.view(),
     {
-        #[verus_spec(with Tracked(owner), Tracked(perm), Tracked(rc_perm))]
+        #[verus_spec(with Tracked(regions))]
         let from_unused = MetaSlot::get_from_unused(paddr, metadata, false);
         Ok(Self {
             ptr: from_unused?,
@@ -132,12 +125,28 @@ impl<M: AnyFrameMeta> Frame<M> {
         })
     }
 
-/*    /// Gets the metadata of this page.
-    pub fn meta(&self) -> &/*M*/ FrameMeta {
+    /// Gets the metadata of this page.
+    #[verus_spec(
+        with Tracked(regions) : Tracked<&'a mut MetaRegionOwners>,
+            Tracked(perm) : Tracked<&'a vstd::simple_pptr::PointsTo<M>>
+    )]
+    #[verifier::external_body]
+    pub fn meta(&self) -> &'a M
+        requires
+            old(regions).slots.contains_key(frame_to_index(self.ptr.addr())),
+            old(regions).slots[frame_to_index(self.ptr.addr())]@.pptr() == self.ptr,
+            old(regions).slots[frame_to_index(self.ptr.addr())]@.mem_contents() is Init,
+    {
         // SAFETY: The type is tracked by the type system.
-        unsafe { &*self.slot().as_meta_ptr/*::<M>*/() }
-    }*/
-}
+        
+        #[verus_spec(with Tracked(regions))]
+        let slot = self.slot();
+
+        #[verus_spec(with Tracked(regions), Ghost(self.ptr.addr()))]
+        let ptr = slot.as_meta_ptr();
+
+        ptr.borrow(Tracked(perm))
+    }
 }
 
 impl<M: AnyFrameMeta> Frame<M> {
@@ -146,20 +155,37 @@ impl<M: AnyFrameMeta> Frame<M> {
     /// If the provided frame is not in use at the moment, it will return an error.
     ///
     /// The returned frame will have an extra reference count to the frame.
+    #[verus_spec(
+        with Tracked(regions) : Tracked<&mut MetaRegionOwners>
+    )]
     pub fn from_in_use(paddr: Paddr) -> Result<Self, GetFrameError> {
+        #[verus_spec(with Tracked(regions))]
+        let from_in_use = MetaSlot::get_from_in_use(paddr);
         Ok(Self {
-            ptr: MetaSlot::get_from_in_use(paddr)?,
+            ptr: from_in_use?,
             _marker: PhantomData,
         })
     }
 }
 
-impl<M: AnyFrameMeta> Frame<M> {
+impl<'a, M: AnyFrameMeta> Frame<M> {
     /// Gets the physical address of the start of the frame.
-    #[verifier::external_body]
-    pub fn start_paddr(&self) -> Paddr {
-        unimplemented!()
-//        self.slot().frame_paddr()
+    #[verus_spec(
+        with Tracked(regions) : Tracked<& MetaRegionOwners>
+    )]
+    pub fn start_paddr(&self) -> Paddr
+        requires
+            FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr()) < FRAME_METADATA_RANGE().end,
+            regions.slots.contains_key(frame_to_index(self.ptr.addr())),
+            regions.slots[frame_to_index(self.ptr.addr())]@.pptr() == self.ptr,
+            regions.slots[frame_to_index(self.ptr.addr())]@.mem_contents() is Init,
+    {
+        #[verus_spec(with Tracked(&regions))]
+        let slot = self.slot();
+        assert(frame_to_index(meta_to_frame(frame_to_meta(self.ptr.addr()))) == frame_to_index(self.ptr.addr())) by { admit() };
+        assert(regions.slots[frame_to_index(meta_to_frame(frame_to_meta(self.ptr.addr())))]@.mem_contents().value() == slot) by { admit() };
+        #[verus_spec(with Tracked(&regions), Ghost(frame_to_meta(self.ptr.addr())))]
+        slot.frame_paddr()
     }
 
     /// Gets the map level of this page.
@@ -212,7 +238,7 @@ impl<M: AnyFrameMeta> Frame<M> {
         unsafe { FrameRef::borrow_paddr(self.start_paddr()) }
     }*/
 
-    /// Forgets the handle to the frame.
+/*    /// Forgets the handle to the frame.
     ///
     /// This will result in the frame being leaked without calling the custom dropper.
     ///
@@ -222,7 +248,7 @@ impl<M: AnyFrameMeta> Frame<M> {
     pub(in crate::mm) fn into_raw(self) -> Paddr {
         let this = ManuallyDrop::new(self);
         this.start_paddr()
-    }
+    }*/
 
     /// Restores a forgotten [`Frame`] from a physical address.
     ///
@@ -236,7 +262,11 @@ impl<M: AnyFrameMeta> Frame<M> {
     ///
     /// Also, the caller ensures that the usage of the frame is correct. There's
     /// no checking of the usage in this function.
-    pub(in crate::mm) unsafe fn from_raw(paddr: Paddr) -> Self {
+    pub(in crate::mm) fn from_raw(paddr: Paddr) -> Self
+        requires
+            paddr % PAGE_SIZE() == 0,
+            paddr < MAX_PADDR(),
+    {
 
         let vaddr = mapping::frame_to_meta(paddr);
         let ptr = PPtr::from_addr(vaddr);
@@ -247,13 +277,24 @@ impl<M: AnyFrameMeta> Frame<M> {
         }
     }
 
-/*    fn slot(&self) -> &MetaSlot {
+    #[verus_spec(
+        with Tracked(regions): Tracked<&'a MetaRegionOwners>
+    )]
+    pub fn slot(&self) -> (slot: &'a MetaSlot)
+        requires
+            regions.slots.contains_key(frame_to_index(self.ptr.addr())),
+            regions.slots[frame_to_index(self.ptr.addr())]@.pptr() == self.ptr,
+            regions.slots[frame_to_index(self.ptr.addr())]@.mem_contents() is Init,
+        ensures
+            slot == regions.slots[frame_to_index(self.ptr.addr())]@.mem_contents().value(),
+    {
         // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
         // mutably borrowed, so taking an immutable reference to it is safe.
-        unsafe { &*self.ptr }
-    }*/
+        let tracked perm = regions.slots.tracked_borrow(frame_to_index(self.ptr.addr()));
+        self.ptr.borrow(Tracked(perm.borrow()))
+    }
 }
-
+}
 /*
 impl<M: AnyFrameMeta + ?Sized> Clone for Frame<M> {
     fn clone(&self) -> Self {

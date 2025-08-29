@@ -27,19 +27,16 @@ impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
     /// The caller should provide the initial metadata of the page.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner): Tracked<&mut MetaRegionOwners>,
-        Tracked(perm): Tracked<PointsTo<MetaSlot>>,
-        Tracked(rc_perm): Tracked<&mut PermissionU64>
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
     pub fn from_unused(paddr: Paddr, metadata: M) -> Result<Self, GetFrameError>
         requires
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
-            old(owner).slots.contains_key(frame_to_meta(paddr)),
-            old(owner).inv(),
-            old(owner).slots[frame_to_meta(paddr)] == perm,
+            old(regions).slots.contains_key(frame_to_meta(paddr)),
+            old(regions).inv(),
     {
-        #[verus_spec(with Tracked(owner), Tracked(perm), Tracked(rc_perm))]
+        #[verus_spec(with Tracked(regions))]
         let from_unused = MetaSlot::get_from_unused(paddr, metadata, true);
         Ok(Self {
             ptr: from_unused?,
@@ -88,10 +85,14 @@ impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
 impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
     /// Gets the physical address of the start of the frame.
     #[rustc_allow_incoherent_impl]
+    #[verus_spec(
+        with Tracked(regions) : Tracked<& MetaRegionOwners>
+    )]
     #[verifier::external_body]
     pub fn start_paddr(&self) -> Paddr {
-        unimplemented!()
-//        self.slot().frame_paddr()
+//        #[verus_spec(with Tracked(&regions))]
+        let slot = self.slot();
+        slot.frame_paddr()
     }
 
     /// Gets the paging level of this page.
@@ -112,7 +113,7 @@ impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
         PAGE_SIZE()
     }
 
-    /// Gets the dynamically-typed metadata of this frame.
+/*    /// Gets the dynamically-typed metadata of this frame.
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
     #[rustc_allow_incoherent_impl]
@@ -121,7 +122,7 @@ impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
         // SAFETY: The metadata is initialized and valid.
         unsafe { &*self.slot().dyn_meta_ptr::<M>() }
     }
-/*
+
     /// Gets the dynamically-typed metadata of this frame.
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
@@ -173,7 +174,7 @@ impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
     #[verus_spec(
         with Tracked(region) : Tracked<MetaRegionOwners>
     )]
-    pub(crate) /*unsafe*/ fn from_raw(paddr: Paddr) -> (res: Self)
+    pub(crate) fn from_raw(paddr: Paddr) -> (res: Self)
         requires
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,

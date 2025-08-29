@@ -96,7 +96,7 @@ impl MetaSlot {
             slots: pre.slots.insert(
                 idx, MetaSlotModel {
                     status,
-                    storage: cell::MemContents::Init(metadata.write_as()),
+                    storage: cell::MemContents::Init(metadata.write_as_spec()),
                     ref_count: rc,
                     vtable_ptr: simple_pptr::MemContents::Init(metadata.vtable_ptr()),
                     in_list: 0,
@@ -234,7 +234,7 @@ impl MetaSlot {
         }
     }
 
-    pub open spec fn frame_paddr(&self, pre: MetaSlotModel) -> Paddr {
+    pub open spec fn frame_paddr_spec(&self, pre: MetaSlotModel) -> Paddr {
         mapping::meta_to_frame_spec(pre.self_addr)
     }
 }
