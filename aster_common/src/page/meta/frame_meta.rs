@@ -21,9 +21,13 @@ pub trait AnyFrameMeta {
 
     spec fn vtable_ptr(&self) -> usize;
 
-    spec fn cast_to(x: &MetaSlotStorage) -> PPtr<Self> where Self: std::marker::Sized;
+    spec fn cast_to_spec(x: &MetaSlotStorage) -> PPtr<Self> where Self: std::marker::Sized;
 
-    spec fn write_as(&self) -> MetaSlotStorage;
+    exec fn cast_to(x: &MetaSlotStorage) -> PPtr<Self> where Self: std::marker::Sized;
+
+    spec fn write_as_spec(&self) -> MetaSlotStorage;
+
+    exec fn write_as(&self) -> MetaSlotStorage;
 }
 
 #[rustc_has_incoherent_inherent_impls]
@@ -111,7 +115,7 @@ impl <M: AnyFrameMeta> UniqueFrame<M> {
         recommends
             pre.inv(),
     {
-        M::cast_to(&pre.slot.storage.value())
+        M::cast_to_spec(&pre.slot.storage.value())
     }
 
     pub open spec fn replace_spec(&self, metadata: M, pre: UniqueFrameModel)
@@ -119,7 +123,7 @@ impl <M: AnyFrameMeta> UniqueFrame<M> {
         recommends
             pre.inv(),
     {
-        let storage = MemContents::Init(metadata.write_as());
+        let storage = MemContents::Init(metadata.write_as_spec());
         UniqueFrameModel {
             slot: MetaSlotModel {
                 storage,
@@ -155,9 +159,19 @@ impl<M: AnyFrameMeta> AnyFrameMeta for Link<M>
 
     spec fn vtable_ptr(&self) -> usize;
 
-    spec fn cast_to(x: &MetaSlotStorage) -> PPtr<Self>;
+    spec fn cast_to_spec(x: &MetaSlotStorage) -> PPtr<Self>;
 
-    spec fn write_as(&self) -> MetaSlotStorage;
+    #[verifier::external_body]
+    fn cast_to(x: &MetaSlotStorage) -> PPtr<Self> {
+        unimplemented!()
+    }
+
+    spec fn write_as_spec(&self) -> MetaSlotStorage;
+
+    #[verifier::external_body]
+    fn write_as(&self) -> MetaSlotStorage {
+        unimplemented!()
+    }
 }
 
 }

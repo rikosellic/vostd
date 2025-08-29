@@ -24,31 +24,53 @@ macro_rules! borrow_field {
 
 #[macro_export]
 macro_rules! update_field {
-    ($ptr:expr => $field:tt <- $val:expr,
-     $perm:expr) => {
+    ($ptr:expr => $field:tt <- $val:expr;
+     $set:expr , $idx:expr) => {
         ::builtin_macros::verus_exec_expr!(
         {
-            let mut __tmp = $ptr.take(Tracked($perm));
+            let tracked mut __own = $set.tracked_remove($idx);
+            let mut __tmp = $ptr.take(Tracked(__own.self_perm.borrow_mut()));
             __tmp.$field = $val;
-            $ptr.put(Tracked($perm), __tmp);
+            $ptr.put(Tracked(__own.self_perm.borrow_mut()), __tmp);
+            proof { $set.tracked_insert($idx, __own); }
         })
     };
-    ($ptr:expr => $field:tt += $val:expr,
+    ($ptr:expr => $field:tt <- $val:expr;
+     $set:expr , $idx:expr , $perm:tt) => {
+        ::builtin_macros::verus_exec_expr!(
+        {
+            let tracked mut __own = $set.tracked_remove($idx);
+            let mut __tmp = $ptr.take(Tracked(__own.$perm.borrow_mut()));
+            __tmp.$field = $val;
+            $ptr.put(Tracked(__own.$perm.borrow_mut()), __tmp);
+            proof { $set.tracked_insert($idx, __own); }
+        })
+    };
+    ($ptr:expr => $field:tt <- $val:expr;
      $perm:expr) => {
         ::builtin_macros::verus_exec_expr!(
         {
-            let mut __tmp = $ptr.take(Tracked($perm));
+            let mut __tmp = $ptr.take(Tracked($perm.borrow_mut()));
+            __tmp.$field = $val;
+            $ptr.put(Tracked($perm.borrow_mut()), __tmp);
+        })
+    };
+    ($ptr:expr => $field:tt += $val:expr;
+     $perm:expr) => {
+        ::builtin_macros::verus_exec_expr!(
+        {
+            let mut __tmp = $ptr.take(Tracked($perm.borrow_mut()));
             __tmp.$field = __tmp.$field + $val;
-            $ptr.put(Tracked($perm), __tmp);
+            $ptr.put(Tracked($perm.borrow_mut()), __tmp);
         })
     };
-    ($ptr:expr => $field:tt -= $val:expr,
+    ($ptr:expr => $field:tt -= $val:expr;
      $perm:expr) => {
         ::builtin_macros::verus_exec_expr!(
         {
-            let mut __tmp = $ptr.take(Tracked($perm));
+            let mut __tmp = $ptr.take(Tracked($perm.borrow_mut()));
             __tmp.$field = __tmp.$field - $val;
-            $ptr.put(Tracked($perm), __tmp);
+            $ptr.put(Tracked($perm.borrow_mut()), __tmp);
         })
     }
 }

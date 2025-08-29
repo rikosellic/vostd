@@ -32,7 +32,9 @@ pub tracked struct LinkOwner<M: AnyFrameMeta> {
 }
 
 impl<M: AnyFrameMeta> Inv for LinkOwner<M> {
-    open spec fn inv(&self) -> bool { true }
+    open spec fn inv(&self) -> bool {
+        self.self_perm@.mem_contents() is Init
+    }
 }
 
 impl<M: AnyFrameMeta> InvView for LinkOwner<M> {
@@ -94,25 +96,15 @@ pub tracked struct LinkedListOwner<M: AnyFrameMeta> {
     pub list: Seq<LinkOwner<M>>,
     pub list_id: u64,
 
-    pub front_perm: Option<Tracked<PointsTo<Link<M>>>>,
-    pub back_perm: Option<Tracked<PointsTo<Link<M>>>>,
     pub self_perm: Tracked<PointsTo<LinkedList<M>>>,
 }
 
 impl<M: AnyFrameMeta> Inv for LinkedListOwner<M> {
     open spec fn inv(&self) -> bool
     {
-        &&& self.front_perm.is_some() ==>
-                self.list.len() > 0 &&
-                self.front_perm.unwrap() == self.list[0].self_perm
-        &&& self.back_perm.is_some() ==>
-                self.list.len() > 0 &&
-                self.back_perm.unwrap() == self.list[self.list.len() - 1].self_perm
-        &&& self.front_perm.is_none() ==> self.list.len() == 0
-        &&& self.back_perm.is_none() ==> self.list.len() == 0
-        &&& forall |i:int|
-                0 <= i < self.list.len() ==>
-                Self::inv_at(self.list, i, self.list_id)
+        forall |i:int|
+            0 <= i < self.list.len() ==>
+            Self::inv_at(self.list, i, self.list_id)
     }
 }
 
@@ -131,7 +123,7 @@ impl<M: AnyFrameMeta> LinkedListOwner<M> {
             owners[i].next.unwrap().wf(&owners[i+1]) &&
             owners[i+1].self_perm@.pptr() == owners[i].next_ptr.unwrap() &&
             owners[i+1].self_perm@.mem_contents().value() == owners[i].next.unwrap()
-        &&& owners[i].self_perm@.is_init()
+        &&& owners[i].inv()
         &&& owners[i].self_perm@.mem_contents().value().wf(&owners[i])
         &&& owners[i].slot@.in_list == id
     }
@@ -174,16 +166,15 @@ impl<M: AnyFrameMeta> OwnerOf for LinkedList<M> {
     type Owner = LinkedListOwner<M>;
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool {
-        &&& self.front is None <==> owner.front_perm is None
-        &&& self.back is None <==> owner.back_perm is None
-        &&& self.front is Some ==>
-                owner.front_perm is Some &&
-                owner.front_perm.unwrap()@.mem_contents() is Init &&
-                owner.front_perm.unwrap()@.pptr() == self.front.unwrap()
-        &&& self.back is Some ==>
-                owner.back_perm is Some &&
-                owner.back_perm.unwrap()@.mem_contents() is Init &&
-                owner.back_perm.unwrap()@.pptr() == self.back.unwrap()
+        &&& self.front is None <==> owner.list.len() == 0
+        &&& self.back is None <==> owner.list.len() == 0
+        &&& owner.list.len() > 0 ==>
+            self.front is Some &&
+//            owner.list[0].self_perm@.mem_contents() is Init &&
+            owner.list[0].self_perm@.pptr() == self.front.unwrap() &&
+            self.back is Some &&
+//            owner.list[owner.list.len()-1].self_perm@.mem_contents() is Init &&
+            owner.list[owner.list.len()-1].self_perm@.pptr() == self.back.unwrap()
         &&& self.size == owner.list.len()
         &&& self.list_id == owner.list_id
     }
