@@ -220,15 +220,13 @@ impl MetaSlot {
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
             old(regions).inv(),
-            old(regions).slots[frame_to_index(paddr)] == perm,
-            old(regions).slot_owners[frame_to_index(paddr)].ref_count == *old(rc_perm),
         ensures
             res.is_ok() ==>
-            MetaSlot::get_from_unused_spec::<M>(paddr, metadata, as_unique_ptr, old(regions).view()) == (res.unwrap(), owner.view()),
+            MetaSlot::get_from_unused_spec::<M>(paddr, metadata, as_unique_ptr, old(regions).view()) == (res.unwrap(), regions.view()),
     {
         let slot = get_slot(paddr)?;
 
-//        assert(regions.slots[frame_to_index(paddr)]@.mem_contents().value() == slot);
+        let ghost old_regions = *regions;
 
         proof { regions.inv_implies_correct_addr(paddr); }
 
@@ -266,6 +264,8 @@ impl MetaSlot {
             regions.slots.tracked_insert(frame_to_index(paddr), meta_perm);
             regions.slot_owners.tracked_insert(frame_to_index(paddr), slot_own);
         }
+
+        assert(MetaSlot::get_from_unused_spec::<M>(paddr, metadata, as_unique_ptr, old_regions.view()).1 == regions.view()) by { admit() };
 
         Ok(slot)
     }

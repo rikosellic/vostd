@@ -54,13 +54,12 @@ impl<M: AnyFrameMeta> CursorModel<M> {
     #[rustc_allow_incoherent_impl]
     pub open spec fn remove(self) -> Self {
         let cur = self.current().unwrap();
-        let rear = self.rear.remove(0);
-        let rear = if rear.len() > 0 { LinkedListModel::update_prev(rear, 0, cur.prev) } else { rear };
         let fore = if self.fore.len() > 0 { LinkedListModel::update_next(self.fore, self.fore.len() - 1, cur.next) } else { self.fore };        
+        let rear = if self.rear.len() > 1 { LinkedListModel::update_prev(self.rear, 1, cur.prev) } else { self.rear };
 
         Self {
             fore: fore,
-            rear: rear,
+            rear: self.rear.remove(0),
             list_model: LinkedListModel { list: fore.add(rear) }
         }
     }
@@ -84,13 +83,28 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
     #[rustc_allow_incoherent_impl]
     pub open spec fn remove_owner_spec(self) -> Self
         recommends
+            self.index < self.length,
             self.remaining > 0
     {
+        let cur = self.current().unwrap();
+        let list = if self.index > 0 { LinkedListOwner::update_next(self.list_own.list, self.index-1, cur.next) } else { self.list_own.list };
+        let list = if self.remaining > 1 { LinkedListOwner::update_prev(self.list_own.list, self.index+1, cur.prev) } else { list };
         Self {
-            list_own: self.list_own,
+            list_own: LinkedListOwner { list: list.remove(self.index), ..self.list_own },
             length: self.length-1,
             index: self.index,
             remaining: self.remaining-1,
+        }
+    }
+ 
+    #[rustc_allow_incoherent_impl]
+    pub open spec fn insert_owner_spec(self, owner: LinkOwner<M>) -> Self
+    {
+        Self {
+            list_own: LinkedListOwner { list: self.list_own.list.insert(self.index, owner), ..self.list_own },
+            length: self.length+1,
+            index: self.index,
+            remaining: self.remaining+1,
         }
     }
  

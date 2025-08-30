@@ -7,6 +7,7 @@ use vstd::simple_pptr::*;
 use vstd::atomic::PermissionU64;
 
 use aster_common::prelude::*;
+use aster_common::prelude::frame_list_model::*;
 
 use vstd_extra::ownership::*;
 
@@ -178,7 +179,8 @@ impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
         ensures
-            res.model(&UniqueFrameOwner::<Link<M>>::from_raw_owner(region, paddr)) == UniqueFrameModel::from_raw_spec(region@, paddr)
+            res.wf(&UniqueFrameLinkOwner::<M>::from_raw_owner(region, paddr)),
+            UniqueFrameLinkOwner::<M>::from_raw_owner(region, paddr).frame_own@ == UniqueFrameModel::from_raw_spec(region@, paddr)
     {
         let vaddr = mapping::frame_to_meta(paddr);
         let ptr = PPtr::<MetaSlot>::from_addr(vaddr);
