@@ -100,7 +100,6 @@ impl<M: AnyFrameMeta> UniqueFrameLinkOwner<M> {
 
 pub ghost struct LinkedListModel<M: AnyFrameMeta> {
     pub list: Seq<LinkModel<M>>,
-//    pub links: Map<Paddr, LinkModel>,
 }
 
 impl<M: AnyFrameMeta> LinkedListModel<M> {
@@ -218,10 +217,8 @@ impl<M: AnyFrameMeta> OwnerOf for LinkedList<M> {
         &&& self.back is None <==> owner.list.len() == 0
         &&& owner.list.len() > 0 ==>
             self.front is Some &&
-//            owner.list[0].self_perm@.mem_contents() is Init &&
             owner.list[0].self_perm@.pptr() == self.front.unwrap() &&
             self.back is Some &&
-//            owner.list[owner.list.len()-1].self_perm@.mem_contents() is Init &&
             owner.list[owner.list.len()-1].self_perm@.pptr() == self.back.unwrap()
         &&& self.size == owner.list.len()
         &&& self.list_id == owner.list_id
@@ -334,14 +331,72 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         }
     }
 
-    #[verifier::returns(proof)]
-    #[verifier::external_body]
-    pub proof fn front_owner(list_own: LinkedListOwner<M>) -> Self {
+    pub open spec fn front_owner_spec(list_own: LinkedListOwner<M>) -> Self {
         CursorOwner::<M> {
             list_own: list_own,
             length: list_own.list.len() as int,
             index: 0,
             remaining: list_own.list.len() as int,
+        }
+    }
+
+    #[verifier::returns(proof)]
+    #[verifier::external_body]
+    pub proof fn front_owner(list_own: LinkedListOwner<M>) -> (res:Self)
+        ensures
+            res == Self::front_owner_spec(list_own)
+    {
+        CursorOwner::<M> {
+            list_own: list_own,
+            length: list_own.list.len() as int,
+            index: 0,
+            remaining: list_own.list.len() as int,
+        }
+    }
+
+    pub open spec fn back_owner_spec(list_own: LinkedListOwner<M>) -> Self {
+        CursorOwner::<M> {
+            list_own: list_own,
+            length: list_own.list.len() as int,
+            index: list_own.list.len() as int - 1,
+            remaining: 1,
+        }
+    }
+
+    #[verifier::returns(proof)]
+    #[verifier::external_body]
+    pub proof fn back_owner(list_own: LinkedListOwner<M>) -> (res:Self)
+        ensures
+            res == Self::back_owner_spec(list_own)
+    {
+        CursorOwner::<M> {
+            list_own: list_own,
+            length: list_own.list.len() as int,
+            index: list_own.list.len() as int - 1,
+            remaining: 1,
+        }
+    }
+
+    pub open spec fn ghost_owner_spec(list_own: LinkedListOwner<M>) -> Self {
+        CursorOwner::<M> {
+            list_own: list_own,
+            length: list_own.list.len() as int,
+            index: list_own.list.len() as int,
+            remaining: 0,
+        }
+    }
+
+    #[verifier::returns(proof)]
+    #[verifier::external_body]
+    pub proof fn ghost_owner(list_own: LinkedListOwner<M>) -> (res:Self)
+        ensures
+            res == Self::ghost_owner_spec(list_own)
+    {
+        CursorOwner::<M> {
+            list_own: list_own,
+            length: list_own.list.len() as int,
+            index: list_own.list.len() as int,
+            remaining: 0,
         }
     }
 

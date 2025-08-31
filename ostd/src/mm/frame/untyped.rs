@@ -23,7 +23,7 @@ use crate::{
 /// If a structure `M` implements [`AnyUFrameMeta`], it can be used as the
 /// metadata of a type of untyped frames [`Frame<M>`]. All frames of such type
 /// will be accessible as untyped memory.
-//pub trait AnyUFrameMeta: AnyFrameMeta {}
+pub trait AnyUFrameMeta: AnyFrameMeta {}
 
 /// A smart pointer to an untyped frame with any metadata.
 ///

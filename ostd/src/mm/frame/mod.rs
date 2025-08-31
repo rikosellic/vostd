@@ -212,7 +212,6 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         unsafe { &*self.slot().dyn_meta_ptr() }
     }*/
 
-    #[verifier::external_body]
     /// Gets the reference count of the frame.
     ///
     /// It returns the number of all references to the frame, including all the
@@ -224,11 +223,26 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     /// The function is safe to call, but using it requires extra care. The
     /// reference count can be changed by other threads at any time including
     /// potentially between calling this method and acting on the result.
-    pub fn reference_count(&self) -> u64 {
-        unimplemented!()
-/*        let refcnt = self.slot().ref_count.load(Ordering::Relaxed);
-//        debug_assert!(refcnt < meta::REF_COUNT_MAX);
-        refcnt*/
+    #[verus_spec(
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>
+    )]
+    pub fn reference_count(&self) -> u64
+        requires
+            old(regions).slots.contains_key(frame_to_index(self.ptr.addr())),
+            old(regions).slots[frame_to_index(self.ptr.addr())]@.pptr() == self.ptr,
+            old(regions).slots[frame_to_index(self.ptr.addr())]@.is_init(),
+            old(regions).slot_owners.contains_key(frame_to_index(self.ptr.addr())),
+            old(regions).slot_owners[frame_to_index(self.ptr.addr())].ref_count@.is_for(
+                old(regions).slots[frame_to_index(self.ptr.addr())]@.mem_contents().value().ref_count),
+    {
+        let tracked slot_own = regions.slot_owners.tracked_remove(frame_to_index(self.ptr.addr()));
+
+        #[verus_spec(with Tracked(regions))]
+        let slot = self.slot();
+        let refcnt = slot.ref_count.load(Tracked(slot_own.ref_count.borrow()));
+        proof{ regions.slot_owners.tracked_insert(frame_to_index(self.ptr.addr()), slot_own); }
+
+        refcnt
     }
     
 
@@ -238,17 +252,34 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         unsafe { FrameRef::borrow_paddr(self.start_paddr()) }
     }*/
 
-/*    /// Forgets the handle to the frame.
+    /// Forgets the handle to the frame.
     ///
     /// This will result in the frame being leaked without calling the custom dropper.
     ///
     /// A physical address to the frame is returned in case the frame needs to be
     /// restored using [`Frame::from_raw`] later. This is useful when some architectural
     /// data structures need to hold the frame handle such as the page table.
-    pub(in crate::mm) fn into_raw(self) -> Paddr {
-        let this = ManuallyDrop::new(self);
-        this.start_paddr()
-    }*/
+    #[verus_spec(
+        with Tracked(regions) : Tracked<&mut MetaRegionOwners>
+    )]
+    pub(in crate::mm) fn into_raw(self) -> Paddr
+        requires
+            FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr()) < FRAME_METADATA_RANGE().end,
+            old(regions).slots.contains_key(frame_to_index(meta_to_frame(self.ptr.addr()))),
+            !old(regions).dropped_slots.contains_key(frame_to_index(meta_to_frame(self.ptr.addr()))),
+    {
+        // TODO: implement ManuallyDrop
+        // let this = ManuallyDrop::new(self);
+        #[verus_spec(with Tracked(regions))]
+        let paddr = self.start_paddr();
+
+        assert(paddr == meta_to_frame(self.ptr.addr())) by { admit() };
+
+        let tracked perm = regions.slots.tracked_remove(frame_to_index(paddr));
+        proof { regions.dropped_slots.tracked_insert(frame_to_index(paddr), perm); }
+
+        paddr
+    }
 
     /// Restores a forgotten [`Frame`] from a physical address.
     ///
@@ -262,14 +293,22 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     ///
     /// Also, the caller ensures that the usage of the frame is correct. There's
     /// no checking of the usage in this function.
+    #[verus_spec(
+        with Tracked(regions) : Tracked<&mut MetaRegionOwners>
+    )]
     pub(in crate::mm) fn from_raw(paddr: Paddr) -> Self
         requires
             paddr % PAGE_SIZE() == 0,
             paddr < MAX_PADDR(),
+            !old(regions).slots.contains_key(frame_to_index(paddr)),
+            old(regions).dropped_slots.contains_key(frame_to_index(paddr)),
     {
 
         let vaddr = mapping::frame_to_meta(paddr);
         let ptr = PPtr::from_addr(vaddr);
+
+        let tracked perm = regions.dropped_slots.tracked_remove(frame_to_index(paddr));
+        proof { regions.slots.tracked_insert(frame_to_index(paddr), perm); }
 
         Self {
             ptr,
