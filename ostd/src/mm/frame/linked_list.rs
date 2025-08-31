@@ -118,7 +118,7 @@ impl<M: AnyFrameMeta> LinkedList<M>
             Tracked(in_list_perm): Tracked<&mut PermissionU64>,
             Tracked(frame_own): Tracked<UniqueFrameLinkOwner<M>>
     )]
-    pub fn pop_front(ptr: PPtr<Self>) -> Option<UniqueFrame<Link<M>>>
+    pub fn pop_front(ptr: PPtr<Self>) -> Option<(UniqueFrame<Link<M>>, Tracked<UniqueFrameLinkOwner<M>>)>
         requires
             old(owner).self_perm@.pptr() == ptr,
             old(owner).self_perm@.mem_contents() is Init,
@@ -174,7 +174,7 @@ impl<M: AnyFrameMeta> LinkedList<M>
             Tracked(in_list_perm): Tracked<&mut PermissionU64>,
             Tracked(frame_own): Tracked<UniqueFrameLinkOwner<M>>
     )]
-    pub fn pop_back(ptr: PPtr<Self>) -> Option<UniqueFrame<Link<M>>>
+    pub fn pop_back(ptr: PPtr<Self>) -> Option<(UniqueFrame<Link<M>>, Tracked<UniqueFrameLinkOwner<M>>)>
         requires
             old(owner).self_perm@.pptr() == ptr,
             old(owner).self_perm@.mem_contents() is Init,

@@ -267,13 +267,12 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr()) < FRAME_METADATA_RANGE().end,
             old(regions).slots.contains_key(frame_to_index(meta_to_frame(self.ptr.addr()))),
             !old(regions).dropped_slots.contains_key(frame_to_index(meta_to_frame(self.ptr.addr()))),
+            old(regions).inv(),
     {
         // TODO: implement ManuallyDrop
         // let this = ManuallyDrop::new(self);
         #[verus_spec(with Tracked(regions))]
         let paddr = self.start_paddr();
-
-        assert(paddr == meta_to_frame(self.ptr.addr())) by { admit() };
 
         let tracked perm = regions.slots.tracked_remove(frame_to_index(paddr));
         proof { regions.dropped_slots.tracked_insert(frame_to_index(paddr), perm); }
@@ -296,15 +295,24 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     #[verus_spec(
         with Tracked(regions) : Tracked<&mut MetaRegionOwners>
     )]
-    pub(in crate::mm) fn from_raw(paddr: Paddr) -> Self
+    pub(in crate::mm) fn from_raw(paddr: Paddr) -> (res:Self)
         requires
             paddr % PAGE_SIZE() == 0,
             paddr < MAX_PADDR(),
             !old(regions).slots.contains_key(frame_to_index(paddr)),
             old(regions).dropped_slots.contains_key(frame_to_index(paddr)),
+            old(regions).inv(),
+        ensures
+            regions.slots.contains_key(frame_to_index(paddr)),
+            !regions.dropped_slots.contains_key(frame_to_index(paddr)),
+            regions.slots[frame_to_index(paddr)] == old(regions).dropped_slots[frame_to_index(paddr)],
+            forall |i:usize| i != frame_to_index(paddr) ==> regions.slots[i] == old(regions).slots[i],
+            forall |i:usize| i != frame_to_index(paddr) ==> regions.dropped_slots[i] == old(regions).dropped_slots[i],
+            regions.slot_owners == old(regions).slot_owners,
+            res.ptr == regions.slots[frame_to_index(paddr)]@.pptr()
     {
 
-        let vaddr = mapping::frame_to_meta(paddr);
+        let vaddr = frame_to_meta(paddr);
         let ptr = PPtr::from_addr(vaddr);
 
         let tracked perm = regions.dropped_slots.tracked_remove(frame_to_index(paddr));
