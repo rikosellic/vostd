@@ -267,13 +267,12 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr()) < FRAME_METADATA_RANGE().end,
             old(regions).slots.contains_key(frame_to_index(meta_to_frame(self.ptr.addr()))),
             !old(regions).dropped_slots.contains_key(frame_to_index(meta_to_frame(self.ptr.addr()))),
+            old(regions).inv()
     {
         // TODO: implement ManuallyDrop
         // let this = ManuallyDrop::new(self);
         #[verus_spec(with Tracked(regions))]
         let paddr = self.start_paddr();
-
-        assert(paddr == meta_to_frame(self.ptr.addr())) by { admit() };
 
         let tracked perm = regions.slots.tracked_remove(frame_to_index(paddr));
         proof { regions.dropped_slots.tracked_insert(frame_to_index(paddr), perm); }
