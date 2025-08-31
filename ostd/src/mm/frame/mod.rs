@@ -179,11 +179,11 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             regions.slots.contains_key(frame_to_index(self.ptr.addr())),
             regions.slots[frame_to_index(self.ptr.addr())]@.pptr() == self.ptr,
             regions.slots[frame_to_index(self.ptr.addr())]@.mem_contents() is Init,
+            regions.inv()
     {
         #[verus_spec(with Tracked(&regions))]
         let slot = self.slot();
-        assert(frame_to_index(meta_to_frame(frame_to_meta(self.ptr.addr()))) == frame_to_index(self.ptr.addr())) by { admit() };
-        assert(regions.slots[frame_to_index(meta_to_frame(frame_to_meta(self.ptr.addr())))]@.mem_contents().value() == slot) by { admit() };
+
         #[verus_spec(with Tracked(&regions), Ghost(frame_to_meta(self.ptr.addr())))]
         slot.frame_paddr()
     }
@@ -226,14 +226,19 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     #[verus_spec(
         with Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
-    pub fn reference_count(&self) -> u64
+    pub fn reference_count(&self) -> (cnt: u64)
         requires
             old(regions).slots.contains_key(frame_to_index(self.ptr.addr())),
             old(regions).slots[frame_to_index(self.ptr.addr())]@.pptr() == self.ptr,
             old(regions).slots[frame_to_index(self.ptr.addr())]@.is_init(),
             old(regions).slot_owners.contains_key(frame_to_index(self.ptr.addr())),
             old(regions).slot_owners[frame_to_index(self.ptr.addr())].ref_count@.is_for(
-                old(regions).slots[frame_to_index(self.ptr.addr())]@.mem_contents().value().ref_count),
+            old(regions).slots[frame_to_index(self.ptr.addr())]@.mem_contents().value().ref_count),
+        ensures
+            cnt == old(regions).slot_owners[frame_to_index(self.ptr.addr())]@.ref_count,
+            regions.slot_owners == old(regions).slot_owners,
+            regions.dropped_slots == old(regions).dropped_slots,
+            forall |i:usize| i != frame_to_index(self.ptr.addr()) ==> regions.slots[i] == old(regions).slots[i]
     {
         let tracked slot_own = regions.slot_owners.tracked_remove(frame_to_index(self.ptr.addr()));
 
@@ -262,12 +267,17 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     #[verus_spec(
         with Tracked(regions) : Tracked<&mut MetaRegionOwners>
     )]
-    pub(in crate::mm) fn into_raw(self) -> Paddr
+    pub(in crate::mm) fn into_raw(self) -> (res:Paddr)
         requires
             FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr()) < FRAME_METADATA_RANGE().end,
             old(regions).slots.contains_key(frame_to_index(meta_to_frame(self.ptr.addr()))),
             !old(regions).dropped_slots.contains_key(frame_to_index(meta_to_frame(self.ptr.addr()))),
             old(regions).inv(),
+        ensures
+            res == meta_to_frame(self.ptr.addr()),
+            regions.slot_owners == old(regions).slot_owners,
+            regions.dropped_slots == old(regions).dropped_slots,
+            forall |i:usize| i != frame_to_index(self.ptr.addr()) ==> regions.slots[i] == old(regions).slots[i]
     {
         // TODO: implement ManuallyDrop
         // let this = ManuallyDrop::new(self);

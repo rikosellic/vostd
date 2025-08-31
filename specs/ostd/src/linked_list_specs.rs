@@ -91,6 +91,7 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         let list = if self.remaining > 1 { LinkedListOwner::update_prev(self.list_own.list, self.index+1, cur.prev) } else { list };
         Self {
             list_own: LinkedListOwner { list: list.remove(self.index), ..self.list_own },
+            list_perm: self.list_perm,
             length: self.length-1,
             index: self.index,
             remaining: self.remaining-1,
@@ -102,6 +103,7 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
     {
         Self {
             list_own: LinkedListOwner { list: self.list_own.list.insert(self.index, owner), ..self.list_own },
+            list_perm: self.list_perm,
             length: self.length+1,
             index: self.index,
             remaining: self.remaining+1,
@@ -115,6 +117,7 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         } else if self.remaining == 0 {
             Self {
                 list_own: self.list_own,
+                list_perm: self.list_perm,
                 length: self.length,
                 index: 0,
                 remaining: self.length,
@@ -122,6 +125,7 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         } else if self.remaining == 1 {
             Self {
                 list_own: self.list_own,
+                list_perm: self.list_perm,
                 length: self.length,
                 index: self.index+1,
                 remaining: self.remaining-1,
@@ -129,6 +133,7 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         } else {
             Self {
                 list_own: self.list_own,
+                list_perm: self.list_perm,
                 length: self.length,
                 index: self.index+1,
                 remaining: self.remaining-1,
@@ -143,6 +148,7 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         } else if self.remaining == 0 {
             Self {
                 list_own: self.list_own,
+                list_perm: self.list_perm,
                 length: self.length,
                 index: self.index-1,
                 remaining: self.remaining+1,
@@ -150,6 +156,7 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         } else if self.index == 0 {
             Self {
                 list_own: self.list_own,
+                list_perm: self.list_perm,
                 length: self.length,
                 index: self.length,
                 remaining: 0,
@@ -157,6 +164,7 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         } else {
             Self {
                 list_own: self.list_own,
+                list_perm: self.list_perm,
                 length: self.length,
                 index: self.index-1,
                 remaining: self.remaining+1,
