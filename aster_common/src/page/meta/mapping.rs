@@ -31,7 +31,7 @@ pub open spec fn meta_addr(i: usize) -> (res: usize)
         0 <= i < max_meta_slots() as usize,
 {
     (FRAME_METADATA_RANGE().start + i * META_SLOT_SIZE()) as usize
-}
+}    
 
 #[allow(non_snake_case)]
 pub broadcast proof fn lemma_FRAME_METADATA_RANGE_is_page_aligned()

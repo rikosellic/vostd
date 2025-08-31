@@ -38,11 +38,12 @@ pub struct UniqueFrame<M: AnyFrameMeta> {
 
 pub tracked struct UniqueFrameOwner<M: AnyFrameMeta> {
     pub slot: Tracked<MetaSlotOwner>,
-    pub perm: Tracked<PointsTo<M>>,
+    pub data: M,
 }
 
 pub ghost struct UniqueFrameModel {
     pub slot: MetaSlotModel,
+//    pub data: M,
 }
 
 impl<M: AnyFrameMeta> Inv for UniqueFrameOwner<M> {
@@ -51,6 +52,7 @@ impl<M: AnyFrameMeta> Inv for UniqueFrameOwner<M> {
     &&& self.slot@.ref_count@.value() == REF_COUNT_UNIQUE
     &&& self.slot@.vtable_ptr@.is_init()
     &&& self.slot@.storage@.is_init()
+    &&& self.slot@.storage@.value() == self.data.write_as_spec()
     }
 }
 
@@ -75,16 +77,6 @@ impl<M: AnyFrameMeta> InvView for UniqueFrameOwner<M> {
 
     proof fn view_preserves_inv(&self) { }
 }
-
-impl <M: AnyFrameMeta> OwnerOf for UniqueFrame<M> {
-    type Owner = UniqueFrameOwner<M>;
-
-    open spec fn wf(&self, owner: &Self::Owner) -> bool {
-    &&& self.ptr == owner.slot@.self_ptr@.pptr()
-    }
-}
-
-impl <M: AnyFrameMeta> ModelOf for UniqueFrame<M> { }
 
 impl <M: AnyFrameMeta> UniqueFrame<M> {
 
@@ -143,12 +135,6 @@ impl UniqueFrameModel {
 
 impl<M: AnyFrameMeta> UniqueFrameOwner<M> {
     pub closed spec fn from_raw_owner(region: MetaRegionOwners, paddr: Paddr) -> Self;
-
-//    pub open spec fn from_raw_spec(region: MetaRegionOwners, paddr: Paddr) -> Self {
-//        Self {
-//            slot: Tracked(region.slot_owners[frame_to_index(paddr)]),
-//        }
-//    }
 }
 
 impl<M: AnyFrameMeta> AnyFrameMeta for Link<M>

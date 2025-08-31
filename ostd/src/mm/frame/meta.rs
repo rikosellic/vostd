@@ -166,9 +166,14 @@ pub enum GetFrameError {
 }
 
 /// Gets the reference to a metadata slot.
-pub(super) fn get_slot(paddr: Paddr) -> (res: Result<PPtr<MetaSlot>, GetFrameError>)
+pub(super) fn get_slot(paddr: Paddr, Tracked(regions) : Tracked<&mut MetaRegionOwners>) -> (res: Result<PPtr<MetaSlot>, GetFrameError>)
+    requires
+        old(regions).inv(),
+        old(regions).slots.contains_key(frame_to_index(paddr))
     ensures
-        res.is_ok() ==> res.unwrap().addr() == frame_to_meta(paddr)
+        res.is_ok() ==> res.unwrap().addr() == frame_to_meta(paddr),
+        res.is_ok() ==> res.unwrap() == regions.slots[frame_to_index(paddr)]@.pptr(),
+        regions == old(regions)
 {
     if paddr % PAGE_SIZE() != 0 {
         return Err(GetFrameError::NotAligned);
@@ -224,7 +229,7 @@ impl MetaSlot {
 //            old(regions).slot_owners.dom().contains(frame_to_index(paddr)),
 //            old(regions).slot_owners[frame_to_index(paddr)].storage@.id() == self.storage.id()
     {
-        let slot = get_slot(paddr)?;
+        let slot = get_slot(paddr, Tracked(regions))?;
 
 //        assert(regions.slots[frame_to_index(paddr)]@.mem_contents().value() == slot);
 
@@ -322,7 +327,7 @@ impl MetaSlot {
     )]
     pub(super) fn get_from_in_use(paddr: Paddr) -> Result<PPtr<Self>, GetFrameError>
     {
-        let slot = get_slot(paddr)?;
+        let slot = get_slot(paddr, Tracked(regions))?;
 
         // Try to increase the reference count for an in-use frame. Otherwise fail.
         loop {

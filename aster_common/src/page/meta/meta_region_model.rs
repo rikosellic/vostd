@@ -15,6 +15,7 @@ pub struct MetaRegion;
 
 pub tracked struct MetaRegionOwners {
     pub slots: Map<usize, Tracked<simple_pptr::PointsTo<MetaSlot>>>,
+    pub dropped_slots: Map<usize, Tracked<simple_pptr::PointsTo<MetaSlot>>>,
     pub slot_owners: Map<usize, MetaSlotOwner>,
 }
 
@@ -25,11 +26,15 @@ pub ghost struct MetaRegionModel {
 impl Inv for MetaRegionOwners {
     open spec fn inv(&self) -> bool {
     &&& self.slots.dom().finite()
-    &&& self.slots.dom() == self.slot_owners.dom()
+//    &&& self.slots.dom() == self.slot_owners.dom()
     &&& {
         // All accessible slots are within the valid address range.
         forall |i: usize|
             i < max_meta_slots() <==> #[trigger] self.slots.contains_key(i)
+        }
+    &&& {
+        forall |i: usize|
+            i < max_meta_slots() <==> #[trigger] self.dropped_slots.contains_key(i)
         }
     &&& {
         // Invariant for each slot holds.
@@ -44,7 +49,21 @@ impl Inv for MetaRegionOwners {
             &&& self.slots[i]@.value().wf(&self.slot_owners[i])
             &&& self.slot_owners[i].self_ptr@.addr() == self.slots[i]@.addr()
             }
-    }
+        }
+    &&& {
+        // Invariant for each slot holds.
+        forall |i: usize|
+            #[trigger]
+            self.dropped_slots.contains_key(i) ==>
+            {
+            &&& self.slot_owners.contains_key(i)
+            &&& self.slot_owners[i].inv()
+            &&& self.dropped_slots[i]@.is_init()
+            &&& self.dropped_slots[i]@.addr() == meta_addr(i)
+            &&& self.dropped_slots[i]@.value().wf(&self.slot_owners[i])
+            &&& self.slot_owners[i].self_ptr@.addr() == self.dropped_slots[i]@.addr()
+            }
+        }
     }
 }
 
