@@ -468,7 +468,7 @@ impl<M: AnyFrameMeta> CursorMut<M>
             // SAFETY: We own the previous node by `&mut self` and the node is
             // initialized.
 
-//            update_field!(prev => next <- next_ptr; owner.list_own.list , owner.index - 1 , self_perm);
+            update_field!(prev => next <- next_ptr; owner.list_own.perms , owner.index-1);
 
         } else {
             update_field!(self.list => front <- next_ptr; owner.list_own.self_perm);
@@ -484,7 +484,7 @@ impl<M: AnyFrameMeta> CursorMut<M>
             // initialized.
             assert(owner.index < owner.length - 1);
             assert(owner.length == owner.list_own.list.len());
-//            update_field!(next => prev <- prev_ptr; owner.list_own.list, owner.index+1);
+            update_field!(next => prev <- prev_ptr; owner.list_own.perms, owner.index+1);
 
             self.current = Some(next);
         } else {
