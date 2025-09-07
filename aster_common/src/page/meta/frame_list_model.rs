@@ -30,13 +30,8 @@ pub tracked struct LinkOwner<M: AnyFrameMeta> {
 
 impl<M: AnyFrameMeta> Inv for LinkOwner<M> {
     open spec fn inv(&self) -> bool {
-<<<<<<< HEAD
-        &&& self.self_perm@.mem_contents() is Init
-        &&& self.self_perm@.addr() % META_SLOT_SIZE() == 0
-=======
         true
 //        self.self_perm@.mem_contents() is Init
->>>>>>> phaseII/verifiable
     }
 }
 
@@ -75,14 +70,9 @@ pub tracked struct UniqueFrameLinkOwner<M: AnyFrameMeta> {
 
 impl<M: AnyFrameMeta> Inv for UniqueFrameLinkOwner<M> {
     open spec fn inv(&self) -> bool {
-<<<<<<< HEAD
-        &&& self.link_own.inv()
-        &&& self.link_own.self_perm@.mem_contents().value() == self.frame_own.data
-=======
         true
 //        &&& self.link_own.self_perm@.mem_contents() is Init
 //        &&& self.link_own.self_perm@.mem_contents().value() == self.frame_own.data
->>>>>>> phaseII/verifiable
     }
 }
 
@@ -171,13 +161,6 @@ impl<M: AnyFrameMeta> LinkedListOwner<M> {
         &&& self.list[i].inv()
         &&& self.list[i].slot@.in_list == self.list_id
     }
-
-    pub proof fn inv_at_inv(self, i: int)
-        requires
-            Self::inv_at(self.list, i, self.list_id)
-        ensures
-            self.list[i].inv()
-    { }
 
     pub open spec fn view_helper(owners: Seq<LinkOwner<M>>) -> Seq<LinkModel<M>>
         decreases owners.len()

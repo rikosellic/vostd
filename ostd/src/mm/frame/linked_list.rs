@@ -126,7 +126,7 @@ impl<M: AnyFrameMeta> LinkedList<M>
             perm.mem_contents().value().wf(&owner),
             owner.inv(),
     {
-        assert(owner.list.len() > 0 ==> LinkedListOwner::inv_at(owner.list, 0, owner.list_id));
+        assert(owner.list.len() > 0 ==> owner.inv_at(0));
 
         #[verus_spec(with Tracked(owner), Tracked(perm))]
         let (cursor, cursor_own) = Self::cursor_front_mut(ptr);
@@ -181,7 +181,7 @@ impl<M: AnyFrameMeta> LinkedList<M>
             perm.mem_contents().value().wf(&owner),
             owner.inv(),
     {
-        assert(owner.list.len() > 0 ==> LinkedListOwner::inv_at(owner.list, owner.list.len() - 1, owner.list_id));
+        assert(owner.list.len() > 0 ==> owner.inv_at(owner.list.len() - 1));
 
         #[verus_spec(with Tracked(owner), Tracked(perm))]
         let (cursor, cursor_own) = Self::cursor_back_mut(ptr);
@@ -401,12 +401,6 @@ impl<M: AnyFrameMeta> CursorMut<M>
 
         proof {
             if self.current is Some {
-                assert(LinkedListOwner::inv_at(owner.list_own.list, owner.index, owner.list_own.list_id));
-            }
-        }
-
-        proof {
-            if self.current is Some {
                 assert(owner.list_own.inv_at(owner.index));
             }
         }
@@ -465,10 +459,10 @@ impl<M: AnyFrameMeta> CursorMut<M>
                     assert(self.model(&owner.move_prev_owner_spec()).fore == old_self.model(&owner).move_prev_spec().fore);
                     assert(self.model(&owner.move_prev_owner_spec()).rear == old_self.model(&owner).move_prev_spec().rear);
                     if owner@.rear.len() > 0 {
-                        assert(LinkedListOwner::inv_at(owner.list_own.list, owner.index, owner.list_own.list_id));
+                        assert(owner.inv_at(owner.index));
                     }
                 } else {
-                    assert(LinkedListOwner::inv_at(owner.list_own.list, owner.index, owner.list_own.list_id));
+                    assert(owner.inv_at(owner.index));
                     assert(self.model(&owner.move_prev_owner_spec()).rear == old_self.model(&owner).move_prev_spec().rear);
                     assert(owner@.rear == owner@.list_model.list);
                 }
@@ -550,9 +544,6 @@ impl<M: AnyFrameMeta> CursorMut<M>
         let opt_next = borrow_field!(&mut frame.meta_mut(Tracked(cur_perm.borrow_mut())) => next, cur_perm.borrow_mut()) ;
         proof { owner.list_own.perms.tracked_insert(owner.index, cur_perm); }
 
-        assert(owner1@ == owner@) by { admit()};
-        let ghost owner2 = *owner;
-
         if let Some(next) = opt_next {
             // SAFETY: We own the next node by `&mut self` and the node is
             // initialized.
@@ -576,8 +567,6 @@ impl<M: AnyFrameMeta> CursorMut<M>
 //        frame.slot().in_list_store(0);
 
         update_field!(self.list => size -= 1; owner.list_perm);
-
-        assert(owner@ == owner4@);
 
 //        assert(owner@.fore == old_owner@.remove().fore);
 
