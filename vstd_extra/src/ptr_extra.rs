@@ -29,9 +29,9 @@ macro_rules! update_field {
         ::builtin_macros::verus_exec_expr!(
         {
             let tracked mut __own = $set.tracked_remove($idx);
-            let mut __tmp = $ptr.take(Tracked(__own.self_perm.borrow_mut()));
+            let mut __tmp = $ptr.take(Tracked(__own.borrow_mut()));
             __tmp.$field = $val;
-            $ptr.put(Tracked(__own.self_perm.borrow_mut()), __tmp);
+            $ptr.put(Tracked(__own.borrow_mut()), __tmp);
             proof { $set.tracked_insert($idx, __own); }
         })
     };

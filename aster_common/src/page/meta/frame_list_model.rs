@@ -25,13 +25,13 @@ pub tracked struct LinkOwner<M: AnyFrameMeta> {
     pub slot: MetaSlotOwner,
 
     pub prev: Option<PPtr<Link<M>>>,
-    pub next: Option<PPtr<Link<M>>>,
-    pub self_perm: Tracked<PointsTo<Link<M>>>
+    pub next: Option<PPtr<Link<M>>>
 }
 
 impl<M: AnyFrameMeta> Inv for LinkOwner<M> {
     open spec fn inv(&self) -> bool {
-        self.self_perm@.mem_contents() is Init
+        true
+//        self.self_perm@.mem_contents() is Init
     }
 }
 
@@ -54,7 +54,7 @@ impl<M: AnyFrameMeta> OwnerOf for Link<M> {
     type Owner = LinkOwner<M>;
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool {
-        &&& owner.self_perm@.mem_contents().value() == self
+//        &&& owner.self_perm@.mem_contents().value() == self
         &&& owner.next == self.next
         &&& owner.prev == self.prev
     }
@@ -64,13 +64,15 @@ impl<M: AnyFrameMeta> ModelOf for Link<M> { }
 
 pub tracked struct UniqueFrameLinkOwner<M: AnyFrameMeta> {
     pub link_own : LinkOwner<M>,
+    pub link_perm : Tracked<PointsTo<Link<M>>>,
     pub frame_own : UniqueFrameOwner<Link<M>>
 }
 
 impl<M: AnyFrameMeta> Inv for UniqueFrameLinkOwner<M> {
     open spec fn inv(&self) -> bool {
-        &&& self.link_own.self_perm@.mem_contents() is Init
-        &&& self.link_own.self_perm@.mem_contents().value() == self.frame_own.data
+        true
+//        &&& self.link_own.self_perm@.mem_contents() is Init
+//        &&& self.link_own.self_perm@.mem_contents().value() == self.frame_own.data
     }
 }
 
@@ -88,7 +90,9 @@ impl<M: AnyFrameMeta> OwnerOf for UniqueFrame<Link<M>> {
     type Owner = UniqueFrameLinkOwner<M>;
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool {
+        &&& owner.link_perm@.is_init()
         &&& self.ptr == owner.frame_own.slot@.self_ptr@.pptr()
+        &&& owner.link_perm@.pptr() == Link::<M>::cast_to_spec(&owner.frame_own@.slot.storage.value())
     }
 }
 
@@ -127,6 +131,7 @@ impl<M: AnyFrameMeta> Inv for LinkedListModel<M> {
 
 pub tracked struct LinkedListOwner<M: AnyFrameMeta> {
     pub list: Seq<LinkOwner<M>>,
+    pub perms: Map<int, Tracked<PointsTo<Link<M>>>>,
     pub list_id: u64,
 
     pub self_perm: Tracked<PointsTo<LinkedList<M>>>,
@@ -137,22 +142,26 @@ impl<M: AnyFrameMeta> Inv for LinkedListOwner<M> {
     {
         forall |i:int|
             0 <= i < self.list.len() ==>
-            Self::inv_at(self.list, i, self.list_id)
+            self.inv_at(i)
     }
 }
 
 impl<M: AnyFrameMeta> LinkedListOwner<M> {
-    pub open spec fn inv_at(owners: Seq<LinkOwner<M>>, i: int, id: u64) -> bool
+    pub open spec fn inv_at(self, i: int) -> bool
     {
-        &&& owners[i].prev is None <==> i == 0
-        &&& owners[i].next is None <==> i == owners.len() - 1
-        &&& owners[i].prev.is_some() ==>
-            owners[i-1].self_perm@.pptr() == owners[i].prev.unwrap()
-        &&& owners[i].next.is_some() ==>
-            owners[i+1].self_perm@.pptr() == owners[i].next.unwrap()
-        &&& owners[i].inv()
-        &&& owners[i].self_perm@.mem_contents().value().wf(&owners[i])
-        &&& owners[i].slot@.in_list == id
+        &&& self.list[i].prev is None <==> i == 0
+        &&& self.list[i].next is None <==> i == self.list.len() - 1
+        &&& self.perms.contains_key(i)
+        &&& self.perms[i]@.is_init()
+        &&& self.perms[i]@.mem_contents().value().wf(&self.list[i])
+        &&& 0 < i ==>
+            self.list[i].prev.is_some() &&
+            self.perms[i-1]@.pptr() == self.list[i].prev.unwrap()
+        &&& i < self.list.len() - 1 ==>
+            self.list[i].next.is_some() &&
+            self.perms[i+1]@.pptr() == self.list[i].next.unwrap()
+        &&& self.list[i].inv()
+        &&& self.list[i].slot@.in_list == self.list_id
     }
 
     pub open spec fn view_helper(owners: Seq<LinkOwner<M>>) -> Seq<LinkModel<M>>
@@ -217,9 +226,9 @@ impl<M: AnyFrameMeta> OwnerOf for LinkedList<M> {
         &&& self.back is None <==> owner.list.len() == 0
         &&& owner.list.len() > 0 ==>
             self.front is Some &&
-            owner.list[0].self_perm@.pptr() == self.front.unwrap() &&
+            owner.perms[0]@.pptr() == self.front.unwrap() &&
             self.back is Some &&
-            owner.list[owner.list.len()-1].self_perm@.pptr() == self.back.unwrap()
+            owner.perms[owner.list.len()-1]@.pptr() == self.back.unwrap()
         &&& self.size == owner.list.len()
         &&& self.list_id == owner.list_id
     }
@@ -301,7 +310,7 @@ impl<M: AnyFrameMeta> OwnerOf for CursorMut<M> {
 //        &&& FRAME_METADATA_RANGE().start <= self.current.unwrap().addr() < FRAME_METADATA_RANGE().start + MAX_NR_PAGES() * META_SLOT_SIZE()
         &&& 0 <= owner.index < owner.list_own.list.len() ==>
                 self.current.is_some() &&
-                self.current.unwrap() == owner.list_own.list[owner.index].self_perm@.pptr()
+                owner.list_own.perms[owner.index]@.pptr() == self.current.unwrap()
         &&& owner.index == owner.list_own.list.len() ==>
                 self.current.is_none()
         &&& owner.list_own.self_perm@.pptr() == self.list

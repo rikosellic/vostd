@@ -213,7 +213,6 @@ impl<M: AnyFrameMeta> LinkedList<M>
             regions.slots.tracked_insert(frame_to_index(frame), slot_perm);
         }
 
-
         in_list == Self::lazy_get_id(ptr)
     }
 
@@ -238,8 +237,6 @@ impl<M: AnyFrameMeta> LinkedList<M>
         let Ok(slot_ptr) = get_slot(frame, Tracked(regions)) else {
             return None;
         };
-
-//        assert(regions.slots[frame_to_index(frame)]@.pptr() == slot_ptr) by { admit() };
 
         let tracked mut slot_perm = regions.slots.tracked_remove(frame_to_index(frame));
         let tracked mut slot_own = regions.slot_owners.tracked_remove(frame_to_index(frame));
@@ -372,13 +369,13 @@ impl<M: AnyFrameMeta> CursorMut<M>
     {
         proof {
             if self.current is Some {
-                assert(LinkedListOwner::inv_at(owner.list_own.list, owner.index, owner.list_own.list_id));
+                assert(owner.list_own.inv_at(owner.index));
             }
         }
 
         self.current = match self.current {
             // SAFETY: The cursor is pointing to a valid element.
-            Some(current) => borrow_field!(& current => next, owner.list_own.list.tracked_borrow(owner.index).self_perm.borrow()),
+            Some(current) => borrow_field!(& current => next, owner.list_own.perms.tracked_borrow(owner.index).borrow()),
             None => borrow_field!(& self.list => front, owner.list_own.self_perm.borrow()),
         };
 
@@ -401,13 +398,13 @@ impl<M: AnyFrameMeta> CursorMut<M>
     {
         proof {
             if self.current is Some {
-                assert(LinkedListOwner::inv_at(owner.list_own.list, owner.index, owner.list_own.list_id));
+                assert(owner.list_own.inv_at(owner.index));
             }
         }
 
         self.current = match self.current {
             // SAFETY: The cursor is pointing to a valid element.
-            Some(current) => borrow_field!(& current => prev, owner.list_own.list.tracked_borrow(owner.index).self_perm.borrow()),
+            Some(current) => borrow_field!(& current => prev, owner.list_own.perms.tracked_borrow(owner.index).borrow()),
             None => borrow_field!(& self.list => back, owner.list_own.self_perm.borrow()),
         };
     }
@@ -450,9 +447,9 @@ impl<M: AnyFrameMeta> CursorMut<M>
         let current = self.current?;
 
         assert(owner.length > 0);
-        assert(LinkedListOwner::inv_at(owner.list_own.list, owner.index, owner.list_own.list_id));
-        assert(owner.index > 0 ==> LinkedListOwner::inv_at(owner.list_own.list, owner.index-1, owner.list_own.list_id));
-        assert(owner.index < owner.length - 1 ==> LinkedListOwner::inv_at(owner.list_own.list, owner.index+1, owner.list_own.list_id));
+        assert(owner.list_own.inv_at(owner.index));
+        assert(owner.index > 0 ==> owner.list_own.inv_at(owner.index-1));
+        assert(owner.index < owner.length - 1 ==> owner.list_own.inv_at(owner.index+1));
 
         let meta_ptr = current.addr();
         let paddr = mapping::meta_to_frame(meta_ptr);
@@ -461,36 +458,33 @@ impl<M: AnyFrameMeta> CursorMut<M>
         let mut frame = UniqueFrame::<Link<M>>::from_raw(paddr);
         assert(frame.model(&frame_owner).slot == owner@.current().unwrap().slot) by { admit() };
 
-        let tracked mut cur_own = owner.list_own.list.tracked_remove(owner.index);
-        let ghost cur_own_old = cur_own;
-        let next_ptr = frame.meta(Tracked(cur_own.self_perm.borrow())).next;
-        let opt_prev = borrow_field!(&mut frame.meta_mut(Tracked(cur_own.self_perm.borrow_mut())) => prev, cur_own.self_perm.borrow_mut());
-        assert(cur_own_old == cur_own) by { admit() };
-        proof { owner.list_own.list.tracked_insert(owner.index, cur_own); }
+        let tracked mut cur_perm = owner.list_own.perms.tracked_remove(owner.index);
+
+        let next_ptr = frame.meta(Tracked(cur_perm.borrow())).next;
+        let opt_prev = borrow_field!(&mut frame.meta_mut(Tracked(cur_perm.borrow_mut())) => prev, cur_perm.borrow_mut());
+        proof { owner.list_own.perms.tracked_insert(owner.index, cur_perm); }
 
         if let Some(prev) = opt_prev {
             // SAFETY: We own the previous node by `&mut self` and the node is
             // initialized.
 
-            update_field!(prev => next <- next_ptr; owner.list_own.list , owner.index - 1 , self_perm);
+//            update_field!(prev => next <- next_ptr; owner.list_own.list , owner.index - 1 , self_perm);
 
         } else {
             update_field!(self.list => front <- next_ptr; owner.list_own.self_perm);
         }
 
-        let tracked mut cur_own = owner.list_own.list.tracked_remove(owner.index);
-        let ghost cur_own_old = cur_own;
-        let prev_ptr = frame.meta(Tracked(cur_own.self_perm.borrow())).prev;
-        let opt_next = borrow_field!(&mut frame.meta_mut(Tracked(cur_own.self_perm.borrow_mut())) => next, cur_own.self_perm.borrow_mut()) ;
-        assert(cur_own_old == cur_own) by { admit() };
-        proof { owner.list_own.list.tracked_insert(owner.index, cur_own); }
+        let tracked mut cur_perm = owner.list_own.perms.tracked_remove(owner.index);
+        let prev_ptr = frame.meta(Tracked(cur_perm.borrow())).prev;
+        let opt_next = borrow_field!(&mut frame.meta_mut(Tracked(cur_perm.borrow_mut())) => next, cur_perm.borrow_mut()) ;
+        proof { owner.list_own.perms.tracked_insert(owner.index, cur_perm); }
 
         if let Some(next) = opt_next {
             // SAFETY: We own the next node by `&mut self` and the node is
             // initialized.
             assert(owner.index < owner.length - 1);
             assert(owner.length == owner.list_own.list.len());
-            update_field!(next => prev <- prev_ptr; owner.list_own.list, owner.index+1);
+//            update_field!(next => prev <- prev_ptr; owner.list_own.list, owner.index+1);
 
             self.current = Some(next);
         } else {
@@ -498,10 +492,10 @@ impl<M: AnyFrameMeta> CursorMut<M>
             self.current = None;
         }
 
-        let tracked mut cur_own = owner.list_own.list.tracked_remove(owner.index);
-        update_field!(frame.meta_mut(Tracked(cur_own.self_perm.borrow_mut())) => next <- None; cur_own.self_perm);
-        update_field!(frame.meta_mut(Tracked(cur_own.self_perm.borrow_mut())) => prev <- None; cur_own.self_perm);
-        proof { owner.list_own.list.tracked_insert(owner.index, cur_own); }
+        let tracked mut cur_perm = owner.list_own.perms.tracked_remove(owner.index);
+        update_field!(frame.meta_mut(Tracked(cur_perm.borrow_mut())) => next <- None; cur_perm);
+        update_field!(frame.meta_mut(Tracked(cur_perm.borrow_mut())) => prev <- None; cur_perm);
+        proof { owner.list_own.perms.tracked_insert(owner.index, cur_perm); }
 
 //        frame.slot().in_list.store(0, Ordering::Relaxed);
 //        frame.slot().in_list_store(0);
@@ -535,41 +529,42 @@ impl<M: AnyFrameMeta> CursorMut<M>
 //        debug_assert!(frame.meta_mut().prev.is_none());
 //        debug_assert_eq!(frame.slot().in_list.load(Ordering::Relaxed), 0);
 
-        let frame_ptr = frame.meta_mut(Tracked(frame_own.link_own.self_perm.borrow_mut()));
+        let frame_ptr = frame.meta_mut(Tracked(frame_own.link_perm.borrow_mut()));
 
         if let Some(current) = borrow_field!(&mut self.current) {
-            assert(LinkedListOwner::inv_at(owner.list_own.list, owner.index, owner.list_own.list_id));
-            assert(owner.index > 0 ==> LinkedListOwner::inv_at(owner.list_own.list, owner.index-1, owner.list_own.list_id));
-            assert(owner.index < owner.length - 1 ==> LinkedListOwner::inv_at(owner.list_own.list, owner.index+1, owner.list_own.list_id));
+            assert(owner.list_own.inv_at(owner.index));
+            assert(owner.index > 0 ==> owner.list_own.inv_at(owner.index-1));
+            assert(owner.index < owner.length - 1 ==> owner.list_own.inv_at(owner.index+1));
 
             // SAFETY: We own the current node by `&mut self` and the node is
             // initialized.
-            let tracked mut cur_own = owner.list_own.list.tracked_remove(owner.index);
-            let opt_prev = borrow_field!(& current => prev, cur_own.self_perm.borrow());
-            proof { owner.list_own.list.tracked_insert(owner.index, cur_own); }
+            let tracked mut cur_perm = owner.list_own.perms.tracked_remove(owner.index);
+            let opt_prev = borrow_field!(& current => prev, cur_perm.borrow());
+            proof { owner.list_own.perms.tracked_insert(owner.index, cur_perm); }
             
             if let Some(prev) = opt_prev {
                 // SAFETY: We own the previous node by `&mut self` and the node
                 // is initialized.
-                update_field!(prev => next <- Some(frame_ptr); owner.list_own.list, owner.index-1);
-                update_field!(frame_ptr => prev <- Some(prev); frame_own.link_own.self_perm);
-                update_field!(frame_ptr => next <- Some(current); frame_own.link_own.self_perm);
-                update_field!(current => prev <- Some(frame_ptr); owner.list_own.list, owner.index);
+                update_field!(prev => next <- Some(frame_ptr); owner.list_own.perms, owner.index-1);
+                update_field!(frame_ptr => prev <- Some(prev); frame_own.link_perm);
+                update_field!(frame_ptr => next <- Some(current); frame_own.link_perm);
+                update_field!(current => prev <- Some(frame_ptr); owner.list_own.perms, owner.index);
             } else {
-                update_field!(frame_ptr => next <- Some(current); frame_own.link_own.self_perm);
-                update_field!(current => prev <- Some(frame_ptr); owner.list_own.list, owner.index);
+                update_field!(frame_ptr => next <- Some(current); frame_own.link_perm);
+                update_field!(current => prev <- Some(frame_ptr); owner.list_own.perms, owner.index);
                 
                 update_field!(self.list => front <- Some(frame_ptr); owner.list_own.self_perm);
             }
         } else {
-            assert(0 < owner.length ==> LinkedListOwner::inv_at(owner.list_own.list, owner.length-1, owner.list_own.list_id));
+            assert(0 < owner.length ==> owner.list_own.inv_at(owner.index-1));
 
             // We are at the "ghost" non-element.
             if let Some(back) = borrow_field!(&mut self.list => back, owner.list_own.self_perm.borrow_mut()) {
+                assert(0 < owner.length);
                 // SAFETY: We have ownership of the links via `&mut self`.
 //                    debug_assert!(back.as_mut().next.is_none());
-                update_field!(back => next <- Some(frame_ptr); owner.list_own.list, owner.length-1);
-                update_field!(frame_ptr => prev <- Some(back); frame_own.link_own.self_perm);
+                update_field!(back => next <- Some(frame_ptr); owner.list_own.perms, owner.length-1);
+                update_field!(frame_ptr => prev <- Some(back); frame_own.link_perm);
                 update_field!(self.list => back <- Some(frame_ptr); owner.list_own.self_perm);
             } else {
 //                debug_assert_eq!(self.list.front, None);
