@@ -183,7 +183,8 @@ impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
             res.0.wf(&res.1@),
             res.1@.frame_own@ == UniqueFrameModel::from_raw_spec(region@, paddr),
             res.0.ptr == region.slots[frame_to_index(paddr)]@.pptr(),
-            res.1@.frame_own@.slot == region.slot_owners[frame_to_index(paddr)]@,
+            res.1@.frame_own.slot == region.slot_owners[frame_to_index(paddr)],
+            res.1@.link_own.slot == region.slot_owners[frame_to_index(paddr)],
     {
         let vaddr = mapping::frame_to_meta(paddr);
         let ptr = PPtr::<MetaSlot>::from_addr(vaddr);

@@ -1,5 +1,6 @@
 use vstd::prelude::*;
 use vstd_extra::prelude::*;
+use vstd_extra::ownership::*;
 use aster_common::prelude::*;
 use aster_common::prelude::frame_list_model::*;
 
@@ -77,26 +78,36 @@ impl<M: AnyFrameMeta> CursorModel<M> {
         }
     }
 }
- 
+
+impl<M: AnyFrameMeta> LinkedListOwner<M> {
+    #[rustc_allow_incoherent_impl]
+    pub open spec fn remove_list_spec(list: Seq<LinkOwner<M>>, i: int) -> Seq<LinkOwner<M>>
+    {
+        let cur = list[i];
+        let list = if i > 0 { LinkedListOwner::update_next(list, i-1, cur.next) } else { list };
+        let list = if i < list.len() - 1 { LinkedListOwner::update_prev(list, i+1, cur.prev) } else { list };
+        list.remove(i)
+    }
+}
+
 impl<M: AnyFrameMeta> CursorOwner<M> {
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn remove_owner_spec(self) -> Self
+    pub open spec fn remove_owner_spec(self, post: Self) -> bool
         recommends
-            self.index < self.length,
-            self.remaining > 0
+            self.index < self.length(),
     {
-        let cur = self.current().unwrap();
-        let list = if self.index > 0 { LinkedListOwner::update_next(self.list_own.list, self.index-1, cur.next) } else { self.list_own.list };
-        let list = if self.remaining > 1 { LinkedListOwner::update_prev(self.list_own.list, self.index+1, cur.prev) } else { list };
-        Self {
-            list_own: LinkedListOwner { list: list.remove(self.index), ..self.list_own },
-            list_perm: self.list_perm,
-            length: self.length-1,
-            index: self.index,
-            remaining: self.remaining-1,
-        }
+        &&& post.list_own.list == LinkedListOwner::remove_list_spec(self.list_own.list, self.index)
+        &&& post.index == self.index
     }
+
+    #[rustc_allow_incoherent_impl]
+    pub proof fn remove_owner_spec_implies_model_spec(self, post: Self)
+        requires
+            self.remove_owner_spec(post)
+        ensures
+            post@ == self@.remove()
+    { admit() }
  
     #[rustc_allow_incoherent_impl]
     pub open spec fn insert_owner_spec(self, owner: LinkOwner<M>) -> Self
@@ -104,70 +115,56 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         Self {
             list_own: LinkedListOwner { list: self.list_own.list.insert(self.index, owner), ..self.list_own },
             list_perm: self.list_perm,
-            length: self.length+1,
             index: self.index,
-            remaining: self.remaining+1,
         }
     }
  
     #[rustc_allow_incoherent_impl]
     pub open spec fn move_next_owner_spec(self) -> Self {
-        if self.length == 0 {
+        if self.length() == 0 {
             self
-        } else if self.remaining == 0 {
+        } else if self.index == self.length() {
             Self {
                 list_own: self.list_own,
                 list_perm: self.list_perm,
-                length: self.length,
                 index: 0,
-                remaining: self.length,
             }
-        } else if self.remaining == 1 {
+        } else if self.index == self.length() - 1 {
             Self {
                 list_own: self.list_own,
                 list_perm: self.list_perm,
-                length: self.length,
                 index: self.index+1,
-                remaining: self.remaining-1,
             }
         } else {
             Self {
                 list_own: self.list_own,
                 list_perm: self.list_perm,
-                length: self.length,
                 index: self.index+1,
-                remaining: self.remaining-1,
             }
         }
     }
  
     #[rustc_allow_incoherent_impl]
     pub open spec fn move_prev_owner_spec(self) -> Self {
-        if self.length == 0 {
+        if self.length() == 0 {
             self
-        } else if self.remaining == 0 {
+        } else if self.index == self.length() {
             Self {
                 list_own: self.list_own,
                 list_perm: self.list_perm,
-                length: self.length,
                 index: self.index-1,
-                remaining: self.remaining+1,
             }
         } else if self.index == 0 {
             Self {
                 list_own: self.list_own,
                 list_perm: self.list_perm,
-                length: self.length,
-                index: self.length,
-                remaining: 0,
+                index: self.length(),
             }
         } else {
             Self {
                 list_own: self.list_own,
                 list_perm: self.list_perm,
-                length: self.length,
                 index: self.index-1,
-                remaining: self.remaining+1,
             }
         }
     }
