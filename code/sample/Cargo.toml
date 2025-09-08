@@ -22,6 +22,6 @@ verify = true
 check_lifetime = true
 
 [dependencies]
-vstd = { path = "../../tools/verus/source/vstd" }
-builtin = { path = "../../tools/verus/source/builtin" }
-builtin_macros = { path = "../../tools/verus/source/builtin_macros" }
+vstd = { workspace = true, optional = true }
+builtin = { workspace = true, optional = true }
+builtin_macros = { workspace = true, optional = true }

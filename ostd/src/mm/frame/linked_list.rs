@@ -378,8 +378,10 @@ impl<M: AnyFrameMeta> CursorMut<M>
 
         self.current = match self.current {
             // SAFETY: The cursor is pointing to a valid element.
+
             Some(current) => borrow_field!(& current => next, owner.list_own.list.tracked_borrow(owner.index).self_perm.borrow()),
             None => borrow_field!(& self.list => front, owner.list_own.self_perm.borrow()),
+
         };
 
     }
@@ -407,6 +409,7 @@ impl<M: AnyFrameMeta> CursorMut<M>
 
         self.current = match self.current {
             // SAFETY: The cursor is pointing to a valid element.
+            // XXX: The verifier does not yet support the following Rust feature: casting a pointer (here the cast is implicit)
             Some(current) => borrow_field!(& current => prev, owner.list_own.list.tracked_borrow(owner.index).self_perm.borrow()),
             None => borrow_field!(& self.list => back, owner.list_own.self_perm.borrow()),
         };
@@ -464,7 +467,9 @@ impl<M: AnyFrameMeta> CursorMut<M>
         let tracked mut cur_own = owner.list_own.list.tracked_remove(owner.index);
         let ghost cur_own_old = cur_own;
         let next_ptr = frame.meta(Tracked(cur_own.self_perm.borrow())).next;
+
         let opt_prev = borrow_field!(&mut frame.meta_mut(Tracked(cur_own.self_perm.borrow_mut())) => prev, cur_own.self_perm.borrow_mut());
+
         assert(cur_own_old == cur_own) by { admit() };
         proof { owner.list_own.list.tracked_insert(owner.index, cur_own); }
 

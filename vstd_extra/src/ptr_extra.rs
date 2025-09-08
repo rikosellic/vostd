@@ -1,5 +1,7 @@
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
+use verus_builtin_macros as builtin_macros;
+
 
 verus! {
 
@@ -12,7 +14,8 @@ macro_rules! borrow_field {
     (&mut $ptr:expr) => {
         ::builtin_macros::verus_exec_expr!(
         $ptr
-    )};    (& $ptr:expr => $field:tt, $perm:expr) => {
+    )};
+    (& $ptr:expr => $field:tt, $perm:expr) => {
         ::builtin_macros::verus_exec_expr!(
         $ptr.borrow(Tracked($perm)).$field
     )};
@@ -76,3 +79,8 @@ macro_rules! update_field {
 }
 
 }
+
+pub use {
+    borrow_field,
+    update_field,
+};
