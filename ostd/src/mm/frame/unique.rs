@@ -175,21 +175,25 @@ impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
     #[verus_spec(
         with Tracked(region) : Tracked<MetaRegionOwners>
     )]
-    pub(crate) fn from_raw(paddr: Paddr) -> (res: Self)
+    pub(crate) fn from_raw(paddr: Paddr) -> (res: (Self, Tracked<UniqueFrameLinkOwner<M>>))
         requires
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
         ensures
-            res.wf(&UniqueFrameLinkOwner::<M>::from_raw_owner(region, paddr)),
-            UniqueFrameLinkOwner::<M>::from_raw_owner(region, paddr).frame_own@ == UniqueFrameModel::from_raw_spec(region@, paddr)
+            res.1@ == UniqueFrameLinkOwner::<M>::from_raw_owner(region, paddr),
+            res.0.wf(&res.1@),
+            res.1@.frame_own@ == UniqueFrameModel::from_raw_spec(region@, paddr),
+            res.0.ptr == region.slots[frame_to_index(paddr)]@.pptr(),
+            res.1@.frame_own.slot == region.slot_owners[frame_to_index(paddr)],
+            res.1@.link_own.slot == region.slot_owners[frame_to_index(paddr)],
     {
         let vaddr = mapping::frame_to_meta(paddr);
         let ptr = PPtr::<MetaSlot>::from_addr(vaddr);
 
-         Self {
-             ptr,
-             _marker: PhantomData,
-        }
+        (Self {
+            ptr,
+            _marker: PhantomData,
+        }, Tracked(UniqueFrameLinkOwner::<M>::from_raw_owner(region, paddr)))
     }
 
     #[rustc_allow_incoherent_impl]

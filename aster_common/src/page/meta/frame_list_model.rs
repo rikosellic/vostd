@@ -25,13 +25,13 @@ pub tracked struct LinkOwner<M: AnyFrameMeta> {
     pub slot: MetaSlotOwner,
 
     pub prev: Option<PPtr<Link<M>>>,
-    pub next: Option<PPtr<Link<M>>>,
-    pub self_perm: Tracked<PointsTo<Link<M>>>
+    pub next: Option<PPtr<Link<M>>>
 }
 
 impl<M: AnyFrameMeta> Inv for LinkOwner<M> {
     open spec fn inv(&self) -> bool {
-        self.self_perm@.mem_contents() is Init
+        true
+//        self.self_perm@.mem_contents() is Init
     }
 }
 
@@ -54,7 +54,7 @@ impl<M: AnyFrameMeta> OwnerOf for Link<M> {
     type Owner = LinkOwner<M>;
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool {
-        &&& owner.self_perm@.mem_contents().value() == self
+//        &&& owner.self_perm@.mem_contents().value() == self
         &&& owner.next == self.next
         &&& owner.prev == self.prev
     }
@@ -64,13 +64,15 @@ impl<M: AnyFrameMeta> ModelOf for Link<M> { }
 
 pub tracked struct UniqueFrameLinkOwner<M: AnyFrameMeta> {
     pub link_own : LinkOwner<M>,
+    pub link_perm : Tracked<PointsTo<Link<M>>>,
     pub frame_own : UniqueFrameOwner<Link<M>>
 }
 
 impl<M: AnyFrameMeta> Inv for UniqueFrameLinkOwner<M> {
     open spec fn inv(&self) -> bool {
-        &&& self.link_own.self_perm@.mem_contents() is Init
-        &&& self.link_own.self_perm@.mem_contents().value() == self.frame_own.data
+        true
+//        &&& self.link_own.self_perm@.mem_contents() is Init
+//        &&& self.link_own.self_perm@.mem_contents().value() == self.frame_own.data
     }
 }
 
@@ -88,7 +90,9 @@ impl<M: AnyFrameMeta> OwnerOf for UniqueFrame<Link<M>> {
     type Owner = UniqueFrameLinkOwner<M>;
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool {
+        &&& owner.link_perm@.is_init()
         &&& self.ptr == owner.frame_own.slot@.self_ptr@.pptr()
+        &&& owner.link_perm@.pptr() == Link::<M>::cast_to_spec(&owner.frame_own@.slot.storage.value())
     }
 }
 
@@ -125,11 +129,11 @@ impl<M: AnyFrameMeta> Inv for LinkedListModel<M> {
     open spec fn inv(&self) -> bool { true }
 }
 
+#[rustc_has_incoherent_inherent_impls]
 pub tracked struct LinkedListOwner<M: AnyFrameMeta> {
     pub list: Seq<LinkOwner<M>>,
+    pub perms: Map<int, Tracked<PointsTo<Link<M>>>>,
     pub list_id: u64,
-
-    pub self_perm: Tracked<PointsTo<LinkedList<M>>>,
 }
 
 impl<M: AnyFrameMeta> Inv for LinkedListOwner<M> {
@@ -137,22 +141,29 @@ impl<M: AnyFrameMeta> Inv for LinkedListOwner<M> {
     {
         forall |i:int|
             0 <= i < self.list.len() ==>
-            Self::inv_at(self.list, i, self.list_id)
+            self.inv_at(i)
     }
 }
 
 impl<M: AnyFrameMeta> LinkedListOwner<M> {
-    pub open spec fn inv_at(owners: Seq<LinkOwner<M>>, i: int, id: u64) -> bool
+    pub open spec fn inv_at(self, i: int) -> bool
     {
-        &&& owners[i].prev is None <==> i == 0
-        &&& owners[i].next is None <==> i == owners.len() - 1
-        &&& owners[i].prev.is_some() ==>
-            owners[i-1].self_perm@.pptr() == owners[i].prev.unwrap()
-        &&& owners[i].next.is_some() ==>
-            owners[i+1].self_perm@.pptr() == owners[i].next.unwrap()
-        &&& owners[i].inv()
-        &&& owners[i].self_perm@.mem_contents().value().wf(&owners[i])
-        &&& owners[i].slot@.in_list == id
+        &&& self.list[i].prev is None <==> i == 0
+        &&& self.list[i].next is None <==> i == self.list.len() - 1
+        &&& FRAME_METADATA_RANGE().start <= self.perms[i]@.addr() < FRAME_METADATA_RANGE().start + MAX_NR_PAGES() * META_SLOT_SIZE()
+        &&& self.perms.contains_key(i)
+        &&& self.perms[i]@.is_init()
+        &&& self.perms[i]@.mem_contents().value().wf(&self.list[i])
+        &&& 0 < i ==>
+            self.list[i].prev.is_some() &&
+            self.list[i].paddr == self.perms[i-1]@.addr() &&
+            self.perms[i-1]@.pptr() == self.list[i].prev.unwrap()
+        &&& i < self.list.len() - 1 ==>
+            self.list[i].next.is_some() &&
+            self.list[i].paddr == self.perms[i+1]@.addr() &&
+            self.perms[i+1]@.pptr() == self.list[i].next.unwrap()
+        &&& self.list[i].inv()
+        &&& self.list[i].slot@.in_list == self.list_id
     }
 
     pub open spec fn view_helper(owners: Seq<LinkOwner<M>>) -> Seq<LinkModel<M>>
@@ -207,6 +218,12 @@ impl<M: AnyFrameMeta> LinkedListOwner<M> {
         };
         links.update(i, new_link)
     }
+
+    pub open spec fn region_consistency(self, regions:MetaRegionOwners) -> bool {
+        forall |i:int|
+            0 <= i < self.list.len() ==>
+            self.list[i].slot == regions.slot_owners[frame_to_index(meta_to_frame(self.list[i].paddr))]
+    }
 }
 
 impl<M: AnyFrameMeta> OwnerOf for LinkedList<M> {
@@ -217,9 +234,11 @@ impl<M: AnyFrameMeta> OwnerOf for LinkedList<M> {
         &&& self.back is None <==> owner.list.len() == 0
         &&& owner.list.len() > 0 ==>
             self.front is Some &&
-            owner.list[0].self_perm@.pptr() == self.front.unwrap() &&
+            self.front.unwrap().addr() == owner.list[0].paddr &&
+            owner.perms[0]@.pptr() == self.front.unwrap() &&
             self.back is Some &&
-            owner.list[owner.list.len()-1].self_perm@.pptr() == self.back.unwrap()
+            self.back.unwrap().addr() == owner.list[owner.list.len()-1].paddr &&
+            owner.perms[owner.list.len()-1]@.pptr() == self.back.unwrap()
         &&& self.size == owner.list.len()
         &&& self.list_id == owner.list_id
     }
@@ -261,19 +280,14 @@ impl<M: AnyFrameMeta> Inv for CursorModel<M> {
 #[rustc_has_incoherent_inherent_impls]
 pub tracked struct CursorOwner<M: AnyFrameMeta> {
     pub list_own: LinkedListOwner<M>,
+    pub list_perm: Tracked<PointsTo<LinkedList<M>>>,
 
-    pub length: int,
     pub index: int,
-    pub remaining: int,
 }
 
 impl<M: AnyFrameMeta> Inv for CursorOwner<M> {
     open spec fn inv(&self) -> bool {
-        &&& self.length == self.list_own.list.len()
-        &&& self.length == self.index + self.remaining
-        &&& 0 <= self.index <= self.length
-        &&& 0 <= self.remaining <= self.length
-        &&& 0 <= self.length
+        &&& 0 <= self.index <= self.list_own.list.len()
         &&& self.list_own.inv()
     }
 }
@@ -298,15 +312,15 @@ impl<M: AnyFrameMeta> OwnerOf for CursorMut<M> {
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool
     {
-//        &&& FRAME_METADATA_RANGE().start <= self.current.unwrap().addr() < FRAME_METADATA_RANGE().start + MAX_NR_PAGES() * META_SLOT_SIZE()
-        &&& 0 <= owner.index < owner.list_own.list.len() ==>
-                self.current.is_some() &&
-                self.current.unwrap() == owner.list_own.list[owner.index].self_perm@.pptr()
+        &&& 0 <= owner.index < owner.length() ==>
+            self.current.is_some() &&
+            self.current.unwrap().addr() == owner.list_own.list[owner.index].paddr &&
+            owner.list_own.perms[owner.index]@.pptr() == self.current.unwrap()
         &&& owner.index == owner.list_own.list.len() ==>
                 self.current.is_none()
-        &&& owner.list_own.self_perm@.pptr() == self.list
-        &&& owner.list_own.self_perm@.is_init()
-        &&& owner.list_own.self_perm@.mem_contents().value().wf(&owner.list_own)
+        &&& owner.list_perm@.pptr() == self.list
+        &&& owner.list_perm@.is_init()
+        &&& owner.list_perm@.mem_contents().value().wf(&owner.list_own)
     }
 }
 
@@ -323,90 +337,82 @@ impl<M: AnyFrameMeta> CursorModel<M> {
 }
 
 impl<M: AnyFrameMeta> CursorOwner<M> {
+    pub open spec fn length(self) -> int {
+        self.list_own.list.len() as int
+    }
+
     pub open spec fn current(self) -> Option<LinkOwner<M>> {
-        if 0 <= self.index < self.length {
+        if 0 <= self.index < self.length() {
             Some(self.list_own.list[self.index])
         } else {
             None
         }
     }
 
-    pub open spec fn front_owner_spec(list_own: LinkedListOwner<M>) -> Self {
+    pub open spec fn front_owner_spec(list_own: LinkedListOwner<M>, list_perm: Tracked<PointsTo<LinkedList<M>>>) -> Self {
         CursorOwner::<M> {
             list_own: list_own,
-            length: list_own.list.len() as int,
+            list_perm: list_perm,
             index: 0,
-            remaining: list_own.list.len() as int,
         }
     }
 
     #[verifier::returns(proof)]
     #[verifier::external_body]
-    pub proof fn front_owner(list_own: LinkedListOwner<M>) -> (res:Self)
+    pub proof fn front_owner(list_own: LinkedListOwner<M>, list_perm: Tracked<PointsTo<LinkedList<M>>>) -> (res:Self)
         ensures
-            res == Self::front_owner_spec(list_own)
+            res == Self::front_owner_spec(list_own, list_perm)
     {
         CursorOwner::<M> {
             list_own: list_own,
-            length: list_own.list.len() as int,
+            list_perm: list_perm,
             index: 0,
-            remaining: list_own.list.len() as int,
         }
     }
 
-    pub open spec fn back_owner_spec(list_own: LinkedListOwner<M>) -> Self {
+    pub open spec fn back_owner_spec(list_own: LinkedListOwner<M>, list_perm: Tracked<PointsTo<LinkedList<M>>>) -> Self {
         CursorOwner::<M> {
             list_own: list_own,
-            length: list_own.list.len() as int,
-            index: list_own.list.len() as int - 1,
-            remaining: 1,
+            list_perm: list_perm,
+            index: if list_own.list.len() > 0 { list_own.list.len() as int - 1 } else { 0 },
         }
     }
 
     #[verifier::returns(proof)]
     #[verifier::external_body]
-    pub proof fn back_owner(list_own: LinkedListOwner<M>) -> (res:Self)
+    pub proof fn back_owner(list_own: LinkedListOwner<M>, list_perm: Tracked<PointsTo<LinkedList<M>>>) -> (res:Self)
         ensures
-            res == Self::back_owner_spec(list_own)
+            res == Self::back_owner_spec(list_own, list_perm)
     {
         CursorOwner::<M> {
             list_own: list_own,
-            length: list_own.list.len() as int,
-            index: list_own.list.len() as int - 1,
-            remaining: 1,
+            list_perm: list_perm,
+            index: if list_own.list.len() > 0 { list_own.list.len() as int - 1 } else { 0 },
         }
     }
 
-    pub open spec fn ghost_owner_spec(list_own: LinkedListOwner<M>) -> Self {
+    pub open spec fn ghost_owner_spec(list_own: LinkedListOwner<M>, list_perm: Tracked<PointsTo<LinkedList<M>>>) -> Self {
         CursorOwner::<M> {
             list_own: list_own,
-            length: list_own.list.len() as int,
+            list_perm: list_perm,
             index: list_own.list.len() as int,
-            remaining: 0,
         }
     }
 
     #[verifier::returns(proof)]
     #[verifier::external_body]
-    pub proof fn ghost_owner(list_own: LinkedListOwner<M>) -> (res:Self)
+    pub proof fn ghost_owner(list_own: LinkedListOwner<M>, list_perm: Tracked<PointsTo<LinkedList<M>>>) -> (res:Self)
         ensures
-            res == Self::ghost_owner_spec(list_own)
+            res == Self::ghost_owner_spec(list_own, list_perm)
     {
         CursorOwner::<M> {
             list_own: list_own,
-            length: list_own.list.len() as int,
+            list_perm: list_perm,
             index: list_own.list.len() as int,
-            remaining: 0,
         }
     }
 
-/*    #[verifier::returns(proof)]
-    pub proof fn cur_own(self) -> Tracked<PointsTo<Link<M>>>
-        requires
-            0 <= self.index < self.length
-    {
-        self.list_own.list[self.index].self_perm
-    }*/
+
 }
 
 }
