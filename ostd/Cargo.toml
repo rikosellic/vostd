@@ -11,14 +11,19 @@ repository = "https://github.com/asterinas/asterinas"
 crate-type = ["rlib"]
 name = "ostd"
 # for cargo
-# path = "src/.dummy.rs"
-path = "src/lib.rs"
+path = "src/.dummy.rs"
+# path = "src/lib.rs"
 
 [features]
 verus = []
 verify = ["verus"]
 alloc = []
 default = ["verify", "alloc"]
+
+[package.metadata.verus]
+path = "src/lib.rs"
+verify = true
+# check_lifetime = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -28,8 +33,10 @@ default-target = "x86_64-unknown-none"
 targets = ["x86_64-unknown-none"]
 
 [dependencies]
-builtin = { path = "../tools/verus/source/builtin" }
-verus_builtin_macros = { path = "../tools/verus/source/builtin_macros" }
+vstd = { workspace = true }
+builtin = { workspace = true }
+builtin_macros = { workspace = true }
+
 vstd_extra = { path = "../vstd_extra" }
 aster_common = { path = "../aster_common" }
 #align_ext = { path = "libs/align_ext", version = "0.1.0" }
@@ -41,7 +48,7 @@ gimli = { version = "0.28", default-features = false, features = ["read-core"] }
 #id-alloc = { path = "libs/id-alloc", version = "0.1.0" }
 inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e", version = "0.1.0" }
 #int-to-c-enum = { path = "../kernel/libs/int-to-c-enum", version = "0.1.0" }
-intrusive-collections = { version = "0.9.6", features = ["nightly"] }
+# intrusive-collections = { version = "0.9.6", features = ["nightly"] }
 #linux-boot-params = { version = "0.15.1", path = "libs/linux-bzimage/boot-params" }
 log = "0.4"
 num = { version = "0.4", default-features = false }
@@ -52,7 +59,7 @@ num-traits = { version = "0.2", default-features = false }
 #ostd-pod = { git = "https://github.com/asterinas/ostd-pod", rev = "c4644be", version = "0.1.1" }
 spin = "0.9.4"
 smallvec = "1.13.2"
-unwinding = { version = "=0.2.5", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
+# unwinding = { version = "=0.2.5", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
 volatile = "0.6.1"
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
 

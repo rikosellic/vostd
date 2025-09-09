@@ -129,6 +129,7 @@ impl<M: AnyFrameMeta> Inv for LinkedListModel<M> {
     open spec fn inv(&self) -> bool { true }
 }
 
+#[rustc_has_incoherent_inherent_impls]
 pub tracked struct LinkedListOwner<M: AnyFrameMeta> {
     pub list: Seq<LinkOwner<M>>,
     pub perms: Map<int, Tracked<PointsTo<Link<M>>>>,
@@ -149,14 +150,17 @@ impl<M: AnyFrameMeta> LinkedListOwner<M> {
     {
         &&& self.list[i].prev is None <==> i == 0
         &&& self.list[i].next is None <==> i == self.list.len() - 1
+        &&& FRAME_METADATA_RANGE().start <= self.perms[i]@.addr() < FRAME_METADATA_RANGE().start + MAX_NR_PAGES() * META_SLOT_SIZE()
         &&& self.perms.contains_key(i)
         &&& self.perms[i]@.is_init()
         &&& self.perms[i]@.mem_contents().value().wf(&self.list[i])
         &&& 0 < i ==>
             self.list[i].prev.is_some() &&
+            self.list[i].paddr == self.perms[i-1]@.addr() &&
             self.perms[i-1]@.pptr() == self.list[i].prev.unwrap()
         &&& i < self.list.len() - 1 ==>
             self.list[i].next.is_some() &&
+            self.list[i].paddr == self.perms[i+1]@.addr() &&
             self.perms[i+1]@.pptr() == self.list[i].next.unwrap()
         &&& self.list[i].inv()
         &&& self.list[i].slot@.in_list == self.list_id
@@ -214,6 +218,12 @@ impl<M: AnyFrameMeta> LinkedListOwner<M> {
         };
         links.update(i, new_link)
     }
+
+    pub open spec fn region_consistency(self, regions:MetaRegionOwners) -> bool {
+        forall |i:int|
+            0 <= i < self.list.len() ==>
+            self.list[i].slot == regions.slot_owners[frame_to_index(meta_to_frame(self.list[i].paddr))]
+    }
 }
 
 impl<M: AnyFrameMeta> OwnerOf for LinkedList<M> {
@@ -224,8 +234,10 @@ impl<M: AnyFrameMeta> OwnerOf for LinkedList<M> {
         &&& self.back is None <==> owner.list.len() == 0
         &&& owner.list.len() > 0 ==>
             self.front is Some &&
+            self.front.unwrap().addr() == owner.list[0].paddr &&
             owner.perms[0]@.pptr() == self.front.unwrap() &&
             self.back is Some &&
+            self.back.unwrap().addr() == owner.list[owner.list.len()-1].paddr &&
             owner.perms[owner.list.len()-1]@.pptr() == self.back.unwrap()
         &&& self.size == owner.list.len()
         &&& self.list_id == owner.list_id
@@ -270,18 +282,12 @@ pub tracked struct CursorOwner<M: AnyFrameMeta> {
     pub list_own: LinkedListOwner<M>,
     pub list_perm: Tracked<PointsTo<LinkedList<M>>>,
 
-    pub length: int,
     pub index: int,
-    pub remaining: int,
 }
 
 impl<M: AnyFrameMeta> Inv for CursorOwner<M> {
     open spec fn inv(&self) -> bool {
-        &&& self.length == self.list_own.list.len()
-        &&& self.length == self.index + self.remaining
-        &&& 0 <= self.index <= self.length
-        &&& 0 <= self.remaining <= self.length
-        &&& 0 <= self.length
+        &&& 0 <= self.index <= self.list_own.list.len()
         &&& self.list_own.inv()
     }
 }
@@ -306,9 +312,10 @@ impl<M: AnyFrameMeta> OwnerOf for CursorMut<M> {
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool
     {
-        &&& 0 <= owner.index < owner.list_own.list.len() ==>
-                self.current.is_some() &&
-                owner.list_own.perms[owner.index]@.pptr() == self.current.unwrap()
+        &&& 0 <= owner.index < owner.length() ==>
+            self.current.is_some() &&
+            self.current.unwrap().addr() == owner.list_own.list[owner.index].paddr &&
+            owner.list_own.perms[owner.index]@.pptr() == self.current.unwrap()
         &&& owner.index == owner.list_own.list.len() ==>
                 self.current.is_none()
         &&& owner.list_perm@.pptr() == self.list
@@ -330,8 +337,12 @@ impl<M: AnyFrameMeta> CursorModel<M> {
 }
 
 impl<M: AnyFrameMeta> CursorOwner<M> {
+    pub open spec fn length(self) -> int {
+        self.list_own.list.len() as int
+    }
+
     pub open spec fn current(self) -> Option<LinkOwner<M>> {
-        if 0 <= self.index < self.length {
+        if 0 <= self.index < self.length() {
             Some(self.list_own.list[self.index])
         } else {
             None
@@ -342,9 +353,7 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         CursorOwner::<M> {
             list_own: list_own,
             list_perm: list_perm,
-            length: list_own.list.len() as int,
             index: 0,
-            remaining: list_own.list.len() as int,
         }
     }
 
@@ -357,9 +366,7 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         CursorOwner::<M> {
             list_own: list_own,
             list_perm: list_perm,
-            length: list_own.list.len() as int,
             index: 0,
-            remaining: list_own.list.len() as int,
         }
     }
 
@@ -367,9 +374,7 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         CursorOwner::<M> {
             list_own: list_own,
             list_perm: list_perm,
-            length: list_own.list.len() as int,
             index: if list_own.list.len() > 0 { list_own.list.len() as int - 1 } else { 0 },
-            remaining: if list_own.list.len() > 0 { 1 } else { 0 },
         }
     }
 
@@ -382,9 +387,7 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         CursorOwner::<M> {
             list_own: list_own,
             list_perm: list_perm,
-            length: list_own.list.len() as int,
             index: if list_own.list.len() > 0 { list_own.list.len() as int - 1 } else { 0 },
-            remaining: if list_own.list.len() > 0 { 1 } else { 0 },
         }
     }
 
@@ -392,9 +395,7 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         CursorOwner::<M> {
             list_own: list_own,
             list_perm: list_perm,
-            length: list_own.list.len() as int,
             index: list_own.list.len() as int,
-            remaining: 0,
         }
     }
 
@@ -407,19 +408,11 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         CursorOwner::<M> {
             list_own: list_own,
             list_perm: list_perm,
-            length: list_own.list.len() as int,
             index: list_own.list.len() as int,
-            remaining: 0,
         }
     }
 
-/*    #[verifier::returns(proof)]
-    pub proof fn cur_own(self) -> Tracked<PointsTo<Link<M>>>
-        requires
-            0 <= self.index < self.length
-    {
-        self.list_own.list[self.index].self_perm
-    }*/
+
 }
 
 }

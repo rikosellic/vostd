@@ -7,8 +7,8 @@ edition = "2021"
 crate-type = ["rlib"]
 name = "aster_common"
 # for cargo
-# path = "src/.dummy.rs"
-path = "src/lib.rs"
+path = "src/.dummy.rs"
+# path = "src/lib.rs"
 
 [features]
 verus = []
@@ -16,10 +16,15 @@ verify = ["verus"]
 alloc = []
 default = ["verify", "alloc"]
 
+[package.metadata.verus]
+path = "src/lib.rs"
+verify = true
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-vstd = { path = "../tools/verus/source/vstd" }
-builtin_macros = { path = "../tools/verus/source/builtin_macros" }
+vstd = { workspace = true }
+builtin = { workspace = true }
+builtin_macros = { workspace = true }
 vstd_extra = { path = "../vstd_extra" }
  
