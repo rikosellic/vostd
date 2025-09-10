@@ -3,6 +3,8 @@
 .git-slave/
 .gitslave
 
+dv/
+
 # Cargo
 Cargo.lock
 target/
