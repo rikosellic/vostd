@@ -27,3 +27,9 @@ codegen-units = 1
 opt-level = 3
 incremental = false
 codegen-units = 1
+
+[workspace.dependencies]
+# Verus
+vstd = { path = "tools/verus/source/vstd" }
+builtin = { package = "verus_builtin", path = "tools/verus/source/builtin" }
+builtin_macros = { package = "verus_builtin_macros", path = "tools/verus/source/builtin_macros" }
