@@ -4,31 +4,22 @@
 
 use core::mem::ManuallyDrop;
 
-use super::{PageTableEntryTrait, PageTableNode, PageTableNodeRef};
+use super::{PageTableNode, PageTableNodeRef};
 use crate::{
-    mm::{page_prop::PageProperty, page_table::PageTableConfig, Paddr, PagingLevel},
-    sync::RcuDrop,
+    mm::{Paddr, PagingLevel},
+//    sync::RcuDrop,
 };
 
-/// A page table entry that owns the child of a page table node if present.
-#[derive(Debug)]
-pub(in crate::mm) enum Child<C: PageTableConfig> {
-    /// A child page table node.
-    PageTable(RcuDrop<PageTableNode<C>>),
-    /// Physical address of a mapped physical frame.
-    ///
-    /// It is associated with the virtual page property and the level of the
-    /// mapping node, which decides the size of the frame.
-    Frame(Paddr, PagingLevel, PageProperty),
-    None,
-}
+use aster_common::prelude::*;
 
 impl<C: PageTableConfig> Child<C> {
     /// Returns whether the child is not present.
+    #[rustc_allow_incoherent_impl]
     pub(in crate::mm) fn is_none(&self) -> bool {
         matches!(self, Child::None)
     }
 
+    #[rustc_allow_incoherent_impl]
     pub(super) fn into_pte(self) -> C::E {
         match self {
             Child::PageTable(node) => {
@@ -48,6 +39,7 @@ impl<C: PageTableConfig> Child<C> {
     ///  - must not be referenced by a living [`ChildRef`].
     ///
     /// The level must match the original level of the child.
+    #[rustc_allow_incoherent_impl]
     pub(super) unsafe fn from_pte(pte: C::E, level: PagingLevel) -> Self {
         if !pte.is_present() {
             return Child::None;
@@ -59,8 +51,8 @@ impl<C: PageTableConfig> Child<C> {
             // SAFETY: The caller ensures that this node was created by
             // `into_pte`, so that restoring the forgotten reference is safe.
             let node = unsafe { PageTableNode::from_raw(paddr) };
-            debug_assert_eq!(node.level(), level - 1);
-            return Child::PageTable(RcuDrop::new(node));
+//            debug_assert_eq!(node.level(), level - 1);
+            return Child::PageTable(/*RcuDrop::new(*/node/*)*/);
         }
 
         Child::Frame(paddr, level, pte.prop())
@@ -68,7 +60,6 @@ impl<C: PageTableConfig> Child<C> {
 }
 
 /// A reference to the child of a page table node.
-#[derive(Debug)]
 pub(in crate::mm) enum ChildRef<'a, C: PageTableConfig> {
     /// A child page table node.
     PageTable(PageTableNodeRef<'a, C>),
@@ -80,6 +71,7 @@ pub(in crate::mm) enum ChildRef<'a, C: PageTableConfig> {
     None,
 }
 
+/* TODO: borrow_paddr
 impl<C: PageTableConfig> ChildRef<'_, C> {
     /// Converts a PTE to a child.
     ///
@@ -108,4 +100,4 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
 
         ChildRef::Frame(paddr, level, pte.prop())
     }
-}
+}*/

@@ -4,62 +4,46 @@
 
 use core::mem::ManuallyDrop;
 
-use super::{Child, ChildRef, PageTableEntryTrait, PageTableGuard, PageTableNode};
+use super::{Child, ChildRef, PageTableGuard, PageTableNode};
 use crate::{
     mm::{
         nr_subpage_per_huge,
         page_prop::PageProperty,
         page_size,
-        page_table::{PageTableConfig, PageTableNodeRef},
+        page_table::{PageTableNodeRef},
     },
-    sync::RcuDrop,
-    task::atomic_mode::InAtomicMode,
+//    sync::RcuDrop,
+//    task::atomic_mode::InAtomicMode,
 };
 
-/// A view of an entry in a page table node.
-///
-/// It can be borrowed from a node using the [`PageTableGuard::entry`] method.
-///
-/// This is a static reference to an entry in a node that does not account for
-/// a dynamic reference count to the child. It can be used to create a owned
-/// handle, which is a [`Child`].
-pub(in crate::mm) struct Entry<'a, 'rcu, C: PageTableConfig> {
-    /// The page table entry.
-    ///
-    /// We store the page table entry here to optimize the number of reads from
-    /// the node. We cannot hold a `&mut E` reference to the entry because that
-    /// other CPUs may modify the memory location for accessed/dirty bits. Such
-    /// accesses will violate the aliasing rules of Rust and cause undefined
-    /// behaviors.
-    pte: C::E,
-    /// The index of the entry in the node.
-    idx: usize,
-    /// The node that contains the entry.
-    node: &'a mut PageTableGuard<'rcu, C>,
-}
+use aster_common::prelude::*;
 
 impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     /// Returns if the entry does not map to anything.
+    #[rustc_allow_incoherent_impl]
     pub(in crate::mm) fn is_none(&self) -> bool {
         !self.pte.is_present()
     }
-
+ 
     /// Returns if the entry maps to a page table node.
+    #[rustc_allow_incoherent_impl]
     pub(in crate::mm) fn is_node(&self) -> bool {
-        self.pte.is_present() && !self.pte.is_last(self.node.level())
+        self.pte.is_present()/* && !self.pte.is_last(self.node.level())*/
     }
 
-    /// Gets a reference to the child.
+/*    /// Gets a reference to the child.
     pub(in crate::mm) fn to_ref(&self) -> ChildRef<'rcu, C> {
         // SAFETY:
         //  - The PTE outlives the reference (since we have `&self`).
         //  - The level matches the current node.
         unsafe { ChildRef::from_pte(&self.pte, self.node.level()) }
-    }
+    }*/
 
     /// Operates on the mapping properties of the entry.
     ///
     /// It only modifies the properties if the entry is present.
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub(in crate::mm) fn protect(&mut self, op: &mut impl FnMut(&mut PageProperty)) {
         if !self.pte.is_present() {
             return;
@@ -80,7 +64,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         //  2. We replace the PTE with a new one, which differs only in
         //     `PageProperty`, so the level still matches the current
         //     page table node.
-        unsafe { self.node.write_pte(self.idx, self.pte) };
+//        unsafe { self.node.write_pte(self.idx, self.pte) };
     }
 
     /// Replaces the entry with a new child.
@@ -91,8 +75,11 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     ///
     /// The method panics if the level of the new child does not match the
     /// current node.
+    #[verifier::external_body]
+    #[rustc_allow_incoherent_impl]
     pub(in crate::mm) fn replace(&mut self, new_child: Child<C>) -> Child<C> {
-        match &new_child {
+        unimplemented!()
+/*        match &new_child {
             Child::PageTable(node) => {
                 assert_eq!(node.level(), self.node.level() - 1);
             }
@@ -122,9 +109,10 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
         self.pte = new_pte;
 
-        old_child
+        old_child*/
     }
 
+    /* TODO: stub out InAtomicMode
     /// Allocates a new child page table node and replaces the entry with it.
     ///
     /// If the old entry is not none, the operation will fail and return `None`.
@@ -226,5 +214,5 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             idx,
             node: guard,
         }
-    }
+    }*/
 }

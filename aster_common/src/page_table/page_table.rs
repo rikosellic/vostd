@@ -8,11 +8,11 @@ use core::marker::PhantomData;
 
 verus! {
 
-#[derive(Debug)]
+/// A handle to a page table.
+/// A page table can track the lifetime of the mapped physical pages.
 #[rustc_has_incoherent_inherent_impls]
-pub struct PageTable<M: PageTableMode> {
-    pub root: RawPageTableNode,
-    pub _phantom: PhantomData<M>,
+pub struct PageTable<C: PageTableConfig> {
+    pub root: PageTableNode<C>,
 }
 
 } // verus!

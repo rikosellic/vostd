@@ -2,18 +2,13 @@
 
 use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref, ptr::NonNull};
 
-use aster_common::prelude::AnyFrameMeta;
+use aster_common::prelude::*;
 
 use super::{
     Frame,
 };
 use crate::{mm::Paddr/*, sync::non_null::NonNullPtr*/};
 
-/// A struct that can work as `&'a Frame<M>`.
-pub struct FrameRef<'a, M: AnyFrameMeta> {
-    inner: ManuallyDrop<Frame<M>>,
-    _marker: PhantomData<&'a Frame<M>>,
-}
 /*
 impl FrameRef<'_> {
     /// Borrows the [`Frame`] at the physical address as a [`FrameRef`].
@@ -35,13 +30,13 @@ impl FrameRef<'_> {
     }
 }*/
 
-impl<M: AnyFrameMeta> Deref for FrameRef<'_, M> {
+/*impl<M: AnyFrameMeta> Deref for FrameRef<'_, M> {
     type Target = Frame<M>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
-}
+}*/
 
 // SAFETY: `Frame` is essentially a `*const MetaSlot` that could be used as a non-null
 // `*const` pointer.

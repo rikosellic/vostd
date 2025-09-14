@@ -217,7 +217,7 @@ impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
     }
 }*/
 
-impl<M: AnyFrameMeta> From<UniqueFrame<Link<M>>> for Frame<M> {
+/*impl<M: AnyFrameMeta> From<UniqueFrame<Link<M>>> for Frame<M> {
     #[verifier::external_body]
     fn from(unique: UniqueFrame<Link<M>>) -> Self {
         unimplemented!()
@@ -229,9 +229,9 @@ impl<M: AnyFrameMeta> From<UniqueFrame<Link<M>>> for Frame<M> {
         // SAFETY: The internal representation is now the same.
         unsafe { core::mem::transmute(unique) }*/
     }
-}
+}*/
 
-impl<M: AnyFrameMeta> TryFrom<Frame<M>> for UniqueFrame<Link<M>> {
+/*impl<M: AnyFrameMeta> TryFrom<Frame<M>> for UniqueFrame<Link<M>> {
     type Error = Frame<M>;
 
     #[verifier::external_body]
@@ -253,5 +253,5 @@ impl<M: AnyFrameMeta> TryFrom<Frame<M>> for UniqueFrame<Link<M>> {
             Err(_) => Err(frame),
         }*/
     }
-}
+}*/
 }

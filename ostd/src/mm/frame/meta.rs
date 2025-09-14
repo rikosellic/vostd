@@ -36,7 +36,6 @@ use core::{
 //use log::info;
 
 use crate::{
-    arch::mm::PagingConsts,
 //    boot::memory_region::MemoryRegionType,
 //    const_assert,
     mm::{
@@ -51,7 +50,7 @@ use crate::{
 //    util::ops::range_difference,
 };
 
-pub use aster_common::prelude::{mapping, MetaSlot, META_SLOT_SIZE, FrameMeta, Link};
+pub use aster_common::prelude::*;
 
 /// The maximum number of bytes of the metadata of a frame.
 pub const FRAME_METADATA_MAX_SIZE: usize = META_SLOT_SIZE()

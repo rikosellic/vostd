@@ -46,38 +46,6 @@ use crate::{
     task::atomic_mode::InAtomicMode,
 };
 
-/// The cursor for traversal over the page table.
-///
-/// A slot is a PTE at any levels, which correspond to a certain virtual
-/// memory range sized by the "page size" of the current level.
-///
-/// A cursor is able to move to the next slot, to read page properties,
-/// and even to jump to a virtual address directly.
-#[derive(Debug)]
-pub(crate) struct Cursor<'rcu, C: PageTableConfig> {
-    /// The current path of the cursor.
-    ///
-    /// The level 1 page table lock guard is at index 0, and the level N page
-    /// table lock guard is at index N - 1.
-    path: [Option<PageTableGuard<'rcu, C>>; MAX_NR_LEVELS],
-    /// The cursor should be used in a RCU read side critical section.
-    rcu_guard: &'rcu dyn InAtomicMode,
-    /// The level of the page table that the cursor currently points to.
-    level: PagingLevel,
-    /// The top-most level that the cursor is allowed to access.
-    ///
-    /// From `level` to `guard_level`, the nodes are held in `path`.
-    guard_level: PagingLevel,
-    /// The virtual address that the cursor currently points to.
-    va: Vaddr,
-    /// The virtual address range that is locked.
-    barrier_va: Range<Vaddr>,
-    _phantom: PhantomData<&'rcu PageTable<C>>,
-}
-
-/// The maximum value of `PagingConstsTrait::NR_LEVELS`.
-const MAX_NR_LEVELS: usize = 4;
-
 /// A fragment of a page table that can be taken out of the page table.
 #[derive(Debug)]
 #[must_use]

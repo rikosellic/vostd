@@ -1,95 +1,81 @@
 pub mod dyn_page;
 pub mod meta;
-pub mod model;
+//pub mod model;
 
 pub use meta::*;
 pub use dyn_page::*;
-pub use model::*;
+//pub use model::*;
 
 use vstd::prelude::*;
-use vstd::simple_pptr;
+use vstd::simple_pptr::{self, PPtr};
 use vstd::cell;
 use core::marker::PhantomData;
 use crate::mm::Paddr;
 use crate::x86_64::mm::{MAX_NR_PAGES, MAX_PADDR, PAGE_SIZE};
 
+use crate::prelude::*;
 use crate::prelude::MetaSlotStorage::PTNode;
 
 use vstd_extra::ownership::*;
 
+use std::mem::ManuallyDrop;
+
 verus! {
 
+/// A smart pointer to a frame.
+///
+/// A frame is a contiguous range of bytes in physical memory. The [`Frame`]
+/// type is a smart pointer to a frame that is reference-counted.
+///
+/// Frames are associated with metadata. The type of the metadata `M` is
+/// determines the kind of the frame. If `M` implements [`AnyUFrameMeta`], the
+/// frame is a untyped frame. Otherwise, it is a typed frame.
+#[repr(transparent)]
 #[rustc_has_incoherent_inherent_impls]
-pub struct Page<M: PageMeta> {
-    pub ptr: simple_pptr::PPtr<MetaSlot>,
+pub struct Frame<M: AnyFrameMeta> {
+    pub ptr: PPtr<MetaSlot>,
     pub _marker: PhantomData<M>,
 }
 
-impl<M: PageMeta> Page<M> {
-    pub open spec fn inv_ptr(self) -> bool {
-        let addr = self.ptr.addr();
-        FRAME_METADATA_RANGE().start <= addr && addr < FRAME_METADATA_RANGE().start + MAX_NR_PAGES()
-            * META_SLOT_SIZE() && addr % META_SLOT_SIZE() == 0
-    }
+/// A struct that can work as `&'a Frame<M>`.
+pub struct FrameRef<'a, M: AnyFrameMeta> {
+    inner: ManuallyDrop<Frame<M>>,
+    _marker: PhantomData<&'a Frame<M>>,
+}
 
-    #[verifier::inline]
-    pub open spec fn paddr_spec(&self) -> Paddr
-        recommends
-            self.inv_ptr(),
+impl<M: AnyFrameMeta> Inv for Frame<M> {
+    open spec fn inv(&self) -> bool
     {
-        meta_to_frame(self.ptr.addr())
+        &&& self.ptr.addr() % META_SLOT_SIZE() == 0
+        &&& FRAME_METADATA_RANGE().start <= self.ptr.addr() < FRAME_METADATA_RANGE().start + MAX_NR_PAGES() * META_SLOT_SIZE()
+        &&& self.ptr.addr() < VMALLOC_BASE_VADDR() - LINEAR_MAPPING_BASE_VADDR()
     }
+}
 
-    #[verifier::when_used_as_spec(paddr_spec)]
-    pub fn paddr(&self) -> (res: Paddr)
-        requires
-            self.inv_ptr(),
-        ensures
-            res == self.paddr_spec(),
-            res % PAGE_SIZE() == 0,
-            res < MAX_PADDR(),
-    {
-        meta_to_frame(self.ptr.addr())
-    }
+impl<M: AnyFrameMeta> Frame<M> {
 
     #[verifier::external_body]
-    pub fn meta_pt<'a>(
+    pub fn meta_pt<'a, C: PageTableConfig>(
         &'a self,
         Tracked(p_slot): Tracked<&'a simple_pptr::PointsTo<MetaSlot>>,
         owner: MetaSlotOwner,
 //        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>,
-    ) -> (res: & PageTablePageMetaInner)
+    ) -> (res: & PageTablePageMeta<C>)
         requires
-            self.inv_ptr(),
+            self.inv(),
             p_slot.pptr() == self.ptr,
             p_slot.is_init(),
             p_slot.value().wf(&owner),
             is_variant(owner.view().storage.value(), "PTNode"),
         ensures
-            PTNode(*res) == owner.view().storage.value(),
+//            PTNode(*res) == owner.view().storage.value(),
     {
         let slot = self.ptr.borrow(Tracked(p_slot));
         unimplemented!()
 //        slot.storage.borrow(owner.storage)
     }
 
-/*    pub fn meta_frame<'a>(
-        &'a self,
-        Tracked(p_slot): Tracked<&'a simple_pptr::PointsTo<MetaSlot>>,
-//        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>,
-    ) -> (res: &'a FrameMeta)
-        requires
-            self.inv_ptr(),
-            p_slot.pptr() == self.ptr,
-            p_slot.is_init(),
-            p_slot.value().wf(),
-//            is_variant(p_inner.value(), "_frame"),
-        ensures
-//            *res == p_slot.value().borrow_frame_spec(p_inner),
-    {
-        let slot = self.ptr.borrow(Tracked(p_slot));
-  //      slot.borrow_frame(Tracked(p_inner))
-    }*/
+
 }
 
 } // verus!

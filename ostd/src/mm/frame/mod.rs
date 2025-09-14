@@ -39,7 +39,6 @@ pub mod unique;
 pub mod untyped;
 
 mod frame_ref;
-pub use frame_ref::FrameRef;
 
 #[cfg(ktest)]
 mod test;
@@ -55,31 +54,17 @@ use core::{
 };
 
 //pub use allocator::GlobalFrameAllocator;
-use meta::{mapping, FrameMeta, GetFrameError, MetaSlot, REF_COUNT_UNUSED};
+use meta::{mapping, GetFrameError, MetaSlot, REF_COUNT_UNUSED};
 //pub use segment::Segment;
 use untyped::{/*AnyUFrameMeta,*/ UFrame};
 
 use super::{PagingLevel, PAGE_SIZE};
-use crate::mm::{Paddr, PagingConsts, Vaddr};
+use crate::mm::{Paddr, Vaddr};
 
 use aster_common::prelude::*;
 use vstd_extra::ownership::*;
 
 verus! {
-
-/// A smart pointer to a frame.
-///
-/// A frame is a contiguous range of bytes in physical memory. The [`Frame`]
-/// type is a smart pointer to a frame that is reference-counted.
-///
-/// Frames are associated with metadata. The type of the metadata `M` is
-/// determines the kind of the frame. If `M` implements [`AnyUFrameMeta`], the
-/// frame is a untyped frame. Otherwise, it is a typed frame.
-#[repr(transparent)]
-pub struct Frame<M: AnyFrameMeta> {
-    pub ptr: PPtr<MetaSlot>,
-    pub _marker: PhantomData<M>,
-}
 
 /*
 unsafe impl<M: AnyFrameMeta + ?Sized> Send for Frame<M> {}
@@ -110,6 +95,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     #[verus_spec(
         with Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
+    #[rustc_allow_incoherent_impl]
     pub fn from_unused(paddr: Paddr, metadata: M) -> (res:Result<Self, GetFrameError>)
         requires
             old(regions).inv(),
@@ -131,6 +117,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             Tracked(perm) : Tracked<&'a vstd::simple_pptr::PointsTo<M>>
     )]
     #[verifier::external_body]
+    #[rustc_allow_incoherent_impl]
     pub fn meta(&self) -> &'a M
         requires
             old(regions).slots.contains_key(frame_to_index(self.ptr.addr())),
@@ -158,6 +145,7 @@ impl<M: AnyFrameMeta> Frame<M> {
     #[verus_spec(
         with Tracked(regions) : Tracked<&mut MetaRegionOwners>
     )]
+    #[rustc_allow_incoherent_impl]
     pub fn from_in_use(paddr: Paddr) -> Result<Self, GetFrameError> {
         #[verus_spec(with Tracked(regions))]
         let from_in_use = MetaSlot::get_from_in_use(paddr);
@@ -173,6 +161,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     #[verus_spec(
         with Tracked(regions) : Tracked<& MetaRegionOwners>
     )]
+    #[rustc_allow_incoherent_impl]
     pub fn start_paddr(&self) -> Paddr
         requires
             FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr()) < FRAME_METADATA_RANGE().end,
@@ -195,11 +184,13 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     ///
     /// Currently, the level is always 1, which means the frame is a regular
     /// page frame.
+    #[rustc_allow_incoherent_impl]
     pub const fn map_level(&self) -> PagingLevel {
         1
     }
 
     /// Gets the size of this page in bytes.
+    #[rustc_allow_incoherent_impl]
     pub const fn size(&self) -> usize {
         PAGE_SIZE()
     }
@@ -226,6 +217,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     #[verus_spec(
         with Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
+    #[rustc_allow_incoherent_impl]
     pub fn reference_count(&self) -> u64
         requires
             old(regions).slots.contains_key(frame_to_index(self.ptr.addr())),
@@ -262,6 +254,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     #[verus_spec(
         with Tracked(regions) : Tracked<&mut MetaRegionOwners>
     )]
+    #[rustc_allow_incoherent_impl]
     pub(in crate::mm) fn into_raw(self) -> Paddr
         requires
             FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr()) < FRAME_METADATA_RANGE().end,
@@ -295,6 +288,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     #[verus_spec(
         with Tracked(regions) : Tracked<&mut MetaRegionOwners>
     )]
+    #[rustc_allow_incoherent_impl]
     pub(in crate::mm) fn from_raw(paddr: Paddr) -> Self
         requires
             paddr % PAGE_SIZE() == 0,
@@ -318,6 +312,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     #[verus_spec(
         with Tracked(regions): Tracked<&'a MetaRegionOwners>
     )]
+    #[rustc_allow_incoherent_impl]
     pub fn slot(&self) -> (slot: &'a MetaSlot)
         requires
             regions.slots.contains_key(frame_to_index(self.ptr.addr())),

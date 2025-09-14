@@ -3,6 +3,7 @@ use vstd::cell::{self, PCell};
 use vstd::simple_pptr::{self, PPtr};
 use vstd::atomic_ghost::*;
 use vstd::atomic::PAtomicU64;
+use vstd::atomic::PAtomicU8;
 
 use vstd_extra::ownership::*;
 
@@ -34,10 +35,17 @@ pub struct LinkOuter {
     pub prev: Option<PPtr<LinkOuter>>,
 }
 
+pub struct PageTablePageMetaOuter {
+    pub nr_children: u16,
+    pub stray: bool,
+    pub level: PagingLevel,
+    pub lock: PAtomicU8,
+}
+
 pub enum MetaSlotStorage {
     Empty([u8; 39]),
     FrameLink(LinkOuter),
-    PTNode(PageTablePageMetaInner),
+    PTNode(PageTablePageMetaOuter),
 }
 
 #[rustc_has_incoherent_inherent_impls]

@@ -32,7 +32,6 @@ use aster_common::prelude::*;
 use aster_common::prelude::frame_list_model::*;
 
 use crate::{
-    arch::mm::PagingConsts,
     mm::{Paddr, Vaddr},
 };
 

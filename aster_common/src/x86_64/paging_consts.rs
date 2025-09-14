@@ -87,6 +87,16 @@ impl PagingConstsTrait for PagingConsts {
         2
     }
 
+    #[verifier::inline]
+    open spec fn VA_SIGN_EXT_spec() -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn VA_SIGN_EXT() -> bool {
+        true
+    }
+
     // Expansion for PTE_SIZE
     #[verifier::inline]
     open spec fn PTE_SIZE_spec() -> usize {
@@ -111,6 +121,8 @@ impl PagingConstsTrait for PagingConsts {
         }
         8
     }
+
+
 }
 
 } // verus!
