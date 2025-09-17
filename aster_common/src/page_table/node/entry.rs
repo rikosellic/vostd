@@ -8,6 +8,8 @@ use crate::prelude::{
 
 use vstd_extra::ownership::*;
 
+use std::ops::Deref;
+
 verus! {
 
 /// A reference to a page table node.
@@ -17,6 +19,14 @@ pub type PageTableNodeRef<'a, C: PageTableConfig> = FrameRef<'a, PageTablePageMe
 #[rustc_has_incoherent_inherent_impls]
 pub struct PageTableGuard<'rcu, C: PageTableConfig> {
     pub inner: PageTableNodeRef<'rcu, C>,
+}
+
+impl<'rcu, C: PageTableConfig> Deref for PageTableGuard<'rcu, C> {
+    type Target = PageTableNodeRef<'rcu, C>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 #[rustc_has_incoherent_inherent_impls]

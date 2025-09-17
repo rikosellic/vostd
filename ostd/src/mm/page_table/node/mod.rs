@@ -255,14 +255,6 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     }
 }
 
-/*impl<'rcu, C: PageTableConfig> Deref for PageTableGuard<'rcu, C> {
-    type Target = PageTableNodeRef<'rcu, C>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}*/
-
 /*impl<C: PageTableConfig> Drop for PageTableGuard<'_, C> {
     fn drop(&mut self) {
         self.inner.meta().lock.store(0, Ordering::Release);
