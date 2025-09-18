@@ -1,17 +1,22 @@
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
-use super::super::Page;
+use super::super::Frame;
 use super::frame_to_meta;
 use super::PageUsage;
 
+use crate::prelude::*;
+
+use vstd::cell::{PCell, PointsTo};
+use vstd::atomic::{PAtomicU8, PermissionU8};
+use crate::mm::*;
+use crate::x86_64::page_table_entry::PageTableEntry;
+use crate::x86_64::paging_consts::PagingConsts;
+use core::marker::PhantomData;
+
 verus! {
 
-use crate::prelude::MetaSlot;
-use crate::prelude::PagingConstsTrait;
-use crate::prelude::Link;
-
-#[allow(non_snake_case)]
+/*#[allow(non_snake_case)]
 pub trait PageMeta: Sync + Sized {
     spec fn USAGE_spec() -> PageUsage;
 
@@ -32,64 +37,7 @@ pub trait PageMeta: Sync + Sized {
         ensures
             page == Self::on_drop_spec(*old(page)),
     ;
-}
-
-} // verus!
-verus! {
-
-#[derive(Debug, Default)]
-#[repr(C)]
-#[rustc_has_incoherent_inherent_impls]
-pub struct FrameMeta {
-    // If not doing so, the page table metadata would fit
-    // in the front padding of meta slot and make it 12 bytes.
-    // We make it 16 bytes. Further usage of frame metadata
-    // is welcome to exploit this space.
-    _unused_for_layout_padding: [u8; 8],
-}
-
-impl PageMeta for FrameMeta {
-    #[verifier::inline]
-    open spec fn USAGE_spec() -> PageUsage {
-        PageUsage::Frame
-    }
-
-    proof fn used() {
-        assert(PageUsage::Frame != PageUsage::Unused);
-    }
-
-    #[inline(always)]
-    fn USAGE() -> (res: PageUsage)
-        ensures
-            res == Self::USAGE_spec(),
-    {
-        PageUsage::Frame
-    }
-
-    #[verifier::inline]
-    open spec fn on_drop_spec(page: Page<Self>) -> (res: Page<Self>) {
-        page
-    }
-
-    #[inline(always)]
-    fn on_drop(page: &mut Page<Self>)
-        ensures
-            page == Self::on_drop_spec(*old(page)),
-    {
-        // Nothing should be done so far since dropping the page would
-        // have all taken care of.
-    }
-}
-
-} // verus!
-verus! {
-
-use vstd::cell::{PCell, PointsTo};
-use vstd::atomic::{PAtomicU8, PermissionU8};
-use crate::mm::*;
-use crate::x86_64::page_table_entry::PageTableEntry;
-use crate::x86_64::paging_consts::PagingConsts;
-use core::marker::PhantomData;
+}*/
 
 #[rustc_has_incoherent_inherent_impls]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -112,31 +60,57 @@ impl Default for MapTrackingStatus {
     }
 }
 
-#[derive(Debug, Default)]
-#[repr(C)]
-pub struct PageTablePageMetaInner {
-    pub nr_children: u16,
-    pub level: PagingLevel,
-    pub is_tracked: MapTrackingStatus,
-}
-
-#[repr(C)]
+/// The metadata of any kinds of page table pages.
+/// Make sure the the generic parameters don't effect the memory layout.
 #[rustc_has_incoherent_inherent_impls]
-pub struct PageTablePageMeta {
+pub struct PageTablePageMeta<C: PageTableConfig> {
+    /// The number of valid PTEs. It is mutable if the lock is held.
+    pub nr_children: /*SyncUnsafeCell<*/u16/*>*/,
+    /// If the page table is detached from its parent.
+    ///
+    /// A page table can be detached from its parent while still being accessed,
+    /// since we use a RCU scheme to recycle page tables. If this flag is set,
+    /// it means that the parent is recycling the page table.
+    pub stray: /*SyncUnsafeCell<*/bool/*>*/,
+    /// The level of the page table page. A page table page cannot be
+    /// referenced by page tables of different levels.
+    pub level: PagingLevel,
+    /// The lock for the page table page.
     pub lock: PAtomicU8,
-    pub inner: PCell<PageTablePageMetaInner>,
-    pub _phantom: PhantomData<(PageTableEntry, PagingConsts)>,
+    pub _phantom: core::marker::PhantomData<C>,
 }
 
-spec fn drop_tree_spec(_page: Page<PageTablePageMeta>) -> Page<PageTablePageMeta>;
+spec fn drop_tree_spec<C: PageTableConfig>(_page: Frame<PageTablePageMeta<C>>) -> Frame<PageTablePageMeta<C>>;
 
 #[verifier::external_body]
-extern  fn drop_tree(_page: &mut Page<PageTablePageMeta>)
+extern  fn drop_tree<C: PageTableConfig>(_page: &mut Frame<PageTablePageMeta<C>>)
     ensures
-        _page == drop_tree_spec(*old(_page)),
+        _page == drop_tree_spec::<C>(*old(_page)),
 ;
 
-impl PageMeta for PageTablePageMeta {
+impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
+    fn on_drop(&mut self) { }
+
+    fn is_untyped(&self) -> bool { false }
+
+    spec fn vtable_ptr(&self) -> usize;
+
+    spec fn cast_to_spec(x: &MetaSlotStorage) -> PPtr<Self>;
+
+    #[verifier::external_body]
+    fn cast_to(x: &MetaSlotStorage) -> PPtr<Self> {
+        unimplemented!()
+    }
+
+    spec fn write_as_spec(&self) -> MetaSlotStorage;
+
+    #[verifier::external_body]
+    fn write_as(&self) -> MetaSlotStorage {
+        unimplemented!()
+    }
+}
+
+/*impl PageMeta for PageTablePageMeta {
     #[verifier::inline]
     open spec fn USAGE_spec() -> PageUsage {
         PageUsage::PageTable
@@ -164,19 +138,7 @@ impl PageMeta for PageTablePageMeta {
     {
         drop_tree(_page)
     }
-}
-
-#[rustc_has_incoherent_inherent_impls]
-pub tracked struct PageTablePageMetaModel {
-    pub tracked lock: PermissionU8,
-    pub tracked inner: PointsTo<PageTablePageMetaInner>,
-}
-
-impl PageTablePageMetaModel {
-    pub open spec fn relate(&self, m: &PageTablePageMeta) -> bool {
-        self.lock.is_for(m.lock) && self.inner.id() == m.inner.id()
-    }
-}
+}*/
 
 /*impl PageTablePageMeta {
     pub open spec fn new_locked_spec(
@@ -216,7 +178,7 @@ verus! {
 #[repr(C)]
 pub struct MetaPageMeta {}
 
-impl PageMeta for MetaPageMeta {
+/*impl PageMeta for MetaPageMeta {
     #[verifier::inline]
     open spec fn USAGE_spec() -> PageUsage {
         PageUsage::Meta
@@ -244,7 +206,7 @@ impl PageMeta for MetaPageMeta {
             _page == Self::on_drop_spec(*old(_page)),
     {
     }
-}
+}*/
 
 } // verus!
 verus! {
@@ -253,7 +215,7 @@ verus! {
 #[repr(C)]
 pub struct KernelMeta {}
 
-impl PageMeta for KernelMeta {
+/*impl PageMeta for KernelMeta {
     #[verifier::inline]
     open spec fn USAGE_spec() -> PageUsage {
         PageUsage::Kernel
@@ -281,6 +243,6 @@ impl PageMeta for KernelMeta {
             _page == Self::on_drop_spec(*old(_page)),
     {
     }
-}
+}*/
 
 } // verus!

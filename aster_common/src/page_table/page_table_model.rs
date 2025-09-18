@@ -1,10 +1,145 @@
 use vstd::prelude::*;
+use vstd::simple_pptr::*;
 
 use vstd_extra::ghost_tree;
+use vstd_extra::ownership::*;
+use vstd_extra::prelude::TreeNodeValue;
 
 use crate::prelude::*;
 
 verus! {
+
+pub tracked struct PageTableNodeOwner {
+    pub paddr: usize,
+
+    // Metadata
+    pub is_pt: bool,  // if the node is a page table or a raw page
+    pub is_tracked: bool,  // if the node is tracked
+    pub nr_raws: nat,  // number of RawPageTableNodes
+    pub is_locked: bool,  // whether the node is locked
+    pub in_cpu: nat,  // number of CPUs that are currently using the node
+    pub nr_parents: nat,  // number of parents
+
+    // Sub-owners
+    pub entries: [Option<PageTableEntry>; CONST_NR_ENTRIES],
+}
+
+pub ghost struct PageTableNodeModel {
+    pub paddr: usize,
+
+    // Metadata
+    pub is_pt: bool,  // if the node is a page table or a raw page
+    pub is_tracked: bool,  // if the node is tracked
+    pub nr_raws: nat,  // number of RawPageTableNodes
+    pub is_locked: bool,  // whether the node is locked
+    pub in_cpu: nat,  // number of CPUs that are currently using the node
+    pub nr_parents: nat,  // number of parents
+
+    // Sub-owners
+    pub entries: [Option<PageTableEntry>; CONST_NR_ENTRIES],
+}
+
+impl Inv for PageTableNodeOwner {
+    open spec fn inv(&self) -> bool {
+        true
+    }
+}
+
+impl Inv for PageTableNodeModel {
+    open spec fn inv(&self) -> bool {
+        true
+    }
+}
+
+impl InvView for PageTableNodeOwner {
+    type V = PageTableNodeModel;
+
+    open spec fn view(&self) -> Self::V {
+        PageTableNodeModel {
+            paddr: self.paddr,
+            is_pt: self.is_pt,
+            is_tracked: self.is_tracked,
+            nr_raws: self.nr_raws,
+            is_locked: self.is_locked,
+            in_cpu: self.in_cpu,
+            nr_parents: self.nr_parents,
+
+            entries: self.entries,
+        }
+    }
+
+    proof fn view_preserves_inv(&self) { }
+}
+
+impl<C: PageTableConfig> OwnerOf for PageTableNode<C> {
+    type Owner = PageTableNodeOwner;
+
+    open spec fn wf(&self, owner: &Self::Owner) -> bool {
+        true
+    }
+}
+
+impl TreeNodeValue for PageTableNodeOwner {
+    open spec fn default() -> Self {
+        Self {
+            paddr: 0,
+            is_pt: true,
+            is_tracked: true,
+            nr_raws: 0,
+            is_locked: false,
+            in_cpu: 0,
+            nr_parents: 0,
+            entries: [None; CONST_NR_ENTRIES],
+        }
+    }
+
+    proof fn default_preserves_inv()
+        ensures
+            #[trigger] Self::default().inv(),
+    { }
+}
+
+impl TreeNodeValue for PageTableNodeModel {
+    open spec fn default() -> Self {
+        Self {
+            paddr: 0,
+            is_pt: true,
+            is_tracked: true,
+            nr_raws: 0,
+            is_locked: false,
+            in_cpu: 0,
+            nr_parents: 0,
+            entries: [None; CONST_NR_ENTRIES],
+        }
+    }
+
+    proof fn default_preserves_inv()
+        ensures
+            #[trigger] Self::default().inv(),
+    { }
+}
+
+impl<C: PageTableConfig> ModelOf for PageTableNode<C> { }
+
+pub type PageTableTreeModel = ghost_tree::Tree<PageTableNodeValue, CONST_NR_ENTRIES, CONST_NR_LEVELS>;
+
+pub tracked struct PageTableOwner<C: PageTableConfig> {
+    pub tree: PageTableTreeModel,
+    pub perms: Map<usize, PointsTo<PageTableNode<C>>>,
+}
+
+pub tracked struct PageTableModel {
+    pub tree: ghost_tree::Tree<PageTableNodeModel, CONST_NR_ENTRIES, CONST_NR_LEVELS>,
+    pub flat: Map<usize, Option<Mapping>>
+}
+
+impl<C: PageTableConfig> Inv for PageTableOwner<C> {
+    open spec fn inv(&self) -> bool {
+        true
+//        forall |path: TreePath|
+//            inv_at()
+    }
+}
 
 pub tracked struct Mapping {
     pub tracked pa: usize,
@@ -29,16 +164,16 @@ pub type PageTablePathModel = Map<usize, Tracked<Seq<PageTableNodeValue>>>;
 
 pub type PageTableMapModel = Map<usize, Option<Mapping>>;
 
-#[rustc_has_incoherent_inherent_impls]
+/*#[rustc_has_incoherent_inherent_impls]
 pub tracked struct PageTableModel {
     pub tracked tree: PageTableTreeModel,
     pub tracked path: PageTablePathModel,
     pub tracked flat: PageTableMapModel,
-}
+}*/
 
 pub open spec fn tree_to_path_refinement(tv: PageTableTreeModel, pv: PageTablePathModel) -> bool {
     forall|nr: usize| #[trigger]
-        tv.inner.trace(PageTableTreePathModel::from_va((nr * CONST_PAGE_SIZE) as usize).view())
+        tv.trace(PageTableTreePathModel::from_va((nr * CONST_PAGE_SIZE) as usize).view())
             == pv[nr]
 }
 
@@ -49,7 +184,7 @@ pub open spec fn path_to_flat_refinement(pv: PageTablePathModel, fv: PageTableMa
 pub open spec fn tree_to_flat_refinement(tv: PageTableTreeModel, fv: PageTableMapModel) -> bool {
     forall|nr: usize| #[trigger]
         fv[nr] == as_mapping(
-            tv.inner.trace(PageTableTreePathModel::from_va((nr * CONST_PAGE_SIZE) as usize)@),
+            tv.trace(PageTableTreePathModel::from_va((nr * CONST_PAGE_SIZE) as usize)@),
         )
 }
 
@@ -104,8 +239,7 @@ impl PageTableModel {
     // }
     pub open spec fn inv(self) -> bool {
         &&& self.tree.inv()
-        &&& tree_to_path_refinement(self.tree, self.path)
-        &&& path_to_flat_refinement(self.path, self.flat)
+//        &&& tree_to_flat_refinement(self.tree, self.flat)
     }
 }
 

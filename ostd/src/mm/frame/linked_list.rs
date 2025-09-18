@@ -34,7 +34,6 @@ use aster_common::prelude::frame_list_model::*;
 use ostd_specs::*;
 
 use crate::{
-    arch::mm::PagingConsts,
     mm::{Paddr, Vaddr},
 };
 
@@ -654,7 +653,7 @@ impl<M: AnyFrameMeta> CursorMut<M>
 
         let frame_ptr = frame.meta_mut(Tracked(frame_own.link_perm.borrow_mut()));
 
-        if let Some(current) = borrow_field!(&mut self.current) {
+        if let Some(current) = self.current {
             assert(owner.list_own.inv_at(owner.index));
             assert(owner.index > 0 ==> owner.list_own.inv_at(owner.index-1));
             assert(owner.index < owner.length() - 1 ==> owner.list_own.inv_at(owner.index+1));

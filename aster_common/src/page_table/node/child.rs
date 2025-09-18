@@ -1,24 +1,23 @@
 use vstd::prelude::*;
 
-use crate::prelude::{RawPageTableNode, PageProperty, Paddr, PagingLevel, DynPage};
+use crate::prelude::{PageTableConfig, PageTableNode, RawPageTableNode, PageProperty, Paddr, PagingLevel, DynPage};
 
 verus! {
 
-/// A child of a page table node.
-///
-/// This is a owning handle to a child of a page table node. If the child is
-/// either a page table node or a page, it holds a reference count to the
-/// corresponding page.
+/// A page table entry that owns the child of a page table node if present.
 #[rustc_has_incoherent_inherent_impls]
-pub enum Child {
-    PageTable(RawPageTableNode),
-    Page(DynPage, PageProperty),
-    /// Pages not tracked by handles.
-    Untracked(Paddr, PagingLevel, PageProperty),
-    None,
+pub enum Child<C: PageTableConfig> {
+    /// A child page table node.
+    pub PageTable(/*RcuDrop<*/PageTableNode<C>/*>*/),
+    /// Physical address of a mapped physical frame.
+    ///
+    /// It is associated with the virtual page property and the level of the
+    /// mapping node, which decides the size of the frame.
+    pub Frame(Paddr, PagingLevel, PageProperty),
+    pub None,
 }
 
-impl Child {
+impl<C: PageTableConfig> Child<C> {
     #[verifier::inline]
     pub open spec fn is_none_spec(&self) -> bool {
         match self {

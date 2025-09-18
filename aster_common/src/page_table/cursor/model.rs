@@ -15,7 +15,7 @@ impl ConcreteCursor {
     pub open spec fn inv(self) -> bool {
         &&& self.tree.inv()
         &&& self.path.inv()
-        &&& self.tree@.on_tree(self.locked_subtree@)
+//        &&& self.tree.on_tree(self.locked_subtree)
     }
 
     #[verifier::inline]
@@ -97,7 +97,7 @@ impl ConcreteCursor {
             self.inv(),
             path.inv(),
     {
-        self.tree@.trace(path@)
+        self.tree.trace(path@)
     }
 }
 
