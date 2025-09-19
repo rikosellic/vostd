@@ -75,7 +75,8 @@ impl<M: AnyFrameMeta> LinkedList<M>
     /// Pushes a frame to the front of the linked list.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner): Tracked<LinkedListOwner<M>>,
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            Tracked(owner): Tracked<LinkedListOwner<M>>,
             Tracked(perm): Tracked<PointsTo<LinkedList<M>>>,
             Tracked(frame_own): Tracked<&mut UniqueFrameLinkOwner<M>>
     )]
@@ -88,13 +89,18 @@ impl<M: AnyFrameMeta> LinkedList<M>
             old(frame_own).inv(),
             frame.wf(old(frame_own)),
             owner.list.len() < usize::MAX,
+            old(regions).slots.contains_key(frame_to_index(frame.ptr.addr())),
+            old(regions).slots[frame_to_index(frame.ptr.addr())]@.is_init(),
+            old(regions).slot_owners.contains_key(frame_to_index(frame.ptr.addr())),
+            old(regions).slot_owners[frame_to_index(frame.ptr.addr())].in_list@.is_for(
+                old(regions).slots[frame_to_index(frame.ptr.addr())]@.mem_contents().value().in_list),
     {
         #[verus_spec(with Tracked(owner), Tracked(perm))]
         let (cursor, cursor_own) = Self::cursor_front_mut(ptr);
         let mut cursor = cursor;
         let tracked mut cursor_own = cursor_own;
 
-        #[verus_spec(with Tracked(cursor_own.borrow_mut()), Tracked(frame_own))]
+        #[verus_spec(with Tracked(regions), Tracked(cursor_own.borrow_mut()), Tracked(frame_own))]
         cursor.insert_before(frame);
     }
 
@@ -132,7 +138,8 @@ impl<M: AnyFrameMeta> LinkedList<M>
     /// Pushes a frame to the back of the linked list.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner): Tracked<LinkedListOwner<M>>,
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            Tracked(owner): Tracked<LinkedListOwner<M>>,
             Tracked(perm): Tracked<PointsTo<LinkedList<M>>>,
             Tracked(frame_own): Tracked<&mut UniqueFrameLinkOwner<M>>
     )]
@@ -145,13 +152,18 @@ impl<M: AnyFrameMeta> LinkedList<M>
             old(frame_own).inv(),
             frame.wf(old(frame_own)),
             owner.list.len() < usize::MAX,
+            old(regions).slots.contains_key(frame_to_index(frame.ptr.addr())),
+            old(regions).slots[frame_to_index(frame.ptr.addr())]@.is_init(),
+            old(regions).slot_owners.contains_key(frame_to_index(frame.ptr.addr())),
+            old(regions).slot_owners[frame_to_index(frame.ptr.addr())].in_list@.is_for(
+                old(regions).slots[frame_to_index(frame.ptr.addr())]@.mem_contents().value().in_list),
     {
         #[verus_spec(with Tracked(owner), Tracked(perm))]
         let (cursor, cursor_own) = Self::cursor_back_mut(ptr);
         let mut cursor = cursor;
         let tracked mut cursor_own = cursor_own;
 
-        #[verus_spec(with Tracked(cursor_own.borrow_mut()), Tracked(frame_own))]
+        #[verus_spec(with Tracked(regions), Tracked(cursor_own.borrow_mut()), Tracked(frame_own))]
         cursor.insert_before(frame);
     }
 
@@ -542,7 +554,8 @@ impl<M: AnyFrameMeta> CursorMut<M>
     /// element is inserted at the back of the [`LinkedList`].
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner): Tracked<&mut CursorOwner<M>>,
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            Tracked(owner): Tracked<&mut CursorOwner<M>>,
             Tracked(frame_own): Tracked<&mut UniqueFrameLinkOwner<M>>
     )]
     pub fn insert_before(&mut self, mut frame: UniqueFrame<Link<M>>)
@@ -552,6 +565,11 @@ impl<M: AnyFrameMeta> CursorMut<M>
             old(frame_own).inv(),
             frame.wf(&old(frame_own)),
             old(owner).length() < usize::MAX,
+            old(regions).slots.contains_key(frame_to_index(frame.ptr.addr())),
+            old(regions).slots[frame_to_index(frame.ptr.addr())]@.is_init(),
+            old(regions).slot_owners.contains_key(frame_to_index(frame.ptr.addr())),
+            old(regions).slot_owners[frame_to_index(frame.ptr.addr())].in_list@.is_for(
+                old(regions).slots[frame_to_index(frame.ptr.addr())]@.mem_contents().value().in_list),
     {
         // The frame can't possibly be in any linked lists since the list will
         // own the frame so there can't be any unique pointers to it.
@@ -637,13 +655,17 @@ impl<M: AnyFrameMeta> CursorMut<M>
             }
         }
 
-//        frame
-//            .slot()
-//            .in_list
-//            .store(in_list_perm, borrow_field!(& self.list, owner.list_perm).lazy_get_id());
+        assert(regions.slot_owners.contains_key(frame_to_index(frame.ptr.addr()))) by { admit() };
+        let slot = frame.slot();
+        
+        assert(slot == regions.slots[frame_to_index(frame.ptr.addr())]@.mem_contents().value()) by { admit() };
+        assert(regions.slot_owners[frame_to_index(frame.ptr.addr())].in_list@.is_for(
+                regions.slots[frame_to_index(frame.ptr.addr())]@.mem_contents().value().in_list)) by { admit() };
+        assert(frame.ptr.addr() == frame_ptr.addr()) by { admit() };
 
-//        frame.slot().in_list_store(self.list.borrow(Tracked(&*list_perm)).lazy_get_id());
-
+        let tracked mut slot_own = regions.slot_owners.tracked_remove(frame_to_index(frame.ptr.addr()));
+        slot.in_list.store(Tracked(slot_own.in_list.borrow_mut()), LinkedList::<M>::lazy_get_id(self.list /*Tracked(owner.list_perm.borrow())*/));
+        proof { regions.slot_owners.tracked_insert(frame_to_index(frame.ptr.addr()), slot_own) }
 
         // Forget the frame to transfer the ownership to the list.
 //        let _ = frame.into_raw();
