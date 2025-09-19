@@ -101,7 +101,7 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         &&& post.list_own.list == LinkedListOwner::<M>::remove_list_spec(self.list_own.list, self.index)
         &&& post.index == self.index
     }
- 
+
     #[rustc_allow_incoherent_impl]
     pub proof fn remove_owner_spec_implies_model_spec(self, post: Self)
         requires
