@@ -6,7 +6,7 @@ use aster_common::prelude::frame_list_model::*;
 
 verus! {
 
-impl<M: AnyFrameMeta> CursorModel<M> {
+impl CursorModel {
 
     #[rustc_allow_incoherent_impl]
     pub open spec fn move_next_spec(self) -> Self {
@@ -20,7 +20,7 @@ impl<M: AnyFrameMeta> CursorModel<M> {
                 }
             } else {
                 Self {
-                    fore: Seq::<LinkModel<M>>::empty(),
+                    fore: Seq::<LinkModel>::empty(),
                     rear: self.fore,
                     list_model: self.list_model
                 }
@@ -43,49 +43,50 @@ impl<M: AnyFrameMeta> CursorModel<M> {
             } else {
                 Self {
                     fore: self.rear,
-                    rear: Seq::<LinkModel<M>>::empty(),
+                    rear: Seq::<LinkModel>::empty(),
                     list_model: self.list_model
                 }
             } 
         } else {
             self
         }
-    }
+    } 
 
     #[rustc_allow_incoherent_impl]
     pub open spec fn remove(self) -> Self {
         let cur = self.current().unwrap();
-        let fore = if self.fore.len() > 0 { LinkedListModel::update_next(self.fore, self.fore.len() - 1, cur.next) } else { self.fore };        
-        let rear = if self.rear.len() > 1 { LinkedListModel::update_prev(self.rear, 1, cur.prev) } else { self.rear };
+//        let fore = if self.fore.len() > 0 { LinkedListModel::update_next(self.fore, self.fore.len() - 1, cur.next) } else { self.fore };        
+//        let rear = if self.rear.len() > 1 { LinkedListModel::update_prev(self.rear, 1, cur.prev) } else { self.rear };
+        let rear = self.rear.remove(0);
 
         Self {
-            fore: fore,
-            rear: self.rear.remove(0),
-            list_model: LinkedListModel { list: fore.add(rear) }
+            fore: self.fore,
+            rear: rear,
+            list_model: LinkedListModel { list: self.fore.add(rear) }
         }
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn insert(self, link: LinkModel<M>) -> Self {
+    pub open spec fn insert(self, link: LinkModel) -> Self {
         let fore = self.fore.insert(self.fore.len() - 1, link);
-        let rear = if self.rear.len() > 0 { LinkedListModel::update_prev(self.rear, 0, link.prev) } else { self.rear };
-        let fore = if fore.len() > 0 { LinkedListModel::update_next(self.fore, self.fore.len() - 1, link.next) } else { fore };        
+//        let rear = if self.rear.len() > 0 { LinkedListModel::update_prev(self.rear, 0, link.prev) } else { self.rear };
+//        let fore = if fore.len() > 0 { LinkedListModel::update_next(self.fore, self.fore.len() - 1, link.next) } else { fore };        
         
         Self {
             fore: fore,
-            rear: rear,
-            list_model: self.list_model
+            rear: self.rear,
+            list_model: LinkedListModel { list: fore.add(self.rear) }
         }
     }
 }
 
 impl<M: AnyFrameMeta> LinkedListOwner<M> {
     #[rustc_allow_incoherent_impl]
-    pub open spec fn remove_list_spec(list: Seq<LinkOwner<M>>, i: int) -> Seq<LinkOwner<M>>
+    pub open spec fn remove_list_spec(list: Seq<LinkOwner>, i: int) -> Seq<LinkOwner>
     {
         let cur = list[i];
-        let list = if i > 0 { LinkedListOwner::update_next(list, i-1, cur.next) } else { list };
-        let list = if i < list.len() - 1 { LinkedListOwner::update_prev(list, i+1, cur.prev) } else { list };
+//        let list = if i > 0 { LinkedListOwner::update_next(list, i-1, cur.next) } else { list };
+//        let list = if i < list.len() - 1 { LinkedListOwner::update_prev(list, i+1, cur.prev) } else { list };
         list.remove(i)
     }
 }
@@ -97,10 +98,10 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         recommends
             self.index < self.length(),
     {
-        &&& post.list_own.list == LinkedListOwner::remove_list_spec(self.list_own.list, self.index)
+        &&& post.list_own.list == LinkedListOwner::<M>::remove_list_spec(self.list_own.list, self.index)
         &&& post.index == self.index
     }
-
+ 
     #[rustc_allow_incoherent_impl]
     pub proof fn remove_owner_spec_implies_model_spec(self, post: Self)
         requires
@@ -110,15 +111,23 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
     { admit() }
  
     #[rustc_allow_incoherent_impl]
-    pub open spec fn insert_owner_spec(self, owner: LinkOwner<M>) -> Self
+    pub open spec fn insert_owner_spec(self, link: LinkOwner, post: Self) -> bool
+        recommends
+            self.index < self.length()
     {
-        Self {
-            list_own: LinkedListOwner { list: self.list_own.list.insert(self.index, owner), ..self.list_own },
-            list_perm: self.list_perm,
-            index: self.index,
-        }
+        &&& post.list_own.list == self.list_own.list.insert(self.index, link)
+        &&& post.list_own.list_id == self.list_own.list_id
+        &&& post.index == self.index + 1
     }
- 
+
+    #[rustc_allow_incoherent_impl]
+    pub proof fn insert_owner_spec_implies_model_spec(self, link: LinkOwner, post: Self)
+        requires
+            self.insert_owner_spec(link, post)
+        ensures
+            post@ == self@.insert(link@)
+    { admit() }
+
     #[rustc_allow_incoherent_impl]
     pub open spec fn move_next_owner_spec(self) -> Self {
         if self.length() == 0 {

@@ -134,6 +134,19 @@ pub fn get_verus_target_dir() -> PathBuf {
         .join("release")
 }
 
+#[cfg(target_os = "windows")]
+#[memoize]
+pub fn system_crates() -> HashSet<&'static str> {
+    HashSet::from([
+        "build-script-build",
+        "borsh",
+        "vstd", 
+        "verus_builtin",
+        "verus_builtin_macros",
+        ])
+}
+
+#[cfg(not(target_os = "windows"))]
 #[memoize]
 pub fn system_crates() -> HashSet<&'static str> {
     HashSet::from([
