@@ -219,20 +219,21 @@ verus! {
 impl PageTableEntryTrait for PageTableEntry {
 
     #[verifier::inline]
-    open spec fn default_spec() -> Self {
-        Self(0)
+    open spec fn default_spec() -> Self
+    {
+        Self { 0: 0 }
     }
 
     #[inline(always)]
     fn default() -> (res: Self)
         ensures res == Self::default_spec()
     {
-        Self(0)
+        Self { 0: 0 }
     }
 
     #[verifier::inline]
     open spec fn new_absent_spec() -> Self {
-        Self::default()
+        Self::default_spec()
     }
 
     #[inline(always)]
@@ -243,15 +244,15 @@ impl PageTableEntryTrait for PageTableEntry {
     }
 
     #[verifier::inline]
-    open spec fn as_value_spec(&self) -> u64 {
-        self.0 as u64
+    open spec fn as_usize_spec(self) -> usize {
+        self.0 as usize
     }
 
     #[inline(always)]
-    fn as_value(&self) -> (res: u64)
-            ensures res == self.as_value_spec()
+    fn as_usize(self) -> (res: usize)
+            ensures res == self.as_usize_spec()
     {
-        self.0 as u64
+        self.0 as usize
     }
 
     #[verifier::inline]

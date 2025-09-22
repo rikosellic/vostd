@@ -9,8 +9,8 @@ use super::{
 };
 use crate::{mm::Paddr/*, sync::non_null::NonNullPtr*/};
 
-/*
-impl FrameRef<'_> {
+
+impl<M: AnyFrameMeta> FrameRef<'_, M> {
     /// Borrows the [`Frame`] at the physical address as a [`FrameRef`].
     ///
     /// # Safety
@@ -20,7 +20,8 @@ impl FrameRef<'_> {
     ///    be seen as borrowed from that frame.
     ///  - the type of the [`FrameRef`] (`M`) matches the borrowed frame.
     #[verifier::external_body]
-    pub(in crate::mm) unsafe fn borrow_paddr(raw: Paddr) -> Self {
+    #[rustc_allow_incoherent_impl]
+    pub unsafe fn borrow_paddr(raw: Paddr) -> Self {
         unimplemented!()
 /*        Self {
             // SAFETY: The caller ensures the safety.
@@ -28,7 +29,7 @@ impl FrameRef<'_> {
             _marker: PhantomData,
         }*/
     }
-}*/
+}
 
 // SAFETY: `Frame` is essentially a `*const MetaSlot` that could be used as a non-null
 // `*const` pointer.

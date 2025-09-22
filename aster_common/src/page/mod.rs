@@ -39,6 +39,7 @@ pub struct Frame<M: AnyFrameMeta> {
 }
 
 /// A struct that can work as `&'a Frame<M>`.
+#[rustc_has_incoherent_inherent_impls]
 pub struct FrameRef<'a, M: AnyFrameMeta> {
     inner: /*ManuallyDrop<*/Frame<M>/*>*/,
     _marker: PhantomData<&'a Frame<M>>,
