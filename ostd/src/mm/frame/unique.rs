@@ -10,6 +10,7 @@ use aster_common::prelude::*;
 use aster_common::prelude::frame_list_model::UniqueFrameLinkOwner;
 
 use vstd_extra::ownership::*;
+use vstd_extra::cast_ptr::Repr;
 
 use core::{marker::PhantomData, mem::ManuallyDrop, sync::atomic::Ordering};
 
@@ -22,7 +23,7 @@ use crate::mm::{Paddr, PagingConsts, PagingLevel};
 
 verus! {
 
-impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
+impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrame<Link<M>> {
     /// Gets a [`UniqueFrame`] with a specific usage from a raw, unused page.
     ///
     /// The caller should provide the initial metadata of the page.
@@ -83,7 +84,7 @@ impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
     }
 }
 
-impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
+impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrame<Link<M>> {
     /// Gets the physical address of the start of the frame.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(

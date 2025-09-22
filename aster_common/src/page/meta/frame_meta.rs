@@ -4,6 +4,7 @@ use vstd::cell;
 use vstd::atomic::*;
 
 use vstd_extra::ownership::*;
+use vstd_extra::cast_ptr::*;
 
 use crate::prelude::*;
 
@@ -12,7 +13,7 @@ use std::marker::PhantomData;
 verus! {
 
 /// Space-holder of the AnyFrameMeta virtual table.
-pub trait AnyFrameMeta {
+pub trait AnyFrameMeta: Repr<MetaSlotStorage> {
     exec fn on_drop(&mut self) {}
 
     exec fn is_untyped(&self) -> bool {
@@ -20,14 +21,6 @@ pub trait AnyFrameMeta {
     }
 
     spec fn vtable_ptr(&self) -> usize;
-
-    spec fn cast_to_spec(x: &MetaSlotStorage) -> PPtr<Self> where Self: std::marker::Sized;
-
-    exec fn cast_to(x: &MetaSlotStorage) -> PPtr<Self> where Self: std::marker::Sized;
-
-    spec fn write_as_spec(&self) -> MetaSlotStorage;
-
-    exec fn write_as(&self) -> MetaSlotStorage;
 }
 
 #[rustc_has_incoherent_inherent_impls]
@@ -52,7 +45,7 @@ impl<M: AnyFrameMeta> Inv for UniqueFrameOwner<M> {
     &&& self.slot@.ref_count@.value() == REF_COUNT_UNIQUE
     &&& self.slot@.vtable_ptr@.is_init()
     &&& self.slot@.storage@.is_init()
-    &&& self.slot@.storage@.value() == self.data.write_as_spec()
+    &&& self.slot@.storage@.value() == self.data.to_repr()
     }
 }
 
@@ -103,19 +96,12 @@ impl <M: AnyFrameMeta> UniqueFrame<M> {
             UniqueFrame::from_unused_spec(paddr, metadata, pre).1.inv(),
     { }
 
-    pub open spec fn meta_spec(&self, pre: UniqueFrameModel) -> PPtr<M>
-        recommends
-            pre.inv(),
-    {
-        M::cast_to_spec(&pre.slot.storage.value())
-    }
-
     pub open spec fn replace_spec(&self, metadata: M, pre: UniqueFrameModel)
         -> UniqueFrameModel
         recommends
             pre.inv(),
     {
-        let storage = MemContents::Init(metadata.write_as_spec());
+        let storage = MemContents::Init(metadata.to_repr());
         UniqueFrameModel {
             slot: MetaSlotModel {
                 storage,
@@ -133,31 +119,136 @@ impl UniqueFrameModel {
     }
 }
 
-impl<M: AnyFrameMeta> UniqueFrameOwner<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrameOwner<M> {
     pub closed spec fn from_raw_owner(region: MetaRegionOwners, paddr: Paddr) -> Self;
 }
 
-impl<M: AnyFrameMeta> AnyFrameMeta for Link<M>
+impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Link<M> {
+    pub open spec fn into_spec(self) -> LinkOuter {
+        let next = match self.next {
+            Some(link) => Some(link.addr()),
+            None => None
+        };
+        let prev = match self.prev {
+            Some(link) => Some(link.addr()),
+            None => None
+        };
+        LinkOuter {
+            next: next,
+            prev: prev,
+            slot: self.meta.to_repr(),
+        }
+    }
+
+    #[verifier::when_used_as_spec(into_spec)]
+    pub fn into(self) -> (res: LinkOuter)
+        ensures res == self.into_spec()
+    {
+        let next = match self.next {
+            Some(link) => Some(link.addr()),
+            None => None
+        };
+        let prev = match self.prev {
+            Some(link) => Some(link.addr()),
+            None => None
+        };
+        LinkOuter {
+            next: next,
+            prev: prev,
+            slot: self.meta.to_repr(),
+        }
+    }
+}
+
+impl LinkOuter {
+    pub open spec fn into_spec<M: AnyFrameMeta + Repr<MetaSlotInner>>(self) -> Link<M> {
+        let next = match self.next {
+            Some(addr) => Some(PPtr(addr, PhantomData)),
+            None => None
+        };
+        let prev = match self.prev {
+            Some(addr) => Some(PPtr(addr, PhantomData)),
+            None => None
+        };
+        Link::<M> {
+            next: next,
+            prev: prev,
+            meta: M::from_repr(self.slot)
+        }
+    }
+
+    #[verifier::when_used_as_spec(into_spec)]
+    pub fn into<M: AnyFrameMeta + Repr<MetaSlotInner>>(self) -> (res: Link<M>)
+        requires M::wf(self.slot)
+        ensures res == self.into::<M>()
+    {
+        let next = match self.next {
+            Some(addr) => Some(PPtr::from_addr(addr)),
+            None => None
+        };
+        let prev = match self.prev {
+            Some(addr) => Some(PPtr::from_addr(addr)),
+            None => None
+        };
+        Link::<M> {
+            next: next,
+            prev: prev,
+            meta: M::from_repr(self.slot)
+        }
+    }
+}
+
+impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Repr<MetaSlotStorage> for Link<M> {
+
+    open spec fn wf(r: MetaSlotStorage) -> bool {
+        match r {
+            MetaSlotStorage::FrameLink(link) => M::wf(link.slot),
+            _ => false,
+        }
+    }
+
+    open spec fn to_repr_spec(self) -> MetaSlotStorage {
+        MetaSlotStorage::FrameLink(self.into())
+    }
+
+    fn to_repr(self) -> MetaSlotStorage {
+        MetaSlotStorage::FrameLink(self.into())
+    }
+
+    open spec fn from_repr_spec(r: MetaSlotStorage) -> Self {
+        r.get_link().unwrap().into()
+    }
+
+    fn from_repr(r: MetaSlotStorage) -> Self
+    {
+        r.get_link().unwrap().into()
+    }
+
+    #[verifier::external_body]
+    fn from_borrowed<'a>(r: &'a MetaSlotStorage) -> &'a Self {
+        unimplemented!()
+//        &r.get_link().unwrap().into()
+    }
+
+    proof fn from_to_repr(self)
+    {
+        <M as Repr<MetaSlotInner>>::from_to_repr(self.meta)
+    }
+
+    proof fn to_from_repr(r: MetaSlotStorage)
+    {
+        assert(r is FrameLink);
+        M::to_from_repr(r.get_link().unwrap().slot)
+    }
+}
+
+impl<M: AnyFrameMeta + Repr<MetaSlotInner>> AnyFrameMeta for Link<M>
 {
     fn on_drop(&mut self) { }
 
     fn is_untyped(&self) -> bool { false }
 
     spec fn vtable_ptr(&self) -> usize;
-
-    spec fn cast_to_spec(x: &MetaSlotStorage) -> PPtr<Self>;
-
-    #[verifier::external_body]
-    fn cast_to(x: &MetaSlotStorage) -> PPtr<Self> {
-        unimplemented!()
-    }
-
-    spec fn write_as_spec(&self) -> MetaSlotStorage;
-
-    #[verifier::external_body]
-    fn write_as(&self) -> MetaSlotStorage {
-        unimplemented!()
-    }
 }
 
 }

@@ -1,4 +1,5 @@
 pub mod array_ptr;
+pub mod cast_ptr;
 pub mod bit_mapping;
 pub mod extern_const;
 pub mod extra_num;

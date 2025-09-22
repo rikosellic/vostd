@@ -27,6 +27,7 @@ use super::{
 
 use vstd_extra::{borrow_field, update_field};
 use vstd_extra::ownership::*;
+use vstd_extra::cast_ptr::Repr;
 
 use aster_common::prelude::*;
 use aster_common::prelude::frame_list_model::*;
@@ -42,7 +43,7 @@ verus! {
 //unsafe impl<M> Send for LinkedList<M> where Link<M>: AnyFrameMeta {}
 //unsafe impl<M> Sync for LinkedList<M> where Link<M>: AnyFrameMeta {}
 
-impl<M: AnyFrameMeta> LinkedList<M>
+impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M>
 {
 
     /// Gets the number of frames in the linked list.
@@ -380,7 +381,7 @@ impl<M: AnyFrameMeta> LinkedList<M>
 
 verus!{
 
-impl<M: AnyFrameMeta> CursorMut<M>
+impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
 {
     /// Moves the cursor to the next frame towards the back.
     ///
@@ -708,7 +709,7 @@ impl DerefMut for Link {
     }
 }
 */
-impl<M: AnyFrameMeta> Link<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Link<M> {
 
     #[rustc_allow_incoherent_impl]
     /// Creates a new linked list metadata.

@@ -28,6 +28,8 @@
 mod child;
 mod entry;
 
+use vstd::prelude::*;
+
 use core::{
     cell::SyncUnsafeCell,
     marker::PhantomData,
@@ -51,12 +53,27 @@ use crate::{
 };
 
 use vstd::atomic::PAtomicU8;
+use vstd::simple_pptr::*;
 use aster_common::prelude::*;
 
+verus! {
+
 impl<C: PageTableConfig> PageTableNode<C> {
+
     #[rustc_allow_incoherent_impl]
-    pub(super) fn level(&self) -> PagingLevel {
-        self.meta().level
+    #[verus_spec(
+        with Tracked(regions) : Tracked<&mut MetaRegionOwners>,
+            perm: Tracked<&PointsTo<PageTablePageMeta<C>>>
+    )]
+    pub fn level(&self) -> PagingLevel
+        requires
+            old(regions).slots.contains_key(frame_to_index(self.ptr.addr())),
+            old(regions).slots[frame_to_index(self.ptr.addr())]@.pptr() == self.ptr,
+            old(regions).slots[frame_to_index(self.ptr.addr())]@.mem_contents() is Init
+    {
+        #[verus_spec(with Tracked(regions), perm)]
+        let meta = self.meta();
+        meta.level
     }
 
     /* TODO: stub out allocator
@@ -252,7 +269,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
 //        unsafe { &mut *self.meta().nr_children.get() }
     }
 }
-
+}
 /*impl<C: PageTableConfig> Drop for PageTableGuard<'_, C> {
     fn drop(&mut self) {
         self.inner.meta().lock.store(0, Ordering::Release);

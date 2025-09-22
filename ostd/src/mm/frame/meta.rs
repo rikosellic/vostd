@@ -427,7 +427,8 @@ impl MetaSlot {
         #[verus_spec(with Tracked(regions), Ghost(addr))]
         let addr = self.addr_of();
         let tracked own = regions.slot_owners.tracked_borrow(frame_to_index(meta_to_frame(addr)));
-        M::cast_to(self.storage.borrow(Tracked(own.storage.borrow())))
+        unimplemented!()
+//        M::cast_to(self.storage.borrow(Tracked(own.storage.borrow())))
     }
 
     /// Writes the metadata to the slot without reading or dropping the previous value.

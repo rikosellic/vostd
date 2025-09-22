@@ -30,9 +30,14 @@ pub open spec fn get_slot_spec(paddr: Paddr) -> (res: PPtr<MetaSlot>)
     PPtr(slot, PhantomData::<MetaSlot>)
 }
 
+pub enum MetaSlotInner {
+    Empty,
+}
+
 pub struct LinkOuter {
-    pub next: Option<PPtr<LinkOuter>>,
-    pub prev: Option<PPtr<LinkOuter>>,
+    pub next: Option<Paddr>,
+    pub prev: Option<Paddr>,
+    pub slot: MetaSlotInner
 }
 
 pub struct PageTablePageMetaOuter {
@@ -46,6 +51,42 @@ pub enum MetaSlotStorage {
     Empty([u8; 39]),
     FrameLink(LinkOuter),
     PTNode(PageTablePageMetaOuter),
+}
+
+impl MetaSlotStorage {
+    pub open spec fn get_link_spec(self) -> Option<LinkOuter> {
+        match self {
+            MetaSlotStorage::FrameLink(link) => Some(link),
+            _ => None
+        }
+    }
+
+    #[verifier::when_used_as_spec(get_link_spec)]
+    pub fn get_link(self) -> (res: Option<LinkOuter>)
+        ensures res == self.get_link_spec()
+    {
+        match self {
+            MetaSlotStorage::FrameLink(link) => Some(link),
+            _ => None
+        }
+    }
+
+    pub open spec fn get_node_spec(self) -> Option<PageTablePageMetaOuter> {
+        match self {
+            MetaSlotStorage::PTNode(node) => Some(node),
+            _ => None
+        }
+    }
+
+    #[verifier::when_used_as_spec(get_node_spec)]
+    pub fn get_node(self) -> (res: Option<PageTablePageMetaOuter>)
+        ensures res == self.get_node_spec()
+    {
+        match self {
+            MetaSlotStorage::PTNode(node) => Some(node),
+            _ => None
+        }
+    }
 }
 
 #[rustc_has_incoherent_inherent_impls]
@@ -80,7 +121,8 @@ pub const fn meta_slot_size() -> (res: usize)
 }
 
 impl MetaSlot {
-    pub open spec fn get_from_unused_spec<M: AnyFrameMeta>(
+    pub open spec fn get_from_unused_spec<M: AnyFrameMeta>
+    (
         paddr: Paddr,
         metadata: M,
         as_unique_ptr: bool,
@@ -104,7 +146,7 @@ impl MetaSlot {
             slots: pre.slots.insert(
                 idx, MetaSlotModel {
                     status,
-                    storage: cell::MemContents::Init(metadata.write_as_spec()),
+                    storage: cell::MemContents::Init(metadata.to_repr()),
                     ref_count: rc,
                     vtable_ptr: simple_pptr::MemContents::Init(metadata.vtable_ptr()),
                     in_list: 0,
