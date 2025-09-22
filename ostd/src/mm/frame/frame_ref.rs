@@ -30,14 +30,6 @@ impl FrameRef<'_> {
     }
 }*/
 
-/*impl<M: AnyFrameMeta> Deref for FrameRef<'_, M> {
-    type Target = Frame<M>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}*/
-
 // SAFETY: `Frame` is essentially a `*const MetaSlot` that could be used as a non-null
 // `*const` pointer.
 /*unsafe impl<M: AnyFrameMeta + ?Sized> NonNullPtr for Frame<M> {

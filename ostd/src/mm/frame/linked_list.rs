@@ -519,7 +519,7 @@ impl<M: AnyFrameMeta> CursorMut<M>
             let mut __tmp = next.take(Tracked(next_perm.borrow_mut()));
             __tmp.prev = prev_ptr;
             next.put(Tracked(next_perm.borrow_mut()), __tmp);
-            proof { owner.list_own.perms.tracked_insert(owner.index, next_perm); }
+            proof { owner.list_own.perms.tracked_insert(owner.index+1, next_perm); }
 
             self.current = Some(next);
         } else {
@@ -598,7 +598,7 @@ impl<M: AnyFrameMeta> CursorMut<M>
                 let mut __tmp = prev.take(Tracked(prev_perm.borrow_mut()));
                 __tmp.next = Some(frame_ptr);
                 prev.put(Tracked(prev_perm.borrow_mut()), __tmp);
-                proof { owner.list_own.perms.tracked_insert(owner.index, prev_perm); }
+                proof { owner.list_own.perms.tracked_insert(owner.index-1, prev_perm); }
 
                 let mut __tmp = frame_ptr.take(Tracked(frame_own.link_perm.borrow_mut()));
                 __tmp.prev = Some(prev);

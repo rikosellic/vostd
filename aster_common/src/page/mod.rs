@@ -19,6 +19,7 @@ use crate::prelude::MetaSlotStorage::PTNode;
 use vstd_extra::ownership::*;
 
 use std::mem::ManuallyDrop;
+use std::ops::Deref;
 
 verus! {
 
@@ -39,8 +40,16 @@ pub struct Frame<M: AnyFrameMeta> {
 
 /// A struct that can work as `&'a Frame<M>`.
 pub struct FrameRef<'a, M: AnyFrameMeta> {
-    inner: ManuallyDrop<Frame<M>>,
+    inner: /*ManuallyDrop<*/Frame<M>/*>*/,
     _marker: PhantomData<&'a Frame<M>>,
+}
+
+impl<M: AnyFrameMeta> Deref for FrameRef<'_, M> {
+    type Target = Frame<M>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 impl<M: AnyFrameMeta> Inv for Frame<M> {
