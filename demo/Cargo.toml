@@ -22,6 +22,6 @@ default = ["verify", "alloc"]
 
 [dependencies]
 vstd = { workspace = true, optional = true }
-builtin = { workspace = true, optional = true }
-builtin_macros = { workspace = true, optional = true }
+verus_builtin = { workspace = true, optional = true }
+verus_builtin_macros = { workspace = true, optional = true }
 aster_common = { path = "../aster_common" }
