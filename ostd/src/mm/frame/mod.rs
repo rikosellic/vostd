@@ -63,6 +63,7 @@ use crate::mm::{Paddr, Vaddr};
 
 use aster_common::prelude::*;
 use vstd_extra::ownership::*;
+use vstd_extra::cast_ptr::*;
 
 verus! {
 
@@ -114,7 +115,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     /// Gets the metadata of this page.
     #[verus_spec(
         with Tracked(regions) : Tracked<&'a mut MetaRegionOwners>,
-            Tracked(perm) : Tracked<&'a vstd::simple_pptr::PointsTo<M>>
+            Tracked(perm) : Tracked<&'a vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, M>>
     )]
     #[verifier::external_body]
     #[rustc_allow_incoherent_impl]
@@ -433,5 +434,5 @@ pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) {
     let slot = unsafe { &*(vaddr as *const MetaSlot) };
 
     // SAFETY: We have already held a reference to the frame.
-    unsafe { slot.inc_ref_count() };
+    slot.inc_ref_count();
 }

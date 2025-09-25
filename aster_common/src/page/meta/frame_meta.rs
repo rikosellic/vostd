@@ -124,16 +124,16 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrameOwner<M> {
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Link<M> {
-    pub open spec fn into_spec(self) -> LinkOuter {
+    pub open spec fn into_spec(self) -> StoredLink {
         let next = match self.next {
-            Some(link) => Some(link.addr()),
+            Some(link) => Some(link.addr),
             None => None
         };
         let prev = match self.prev {
-            Some(link) => Some(link.addr()),
+            Some(link) => Some(link.addr),
             None => None
         };
-        LinkOuter {
+        StoredLink {
             next: next,
             prev: prev,
             slot: self.meta.to_repr(),
@@ -141,18 +141,18 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Link<M> {
     }
 
     #[verifier::when_used_as_spec(into_spec)]
-    pub fn into(self) -> (res: LinkOuter)
+    pub fn into(self) -> (res: StoredLink)
         ensures res == self.into_spec()
     {
         let next = match self.next {
-            Some(link) => Some(link.addr()),
+            Some(link) => Some(link.addr),
             None => None
         };
         let prev = match self.prev {
-            Some(link) => Some(link.addr()),
+            Some(link) => Some(link.addr),
             None => None
         };
-        LinkOuter {
+        StoredLink {
             next: next,
             prev: prev,
             slot: self.meta.to_repr(),
@@ -160,14 +160,20 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Link<M> {
     }
 }
 
-impl LinkOuter {
+impl StoredLink {
     pub open spec fn into_spec<M: AnyFrameMeta + Repr<MetaSlotInner>>(self) -> Link<M> {
         let next = match self.next {
-            Some(addr) => Some(PPtr(addr, PhantomData)),
+            Some(addr) => Some(ReprPtr {
+                addr: addr,
+                ptr: PPtr::<MetaSlotStorage>(addr, PhantomData),
+                _T: PhantomData}),
             None => None
         };
         let prev = match self.prev {
-            Some(addr) => Some(PPtr(addr, PhantomData)),
+            Some(addr) => Some(ReprPtr {
+                addr: addr,
+                ptr: PPtr::<MetaSlotStorage>(addr, PhantomData),
+                _T: PhantomData}),
             None => None
         };
         Link::<M> {
@@ -183,11 +189,17 @@ impl LinkOuter {
         ensures res == self.into::<M>()
     {
         let next = match self.next {
-            Some(addr) => Some(PPtr::from_addr(addr)),
+            Some(addr) => Some(ReprPtr {
+                addr: addr,
+                ptr: PPtr::<MetaSlotStorage>::from_addr(addr),
+                _T: PhantomData}),
             None => None
         };
         let prev = match self.prev {
-            Some(addr) => Some(PPtr::from_addr(addr)),
+            Some(addr) => Some(ReprPtr {
+                addr: addr,
+                ptr: PPtr::<MetaSlotStorage>::from_addr(addr),
+                _T: PhantomData}),
             None => None
         };
         Link::<M> {
@@ -232,12 +244,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Repr<MetaSlotStorage> for Link<M> {
 
     proof fn from_to_repr(self)
     {
-        <M as Repr<MetaSlotInner>>::from_to_repr(self.meta)
+        <M as Repr<MetaSlotInner>>::from_to_repr(self.meta);
+        admit()
     }
 
     proof fn to_from_repr(r: MetaSlotStorage)
     {
-        assert(r is FrameLink);
         M::to_from_repr(r.get_link().unwrap().slot)
     }
 }

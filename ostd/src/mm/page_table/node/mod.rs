@@ -53,7 +53,7 @@ use crate::{
 };
 
 use vstd::atomic::PAtomicU8;
-use vstd::simple_pptr::*;
+use vstd_extra::cast_ptr::*;
 use aster_common::prelude::*;
 
 verus! {
@@ -63,7 +63,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
         with Tracked(regions) : Tracked<&mut MetaRegionOwners>,
-            perm: Tracked<&PointsTo<PageTablePageMeta<C>>>
+            perm: Tracked<&PointsTo<MetaSlotStorage, PageTablePageMeta<C>>>
     )]
     pub fn level(&self) -> PagingLevel
         requires

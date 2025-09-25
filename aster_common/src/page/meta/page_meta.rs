@@ -82,8 +82,8 @@ pub struct PageTablePageMeta<C: PageTableConfig> {
 }
 
 impl<C: PageTableConfig> PageTablePageMeta<C> {
-    pub open spec fn into_spec(self) -> PageTablePageMetaOuter {
-        PageTablePageMetaOuter {
+    pub open spec fn into_spec(self) -> StoredPageTablePageMeta {
+        StoredPageTablePageMeta {
             nr_children: self.nr_children,
             stray: self.stray,
             level: self.level,
@@ -92,10 +92,10 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
     }
 
     #[verifier::when_used_as_spec(into_spec)]
-    pub fn into(self) -> (res: PageTablePageMetaOuter)
+    pub fn into(self) -> (res: StoredPageTablePageMeta)
         ensures res == self.into_spec()
     {
-        PageTablePageMetaOuter {
+        StoredPageTablePageMeta {
             nr_children: self.nr_children,
             stray: self.stray,
             level: self.level,
@@ -104,7 +104,7 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
     }
 }
 
-impl PageTablePageMetaOuter {
+impl StoredPageTablePageMeta {
     pub open spec fn into_spec<C: PageTableConfig>(self) -> PageTablePageMeta<C> {
         PageTablePageMeta::<C> {
             nr_children: self.nr_children,

@@ -3,13 +3,15 @@
 //! - The invariants for both MetaSlot and MetaSlotModel.
 //! - The primitives for MetaSlot.
 use vstd::prelude::*;
-use vstd::cell;
-use vstd::simple_pptr::{self, PPtr};
+use vstd::simple_pptr::*;
 use vstd::atomic::*;
 
 use vstd_extra::ownership::*;
+use vstd_extra::cast_ptr::{self, Repr};
 
 use crate::prelude::*;
+
+use std::marker::PhantomData;
 
 verus! {
 
@@ -40,11 +42,11 @@ pub const REF_COUNT_MAX: u64 = i64::MAX as u64;
 verus! {
 
 pub tracked struct MetaSlotOwner {
-    pub storage: Tracked<cell::PointsTo<MetaSlotStorage>>,
+    pub storage: Tracked<PointsTo<MetaSlotStorage>>,
     pub ref_count: Tracked<PermissionU64>,
-    pub vtable_ptr: Tracked<simple_pptr::PointsTo<usize>>,
+    pub vtable_ptr: Tracked<PointsTo<usize>>,
     pub in_list: Tracked<PermissionU64>,
-    pub self_ptr: Tracked<simple_pptr::PointsTo<MetaSlot>>,
+    pub self_addr: usize,
     pub usage: PageUsage,
 }
 
@@ -72,9 +74,9 @@ impl Inv for MetaSlotOwner {
 
 pub ghost struct MetaSlotModel {
     pub status: MetaSlotStatus,
-    pub storage: cell::MemContents<MetaSlotStorage>,
+    pub storage: MemContents<MetaSlotStorage>,
     pub ref_count: u64,
-    pub vtable_ptr: simple_pptr::MemContents<usize>,
+    pub vtable_ptr: MemContents<usize>,
     pub in_list: u64,
     pub self_addr: usize,
     pub usage: PageUsage,
@@ -112,7 +114,7 @@ impl InvView for MetaSlotOwner {
         let ref_count = self.ref_count@.value();
         let vtable_ptr = self.vtable_ptr@.mem_contents();
         let in_list = self.in_list@.value();
-        let self_addr = self.self_ptr@.addr();
+        let self_addr = self.self_addr;
         let usage = self.usage;
         let status = match ref_count {
             REF_COUNT_UNUSED => MetaSlotStatus::UNUSED,
@@ -139,7 +141,7 @@ impl OwnerOf for MetaSlot {
     type Owner = MetaSlotOwner;
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool {
-    &&& self.storage.id() == owner.storage@.id()
+    &&& self.storage == owner.storage@.pptr()
     &&& self.ref_count.id() == owner.ref_count@.id()
     &&& self.vtable_ptr == owner.vtable_ptr@.pptr()
     &&& self.in_list.id() == owner.in_list@.id()
@@ -147,5 +149,12 @@ impl OwnerOf for MetaSlot {
 }
 
 impl ModelOf for MetaSlot { }
+
+impl MetaSlotOwner {
+    pub fn cast_perm<T: Repr<MetaSlotStorage>>(self) -> Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, T>>
+    {
+        vstd_extra::cast_ptr::PointsTo::new(self.self_addr, self.storage)
+    }
+}
 
 } // verus!

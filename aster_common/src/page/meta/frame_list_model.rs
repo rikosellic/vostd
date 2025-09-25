@@ -65,13 +65,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> ModelOf for Link<M> { }
 
 pub tracked struct UniqueFrameLinkOwner<M: AnyFrameMeta + Repr<MetaSlotInner>> {
     pub link_own : LinkOwner,
-    pub link_perm : Tracked<PointsTo<Link<M>>>,
+    pub link_perm : Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, Link<M>>>,
     pub frame_own : UniqueFrameOwner<Link<M>>
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Inv for UniqueFrameLinkOwner<M> {
     open spec fn inv(&self) -> bool {
-        true
+        self.link_perm@.wf()
 //        &&& self.link_own.self_perm@.mem_contents() is Init
 //        &&& self.link_own.self_perm@.mem_contents().value() == self.frame_own.data
     }
@@ -92,7 +92,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for UniqueFrame<Link<M>> {
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool {
         &&& owner.link_perm@.is_init()
-        &&& self.ptr == owner.frame_own.slot@.self_ptr@.pptr()
+//        &&& self.ptr == owner.frame_own.slot@.storage@.pptr()
 //        &&& owner.link_perm@.pptr() == (&owner.frame_own@.slot.storage.value())
     }
 }
@@ -133,7 +133,7 @@ impl Inv for LinkedListModel {
 #[rustc_has_incoherent_inherent_impls]
 pub tracked struct LinkedListOwner<M: AnyFrameMeta + Repr<MetaSlotInner>> {
     pub list: Seq<LinkOwner>,
-    pub perms: Map<int, Tracked<PointsTo<Link<M>>>>,
+    pub perms: Map<int, Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, Link<M>>>>,
     pub list_id: u64,
 }
 
@@ -151,6 +151,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedListOwner<M> {
     {
         &&& self.perms.contains_key(i)
         &&& self.perms[i]@.addr() == self.list[i].paddr
+        &&& self.perms[i]@.wf()
         &&& FRAME_METADATA_RANGE().start <= self.perms[i]@.addr() < FRAME_METADATA_RANGE().start + MAX_NR_PAGES() * META_SLOT_SIZE()
         &&& self.perms[i]@.is_init()
         &&& self.perms[i]@.mem_contents().value().wf(&self.list[i])
@@ -330,7 +331,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorOwner<M> {
     }
 
     #[verifier::external_body]
-    pub fn list_insert(Tracked(cursor): Tracked<&mut Self>, Tracked(link): Tracked<&mut LinkOwner>, Tracked(perm): Tracked<&PointsTo<Link<M>>>)
+    pub fn list_insert(Tracked(cursor): Tracked<&mut Self>, Tracked(link): Tracked<&mut LinkOwner>, Tracked(perm): Tracked<&vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, Link<M>>>)
         ensures
             cursor.list_own.list == old(cursor).list_own.list.insert(old(cursor).index, *old(link)),
             cursor.list_own.list_id == old(cursor).list_own.list_id,

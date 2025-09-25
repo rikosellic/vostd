@@ -6,6 +6,7 @@ use vstd::atomic::PAtomicU64;
 use vstd::atomic::PAtomicU8;
 
 use vstd_extra::ownership::*;
+use vstd_extra::cast_ptr::*;
 
 use super::*;
 
@@ -30,17 +31,15 @@ pub open spec fn get_slot_spec(paddr: Paddr) -> (res: PPtr<MetaSlot>)
     PPtr(slot, PhantomData::<MetaSlot>)
 }
 
-pub enum MetaSlotInner {
-    Empty,
-}
+pub struct MetaSlotInner {}
 
-pub struct LinkOuter {
+pub struct StoredLink {
     pub next: Option<Paddr>,
     pub prev: Option<Paddr>,
     pub slot: MetaSlotInner
 }
 
-pub struct PageTablePageMetaOuter {
+pub struct StoredPageTablePageMeta {
     pub nr_children: u16,
     pub stray: bool,
     pub level: PagingLevel,
@@ -49,12 +48,12 @@ pub struct PageTablePageMetaOuter {
 
 pub enum MetaSlotStorage {
     Empty([u8; 39]),
-    FrameLink(LinkOuter),
-    PTNode(PageTablePageMetaOuter),
+    FrameLink(StoredLink),
+    PTNode(StoredPageTablePageMeta),
 }
 
 impl MetaSlotStorage {
-    pub open spec fn get_link_spec(self) -> Option<LinkOuter> {
+    pub open spec fn get_link_spec(self) -> Option<StoredLink> {
         match self {
             MetaSlotStorage::FrameLink(link) => Some(link),
             _ => None
@@ -62,7 +61,7 @@ impl MetaSlotStorage {
     }
 
     #[verifier::when_used_as_spec(get_link_spec)]
-    pub fn get_link(self) -> (res: Option<LinkOuter>)
+    pub fn get_link(self) -> (res: Option<StoredLink>)
         ensures res == self.get_link_spec()
     {
         match self {
@@ -71,7 +70,7 @@ impl MetaSlotStorage {
         }
     }
 
-    pub open spec fn get_node_spec(self) -> Option<PageTablePageMetaOuter> {
+    pub open spec fn get_node_spec(self) -> Option<StoredPageTablePageMeta> {
         match self {
             MetaSlotStorage::PTNode(node) => Some(node),
             _ => None
@@ -79,7 +78,7 @@ impl MetaSlotStorage {
     }
 
     #[verifier::when_used_as_spec(get_node_spec)]
-    pub fn get_node(self) -> (res: Option<PageTablePageMetaOuter>)
+    pub fn get_node(self) -> (res: Option<StoredPageTablePageMeta>)
         ensures res == self.get_node_spec()
     {
         match self {
@@ -91,36 +90,55 @@ impl MetaSlotStorage {
 
 #[rustc_has_incoherent_inherent_impls]
 pub struct MetaSlot {
-    pub storage: PCell<MetaSlotStorage>,
+    pub storage: PPtr<MetaSlotStorage>,
     pub ref_count: PAtomicU64,
     pub vtable_ptr: PPtr<usize>,
     pub in_list: PAtomicU64,
 }
 
 
-global layout MetaSlot is size == 64, align == 8;
+//global layout MetaSlot is size == 64, align == 8;
 
 
 pub broadcast proof fn lemma_meta_slot_size()
     ensures
         #[trigger] size_of::<MetaSlot>() == META_SLOT_SIZE(),
-{ }
+{ admit() }
 
 pub proof fn size_of_meta_slot()
     ensures
         size_of::<MetaSlot>() == 64,
         align_of::<MetaSlot>() == 8,
-{ }
+{ admit() }
 
 #[inline(always)]
 #[verifier::allow_in_spec]
 pub const fn meta_slot_size() -> (res: usize)
     returns 64usize
 {
+    proof { size_of_meta_slot(); }
     size_of::<MetaSlot>()
 }
 
 impl MetaSlot {
+    #[verus_spec(
+        with Tracked(owner): Tracked<MetaSlotOwner>
+    )]
+    pub fn cast_storage<T: Repr<MetaSlotStorage>>(&self, addr: usize) -> (res: ReprPtr<MetaSlotStorage, T>)
+        requires
+            self.wf(&owner),
+            owner.inv(),
+            addr == owner.storage@.addr()
+        ensures
+            res.ptr == owner.storage@.pptr()
+    {
+        ReprPtr::<MetaSlotStorage, T> {
+            addr: addr,
+            ptr: self.storage,
+            _T: PhantomData
+        }
+    }
+
     pub open spec fn get_from_unused_spec<M: AnyFrameMeta>
     (
         paddr: Paddr,

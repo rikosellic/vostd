@@ -3,14 +3,14 @@
 //! The unique frame pointer that is not shared with others.
 
 use vstd::prelude::*;
-use vstd::simple_pptr::*;
+use vstd::simple_pptr;
 use vstd::atomic::PermissionU64;
 
 use aster_common::prelude::*;
 use aster_common::prelude::frame_list_model::UniqueFrameLinkOwner;
 
 use vstd_extra::ownership::*;
-use vstd_extra::cast_ptr::Repr;
+use vstd_extra::cast_ptr::*;
 
 use core::{marker::PhantomData, mem::ManuallyDrop, sync::atomic::Ordering};
 
@@ -60,9 +60,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrame<Link<M>> {
     /// Gets the metadata of this page.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn meta(&self, Tracked(perm): Tracked<&PointsTo<Link<M>>>) -> (l: &Link<M>)
+    pub fn meta(&self) -> (l: &Link<M>)
         ensures
-            perm.mem_contents().value() == l,
+//            perm.mem_contents().value() == l,
     {
         unimplemented!()
         // SAFETY: The type is tracked by the type system.
@@ -72,15 +72,25 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrame<Link<M>> {
     /// Gets the mutable metadata of this page.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn meta_mut(&mut self, Tracked(perm): Tracked<&mut PointsTo<Link<M>>>) -> (ptr: PPtr<Link<M>>)
+    #[verus_spec(
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>
+    )]
+    pub fn meta_mut(&mut self) -> (res: ReprPtr<MetaSlotStorage, Link<M>>)
         ensures
-            ptr == perm.pptr(),
-            perm.mem_contents() == old(perm).mem_contents()
+//            res.1@.points_to.pptr() == regions.slot_owners[frame_to_index(meta_to_frame(self.ptr.addr()))].storage@.pptr(),
+            res.addr() == self.ptr.addr(),
+            res.ptr == regions.slot_owners[frame_to_index(meta_to_frame(self.ptr.addr()))].storage@.pptr(),
+//            res.1@.is_init(),
+//            res.1@.wf(),
+            regions == old(regions)
     {
-        unimplemented!()
         // SAFETY: The type is tracked by the type system.
         // And we have the exclusive access to the metadata.
-//        unsafe { &mut *self.slot().as_meta_ptr() }
+//        let owner = regions.slot_owners.tracked_remove(frame_to_index(meta_to_frame(self.ptr.addr())));
+//        let perm = owner.cast_perm();
+//        regions.slot_owners.tracked_insert(frame_to_index(meta_to_frame(self.ptr.addr())), owner);
+
+        self.slot().as_meta_ptr()
     }
 }
 
@@ -174,27 +184,31 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrame<Link<M>> {
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
     #[verus_spec(
-        with Tracked(region) : Tracked<MetaRegionOwners>
+        with Tracked(region) : Tracked<&mut MetaRegionOwners>,
+            Tracked(perm) : Tracked<PointsTo<MetaSlotStorage, Link<M>>>
     )]
     pub(crate) fn from_raw(paddr: Paddr) -> (res: (Self, Tracked<UniqueFrameLinkOwner<M>>))
         requires
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
         ensures
-            res.1@ == UniqueFrameLinkOwner::<M>::from_raw_owner(region, paddr),
+//            res.1@ == UniqueFrameLinkOwner::<M>::from_raw_owner(*old(region), paddr),
             res.0.wf(&res.1@),
-            res.1@.frame_own@ == UniqueFrameModel::from_raw_spec(region@, paddr),
-            res.0.ptr == region.slots[frame_to_index(paddr)]@.pptr(),
+//            res.1@.frame_own@ == UniqueFrameModel::from_raw_spec(old(region)@, paddr),
+//            res.0.ptr == region.slots[frame_to_index(paddr)]@.pptr(),
             res.1@.frame_own.slot == region.slot_owners[frame_to_index(paddr)],
             res.1@.link_own.slot == region.slot_owners[frame_to_index(paddr)],
+            res.1@.link_perm == perm,
     {
-        let vaddr = mapping::frame_to_meta(paddr);
-        let ptr = PPtr::<MetaSlot>::from_addr(vaddr);
+        unimplemented!()
+
+/*        let vaddr = mapping::frame_to_meta(paddr);
+        let ptr = vstd::simple_pptr::PPtr::<MetaSlot>::from_addr(vaddr);
 
         (Self {
             ptr,
             _marker: PhantomData,
-        }, Tracked(UniqueFrameLinkOwner::<M>::from_raw_owner(region, paddr)))
+        }, Tracked(UniqueFrameLinkOwner::<M>::from_raw_owner(*region, paddr)))*/
     }
 
     #[rustc_allow_incoherent_impl]

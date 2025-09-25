@@ -1,17 +1,18 @@
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
-use vstd_extra::cast_ptr::Repr;
+use vstd_extra::cast_ptr::{Repr, ReprPtr};
 
 use crate::prelude::AnyFrameMeta;
 use crate::prelude::MetaSlotInner;
+use crate::prelude::MetaSlotStorage;
 
 verus! {
 
 #[rustc_has_incoherent_inherent_impls]
 pub struct Link<M: AnyFrameMeta + Repr<MetaSlotInner>> {
-    pub next: Option<PPtr<Link<M>>>,
-    pub prev: Option<PPtr<Link<M>>>,
+    pub next: Option<ReprPtr<MetaSlotStorage, Link<M>>>,
+    pub prev: Option<ReprPtr<MetaSlotStorage, Link<M>>>,
     pub meta: M,
 }
 
@@ -64,8 +65,8 @@ pub struct Link<M: AnyFrameMeta + Repr<MetaSlotInner>> {
 #[rustc_has_incoherent_inherent_impls]
 pub struct LinkedList<M: AnyFrameMeta + Repr<MetaSlotInner>>
 {
-    pub front: Option<PPtr<Link<M>>>,
-    pub back: Option<PPtr<Link<M>>>,
+    pub front: Option<ReprPtr<MetaSlotStorage, Link<M>>>,
+    pub back: Option<ReprPtr<MetaSlotStorage, Link<M>>>,
     /// The number of frames in the list.
     pub size: usize,
     /// A lazily initialized ID, used to check whether a frame is in the list.
@@ -100,7 +101,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Default for LinkedList<M>
 pub struct CursorMut<M: AnyFrameMeta + Repr<MetaSlotInner>>
 {
     pub list: PPtr<LinkedList<M>>,
-    pub current: Option<PPtr<Link<M>>>,
+    pub current: Option<ReprPtr<MetaSlotStorage, Link<M>>>,
 }
 
 }

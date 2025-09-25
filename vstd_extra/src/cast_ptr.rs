@@ -1,6 +1,6 @@
 use vstd::prelude::*;
 use vstd::raw_ptr::MemContents;
-use vstd::cell::{self, PCell};
+use vstd::simple_pptr::{self, PPtr};
 use vstd::set;
 use vstd::set_lib;
 use vstd::layout;
@@ -40,11 +40,30 @@ pub trait Repr<R:Sized> : Sized {
 /// The length of the array is not stored in the pointer
 pub struct ReprPtr<R, T: Repr<R>> {
     pub addr: usize,
-    pub cell: PCell<R>,
+    pub ptr: PPtr<R>,
     pub _T: PhantomData<T>,
 }
 
+impl<R, T: Repr<R>> Clone for ReprPtr<R, T> {
+    fn clone(&self) -> Self {
+        Self {
+            addr: self.addr,
+            ptr: self.ptr,
+            _T: PhantomData,
+        }
+    }
+}
+
+impl<R, T: Repr<R>> Copy for ReprPtr<R, T> {
+
+}
+
 impl<R, T: Repr<R>> ReprPtr<R, T> {
+    pub open spec fn addr_spec(self) -> usize {
+        self.addr
+    }
+
+    #[verifier::when_used_as_spec(addr_spec)]
     pub fn addr(self) -> (u: usize)
         ensures
             u == self.addr
@@ -66,9 +85,8 @@ impl<R, T: Repr<R>> ReprPtr<R, T> {
             use_type_invariant(&*perm);
             T::from_to_repr(perm.value());
         }
-        T::from_repr(self.cell.take(Tracked(&mut perm.points_to)))
+        T::from_repr(self.ptr.take(Tracked(perm.points_to.borrow_mut())))
     }
-
 
     pub exec fn put(self, Tracked(perm): Tracked<&mut PointsTo<R, T>>, v: T)
         requires
@@ -82,10 +100,10 @@ impl<R, T: Repr<R>> ReprPtr<R, T> {
             use_type_invariant(&*perm);
             v.from_to_repr();
         }
-        self.cell.put(Tracked(&mut perm.points_to), v.to_repr())
+        self.ptr.put(Tracked(perm.points_to.borrow_mut()), v.to_repr())
     }
 
-    pub exec fn borrow<'a>(&'a self, Tracked(perm): Tracked<&'a PointsTo<R, T>>) -> (v : &'a T)
+    pub exec fn borrow<'a>(self, Tracked(perm): Tracked<&'a PointsTo<R, T>>) -> (v : &'a T)
         requires
             perm.pptr() == self,
             perm.is_init(),
@@ -96,7 +114,7 @@ impl<R, T: Repr<R>> ReprPtr<R, T> {
         proof {
             use_type_invariant(&*perm);
         }
-        T::from_borrowed(self.cell.borrow(Tracked(& perm.points_to)))
+        T::from_borrowed(self.ptr.borrow(Tracked(perm.points_to.borrow())))
     }
 
 }
@@ -104,21 +122,28 @@ impl<R, T: Repr<R>> ReprPtr<R, T> {
 #[verifier::accept_recursive_types(T)]
 pub tracked struct PointsTo<R, T: Repr<R>> {
     addr: usize,
-    cell: PCell<R>,
-    points_to: cell::PointsTo<R>,
+    points_to: Tracked<simple_pptr::PointsTo<R>>,
     _T: PhantomData<T>
 }
 
 impl<R, T: Repr<R>> PointsTo<R, T> {
+    pub fn new(addr: usize, points_to: Tracked<simple_pptr::PointsTo<R>>) -> Tracked<Self>
+    {
+        Tracked(
+            Self {
+                addr: addr,
+                points_to: points_to,
+                _T: PhantomData
+        })
+    }
+
     #[verifier::type_invariant]
     closed spec fn inv(self) -> bool
-    {
-        &&& self.points_to.id() == self.cell.id()
-    }
+    { true }
 
     pub closed spec fn wf(self) -> bool
     {
-        &&& T::wf(self.points_to.value())
+        &&& T::wf(self.points_to@.value())
     }
 
     pub closed spec fn addr_spec(self) -> usize
@@ -135,7 +160,7 @@ impl<R, T: Repr<R>> PointsTo<R, T> {
 
     pub closed spec fn mem_contents(self) -> MemContents<T>
     {
-        match self.points_to.mem_contents() {
+        match self.points_to@.mem_contents() {
             MemContents::<R>::Uninit => MemContents::<T>::Uninit,
             MemContents::<R>::Init(r) => MemContents::<T>::Init(T::from_repr(r)),
         }
@@ -162,7 +187,7 @@ impl<R, T: Repr<R>> PointsTo<R, T> {
     {
         ReprPtr {
             addr: self.addr,
-            cell: self.cell,
+            ptr: self.points_to@.pptr(),
             _T: PhantomData
         }
     }
