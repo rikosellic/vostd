@@ -47,7 +47,7 @@ impl Inv for MetaRegionOwners {
             &&& self.slots[i]@.is_init()
             &&& self.slots[i]@.addr() == meta_addr(i)
             &&& self.slots[i]@.value().wf(&self.slot_owners[i])
-            &&& self.slot_owners[i].self_ptr@.addr() == self.slots[i]@.addr()
+            &&& self.slot_owners[i].self_addr == self.slots[i]@.addr()
             }
         }
     &&& {
@@ -61,7 +61,7 @@ impl Inv for MetaRegionOwners {
             &&& self.dropped_slots[i]@.is_init()
             &&& self.dropped_slots[i]@.addr() == meta_addr(i)
             &&& self.dropped_slots[i]@.value().wf(&self.slot_owners[i])
-            &&& self.slot_owners[i].self_ptr@.addr() == self.dropped_slots[i]@.addr()
+            &&& self.slot_owners[i].self_addr == self.dropped_slots[i]@.addr()
             }
         }
     }

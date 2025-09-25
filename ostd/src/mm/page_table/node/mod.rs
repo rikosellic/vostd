@@ -28,6 +28,8 @@
 mod child;
 mod entry;
 
+use vstd::prelude::*;
+
 use core::{
     cell::SyncUnsafeCell,
     marker::PhantomData,
@@ -51,12 +53,27 @@ use crate::{
 };
 
 use vstd::atomic::PAtomicU8;
+use vstd_extra::cast_ptr::*;
 use aster_common::prelude::*;
 
+verus! {
+
 impl<C: PageTableConfig> PageTableNode<C> {
+
     #[rustc_allow_incoherent_impl]
-    pub(super) fn level(&self) -> PagingLevel {
-        self.meta().level
+    #[verus_spec(
+        with Tracked(regions) : Tracked<&mut MetaRegionOwners>,
+            perm: Tracked<&PointsTo<MetaSlotStorage, PageTablePageMeta<C>>>
+    )]
+    pub fn level(&self) -> PagingLevel
+        requires
+            old(regions).slots.contains_key(frame_to_index(self.ptr.addr())),
+            old(regions).slots[frame_to_index(self.ptr.addr())]@.pptr() == self.ptr,
+            old(regions).slots[frame_to_index(self.ptr.addr())]@.mem_contents() is Init
+    {
+        #[verus_spec(with Tracked(regions), perm)]
+        let meta = self.meta();
+        meta.level
     }
 
     /* TODO: stub out allocator
@@ -210,14 +227,13 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     /// The caller must ensure that the index is within the bound.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub(super) unsafe fn read_pte(&self, idx: usize) -> C::E {
-        unimplemented!()
-/*        debug_assert!(idx < nr_subpage_per_huge::<C>());
+    pub fn read_pte(&self, idx: usize) -> C::E {
+        debug_assert!(idx < nr_subpage_per_huge::<C>());
         let ptr = paddr_to_vaddr(self.start_paddr()) as *mut C::E;
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
         // - All page table entries are aligned and accessed with atomic operations only.
-        unsafe { load_pte(ptr.add(idx), Ordering::Relaxed) }*/
+        unsafe { load_pte(ptr.add(idx), Ordering::Relaxed) }
     }
 
     /// Writes a page table entry at a given index.
@@ -236,13 +252,12 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
     pub(super) unsafe fn write_pte(&mut self, idx: usize, pte: C::E) {
-        unimplemented!()
-/*        debug_assert!(idx < nr_subpage_per_huge::<C>());
+        debug_assert!(idx < nr_subpage_per_huge::<C>());
         let ptr = paddr_to_vaddr(self.start_paddr()) as *mut C::E;
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
         // - All page table entries are aligned and accessed with atomic operations only.
-        unsafe { store_pte(ptr.add(idx), pte, Ordering::Release) }*/
+        unsafe { store_pte(ptr.add(idx), pte, Ordering::Release) }
     }
 
     /// Gets the mutable reference to the number of valid PTEs in the node.
@@ -254,7 +269,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
 //        unsafe { &mut *self.meta().nr_children.get() }
     }
 }
-
+}
 /*impl<C: PageTableConfig> Drop for PageTableGuard<'_, C> {
     fn drop(&mut self) {
         self.inner.meta().lock.store(0, Ordering::Release);

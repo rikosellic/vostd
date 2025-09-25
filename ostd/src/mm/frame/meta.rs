@@ -20,6 +20,7 @@ use vstd::cell::{self, PCell};
 use vstd::atomic::PermissionU64;
 use aster_common::prelude::*;
 use vstd_extra::ownership::*;
+use vstd_extra::cast_ptr::*;
 
 use core::{
     alloc::Layout,
@@ -425,11 +426,14 @@ impl MetaSlot {
             Ghost(addr): Ghost<Vaddr>
     )]
     #[verifier::external_body]
-    pub(super) fn as_meta_ptr<M: AnyFrameMeta>(&self) -> PPtr<M> {
+    pub(super) fn as_meta_ptr<M: AnyFrameMeta + Repr<MetaSlotStorage>>(&self) -> (res: ReprPtr<MetaSlotStorage, M>)
+        ensures
+            regions.slot_owners[frame_to_index(meta_to_frame(addr))].storage@.pptr() == res.ptr
+    {
         #[verus_spec(with Tracked(regions), Ghost(addr))]
         let addr = self.addr_of();
         let tracked own = regions.slot_owners.tracked_borrow(frame_to_index(meta_to_frame(addr)));
-        M::cast_to(self.storage.borrow(Tracked(own.storage.borrow())))
+        self.cast_storage(addr)
     }
 
     /// Writes the metadata to the slot without reading or dropping the previous value.
@@ -445,7 +449,7 @@ impl MetaSlot {
     pub(super) fn write_meta<M: AnyFrameMeta>(&self, metadata: M)
         requires
 //            old(regions).slots.contains_key()
-            old(slot_own).storage@.id() == self.storage.id()
+            old(slot_own).storage@.pptr() == self.storage
         ensures
             slot_own.ref_count == old(slot_own).ref_count
     {

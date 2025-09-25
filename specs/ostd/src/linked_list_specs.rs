@@ -1,6 +1,7 @@
 use vstd::prelude::*;
 use vstd_extra::prelude::*;
 use vstd_extra::ownership::*;
+use vstd_extra::cast_ptr::*;
 use aster_common::prelude::*;
 use aster_common::prelude::frame_list_model::*;
 
@@ -80,7 +81,7 @@ impl CursorModel {
     }
 }
 
-impl<M: AnyFrameMeta> LinkedListOwner<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedListOwner<M> {
     #[rustc_allow_incoherent_impl]
     pub open spec fn remove_list_spec(list: Seq<LinkOwner>, i: int) -> Seq<LinkOwner>
     {
@@ -91,7 +92,7 @@ impl<M: AnyFrameMeta> LinkedListOwner<M> {
     }
 }
 
-impl<M: AnyFrameMeta> CursorOwner<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorOwner<M> {
 
     #[rustc_allow_incoherent_impl]
     pub open spec fn remove_owner_spec(self, post: Self) -> bool
@@ -101,7 +102,7 @@ impl<M: AnyFrameMeta> CursorOwner<M> {
         &&& post.list_own.list == LinkedListOwner::<M>::remove_list_spec(self.list_own.list, self.index)
         &&& post.index == self.index
     }
-
+ 
     #[rustc_allow_incoherent_impl]
     pub proof fn remove_owner_spec_implies_model_spec(self, post: Self)
         requires

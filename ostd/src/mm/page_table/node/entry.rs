@@ -21,14 +21,14 @@ use aster_common::prelude::*;
 impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     /// Returns if the entry does not map to anything.
     #[rustc_allow_incoherent_impl]
-    pub(in crate::mm) fn is_none(&self) -> bool {
+    pub fn is_none(&self) -> bool {
         !self.pte.is_present()
     }
  
     /// Returns if the entry maps to a page table node.
     #[rustc_allow_incoherent_impl]
-    pub(in crate::mm) fn is_node(&self) -> bool {
-        self.pte.is_present()/* && !self.pte.is_last(self.node.level())*/
+    pub fn is_node(&self) -> bool {
+        self.pte.is_present() && !self.pte.is_last(self.node.level())
     }
 
 /*    /// Gets a reference to the child.
