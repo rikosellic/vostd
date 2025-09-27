@@ -18,6 +18,13 @@ pub enum Child<C: PageTableConfig> {
 }
 
 impl<C: PageTableConfig> Child<C> {
+    pub open spec fn get_node(self) -> Option<PageTableNode<C>> {
+        match self {
+            Self::PageTable(node) => Some(node),
+            _ => None
+        }
+    }
+
     #[verifier::inline]
     pub open spec fn is_none_spec(&self) -> bool {
         match self {
@@ -26,12 +33,12 @@ impl<C: PageTableConfig> Child<C> {
         }
     }
 
+    /// Returns whether the child is not present.
     #[verifier::when_used_as_spec(is_none_spec)]
-    pub fn is_none(&self) -> bool {
-        match self {
-            Child::None => true,
-            _ => false,
-        }
+    pub fn is_none(&self) -> (b:bool)
+        ensures b == self.is_none_spec()
+    {
+        matches!(self, Child::None)
     }
 }
 

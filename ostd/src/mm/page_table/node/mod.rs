@@ -53,6 +53,7 @@ use crate::{
 };
 
 use vstd::atomic::PAtomicU8;
+use vstd::simple_pptr;
 use vstd_extra::cast_ptr::*;
 use aster_common::prelude::*;
 
@@ -62,16 +63,14 @@ impl<C: PageTableConfig> PageTableNode<C> {
 
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(regions) : Tracked<&mut MetaRegionOwners>,
+        with Tracked(slot_own) : Tracked<&MetaSlotOwner>,
+            Tracked(slot_perm): Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>,
             perm: Tracked<&PointsTo<MetaSlotStorage, PageTablePageMeta<C>>>
     )]
     pub fn level(&self) -> PagingLevel
         requires
-            old(regions).slots.contains_key(frame_to_index(self.ptr.addr())),
-            old(regions).slots[frame_to_index(self.ptr.addr())]@.pptr() == self.ptr,
-            old(regions).slots[frame_to_index(self.ptr.addr())]@.mem_contents() is Init
     {
-        #[verus_spec(with Tracked(regions), perm)]
+        #[verus_spec(with Tracked(slot_own), Tracked(slot_perm), perm)]
         let meta = self.meta();
         meta.level
     }
@@ -191,7 +190,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     /// [`nr_subpage_per_huge<C>`].
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub(super) fn entry(&mut self, idx: usize) -> Entry<'_, 'rcu, C> {
+    pub(super) fn entry<'slot>(&mut self, idx: usize) -> Entry<'slot, 'rcu, C> {
         unimplemented!()
 /*        assert!(idx < nr_subpage_per_huge::<C>());
         // SAFETY: The index is within the bound.
@@ -260,13 +259,33 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         unsafe { store_pte(ptr.add(idx), pte, Ordering::Release) }
     }
 
+/*. We can't get mutable references. Normally we would put it in a pointer,
+    but that is overkill here; it's only ever incremented and decremented!
+    So we replace this with the inc and dec functions
+
     /// Gets the mutable reference to the number of valid PTEs in the node.
-    #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
     fn nr_children_mut(&mut self) -> &/*mut*/ u16 {
         unimplemented!()
         // SAFETY: The lock is held so we have an exclusive access.
-//        unsafe { &mut *self.meta().nr_children.get() }
+        unsafe { &mut *self.meta().nr_children.get() }
+    }*/
+
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
+    fn nr_children_inc(&mut self)
+    {
+        // SAFETY: The lock is held so we have an exclusive access.
+        let nr_children = self.meta().nr_children;
+        self.meta().nr_children = nr_children+1;
+    }
+
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
+    fn nr_children_dec(&mut self)
+    {
+        // SAFETY: The lock is held so we have an exclusive access.
+        let nr_children = self.meta().nr_children;
+        self.meta().nr_children = nr_children-1;
     }
 }
 }

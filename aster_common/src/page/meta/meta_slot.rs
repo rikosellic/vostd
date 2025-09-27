@@ -121,12 +121,9 @@ pub const fn meta_slot_size() -> (res: usize)
 }
 
 impl MetaSlot {
-    #[verus_spec(
-        with Tracked(owner): Tracked<MetaSlotOwner>
-    )]
-    pub fn cast_storage<T: Repr<MetaSlotStorage>>(&self, addr: usize) -> (res: ReprPtr<MetaSlotStorage, T>)
+    pub fn cast_storage<T: Repr<MetaSlotStorage>>(&self, addr: usize, Tracked(owner): Tracked<&MetaSlotOwner>) -> (res: ReprPtr<MetaSlotStorage, T>)
         requires
-            self.wf(&owner),
+            self.wf(owner),
             owner.inv(),
             addr == owner.storage@.addr()
         ensures

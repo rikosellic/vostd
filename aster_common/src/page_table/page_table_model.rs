@@ -4,10 +4,60 @@ use vstd::simple_pptr::*;
 use vstd_extra::ghost_tree;
 use vstd_extra::ownership::*;
 use vstd_extra::prelude::TreeNodeValue;
+use vstd_extra::cast_ptr::{Repr};
 
 use crate::prelude::*;
 
 verus! {
+
+pub tracked struct EntryOwner<'slot, 'rcu, C: PageTableConfig> {
+    pub slot_own : Tracked<&'slot MetaSlotOwner>,
+    pub guard_perm : Tracked<PointsTo<PageTableGuard<'rcu, C>>>,
+    pub slot_perm : Tracked<PointsTo<MetaSlot>>,
+    pub node_perm : Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, PageTablePageMeta<C>>>,
+}
+
+pub ghost struct EntryModel<C: PageTableConfig> {
+    pub node : PageTablePageMeta<C>,
+}
+
+impl<'slot, 'rcu, C: PageTableConfig> Inv for EntryOwner<'slot, 'rcu, C> {
+    open spec fn inv(&self) -> bool {
+        self.slot_perm@.value().wf(self.slot_own@)
+    }
+}
+
+impl< C: PageTableConfig> Inv for EntryModel<C> {
+    open spec fn inv(&self) -> bool { true }
+}
+
+impl<'slot, 'rcu, C: PageTableConfig> InvView for EntryOwner<'slot, 'rcu, C> {
+    type V = EntryModel<C>;
+
+    open spec fn view(&self) -> <Self as InvView>::V {
+        EntryModel {
+            node: self.node_perm@.value()
+        }
+    }
+
+    proof fn view_preserves_inv(&self) { }
+}
+
+impl<'slot, 'rcu, C: PageTableConfig> OwnerOf for Entry<'slot, 'rcu, C> {
+    type Owner = EntryOwner<'slot, 'rcu, C>;
+
+    open spec fn wf(&self, owner: &Self::Owner) -> bool {
+        &&& self.pte.paddr() % PAGE_SIZE() == 0
+        &&& self.pte.paddr() < MAX_PADDR()
+        &&& self.node == owner.guard_perm@.pptr()
+        &&& owner.guard_perm@.is_init()
+        &&& owner.guard_perm@.value().inner.inner.ptr == owner.slot_perm@.pptr()
+        &&& owner.slot_perm@.is_init()
+        &&& owner.slot_perm@.value().storage == owner.node_perm@.points_to@.pptr()
+        &&& owner.node_perm@.points_to@.is_init()
+        &&& <PageTablePageMeta<C> as Repr<MetaSlotStorage>>::wf(owner.node_perm@.points_to@.value())
+    }
+}
 
 pub tracked struct PageTableNodeOwner {
     pub paddr: usize,

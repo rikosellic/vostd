@@ -203,6 +203,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M>
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
         with Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            Tracked(slot_own): Tracked<&MetaSlotOwner>,
             Tracked(owner): Tracked<&mut LinkedListOwner<M>>
     )]
     pub fn contains(ptr: PPtr<Self>, frame: Paddr) -> bool
@@ -213,7 +214,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M>
             old(regions).slot_owners.contains_key(frame_to_index(frame)),
             old(regions).slot_owners[frame_to_index(frame)].in_list@.is_for(old(regions).slots[frame_to_index(frame)]@.mem_contents().value().in_list),
     {
-        let Ok(slot_ptr) = get_slot(frame, Tracked(regions)) else {
+        let Ok(slot_ptr) = get_slot(frame, Tracked(slot_own)) else {
             return false;
         };
 
@@ -250,18 +251,18 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M>
             old(regions).slot_owners.contains_key(frame_to_index(frame)),
             old(regions).slot_owners[frame_to_index(frame)].in_list@.is_for(old(regions).slots[frame_to_index(frame)]@.mem_contents().value().in_list),
     {
-        let Ok(slot_ptr) = get_slot(frame, Tracked(regions)) else {
-            return None;
-        };
-
         let tracked mut slot_perm = regions.slots.tracked_remove(frame_to_index(frame));
         let tracked mut slot_own = regions.slot_owners.tracked_remove(frame_to_index(frame));
+
+        let Ok(slot_ptr) = get_slot(frame, Tracked(&slot_own)) else {
+            return None;
+        };
 
         let slot = slot_ptr.take(Tracked(slot_perm.borrow_mut()));
         let in_list = slot.in_list.load(Tracked(slot_own.in_list.borrow_mut())); 
         let contains = in_list == Self::lazy_get_id(ptr);
 
-        #[verus_spec(with Tracked(regions), Ghost(frame_to_meta(frame)))]
+        #[verus_spec(with Tracked(&slot_own))]
         let meta_ptr : ReprPtr<MetaSlotStorage, Link<M>> = slot.as_meta_ptr();
 
         let res = if contains {
@@ -275,8 +276,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M>
 
         slot_ptr.put(Tracked(slot_perm.borrow_mut()), slot);
         proof {
-            regions.slot_owners.tracked_insert(frame_to_index(frame), slot_own);
             regions.slots.tracked_insert(frame_to_index(frame), slot_perm);
+            regions.slot_owners.tracked_insert(frame_to_index(frame), slot_own);
         }
 
         res

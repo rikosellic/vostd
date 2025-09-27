@@ -54,7 +54,8 @@ impl InvView for LinkOwner {
 impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for Link<M> {
     type Owner = LinkOwner;
 
-    open spec fn wf(&self, owner: &Self::Owner) -> bool { true
+    open spec fn wf(&self, owner: &Self::Owner) -> bool {
+        true
 //        &&& owner.self_perm@.mem_contents().value() == self
 //        &&& owner.next == self.next
 //        &&& owner.prev == self.prev

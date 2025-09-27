@@ -82,7 +82,6 @@ impl<R, T: Repr<R>> ReprPtr<R, T> {
             v == old(perm).value()
     {
         proof {
-            use_type_invariant(&*perm);
             T::from_to_repr(perm.value());
         }
         T::from_repr(self.ptr.take(Tracked(perm.points_to.borrow_mut())))
@@ -97,7 +96,6 @@ impl<R, T: Repr<R>> ReprPtr<R, T> {
             perm.mem_contents() == MemContents::Init(v),
     {
         proof {
-            use_type_invariant(&*perm);
             v.from_to_repr();
         }
         self.ptr.put(Tracked(perm.points_to.borrow_mut()), v.to_repr())
@@ -111,19 +109,15 @@ impl<R, T: Repr<R>> ReprPtr<R, T> {
         ensures
             *v === perm.value(),
     {
-        proof {
-            use_type_invariant(&*perm);
-        }
         T::from_borrowed(self.ptr.borrow(Tracked(perm.points_to.borrow())))
     }
-
 }
 
 #[verifier::accept_recursive_types(T)]
 pub tracked struct PointsTo<R, T: Repr<R>> {
-    addr: usize,
-    points_to: Tracked<simple_pptr::PointsTo<R>>,
-    _T: PhantomData<T>
+    pub addr: usize,
+    pub points_to: Tracked<simple_pptr::PointsTo<R>>,
+    pub _T: PhantomData<T>
 }
 
 impl<R, T: Repr<R>> PointsTo<R, T> {
@@ -136,10 +130,6 @@ impl<R, T: Repr<R>> PointsTo<R, T> {
                 _T: PhantomData
         })
     }
-
-    #[verifier::type_invariant]
-    closed spec fn inv(self) -> bool
-    { true }
 
     pub closed spec fn wf(self) -> bool
     {
