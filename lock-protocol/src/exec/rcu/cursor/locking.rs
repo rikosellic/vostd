@@ -8,7 +8,7 @@ use vstd_extra::ghost_tree::Node;
 use vstd_extra::manually_drop::*;
 
 use crate::spec::{common::*, utils::*, rcu::*};
-use super::super::{common::*, types::*, cpu::*};
+use super::super::{common::*, cpu::*};
 use super::super::{frame::meta::*, page_table::*};
 use super::super::node::{
     PageTableNode, PageTableNodeRef, PageTableGuard,
@@ -167,8 +167,8 @@ pub(super) fn lock_range<'rcu>(
             subtree_root_opt->Some_0.wf(),
             subtree_root_opt->Some_0.inst().cpu_num() == GLOBAL_CPU_NUM,
             subtree_root_opt->Some_0.inst_id() == pt.inst@.id(),
-            subtree_root_opt->Some_0.guard->Some_0.stray_perm@.value() == false,
-            subtree_root_opt->Some_0.guard->Some_0.in_protocol@ == true,
+            subtree_root_opt->Some_0.guard->Some_0.stray_perm().value() == false,
+            subtree_root_opt->Some_0.guard->Some_0.in_protocol() == true,
             // TODO
             m.inv(),
             m.inst_id() == pt.inst@.id(),
@@ -216,9 +216,10 @@ pub(super) fn lock_range<'rcu>(
     )
 }
 
-pub fn unlock_range(cursor: &mut Cursor<'_>, m: Tracked<LockProtocolModel>) -> (res: Tracked<
-    LockProtocolModel,
->)
+pub fn unlock_range(
+    cursor: &mut Cursor<'_>, 
+    m: Tracked<LockProtocolModel>
+) -> (res: Tracked<LockProtocolModel>)
     requires
         old(cursor).wf(),
         m@.inv(),
@@ -314,8 +315,8 @@ fn try_traverse_and_lock_subtree_root<'rcu>(
             &&& res.0->Some_0.wf()
             &&& res.0->Some_0.inst().cpu_num() == GLOBAL_CPU_NUM
             &&& res.0->Some_0.inst_id() == pt.inst@.id()
-            &&& res.0->Some_0.guard->Some_0.stray_perm@.value() == false
-            &&& res.0->Some_0.guard->Some_0.in_protocol@ == true
+            &&& res.0->Some_0.guard->Some_0.stray_perm().value() == false
+            &&& res.0->Some_0.guard->Some_0.in_protocol() == true
             &&& res.1@.inv()
             &&& res.1@.inst_id() == pt.inst@.id()
             &&& res.1@.state() is Locking
@@ -346,7 +347,7 @@ fn try_traverse_and_lock_subtree_root<'rcu>(
                 &&& cur_node_guard->Some_0.inst_id() == pt.inst@.id()
                 &&& cur_node_guard->Some_0.nid() == cur_nid
                 &&& cur_node_guard->Some_0.inner.deref().level_spec() == cur_level
-                &&& cur_node_guard->Some_0.guard->Some_0.in_protocol@ == false
+                &&& cur_node_guard->Some_0.guard->Some_0.in_protocol() == false
             },
         ensures
             1 <= cur_level <= MAX_NR_LEVELS,
@@ -360,7 +361,7 @@ fn try_traverse_and_lock_subtree_root<'rcu>(
                 &&& cur_node_guard->Some_0.inst_id() == pt.inst@.id()
                 &&& cur_node_guard->Some_0.nid() == cur_nid
                 &&& cur_node_guard->Some_0.inner.deref().level_spec() == cur_level
-                &&& cur_node_guard->Some_0.guard->Some_0.in_protocol@ == false
+                &&& cur_node_guard->Some_0.guard->Some_0.in_protocol() == false
             },
         decreases cur_level,
     {
@@ -469,7 +470,7 @@ fn try_traverse_and_lock_subtree_root<'rcu>(
             m.token = new_token.1.get();
         }
         pt_guard.put_node_token(Tracked(new_node_token));
-        pt_guard.update_in_protocol(Ghost(true));
+        pt_guard.update_in_protocol(Tracked(true));
     }
     (Some(pt_guard), Tracked(m))
 }
@@ -487,25 +488,28 @@ fn dfs_acquire_lock(
     // cur_node_va: Vaddr,
     // va_range: Range<Vaddr>,
     m: Tracked<LockProtocolModel>,
-) -> (res: Tracked<LockProtocolModel>)
+    forgot_guards: Tracked<SubTreeForgotGuard>,
+) -> (res: (Tracked<LockProtocolModel>, Tracked<SubTreeForgotGuard>))
     requires
         cur_node.wf(),
-        cur_node.guard->Some_0.stray_perm@.value() == false,
-        cur_node.guard->Some_0.in_protocol@ == true,
+        cur_node.guard->Some_0.stray_perm().value() == false,
+        cur_node.guard->Some_0.in_protocol() == true,
         m@.inv(),
         m@.inst_id() == cur_node.inst_id(),
         m@.state() is Locking,
         m@.cur_node() == cur_node.nid() + 1,
         m@.node_is_locked(cur_node.nid()),
     ensures
-        res@.inv(),
-        res@.inst_id() == cur_node.inst_id(),
-        res@.state() is Locking,
-        res@.sub_tree_rt() == m@.sub_tree_rt(),
-        res@.cur_node() == NodeHelper::next_outside_subtree(cur_node.nid()),
+        res.0@.inv(),
+        res.0@.inst_id() == cur_node.inst_id(),
+        res.0@.state() is Locking,
+        res.0@.sub_tree_rt() == m@.sub_tree_rt(),
+        res.0@.cur_node() == NodeHelper::next_outside_subtree(cur_node.nid()),
     decreases cur_node.deref().deref().level_spec(),
 {
     broadcast use crate::spec::utils::group_node_helper_lemmas;
+
+    let tracked mut forgot_guards = forgot_guards.get();
 
     let cur_level = cur_node.deref().deref().level();
     if cur_level == 1 {
@@ -531,8 +535,8 @@ fn dfs_acquire_lock(
         invariant
             0 <= i <= 512,
             cur_node.wf(),
-            cur_node.guard->Some_0.stray_perm@.value() == false,
-            cur_node.guard->Some_0.in_protocol@ == true,
+            cur_node.guard->Some_0.stray_perm().value() == false,
+            cur_node.guard->Some_0.in_protocol() == true,
             cur_node.deref().deref().level_spec() > 1,
             NodeHelper::is_not_leaf(cur_node.nid()),
             m.inv(),
@@ -560,7 +564,7 @@ fn dfs_acquire_lock(
                     cur_node.tracked_borrow_guard().tracked_borrow_pte_token();
                 assert(pa_pte_array_token.value().is_alive(entry.idx as nat));
                 assert(pa_pte_array_token.value().get_paddr(entry.idx as nat)
-                    == cur_node.guard->Some_0.perms@.inner.value()[entry.idx as int].inner.paddr());
+                    == cur_node.guard->Some_0.perms().inner.value()[entry.idx as int].inner.paddr());
                 assert(NodeHelper::in_subtree_range(m.sub_tree_rt(), pt.nid@)) by {
                     assert(NodeHelper::in_subtree_range(m.sub_tree_rt(), cur_node.nid()));
                 }
@@ -574,13 +578,19 @@ fn dfs_acquire_lock(
                 // let va_start = va_range.start.max(child_node_va);
                 // let va_end = va_range.end.min(child_node_va_end);
                 // dfs_acquire_lock(guard, &mut pt_guard, child_node_va, va_start..va_end);
-                assert(pt_guard.guard->Some_0.stray_perm@.value() == false);
+                assert(pt_guard.guard->Some_0.stray_perm().value() == false);
                 let res = dfs_acquire_lock(guard, &pt_guard, Tracked(m));
                 proof {
                     m = res.get();
                 }
+                // Forget the page table guard.
+                assert(pt_guard.guard is Some);
+                let tracked guard = pt_guard.guard.tracked_unwrap()
+                let tracked forgot_guard = guard.inner.get();
+                proof {
+                    forgot_guards.tracked_put(pt.nid@, forgot_guard);
+                }
                 let _ = ManuallyDrop::new(pt_guard);
-
             },
             ChildRef::Frame(_, _, _) => unreached(),
             ChildRef::None => {
@@ -589,7 +599,7 @@ fn dfs_acquire_lock(
                 proof {
                     let ghost nid = NodeHelper::get_child(cur_node.nid(), i as nat);
                     let tracked pte_token: &PteArrayToken =
-                        cur_node.guard.tracked_borrow().pte_token.borrow().tracked_borrow();
+                        cur_node.guard.tracked_borrow().tracked_borrow_pte_token();
                     assert(pte_token.value().is_void(i as nat));
                     assert(NodeHelper::in_subtree_range(m.sub_tree_rt(), nid)) by {
                         NodeHelper::lemma_in_subtree_is_child_in_subtree(
@@ -660,7 +670,7 @@ fn dfs_acquire_lock(
         i += 1;
     }
 
-    Tracked(m)
+    (Tracked(m), Tracked(forgot_guards))
 }
 
 /// Releases the locks for the given range in the sub-tree rooted at the node.
@@ -679,8 +689,8 @@ fn dfs_release_lock<'rcu>(
 ) -> (res: Tracked<LockProtocolModel>)
     requires
         cur_node.wf(),
-        cur_node.guard->Some_0.stray_perm@.value() == false,
-        cur_node.guard->Some_0.in_protocol@ == true,
+        cur_node.guard->Some_0.stray_perm().value() == false,
+        cur_node.guard->Some_0.in_protocol() == true,
         m@.inv(),
         m@.inst_id() == cur_node.inst_id(),
         m@.state() is Locking,
@@ -724,8 +734,8 @@ fn dfs_release_lock<'rcu>(
         invariant
             0 <= i <= 512,
             cur_node.wf(),
-            cur_node.guard->Some_0.stray_perm@.value() == false,
-            cur_node.guard->Some_0.in_protocol@ == true,
+            cur_node.guard->Some_0.stray_perm().value() == false,
+            cur_node.guard->Some_0.in_protocol() == true,
             m.inv(),
             m.inst_id() == cur_node.inst_id(),
             m.state() is Locking,
@@ -807,7 +817,7 @@ fn dfs_release_lock<'rcu>(
                 proof {
                     let ghost nid = NodeHelper::get_child(cur_node.nid(), i as nat);
                     let tracked pte_token: &PteArrayToken =
-                        cur_node.guard.tracked_borrow().pte_token.borrow().tracked_borrow();
+                        cur_node.guard.tracked_borrow().tracked_borrow_pte_token();
                     assert(m.cur_node() == NodeHelper::next_outside_subtree(nid)) by {
                         if i + 1 < 512 {
                             assert(m.cur_node() == NodeHelper::get_child(

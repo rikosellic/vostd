@@ -14,10 +14,11 @@ use vstd::cell::{PCell, PointsTo as CellPointsTo};
 
 use vstd_extra::{manually_drop::*, array_ptr::*};
 
-use crate::spec::{common::*, utils::*, rcu::*};
 use crate::task::guard;
-use super::{common::*, cpu::*, frame::meta::*};
-use super::pte::Pte;
+use crate::spec::{common::*, utils::*, rcu::*, lock_protocol::*};
+use crate::mm::lock_protocol_utils::*;
+use crate::mm::frame_concurrent::meta::*;
+use crate::mm::page_table::pte::Pte;
 use spinlock::{PageTablePageSpinLock, SpinGuard};
 use child::Child;
 use entry::Entry;

@@ -2,8 +2,8 @@ use vstd::prelude::*;
 use vstd::cell::{CellId, PCell, PointsTo};
 
 use crate::spec::{common::*, utils::*, rcu::*};
-use super::super::{common::*, cpu::*};
-use super::PageTableGuard;
+use crate::mm::lock_protocol_utils::*;
+use crate::mm::page_table::node_concurrent::PageTableGuard;
 
 verus! {
 

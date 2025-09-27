@@ -7,11 +7,12 @@ use vstd::cell::CellId;
 
 use vstd_extra::array_ptr::*;
 
-use crate::spec::{common::*, utils::*, rcu::*};
-use super::super::{common::*, cpu::*};
-use super::super::pte::*;
+use crate::spec::{common::*, utils::*, rcu::*, lock_protocol::*};
+use crate::mm::lock_protocol_utils::*;
+use crate::mm::page_table::pte::Pte;
+use crate::mm::page_table::PageTableEntryTrait;
 use super::PageTableGuard;
-use super::stray::*;
+use super::stray::{StrayFlag, StrayPerm};
 use crate::mm::page_table::PageTableConfig;
 
 tokenized_state_machine! {
