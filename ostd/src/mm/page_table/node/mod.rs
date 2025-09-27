@@ -29,9 +29,9 @@ mod child;
 mod entry;
 
 use vstd::prelude::*;
+use vstd::cell::PCell;
 
 use core::{
-    cell::SyncUnsafeCell,
     marker::PhantomData,
     ops::Deref,
     sync::atomic::{Ordering},
@@ -54,6 +54,8 @@ use crate::{
 
 use vstd::atomic::PAtomicU8;
 use vstd::simple_pptr;
+
+use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::*;
 use aster_common::prelude::*;
 
@@ -69,6 +71,8 @@ impl<C: PageTableConfig> PageTableNode<C> {
     )]
     pub fn level(&self) -> PagingLevel
         requires
+            slot_perm.is_init(),
+            slot_perm.value().wf(slot_own)
     {
         #[verus_spec(with Tracked(slot_own), Tracked(slot_perm), perm)]
         let meta = self.meta();
@@ -250,7 +254,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     ///     with the page table node.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub(super) unsafe fn write_pte(&mut self, idx: usize, pte: C::E) {
+    pub fn write_pte(&mut self, idx: usize, pte: C::E) {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
         let ptr = paddr_to_vaddr(self.start_paddr()) as *mut C::E;
         // SAFETY:
@@ -259,33 +263,22 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         unsafe { store_pte(ptr.add(idx), pte, Ordering::Release) }
     }
 
-/*. We can't get mutable references. Normally we would put it in a pointer,
-    but that is overkill here; it's only ever incremented and decremented!
-    So we replace this with the inc and dec functions
-
     /// Gets the mutable reference to the number of valid PTEs in the node.
-    fn nr_children_mut(&mut self) -> &/*mut*/ u16 {
-        unimplemented!()
-        // SAFETY: The lock is held so we have an exclusive access.
-        unsafe { &mut *self.meta().nr_children.get() }
-    }*/
-
     #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
-    fn nr_children_inc(&mut self)
+    #[verus_spec(
+        with Tracked(slot_own): Tracked<&MetaSlotOwner>,
+            Tracked(slot_perm): Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>,
+            Tracked(node_perm): Tracked<&'a PointsTo<MetaSlotStorage, PageTablePageMeta<C>>>
+    )]
+    fn nr_children_mut<'a>(&'a mut self) -> &PCell<u16>
+        requires
+            slot_perm.is_init(),
+            slot_perm.value().wf(slot_own)
     {
         // SAFETY: The lock is held so we have an exclusive access.
-        let nr_children = self.meta().nr_children;
-        self.meta().nr_children = nr_children+1;
-    }
-
-    #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
-    fn nr_children_dec(&mut self)
-    {
-        // SAFETY: The lock is held so we have an exclusive access.
-        let nr_children = self.meta().nr_children;
-        self.meta().nr_children = nr_children-1;
+        #[verus_spec(with Tracked(slot_own), Tracked(slot_perm), Tracked(node_perm))]
+        let meta = self.meta();
+        &meta.nr_children
     }
 }
 }
@@ -299,8 +292,8 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
     #[rustc_allow_incoherent_impl]
     pub fn new(level: PagingLevel) -> Self {
         Self {
-            nr_children: /*SyncUnsafeCell::new(*/0/*)*/,
-            stray: /*SyncUnsafeCell::new(*/false/*)*/,
+            nr_children: PCell::new(0).0,
+            stray: PCell::new(false).0,
             level,
             lock: PAtomicU8::new(0).0,
             _phantom: PhantomData,

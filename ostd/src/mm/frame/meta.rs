@@ -168,7 +168,7 @@ pub enum GetFrameError {
 /// Gets the reference to a metadata slot.
 pub fn get_slot(paddr: Paddr, Tracked(owner) : Tracked<&MetaSlotOwner>) -> (res: Result<PPtr<MetaSlot>, GetFrameError>)
     requires
-        owner.self_addr == frame_to_index(paddr),
+        owner.self_addr == frame_to_meta(paddr),
         owner.inv()
     ensures
         res.is_ok() ==> res.unwrap().addr() == frame_to_meta(paddr),
@@ -203,6 +203,19 @@ impl MetaSlot {
             i == owner.self_addr
     { unimplemented!() }
 
+    /// Because of the MetaSlot / MetaSlotStorage divide, this needs to be separate. TODO: consider fixing that.
+    #[rustc_allow_incoherent_impl]
+    #[verus_spec(
+        with Tracked(owner): Tracked<&MetaSlotOwner>
+    )]
+    #[verifier::external_body]
+    pub fn storage_addr_of(&self) -> (i:usize)
+        requires
+            self.wf(owner)
+        ensures
+            i == owner.storage@.addr()
+    { unimplemented!() }
+
     /// Initializes the metadata slot of a frame assuming it is unused.
     ///
     /// If successful, the function returns a pointer to the metadata slot.
@@ -227,6 +240,8 @@ impl MetaSlot {
 //            old(regions).slot_owners.dom().contains(frame_to_index(paddr)),
 //            old(regions).slot_owners[frame_to_index(paddr)].storage@.id() == self.storage.id()
     {
+        proof { regions.inv_implies_correct_addr(paddr); }
+
         let tracked mut slot_own = regions.slot_owners.tracked_remove(frame_to_index(paddr));
         let tracked mut slot_perm = regions.slots.tracked_remove(frame_to_index(paddr));
 
@@ -234,7 +249,6 @@ impl MetaSlot {
 
 //        assert(regions.slots[frame_to_index(paddr)]@.mem_contents().value() == slot);
 
-        proof { regions.inv_implies_correct_addr(paddr); }
 
         // `Acquire` pairs with the `Release` in `drop_last_in_place` and ensures the metadata
         // initialization won't be reordered before this memory compare-and-exchange.
@@ -368,6 +382,9 @@ impl MetaSlot {
         with Tracked(owner) : Tracked<&MetaSlotOwner>
     )]
     pub fn frame_paddr(&self) -> Paddr
+        requires
+            owner.inv(),
+            self.wf(owner)
     {
         #[verus_spec(with Tracked(owner))]
         let addr = self.addr_of();
@@ -416,11 +433,14 @@ impl MetaSlot {
         with Tracked(owner): Tracked<&MetaSlotOwner>
     )]
     pub(super) fn as_meta_ptr<M: AnyFrameMeta + Repr<MetaSlotStorage>>(&self) -> (res: ReprPtr<MetaSlotStorage, M>)
+        requires
+            owner.inv(),
+            self.wf(owner)
         ensures
             res.ptr.addr() == owner.storage@.addr()
     {
         #[verus_spec(with Tracked(owner))]
-        let addr = self.addr_of();
+        let addr = self.storage_addr_of();
 
         self.cast_storage(addr, Tracked(owner))
     }

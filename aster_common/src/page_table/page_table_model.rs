@@ -23,7 +23,8 @@ pub ghost struct EntryModel<C: PageTableConfig> {
 
 impl<'slot, 'rcu, C: PageTableConfig> Inv for EntryOwner<'slot, 'rcu, C> {
     open spec fn inv(&self) -> bool {
-        self.slot_perm@.value().wf(self.slot_own@)
+        &&& self.slot_perm@.value().wf(self.slot_own@)
+        &&& self.slot_own@.inv()
     }
 }
 

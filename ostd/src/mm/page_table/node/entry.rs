@@ -42,6 +42,7 @@ impl<'a, 'slot, 'rcu, C: PageTableConfig> Entry<'slot, 'rcu, C> {
     )]
     pub fn is_node(&self) -> bool
         requires
+            owner.inv(),
             self.wf(&owner),
     {
         let guard = self.node.borrow(Tracked(owner.guard_perm.borrow()));
@@ -94,11 +95,17 @@ impl<'a, 'slot, 'rcu, C: PageTableConfig> Entry<'slot, 'rcu, C> {
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
         with Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(owner): Tracked<&mut EntryOwner<'slot, 'rcu, C>>
-        requires
-            old(self).wf(old(owner))
+            Tracked(owner): Tracked<&mut EntryOwner<'slot, 'rcu, C>>,
+            Tracked(nr_children_perm): Tracked<&mut vstd::cell::PointsTo<u16>>
     )]
     pub fn replace(&mut self, new_child: Child<C>) -> Child<C>
+        requires
+            old(self).wf(old(owner)),
+            old(owner).inv(),
+            !old(regions).slots.contains_key(frame_to_index(old(self).pte.paddr())),
+            old(regions).dropped_slots.contains_key(frame_to_index(old(self).pte.paddr())),
+            new_child is PageTable,
+            FRAME_METADATA_RANGE().start <= frame_to_index(new_child.get_node().unwrap().ptr.addr()) < FRAME_METADATA_RANGE().end
     {
 /*        match &new_child {
             Child::PageTable(node) => {
@@ -122,11 +129,16 @@ impl<'a, 'slot, 'rcu, C: PageTableConfig> Entry<'slot, 'rcu, C> {
         let old_child = Child::from_pte(self.pte, level);
 
         if old_child.is_none() && !new_child.is_none() {
-            guard.nr_children_inc();
+            let nr_children = guard.nr_children_mut();
+            let _tmp = nr_children.take(Tracked(nr_children_perm));
+            nr_children.put(Tracked(nr_children_perm), _tmp+1);
         } else if !old_child.is_none() && new_child.is_none() {
-            guard.nr_children_dec();
+            let nr_children = guard.nr_children_mut();
+            let _tmp = nr_children.take(Tracked(nr_children_perm));
+            nr_children.put(Tracked(nr_children_perm), _tmp-1);
         }
 
+        #[verus_spec(with Tracked(owner.slot_own.borrow()), Tracked(owner.slot_perm.borrow()))]
         let new_pte = new_child.into_pte();
 
         // SAFETY:

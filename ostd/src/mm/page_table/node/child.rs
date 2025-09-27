@@ -52,7 +52,7 @@ impl<C: PageTableConfig> Child<C> {
     #[verus_spec(
         with Tracked(regions) : Tracked<&mut MetaRegionOwners>
     )]
-    pub unsafe fn from_pte(pte: C::E, level: PagingLevel) -> Self
+    pub fn from_pte(pte: C::E, level: PagingLevel) -> Self
         requires
             pte.paddr() % PAGE_SIZE() == 0,
             pte.paddr() < MAX_PADDR(),

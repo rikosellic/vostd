@@ -208,6 +208,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M>
     )]
     pub fn contains(ptr: PPtr<Self>, frame: Paddr) -> bool
         requires
+            slot_own.inv(),
+            slot_own.self_addr == frame_to_meta(frame),
             old(regions).inv(),
             old(regions).slots.contains_key(frame_to_index(frame)),
             old(regions).slots[frame_to_index(frame)]@.is_init(),

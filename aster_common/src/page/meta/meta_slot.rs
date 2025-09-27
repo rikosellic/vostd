@@ -40,8 +40,8 @@ pub struct StoredLink {
 }
 
 pub struct StoredPageTablePageMeta {
-    pub nr_children: u16,
-    pub stray: bool,
+    pub nr_children: PCell<u16>,
+    pub stray: PCell<bool>,
     pub level: PagingLevel,
     pub lock: PAtomicU8,
 }
