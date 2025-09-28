@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! This module contains the implementation of the CPU set and atomic CPU set.
-
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use smallvec::SmallVec;

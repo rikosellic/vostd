@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 use super::{allocator::FrameAllocOptions, *};
 use crate::{impl_frame_meta_for, impl_untyped_frame_meta_for, prelude::*};
 

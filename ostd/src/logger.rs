@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Logging support.
 //!
 //! This module provides a default log implementation while allowing users to inject
 //! their own logger at a higher level.
 //!
 //! Generally IRQs are disabled while printing. So do not print long log messages.
-
 use core::str::FromStr;
 
 use log::{LevelFilter, Metadata, Record};

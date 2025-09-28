@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! PCI device Information
-
 use core::iter;
 
 use super::cfg_space::PciDeviceCommonCfgOffset;

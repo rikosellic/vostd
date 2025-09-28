@@ -2,11 +2,11 @@ pub mod align;
 pub mod flush;
 pub mod model;
 
+use crate::mm::Vaddr;
+use crate::x86_64::mm::CONST_PAGE_SIZE;
+use core::ops::Range;
 use vstd::prelude::*;
 use vstd_extra::prelude::*;
-use core::ops::Range;
-use crate::x86_64::mm::CONST_PAGE_SIZE;
-use crate::mm::Vaddr;
 
 pub use flush::*;
 pub use model::*;

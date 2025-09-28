@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Vendor-specific capability support.
-
 use crate::{
     bus::pci::{common_device::PciCommonDevice, device_info::PciDeviceLocation},
     Error, Result,

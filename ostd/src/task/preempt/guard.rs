@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 use crate::{sync::GuardTransfer, task::atomic_mode::InAtomicMode};
 
 /// A guard for disable preempt.

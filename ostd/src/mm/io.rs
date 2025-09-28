@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Abstractions for reading and writing virtual memory (VM) objects.
 //!
 //! # Safety
@@ -39,7 +38,6 @@
 //! Note that data races on untyped memory are explicitly allowed (since pages can be mapped to
 //! user space, making it impossible to avoid data races). However, they may produce erroneous
 //! results, such as unexpected bytes being copied, but do not cause soundness problems.
-
 use alloc::vec;
 use core::marker::PhantomData;
 

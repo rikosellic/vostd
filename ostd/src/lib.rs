@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! The standard library for Asterinas and other Rust OSes.
 #![feature(alloc_error_handler)]
 #![feature(allocator_api)]

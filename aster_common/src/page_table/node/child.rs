@@ -1,6 +1,6 @@
 use vstd::prelude::*;
 
-use crate::prelude::{RawPageTableNode, PageProperty, Paddr, PagingLevel, DynPage};
+use crate::prelude::{DynPage, Paddr, PageProperty, PagingLevel, RawPageTableNode};
 
 verus! {
 

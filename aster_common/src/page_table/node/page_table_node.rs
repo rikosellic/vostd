@@ -1,6 +1,6 @@
+use vstd::cell;
 use vstd::prelude::*;
 use vstd::simple_pptr;
-use vstd::cell;
 
 use vstd_extra::ownership::*;
 
@@ -63,9 +63,7 @@ impl PageTableNode {
             is_variant(owner.view().storage.value(), "PTNode"),
     {
         self.meta(Tracked(p_slot), owner).level
-    }
-
-/*    pub fn is_tracked(
+    }/*    pub fn is_tracked(
         &self,
         Tracked(p_slot): Tracked<&simple_pptr::PointsTo<MetaSlot>>,
         Tracked(p_inner): Tracked<&cell::PointsTo<MetaSlotInner>>,
@@ -87,6 +85,7 @@ impl PageTableNode {
         let inner = meta.inner.borrow(Tracked(pt_inner));
         inner.is_tracked
     }*/
+
 }
 
 } // verus!

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Providing the ability to exit QEMU and return a value as debug result.
-
 /// The exit code of QEMU.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QemuExitCode {

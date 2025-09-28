@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 #![expect(dead_code)]
 
 use core::sync::atomic::{AtomicBool, AtomicU8, Ordering::Relaxed};

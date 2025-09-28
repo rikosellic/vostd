@@ -1,6 +1,6 @@
-use vstd::prelude::*;
-use super::{part_idx_spec, cpu_to_bit_spec};
 use super::super::CPU_NUM_SPEC;
+use super::{cpu_to_bit_spec, part_idx_spec};
+use vstd::prelude::*;
 
 verus! {
 

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! PCI device capabilities.
-
 #![expect(dead_code)]
 
 use alloc::vec::Vec;

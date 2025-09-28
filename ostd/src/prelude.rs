@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! The prelude.
-
 /// A specialized [`Result`] type for this crate.
 ///
 /// [`Result`]: core::result::Result

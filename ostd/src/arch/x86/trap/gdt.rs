@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Configure the Global Descriptor Table (GDT).
-
 use alloc::boxed::Box;
 
 use x86_64::{

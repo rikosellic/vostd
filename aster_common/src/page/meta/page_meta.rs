@@ -208,7 +208,6 @@ impl PageTablePageMetaModel {
         (meta, Tracked(model))
     }
 }*/
-
 } // verus!
 verus! {
 

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 use alloc::sync::Arc;
 use core::sync::atomic::{fence, AtomicUsize, Ordering};
 

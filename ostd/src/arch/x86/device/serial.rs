@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! A port-mapped UART. Copied from uart_16550.
-
 #![expect(dead_code)]
 
 use crate::{

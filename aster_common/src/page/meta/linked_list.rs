@@ -59,8 +59,7 @@ pub struct Link<M: AnyFrameMeta> {
 ///
 /// [`from_in_use`]: Frame::from_in_use
 #[rustc_has_incoherent_inherent_impls]
-pub struct LinkedList<M: AnyFrameMeta>
-{
+pub struct LinkedList<M: AnyFrameMeta> {
     pub front: Option<PPtr<Link<M>>>,
     pub back: Option<PPtr<Link<M>>>,
     /// The number of frames in the list.
@@ -73,17 +72,11 @@ pub struct LinkedList<M: AnyFrameMeta>
 impl<M: AnyFrameMeta> LinkedList<M> {
     /// Creates a new linked list.
     pub const fn new() -> Self {
-        Self {
-            front: None,
-            back: None,
-            size: 0,
-            list_id: 0,
-        }
+        Self { front: None, back: None, size: 0, list_id: 0 }
     }
 }
 
-impl<M: AnyFrameMeta> Default for LinkedList<M>
-{
+impl<M: AnyFrameMeta> Default for LinkedList<M> {
     fn default() -> Self {
         Self::new()
     }
@@ -94,10 +87,9 @@ impl<M: AnyFrameMeta> Default for LinkedList<M>
 /// The cursor points to either a frame or the "ghost" non-element. It points
 /// to the "ghost" non-element when the cursor surpasses the back of the list.
 #[rustc_has_incoherent_inherent_impls]
-pub struct CursorMut<M: AnyFrameMeta>
-{
+pub struct CursorMut<M: AnyFrameMeta> {
     pub list: PPtr<LinkedList<M>>,
     pub current: Option<PPtr<Link<M>>>,
 }
 
-}
+} // verus!

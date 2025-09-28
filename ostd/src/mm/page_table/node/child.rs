@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! This module specifies the type of the children of a page table node.
-
 use core::mem::ManuallyDrop;
 
 use super::{PageTableEntryTrait, PageTableNode, PageTableNodeRef};

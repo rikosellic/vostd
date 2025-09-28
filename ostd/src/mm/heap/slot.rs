@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Heap slots for allocations.
-
 use core::{alloc::AllocError, ptr::NonNull};
 
 use crate::{

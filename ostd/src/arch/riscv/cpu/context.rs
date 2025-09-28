@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! CPU execution context control.
-
 use core::fmt::Debug;
 
 use riscv::register::scause::{Exception, Interrupt, Trap};

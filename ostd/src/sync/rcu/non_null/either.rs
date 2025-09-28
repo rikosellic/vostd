@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 use core::{marker::PhantomData, ptr::NonNull};
 
 use super::NonNullPtr;

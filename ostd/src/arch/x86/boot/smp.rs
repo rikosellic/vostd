@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Multiprocessor Boot Support
 //!
 //! The MP initialization protocol defines two classes of processors:
@@ -26,7 +25,6 @@
 //!
 //! This sequence does not need to be strictly followed, and there may be
 //! different considerations in different systems.
-
 use acpi::madt::MadtEntry;
 
 use crate::{

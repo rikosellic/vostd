@@ -1,7 +1,7 @@
+use vstd::atomic::*;
+use vstd::cell;
 use vstd::prelude::*;
 use vstd::simple_pptr::{self, *};
-use vstd::cell;
-use vstd::atomic::*;
 
 use vstd_extra::ownership::*;
 
@@ -13,7 +13,8 @@ verus! {
 
 /// Space-holder of the AnyFrameMeta virtual table.
 pub trait AnyFrameMeta {
-    exec fn on_drop(&mut self) {}
+    exec fn on_drop(&mut self) {
+    }
 
     exec fn is_untyped(&self) -> bool {
         false
@@ -43,26 +44,26 @@ pub tracked struct UniqueFrameOwner<M: AnyFrameMeta> {
 
 pub ghost struct UniqueFrameModel {
     pub slot: MetaSlotModel,
-//    pub data: M,
+    //    pub data: M,
 }
 
 impl<M: AnyFrameMeta> Inv for UniqueFrameOwner<M> {
     open spec fn inv(&self) -> bool {
-    &&& self.slot@.inv()
-    &&& self.slot@.ref_count@.value() == REF_COUNT_UNIQUE
-    &&& self.slot@.vtable_ptr@.is_init()
-    &&& self.slot@.storage@.is_init()
-    &&& self.slot@.storage@.value() == self.data.write_as_spec()
+        &&& self.slot@.inv()
+        &&& self.slot@.ref_count@.value() == REF_COUNT_UNIQUE
+        &&& self.slot@.vtable_ptr@.is_init()
+        &&& self.slot@.storage@.is_init()
+        &&& self.slot@.storage@.value() == self.data.write_as_spec()
     }
 }
 
 impl Inv for UniqueFrameModel {
     open spec fn inv(&self) -> bool {
-    &&& self.slot.inv()
-    &&& self.slot.status == MetaSlotStatus::UNIQUE
-    &&& self.slot.ref_count == REF_COUNT_UNIQUE
-    &&& self.slot.vtable_ptr.is_init()
-    &&& self.slot.storage.is_init()
+        &&& self.slot.inv()
+        &&& self.slot.status == MetaSlotStatus::UNIQUE
+        &&& self.slot.ref_count == REF_COUNT_UNIQUE
+        &&& self.slot.vtable_ptr.is_init()
+        &&& self.slot.storage.is_init()
     }
 }
 
@@ -70,18 +71,18 @@ impl<M: AnyFrameMeta> InvView for UniqueFrameOwner<M> {
     type V = UniqueFrameModel;
 
     open spec fn view(&self) -> Self::V {
-        UniqueFrameModel {
-            slot: self.slot@.view(),
-        }
+        UniqueFrameModel { slot: self.slot@.view() }
     }
 
-    proof fn view_preserves_inv(&self) { }
+    proof fn view_preserves_inv(&self) {
+    }
 }
 
-impl <M: AnyFrameMeta> UniqueFrame<M> {
-
-    pub open spec fn from_unused_spec(paddr: Paddr, metadata: M, pre: MetaRegionModel)
-        -> (Self, MetaRegionModel)
+impl<M: AnyFrameMeta> UniqueFrame<M> {
+    pub open spec fn from_unused_spec(paddr: Paddr, metadata: M, pre: MetaRegionModel) -> (
+        Self,
+        MetaRegionModel,
+    )
         recommends
             paddr % PAGE_SIZE() == 0,
             paddr < MAX_PADDR(),
@@ -92,7 +93,6 @@ impl <M: AnyFrameMeta> UniqueFrame<M> {
         (UniqueFrame { ptr, _marker: PhantomData }, post)
     }
 
-
     pub proof fn from_unused_properties(paddr: Paddr, metadata: M, pre: MetaRegionModel)
         requires
             paddr % 4096 == 0,
@@ -101,7 +101,8 @@ impl <M: AnyFrameMeta> UniqueFrame<M> {
             pre.slots[paddr / 4096].ref_count == REF_COUNT_UNUSED,
         ensures
             UniqueFrame::from_unused_spec(paddr, metadata, pre).1.inv(),
-    { }
+    {
+    }
 
     pub open spec fn meta_spec(&self, pre: UniqueFrameModel) -> PPtr<M>
         recommends
@@ -110,26 +111,18 @@ impl <M: AnyFrameMeta> UniqueFrame<M> {
         M::cast_to_spec(&pre.slot.storage.value())
     }
 
-    pub open spec fn replace_spec(&self, metadata: M, pre: UniqueFrameModel)
-        -> UniqueFrameModel
+    pub open spec fn replace_spec(&self, metadata: M, pre: UniqueFrameModel) -> UniqueFrameModel
         recommends
             pre.inv(),
     {
         let storage = MemContents::Init(metadata.write_as_spec());
-        UniqueFrameModel {
-            slot: MetaSlotModel {
-                storage,
-                ..pre.slot
-            }
-        }
+        UniqueFrameModel { slot: MetaSlotModel { storage, ..pre.slot } }
     }
 }
 
 impl UniqueFrameModel {
     pub open spec fn from_raw_spec(region: MetaRegionModel, paddr: Paddr) -> Self {
-        Self {
-            slot: region.slots[frame_to_index(paddr)],
-        }
+        Self { slot: region.slots[frame_to_index(paddr)] }
     }
 }
 
@@ -137,11 +130,13 @@ impl<M: AnyFrameMeta> UniqueFrameOwner<M> {
     pub closed spec fn from_raw_owner(region: MetaRegionOwners, paddr: Paddr) -> Self;
 }
 
-impl<M: AnyFrameMeta> AnyFrameMeta for Link<M>
-{
-    fn on_drop(&mut self) { }
+impl<M: AnyFrameMeta> AnyFrameMeta for Link<M> {
+    fn on_drop(&mut self) {
+    }
 
-    fn is_untyped(&self) -> bool { false }
+    fn is_untyped(&self) -> bool {
+        false
+    }
 
     spec fn vtable_ptr(&self) -> usize;
 
@@ -160,4 +155,4 @@ impl<M: AnyFrameMeta> AnyFrameMeta for Link<M>
     }
 }
 
-}
+} // verus!

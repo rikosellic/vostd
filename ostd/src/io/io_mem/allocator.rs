@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! I/O Memory allocator.
-
 use alloc::vec::Vec;
 use core::ops::Range;
 

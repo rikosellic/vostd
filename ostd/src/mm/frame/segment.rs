@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! A contiguous range of frames.
-
 use core::{fmt::Debug, mem::ManuallyDrop, ops::Range};
 
 use super::{

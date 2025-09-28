@@ -1,7 +1,6 @@
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
-
 verus! {
 
 #[macro_export]
@@ -82,9 +81,5 @@ macro_rules! update_field {
     }
 }
 
-}
-
-pub use {
-    borrow_field,
-    update_field,
-};
+} // verus!
+pub use {borrow_field, update_field};

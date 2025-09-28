@@ -1,8 +1,8 @@
-use vstd::prelude::*;
-use core::ops::Range;
-use crate::x86_64::mm::PAGE_SIZE;
+use super::{align::*, TlbFlushOp, TlbModel};
 use crate::mm::Vaddr;
-use super::{TlbModel, TlbFlushOp, align::*};
+use crate::x86_64::mm::PAGE_SIZE;
+use core::ops::Range;
+use vstd::prelude::*;
 
 verus! {
 

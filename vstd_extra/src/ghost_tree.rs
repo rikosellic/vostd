@@ -1,7 +1,7 @@
+use super::seq_extra::*;
 use vstd::prelude::*;
 use vstd::seq::*;
 use vstd::seq_lib::*;
-use super::seq_extra::*;
 
 verus! {
 
@@ -978,7 +978,7 @@ impl<T: TreeNodeValue, const N: usize, const L: usize> Node<T, N, L> {
                 self.child(path.pop_head().0).unwrap(),
             ].add(self.child(path.pop_head().0).unwrap().recursive_visit(path.pop_head().1)),
     {
-        admit(); // TODO: this proof checked before. What changed?
+        admit();  // TODO: this proof checked before. What changed?
         assert(path.len() > 0);
         if path.len() == 1 {
             let (hd, tl) = path.pop_head();
