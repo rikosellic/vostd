@@ -59,6 +59,9 @@ pub fn nr_pte_index_bits<C: PagingConstsTrait>() -> (res: usize)
     ensures
         res == nr_pte_index_bits_spec::<C>(),
 {
+    proof {
+        lemma_nr_subpage_per_huge_bounded::<C>();
+    }
     nr_subpage_per_huge::<C>().ilog2() as usize
 }
 
