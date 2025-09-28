@@ -4,6 +4,7 @@ use vstd::prelude::*;
 use vstd_extra::update_field;
 use vstd::simple_pptr::*;
 use aster_common::prelude::*;
+use vstd_extra::ownership::*;
 
 mod common {
     use super::*;
@@ -96,8 +97,8 @@ impl Data {
         ensures
             self.a_to_b_spec(i, self.model(old(own)), self.model(own))
     {
-        update_field!(self.cell => a -= i, own.perm.borrow_mut());
-        update_field!(self.cell => b += i, own.perm.borrow_mut());
+    update_field!(self.cell => a -= i; own.perm.borrow_mut());
+    update_field!(self.cell => b += i; own.perm.borrow_mut());
     }
 }
 }
