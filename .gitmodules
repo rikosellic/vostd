@@ -1,4 +1,4 @@
 [submodule "dv"]
 	path = dv
-	url = https://github.com/asterinas/asterinas-fv.git
+	url = https://github.com/asterinas/rust-deductive-verifier.git
 	branch = dv
