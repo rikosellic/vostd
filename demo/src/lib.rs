@@ -101,8 +101,8 @@ impl Data {
         ensures
             self.a_to_b_spec(i, self.model(old(own)), self.model(own)),
     {
-    update_field!(self.cell => a -= i; own.perm.borrow_mut());
-    update_field!(self.cell => b += i; own.perm.borrow_mut());
+        update_field!(self.cell => a -= i; own.perm.borrow_mut());
+        update_field!(self.cell => b += i; own.perm.borrow_mut());
     }
 }
 
