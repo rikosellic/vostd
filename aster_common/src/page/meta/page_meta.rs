@@ -169,11 +169,12 @@ impl<C: PageTableConfig> Repr<MetaSlotStorage> for PageTablePageMeta<C> {
     }
 
     proof fn from_to_repr(self)
-        ensures Self::from_repr(self.to_repr()) == self
     { }
 
     proof fn to_from_repr(r: MetaSlotStorage)
-        ensures Self::from_repr(r).to_repr() == r
+    { }
+
+    proof fn to_repr_wf(self)
     { }
 }
 

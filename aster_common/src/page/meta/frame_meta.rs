@@ -252,6 +252,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Repr<MetaSlotStorage> for Link<M> {
     {
         M::to_from_repr(r.get_link().unwrap().slot)
     }
+
+    proof fn to_repr_wf(self)
+    {
+        <M as Repr<MetaSlotInner>>::to_repr_wf(self.meta)
+    }
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotInner>> AnyFrameMeta for Link<M>

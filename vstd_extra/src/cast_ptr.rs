@@ -34,6 +34,9 @@ pub trait Repr<R:Sized> : Sized {
     proof fn to_from_repr(r: R)
         requires Self::wf(r)
         ensures Self::from_repr(r).to_repr() == r;
+
+    proof fn to_repr_wf(self)
+        ensures Self::wf(self.to_repr());
 }
 
 /// Concrete representation of a pointer to an array
@@ -94,9 +97,11 @@ impl<R, T: Repr<R>> ReprPtr<R, T> {
         ensures
             perm.pptr() == old(perm).pptr(),
             perm.mem_contents() == MemContents::Init(v),
+            perm.wf()
     {
         proof {
             v.from_to_repr();
+            v.to_repr_wf();
         }
         self.ptr.put(Tracked(perm.points_to.borrow_mut()), v.to_repr())
     }
