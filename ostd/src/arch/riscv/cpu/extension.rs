@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! RISC-V ISA extensions.
-
 use bitflags::bitflags;
 use spin::Once;
 

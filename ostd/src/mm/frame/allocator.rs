@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! The physical memory allocator.
-
 use core::{alloc::Layout, ops::Range};
 
 use align_ext::AlignExt;

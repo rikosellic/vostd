@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! PCI bus
-
 #![expect(unused_variables)]
 
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! MMIO device common definitions or functions.
-
 use int_to_c_enum::TryFromInt;
 use log::info;
 

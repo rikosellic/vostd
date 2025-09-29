@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! This module maintains preemption-related information for the current task
 //! on a CPU with a single 32-bit, CPU-local integer value.
 //!
@@ -17,7 +16,6 @@
 //!
 //! This module provides a set of functions to access and manipulate
 //! `guard_count` and `need_preempt`.
-
 use crate::cpu_local_cell;
 
 /// Returns whether the current task _should_ be preempted or not.

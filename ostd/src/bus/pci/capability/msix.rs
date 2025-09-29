@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! MSI-X capability support.
-
 #![expect(dead_code)]
 #![expect(unused_variables)]
 

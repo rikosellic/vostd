@@ -13,9 +13,7 @@
 // These changes are released under the following license:
 //
 // SPDX-License-Identifier: MPL-2.0
-
 //! Configure fast syscall.
-
 use core::arch::global_asm;
 
 use x86::cpuid::CpuId;

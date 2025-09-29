@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! I/O port and its allocator that allocates port I/O (PIO) to device drivers.
-
 use crate::arch::device::io_port::{IoPortReadAccess, IoPortWriteAccess, PortRead, PortWrite};
 mod allocator;
 

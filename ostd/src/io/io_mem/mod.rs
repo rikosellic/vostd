@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! I/O memory and its allocator that allocates memory I/O (MMIO) to device drivers.
-
 mod allocator;
 
 use core::ops::{Deref, Range};

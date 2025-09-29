@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Configure the Interrupt Descriptor Table (IDT).
-
 use alloc::boxed::Box;
 use core::arch::global_asm;
 

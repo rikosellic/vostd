@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Virtio over MMIO
-
 use bus::MmioBus;
 
 use crate::sync::SpinLock;

@@ -1,3 +1,4 @@
+use super::seq_extra::*;
 use vstd::prelude::*;
 
 verus! {

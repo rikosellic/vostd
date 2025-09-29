@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Virtual memory space management.
 //!
 //! The [`VmSpace`] struct is provided to manage the virtual memory space of a
@@ -8,7 +7,6 @@
 //! the page table cursor [`super::page_table::Cursor`], providing efficient,
 //! powerful concurrent accesses to the page table, and suffers from the same
 //! validity concerns as described in [`super::page_table::cursor`].
-
 use core::{ops::Range, sync::atomic::Ordering};
 
 use crate::{

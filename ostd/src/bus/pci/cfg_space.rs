@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! The PCI configuration space.
 //!
 //! Reference: <https://wiki.osdev.org/PCI>
-
 use alloc::sync::Arc;
 use core::mem::size_of;
 

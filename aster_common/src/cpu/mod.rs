@@ -1,8 +1,8 @@
 pub mod set;
 
+use crate::task::DisabledPreemptGuard;
 use vstd::prelude::*;
 use vstd_extra::prelude::*;
-use crate::task::DisabledPreemptGuard;
 
 extern_const!(
 pub CPU_NUM [CPU_NUM_SPEC, CONST_CPU_NUM]: usize = 128);

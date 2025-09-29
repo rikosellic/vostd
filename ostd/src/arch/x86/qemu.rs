@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Provides the ability to exit QEMU and return a value as debug result.
-
 /// The exit code of x86 QEMU isa debug device.
 ///
 /// In `qemu-system-x86_64` the exit code will be `(code << 1) | 1`. So you

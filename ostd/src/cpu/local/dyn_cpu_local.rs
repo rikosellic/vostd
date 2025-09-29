@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Dynamically-allocated CPU-local objects.
-
 use core::{marker::PhantomData, mem::ManuallyDrop, ptr::NonNull};
 
 use bitvec::prelude::{bitvec, BitVec};

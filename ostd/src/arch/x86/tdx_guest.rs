@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 use log::warn;
 use tdx_guest::{tdcall::accept_page, tdvmcall::map_gpa, TdxTrapFrame};
 

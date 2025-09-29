@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec::Vec};
 
 use super::{

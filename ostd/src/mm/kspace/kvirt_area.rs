@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Kernel virtual memory allocation
-
 use core::ops::Range;
 
 use super::{KERNEL_PAGE_TABLE, VMALLOC_VADDR_RANGE};

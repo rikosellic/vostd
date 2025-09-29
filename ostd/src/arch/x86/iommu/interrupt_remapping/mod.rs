@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 mod table;
 
 use core::fmt::Debug;

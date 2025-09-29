@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! The implementation of CPU-local variables that have inner mutability.
-
 use core::cell::UnsafeCell;
 
 use super::{__cpu_local_end, __cpu_local_start, single_instr::*};

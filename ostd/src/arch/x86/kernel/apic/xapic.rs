@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 #![expect(dead_code)]
 
 use x86::apic::xapic;

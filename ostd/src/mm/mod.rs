@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Virtual memory (VM).
-
 /// Virtual addresses.
 pub type Vaddr = usize;
 
@@ -24,7 +22,7 @@ mod test;
 use core::{fmt::Debug, ops::Range};
 
 pub use self::{
-/*    dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
+    /*    dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
     frame::{
         allocator::FrameAllocOptions,
         segment::{Segment, USegment},
@@ -37,12 +35,10 @@ pub use self::{
         VmWriter,
     },*/
     page_prop::{CachePolicy, PageFlags, PageProperty},
-//    vm_space::VmSpace,
-};
-pub(crate) use aster_common::prelude::{
-    paddr_to_vaddr, PrivilegedPageFlags, PageTable, PAGE_SIZE
+    //    vm_space::VmSpace,
 };
 use crate::arch::mm::PagingConsts;
+pub(crate) use aster_common::prelude::{paddr_to_vaddr, PageTable, PrivilegedPageFlags, PAGE_SIZE};
 
 /// The level of a page table node or a frame.
 pub type PagingLevel = u8;

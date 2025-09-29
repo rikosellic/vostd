@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Registers and their definition used by IOMMU.
-
 mod capability;
 mod command;
 mod extended_cap;
