@@ -20,7 +20,7 @@ verify:
 	cargo dv verify --targets $(VERIFICATION_TARGETS)
 
 fmt:
-	cargo dv format
+	cargo dv fmt
 
 clean:
 	cargo clean
