@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! The Linux 64-bit Boot Protocol supporting module.
 //!
-
 use linux_boot_params::{BootParams, E820Type, LINUX_BOOT_HEADER_MAGIC};
 
 #[cfg(feature = "cvm_guest")]

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Implementation of the locking protocol.
-
 use core::{marker::PhantomData, mem::ManuallyDrop, ops::Range, sync::atomic::Ordering};
 
 use align_ext::AlignExt;

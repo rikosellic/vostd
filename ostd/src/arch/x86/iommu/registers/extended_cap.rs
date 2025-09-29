@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 use core::fmt::Debug;
 
 use bitflags::bitflags;

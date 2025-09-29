@@ -1,14 +1,14 @@
-use vstd::prelude::*;
 use vstd::arithmetic::power2::*;
 use vstd::bits::*;
+use vstd::prelude::*;
 use vstd::seq::*;
 
-use vstd_extra::prelude::*;
 use vstd_extra::array_ptr;
 use vstd_extra::ghost_tree::*;
+use vstd_extra::prelude::*;
 
-use crate::x86_64;
 use crate::prelude::*;
+use crate::x86_64;
 use crate::x86_64::mm;
 
 verus! {

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 use core::{
     fmt::Debug,
     intrinsics::transmute_unchecked,

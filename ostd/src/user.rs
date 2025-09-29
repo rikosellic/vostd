@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! User mode.
-
 use crate::{cpu::context::UserContext, trap::TrapFrame};
 
 /// Specific architectures need to implement this trait. This should only used in [`UserMode`]
@@ -44,7 +42,7 @@ pub trait UserContextApi {
 /// space safely.
 ///
 /// Here is a sample code on how to use `UserMode`.
-///  
+///
 /// ```no_run
 /// use ostd::task::Task;
 ///

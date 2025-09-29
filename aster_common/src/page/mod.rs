@@ -2,16 +2,16 @@ pub mod dyn_page;
 pub mod meta;
 pub mod model;
 
-pub use meta::*;
 pub use dyn_page::*;
+pub use meta::*;
 pub use model::*;
 
-use vstd::prelude::*;
-use vstd::simple_pptr;
-use vstd::cell;
-use core::marker::PhantomData;
 use crate::mm::Paddr;
 use crate::x86_64::mm::{MAX_NR_PAGES, MAX_PADDR, PAGE_SIZE};
+use core::marker::PhantomData;
+use vstd::cell;
+use vstd::prelude::*;
+use vstd::simple_pptr;
 
 use crate::prelude::MetaSlotStorage::PTNode;
 
@@ -56,9 +56,10 @@ impl<M: PageMeta> Page<M> {
     pub fn meta_pt<'a>(
         &'a self,
         Tracked(p_slot): Tracked<&'a simple_pptr::PointsTo<MetaSlot>>,
-        owner: MetaSlotOwner,
-//        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>,
-    ) -> (res: & PageTablePageMetaInner)
+        owner:
+            MetaSlotOwner,
+        //        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>,
+    ) -> (res: &PageTablePageMetaInner)
         requires
             self.inv_ptr(),
             p_slot.pptr() == self.ptr,
@@ -70,10 +71,9 @@ impl<M: PageMeta> Page<M> {
     {
         let slot = self.ptr.borrow(Tracked(p_slot));
         unimplemented!()
-//        slot.storage.borrow(owner.storage)
-    }
+        //        slot.storage.borrow(owner.storage)
 
-/*    pub fn meta_frame<'a>(
+    }/*    pub fn meta_frame<'a>(
         &'a self,
         Tracked(p_slot): Tracked<&'a simple_pptr::PointsTo<MetaSlot>>,
 //        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>,
@@ -90,6 +90,7 @@ impl<M: PageMeta> Page<M> {
         let slot = self.ptr.borrow(Tracked(p_slot));
   //      slot.borrow_frame(Tracked(p_inner))
     }*/
+
 }
 
 } // verus!

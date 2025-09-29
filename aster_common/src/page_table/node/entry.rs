@@ -1,9 +1,10 @@
+use vstd::cell;
 use vstd::prelude::*;
 use vstd::simple_pptr;
-use vstd::cell;
 
 use crate::prelude::{
-    PageTableEntry, PageTableEntryTrait, PageTableNode, MetaSlot, PageTablePageMetaInner, MetaSlotOwner
+    MetaSlot, MetaSlotOwner, PageTableEntry, PageTableEntryTrait, PageTableNode,
+    PageTablePageMetaInner,
 };
 
 use vstd_extra::ownership::{InvView, OwnerOf};
@@ -48,9 +49,7 @@ impl<'a> Entry<'a> {
             p_slot.value().wf(&owner),
             is_variant(owner.view().storage.value(), "PTNode"),
     {
-        self.pte.is_present() && !self.pte.is_last(
-            self.node.level(Tracked(p_slot), owner),
-        )
+        self.pte.is_present() && !self.pte.is_last(self.node.level(Tracked(p_slot), owner))
     }
 }
 

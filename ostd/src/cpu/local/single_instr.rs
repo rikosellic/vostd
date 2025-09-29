@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Extensions for CPU-local types that allows single-instruction operations.
 //!
 //! For some per-CPU objects, fetching or modifying the values of them can be
@@ -26,7 +25,6 @@
 //! address from multiple CPUs produces undefined behavior.
 //!
 //! [`CpuLocalCell`]: crate::cpu::local::CpuLocalCell
-
 /// An interface for architecture-specific single-instruction add operation.
 pub trait SingleInstructionAddAssign<Rhs = Self> {
     /// Adds a value to the per-CPU object.

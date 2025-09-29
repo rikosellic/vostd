@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 use core::{fmt::Debug, ops::Deref};
 
 use id_alloc::IdAlloc;

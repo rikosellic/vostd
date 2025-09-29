@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Provides CMOS I/O port access.
 //!
 //! "CMOS" is a tiny bit of very low power static memory that lives on the same chip as the Real-Time Clock (RTC).
 //!
 //! Reference: <https://wiki.osdev.org/CMOS>
 //!
-
 #![expect(unused_variables)]
 
 use acpi::fadt::Fadt;

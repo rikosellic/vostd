@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! The architecture-independent boot module, which provides
 //!  1. a universal information getter interface from the bootloader to the
 //!     rest of OSTD;
 //!  2. the routine booting into the actual kernel;
 //!  3. the routine booting the other processors in the SMP context.
-
 pub mod memory_region;
 pub mod smp;
 

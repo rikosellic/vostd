@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Interrupts.
-
 use spin::Once;
 use x86_64::registers::rflags::{self, RFlags};
 

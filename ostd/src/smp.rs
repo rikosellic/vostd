@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Symmetric Multi-Processing (SMP) support.
 //!
 //! This module provides a way to execute code on other processors via inter-
 //! processor interrupts.
-
 use alloc::{boxed::Box, collections::VecDeque};
 
 use spin::Once;

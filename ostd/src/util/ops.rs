@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 use core::ops::Range;
 
 /// Calculates the [difference] of two [`Range`]s, i.e., `a - b`.

@@ -1,6 +1,6 @@
-use vstd::prelude::*;
 use core::cmp::PartialEq;
 use core::fmt::Debug;
+use vstd::prelude::*;
 
 verus! {
 

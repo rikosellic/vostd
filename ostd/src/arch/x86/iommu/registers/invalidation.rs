@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Invalidation-related registers
-
 use core::ptr::NonNull;
 
 use volatile::{

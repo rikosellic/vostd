@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! The console I/O.
-
 /// Initializes the serial port.
 pub(crate) fn init() {}
 

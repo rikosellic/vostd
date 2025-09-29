@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! The timer support.
-
 use core::{
     arch::asm,
     sync::atomic::{AtomicU64, Ordering},

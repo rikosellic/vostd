@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! CPU local storage.
 //!
 //! This module provides a mechanism to define CPU-local objects. Users can
@@ -29,7 +28,6 @@
 //!    in memory in the order of the CPU IDs. A dynamically-allocated CPU-local
 //!    object can be allocated by occupying the same offset in each per-CPU
 //!    memory chunk.
-
 // This module also, provide CPU-local cell objects that have inner mutability.
 //
 // The difference between statically-allocated CPU-local objects (defined by
@@ -37,7 +35,6 @@
 // [`crate::cpu_local_cell!`]) is that the CPU-local objects can be shared
 // across CPUs. While through a CPU-local cell object you can only access the
 // value on the current CPU, therefore enabling inner mutability without locks.
-
 mod cell;
 mod dyn_cpu_local;
 mod static_cpu_local;

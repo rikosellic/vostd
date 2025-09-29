@@ -1,10 +1,10 @@
-use vstd::prelude::*;
 use vstd::arithmetic::div_mod::*;
+use vstd::prelude::*;
 use vstd_extra::extern_const::*;
 
-use crate::{mm::*, prelude::META_SLOT_SIZE};
 use crate::page::meta::mapping::*;
-use crate::x86_64::mm::{MAX_NR_PAGES, PAGE_SIZE, MAX_PADDR};
+use crate::x86_64::mm::{MAX_NR_PAGES, MAX_PADDR, PAGE_SIZE};
+use crate::{mm::*, prelude::META_SLOT_SIZE};
 use core::ops::Range;
 
 extern_const!(

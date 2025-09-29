@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Panic support.
-
 use core::ffi::c_void;
 
 pub use unwinding::panic::{begin_panic, catch_unwind};

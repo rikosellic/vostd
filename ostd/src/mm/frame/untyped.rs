@@ -1,22 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Untyped physical memory management.
 //!
 //! As detailed in [`crate::mm::frame`], untyped memory can be accessed with
 //! relaxed rules but we cannot create references to them. This module provides
 //! the declaration of untyped frames and segments, and the implementation of
 //! extra functionalities (such as [`VmIo`]) for them.
-
-use super::{Frame/*, Segment*/};
+use super::{Frame /*, Segment*/};
 use crate::{
     mm::{
-//        io::{FallibleVmRead, FallibleVmWrite, VmIo, VmReader, VmWriter},
+        //        io::{FallibleVmRead, FallibleVmWrite, VmIo, VmReader, VmWriter},
         paddr_to_vaddr, //Infallible,
     },
-//    Error, Result,
+    //    Error, Result,
 };
 
- use aster_common::prelude::AnyFrameMeta;
+use aster_common::prelude::AnyFrameMeta;
 
 /// The metadata of untyped frame.
 ///

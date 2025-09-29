@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Tasks are the unit of code execution.
-
 pub mod atomic_mode;
 mod kernel_stack;
 mod preempt;

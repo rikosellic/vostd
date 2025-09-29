@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! The timer support.
-
 pub(crate) mod jiffies;
 
 use alloc::{boxed::Box, vec::Vec};

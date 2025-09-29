@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Scheduling subsystem (in-OSTD part).
 //!
 //! This module defines what OSTD expects from a scheduling implementation
 //! and provides useful functions for controlling the execution flow.
-
 mod fifo_scheduler;
 pub mod info;
 

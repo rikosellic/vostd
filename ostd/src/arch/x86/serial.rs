@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! The console I/O.
-
 use super::device::serial::SerialPort;
 use crate::io::reserve_io_port_range;
 

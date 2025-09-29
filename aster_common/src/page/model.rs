@@ -1,9 +1,9 @@
-use vstd::prelude::*;
-use vstd::simple_pptr::*;
-use vstd::atomic::*;
-use vstd::multiset::*;
 use super::*;
 use crate::prelude::*;
+use vstd::atomic::*;
+use vstd::multiset::*;
+use vstd::prelude::*;
+use vstd::simple_pptr::*;
 
 verus! {
 
@@ -50,7 +50,7 @@ pub tracked enum SpecificPagePerm {
 pub tracked struct PagePerm {
     pub tracked ptr_perm: simple_pptr::PointsTo<MetaSlot>,
     pub tracked ref_count_perm: PermissionU32,
-//    pub tracked inner_perm: Option<cell::PointsTo<MetaSlotInner>>,
+    //    pub tracked inner_perm: Option<cell::PointsTo<MetaSlotInner>>,
     pub tracked specific_perm: SpecificPagePerm,
 }
 
@@ -60,10 +60,9 @@ pub tracked struct PageModel {
     pub ghost state: PageState,
     pub ghost usage: PageUsage,
     pub ghost ref_count: int,
-    pub ghost owners: Multiset<
-        PageOwner,
-    >,
-    pub ghost meta_slot_owner: MetaSlotOwner,
+    pub ghost owners: Multiset<PageOwner>,
+    pub ghost meta_slot_owner:
+        MetaSlotOwner,
     //pub tracked ptr_perm: Tracked<simple_pptr::PointsTo<MetaSlot>>,
 }
 
@@ -97,7 +96,7 @@ impl PageOwner {
 verus! {
 
 impl PagePerm {
-/*    pub open spec fn invariants(self) -> bool {
+    /*    pub open spec fn invariants(self) -> bool {
         &&& self.ptr_perm.is_init() ==> {
             &&& self.ptr_perm.value().wf()
             &&& self.ref_count_perm.is_for(self.ptr_perm.value().ref_count)
@@ -115,14 +114,13 @@ impl PagePerm {
         }
     }
 */
-/*    #[verifier::inline]
+    /*    #[verifier::inline]
     pub open spec fn get_inner_perm(self) -> cell::PointsTo<MetaSlotInner>
         recommends
             self.inner_perm.is_some(),
     {
         self.inner_perm.unwrap()
     }*/
-
     #[verifier::inline]
     pub open spec fn get_pagetable_inner_perm(self) -> cell::PointsTo<PageTablePageMetaInner>
         recommends
@@ -147,7 +145,7 @@ impl PagePerm {
         self.specific_perm.get_pagetable_model()
     }
 
-/*    pub proof fn tracked_borrow_inner_perm(tracked &self) -> (tracked res: &cell::PointsTo<
+    /*    pub proof fn tracked_borrow_inner_perm(tracked &self) -> (tracked res: &cell::PointsTo<
         MetaSlotInner,
     >)
         requires
@@ -157,7 +155,6 @@ impl PagePerm {
     {
         &self.inner_perm.tracked_borrow()
     }*/
-
     pub proof fn tracked_borrow_pagetable_inner_perm(tracked &self) -> (tracked res:
         &cell::PointsTo<PageTablePageMetaInner>)
         requires
@@ -179,7 +176,7 @@ impl PagePerm {
 }
 
 impl SpecificPagePerm {
-/*    pub open spec fn match_meta_slot_inner(self, inner: MetaSlotInner) -> bool {
+    /*    pub open spec fn match_meta_slot_inner(self, inner: MetaSlotInner) -> bool {
         match self {
             SpecificPagePerm::PT(perm) => {
                 &&& is_variant(inner, "_pt")
@@ -189,7 +186,6 @@ impl SpecificPagePerm {
             SpecificPagePerm::NoPerm => is_variant(inner, "_frame"),
         }
     }*/
-
     pub open spec fn match_usage(self, usage: PageUsage) -> bool {
         match self {
             SpecificPagePerm::PT(perm) => usage is PageTable && perm.inner.is_init(),
@@ -337,17 +333,17 @@ impl PageModel {
         &&& perm.ptr_perm.is_init()
         &&& match self.state {
             PageState::Unused => {
-//                &&& perm.inner_perm.is_none()
+                //                &&& perm.inner_perm.is_none()
                 &&& perm.specific_perm is NoPerm
             },
             PageState::Typed => {
-//                &&& perm.inner_perm.is_some()
-//                &&& perm.get_inner_perm().is_init()
+                //                &&& perm.inner_perm.is_some()
+                //                &&& perm.get_inner_perm().is_init()
                 &&& perm.specific_perm.match_usage(self.usage)
             },
             PageState::Untyped => {
-//                &&& perm.inner_perm.is_some()
-//                &&& perm.get_inner_perm().is_init()
+                //                &&& perm.inner_perm.is_some()
+                //                &&& perm.get_inner_perm().is_init()
                 &&& perm.specific_perm.match_usage(self.usage)
             },
         }
@@ -368,21 +364,20 @@ impl PageModel {
         &&& FRAME_METADATA_RANGE().start + self.index * META_SLOT_SIZE() == page.ptr.addr()
     }
 
-/*    pub open spec fn relate_meta_slot(&self, slot: &MetaSlot) -> bool {
+    /*    pub open spec fn relate_meta_slot(&self, slot: &MetaSlot) -> bool {
         &&& FRAME_METADATA_RANGE().start + self.index * META_SLOT_SIZE() == slot.id()
     }
 
     pub open spec fn relate_meta_slot_model(&self, slot: &MetaSlotModel) -> bool {
         &&& self.index * PAGE_SIZE() == slot.address@
     }*/
-
     pub open spec fn relate_meta_slot_model_properties(&self, slot: &MetaSlotModel) -> bool {
         &&& match (self.state, slot.status, slot.usage) {
             (PageState::Unused, MetaSlotStatus::UNUSED, PageUsage::Unused) => true,
             (PageState::Unused, MetaSlotStatus::UNUSED, PageUsage::Frame) => false,
             (PageState::Untyped, _, PageUsage::Frame) => true,
             //TODO: update for new model (more detailed statuses)
-//            (PageState::Typed, MetaSlotStatus::Used, _) => true,
+            //            (PageState::Typed, MetaSlotStatus::Used, _) => true,
             _ => false,
         }
         &&& self.usage == slot.usage
@@ -393,11 +388,9 @@ impl PageModel {
     }
 
     pub open spec fn relate_meta_slot_full(&self, slot: &MetaSlotModel) -> bool {
-//        &&& self.relate_meta_slot_model(slot)
+        //        &&& self.relate_meta_slot_model(slot)
         &&& self.relate_meta_slot_model_properties(slot)
-    }
-
-/*    #[verifier::external_body]
+    }/*    #[verifier::external_body]
     pub proof fn axiom_relate_meta_slot_model_properties(&self, slot: &MetaSlotModel)
         requires
             slot.invariants(),
@@ -406,6 +399,7 @@ impl PageModel {
             self.relate_meta_slot_model_properties(slot),
     {
     }*/
+
 }
 
 } // verus!
@@ -421,14 +415,12 @@ impl<M: PageMeta> Page<M> {
     #[rustc_allow_incoherent_impl]
     pub open spec fn relate_model(&self, model: PageModel) -> bool {
         &&& self.ptr.addr() == FRAME_METADATA_RANGE().start + model.index * META_SLOT_SIZE()
-    }
-/*
+    }/*
     #[rustc_allow_incoherent_impl]
     pub open spec fn relate_meta_slot(&self, slot: &MetaSlot) -> bool {
         self.ptr.addr() == slot.storage.id() as usize
     }*/
-
-/*    #[rustc_allow_incoherent_impl]
+    /*    #[rustc_allow_incoherent_impl]
     pub proof fn lemma_relate_same_meta_slot_relate_model(&self, model: PageModel, slot: &MetaSlot)
         requires
             self.relate_meta_slot(slot),
@@ -437,6 +429,7 @@ impl<M: PageMeta> Page<M> {
             self.relate_model(model),
     {
     }*/
+
 }
 
 } // verus!
@@ -461,8 +454,7 @@ impl<M: PageMeta> Page<M> {
         ensures
             self.inv_ptr(),
     {
-    }
-/*
+    }/*
     #[rustc_allow_incoherent_impl]
     pub proof fn lemma_has_valid_paddr_implies_get_page_satisfies_invariants(
         &self,
@@ -487,6 +479,7 @@ impl<M: PageMeta> Page<M> {
     {
         s.lemma_get_page_has_valid_index(self.paddr());
     } */
+
 }
 
 } // verus!
@@ -540,7 +533,7 @@ verus! {
     {
     }
 
-    
+
     #[rustc_allow_incoherent_impl]
     pub proof fn model_from_slot_relate_abstract_data(
         paddr: Paddr,
@@ -613,4 +606,5 @@ verus! {
 }
 */
 // impl<M: PageMeta> Page<M>
+
 } // verus!

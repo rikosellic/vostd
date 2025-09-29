@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Implementation of the free heap slot list.
-
 use core::ptr::NonNull;
 
 use super::HeapSlot;

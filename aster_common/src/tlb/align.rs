@@ -1,5 +1,5 @@
-use vstd::prelude::*;
 use crate::x86_64::mm::PAGE_SIZE_SPEC;
+use vstd::prelude::*;
 
 verus! {
 

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 /// A type containing either a [`Left`] value `L` or a [`Right`] value `R`.
 ///
 /// [`Left`]: Self::Left

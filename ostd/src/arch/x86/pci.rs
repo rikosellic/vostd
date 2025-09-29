@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! PCI bus access
-
 use super::device::io_port::{ReadWriteAccess, WriteOnlyAccess};
 use crate::{bus::pci::PciDeviceLocation, io::IoPort, prelude::*};
 

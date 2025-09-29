@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Architecture dependent CPU-local information utilities.
-
 use x86_64::registers::segmentation::{Segment64, GS};
 
 /// Gets the base address for the CPU local storage by reading the GS base model-specific register.

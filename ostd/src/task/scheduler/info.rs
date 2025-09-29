@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Scheduling related information in a task.
-
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::{cpu::CpuId, task::Task};
