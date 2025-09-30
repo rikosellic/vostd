@@ -365,6 +365,7 @@ impl<V, const N: usize> ArrayPtr<V, N> {
     pub exec fn from_addr(addr: usize) -> (res: Self)
         ensures
             res.addr == addr,
+            res.index == 0,
     {
         Self { addr, index: 0, _type: PhantomData }
     }

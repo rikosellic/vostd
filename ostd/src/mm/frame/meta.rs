@@ -381,10 +381,10 @@ impl MetaSlot {
     #[verus_spec(
         with Tracked(owner) : Tracked<&MetaSlotOwner>
     )]
-    pub fn frame_paddr(&self) -> Paddr
+    pub fn frame_paddr(&self) -> (pa: Paddr)
         requires
             owner.inv(),
-            self.wf(owner)
+            self.wf(owner),
     {
         #[verus_spec(with Tracked(owner))]
         let addr = self.addr_of();

@@ -254,9 +254,25 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     ///  2. The PTE must represent a valid [`Child`] whose level is compatible
     ///     with the page table node.
     #[rustc_allow_incoherent_impl]
-    pub fn write_pte(&mut self, idx: usize, pte: C::E) {
-//        debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(paddr_to_vaddr(self.start_paddr()));
+    #[verus_spec(
+        with Tracked(slot_own) : Tracked<&MetaSlotOwner>,
+            Tracked(slot_perm): Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
+    )]
+    pub fn write_pte(&mut self, idx: usize, pte: C::E)
+        requires
+            old(self).inner.inner.ptr == slot_perm.pptr(),
+            slot_perm.is_init(),
+            slot_perm.value().wf(&slot_own),
+            slot_own.inv(),
+            idx < NR_ENTRIES(),
+    {
+        #[verus_spec(with Tracked(slot_own), Tracked(slot_perm))]
+        let pa = self.start_paddr();
+        assert(pa < VMALLOC_BASE_VADDR() - LINEAR_MAPPING_BASE_VADDR()) by { admit() };
+
+        // debug_assert!(idx < nr_subpage_per_huge::<C>());
+        let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(paddr_to_vaddr(pa));
+
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
         // - All page table entries are aligned and accessed with atomic operations only.

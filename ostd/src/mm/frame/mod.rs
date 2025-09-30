@@ -169,9 +169,10 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     #[rustc_allow_incoherent_impl]
     pub fn start_paddr(&self) -> Paddr
         requires
-            FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr()) < FRAME_METADATA_RANGE().end,
+            slot_perm.pptr() == self.ptr,
             slot_perm.is_init(),
-            slot_perm.value().wf(&slot_own)
+            slot_perm.value().wf(&slot_own),
+            slot_own.inv()
     {
         #[verus_spec(with Tracked(slot_perm))]
         let slot = self.slot();
@@ -316,8 +317,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         requires
             slot_perm.pptr() == self.ptr,
             slot_perm.is_init(),
-        ensures
-            slot == slot_perm.value(),
+        returns slot_perm.value()
     {
         // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
         // mutably borrowed, so taking an immutable reference to it is safe.
