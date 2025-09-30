@@ -57,6 +57,7 @@ use vstd::simple_pptr;
 
 use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::*;
+use vstd_extra::array_ptr;
 use aster_common::prelude::*;
 
 verus! {
@@ -253,14 +254,13 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     ///  2. The PTE must represent a valid [`Child`] whose level is compatible
     ///     with the page table node.
     #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
     pub fn write_pte(&mut self, idx: usize, pte: C::E) {
-        debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = paddr_to_vaddr(self.start_paddr()) as *mut C::E;
+//        debug_assert!(idx < nr_subpage_per_huge::<C>());
+        let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(paddr_to_vaddr(self.start_paddr()));
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
         // - All page table entries are aligned and accessed with atomic operations only.
-        unsafe { store_pte(ptr.add(idx), pte, Ordering::Release) }
+        store_pte(ptr.add(idx), pte, Ordering::Release)
     }
 
     /// Gets the mutable reference to the number of valid PTEs in the node.

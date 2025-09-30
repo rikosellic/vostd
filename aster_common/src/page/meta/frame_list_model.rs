@@ -64,45 +64,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for Link<M> {
 
 impl<M: AnyFrameMeta + Repr<MetaSlotInner>> ModelOf for Link<M> { }
 
-pub tracked struct UniqueFrameLinkOwner<M: AnyFrameMeta + Repr<MetaSlotInner>> {
-    pub link_own : LinkOwner,
-    pub link_perm : Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, Link<M>>>,
-    pub frame_own : UniqueFrameOwner<Link<M>>
-}
-
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Inv for UniqueFrameLinkOwner<M> {
+/*impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Inv for UniqueFrameLinkOwner<M> {
     open spec fn inv(&self) -> bool {
         self.link_perm@.wf()
 //        &&& self.link_own.self_perm@.mem_contents() is Init
 //        &&& self.link_own.self_perm@.mem_contents().value() == self.frame_own.data
     }
-}
-
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> InvView for UniqueFrameLinkOwner<M> {
-    type V = LinkModel;
-
-    open spec fn view(&self) -> Self::V {
-        self.link_own@
-    }
-
-    proof fn view_preserves_inv(&self) { }
-}
-
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for UniqueFrame<Link<M>> {
-    type Owner = UniqueFrameLinkOwner<M>;
-
-    open spec fn wf(&self, owner: &Self::Owner) -> bool {
-        &&& owner.link_perm@.is_init()
-//        &&& self.ptr == owner.frame_own.slot@.storage@.pptr()
-//        &&& owner.link_perm@.pptr() == (&owner.frame_own@.slot.storage.value())
-    }
-}
-
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> ModelOf for UniqueFrame<Link<M>> { }
-
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrameLinkOwner<M> {
-    pub closed spec fn from_raw_owner(region: MetaRegionOwners, paddr: Paddr) -> Self;
-}
+}*/
 
 pub ghost struct LinkedListModel {
     pub list: Seq<LinkModel>,
