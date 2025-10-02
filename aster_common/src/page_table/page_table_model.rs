@@ -56,8 +56,8 @@ impl<C: PageTableConfig> OwnerOf for PageTablePageMeta<C> {
     }
 }
 
-pub tracked struct EntryOwner<'slot, 'rcu, C: PageTableConfig> {
-    pub slot_own : Tracked<&'slot MetaSlotOwner>,
+pub tracked struct EntryOwner<'rcu, C: PageTableConfig> {
+//    pub slot_own : Tracked<&'static MetaSlotOwner>,
     pub meta_own : Tracked<PageMetaOwner>,
 
     pub guard_perm : Tracked<PointsTo<PageTableGuard<'rcu, C>>>,
@@ -69,10 +69,10 @@ pub ghost struct EntryModel<C: PageTableConfig> {
     pub node : PageTablePageMeta<C>,
 }
 
-impl<'slot, 'rcu, C: PageTableConfig> Inv for EntryOwner<'slot, 'rcu, C> {
+impl<'rcu, C: PageTableConfig> Inv for EntryOwner<'rcu, C> {
     open spec fn inv(&self) -> bool {
-        &&& self.slot_perm@.value().wf(self.slot_own@)
-        &&& self.slot_own@.inv()
+//        &&& self.slot_perm@.value().wf(self.slot_own@)
+//        &&& self.slot_own@.inv()
         &&& self.guard_perm@.is_init()
         &&& self.guard_perm@.value().inner.inner.ptr == self.slot_perm@.pptr()
         &&& self.slot_perm@.is_init()
@@ -81,12 +81,20 @@ impl<'slot, 'rcu, C: PageTableConfig> Inv for EntryOwner<'slot, 'rcu, C> {
         &&& <PageTablePageMeta<C> as Repr<MetaSlotStorage>>::wf(self.meta_perm@.points_to@.value())
         &&& self.meta_own@.inv()
         &&& self.meta_perm@.value().wf(&self.meta_own@)
-        &&& self.meta_perm@.pptr().ptr.0 == self.slot_own@.storage@.addr()
-        &&& self.meta_perm@.pptr().addr == self.slot_own@.storage@.addr()
+        &&& self.meta_perm@.pptr().ptr.0 == self.slot_perm@.value().storage.addr()
+        &&& self.meta_perm@.pptr().addr == self.slot_perm@.value().storage.addr()
         &&& self.meta_perm@.is_init()
         &&& self.meta_perm@.wf()
 
-        &&& meta_to_frame(self.slot_own@.self_addr) < VMALLOC_BASE_VADDR() - LINEAR_MAPPING_BASE_VADDR()
+        &&& meta_to_frame(self.slot_perm@.addr()) < VMALLOC_BASE_VADDR() - LINEAR_MAPPING_BASE_VADDR()
+    }
+}
+
+impl<'rcu, C: PageTableConfig> EntryOwner<'rcu, C> {
+    pub open spec fn relate_slot_owner(self, slot_own: &MetaSlotOwner) -> bool {
+        &&& slot_own.inv()
+        &&& self.slot_perm@.value().wf(slot_own)
+        &&& self.slot_perm@.addr() == slot_own.self_addr
     }
 }
 
@@ -94,7 +102,7 @@ impl< C: PageTableConfig> Inv for EntryModel<C> {
     open spec fn inv(&self) -> bool { true }
 }
 
-impl<'slot, 'rcu, C: PageTableConfig> InvView for EntryOwner<'slot, 'rcu, C> {
+impl<'rcu, C: PageTableConfig> InvView for EntryOwner<'rcu, C> {
     type V = EntryModel<C>;
 
     open spec fn view(&self) -> <Self as InvView>::V {
@@ -106,8 +114,8 @@ impl<'slot, 'rcu, C: PageTableConfig> InvView for EntryOwner<'slot, 'rcu, C> {
     proof fn view_preserves_inv(&self) { }
 }
 
-impl<'slot, 'rcu, C: PageTableConfig> OwnerOf for Entry<'slot, 'rcu, C> {
-    type Owner = EntryOwner<'slot, 'rcu, C>;
+impl<'rcu, C: PageTableConfig> OwnerOf for Entry<'rcu, C> {
+    type Owner = EntryOwner<'rcu, C>;
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool {
         &&& self.pte.paddr() % PAGE_SIZE() == 0

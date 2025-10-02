@@ -173,7 +173,6 @@ pub tracked struct UniqueFrameOwner<M: AnyFrameMeta + Repr<MetaSlotStorage> + Ow
 
 pub ghost struct UniqueFrameModel {
     pub slot: MetaSlotModel,
-//    pub data: M,
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Inv for UniqueFrameOwner<M> {
@@ -214,6 +213,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> OwnerOf for UniqueFrame<
         true
     }
 }
+
+impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> ModelOf for UniqueFrame<M> { }
 
 impl <M: AnyFrameMeta> UniqueFrame<M> {
 
