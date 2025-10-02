@@ -215,6 +215,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> OwnerOf for UniqueFrame<
     }
 }
 
+impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> ModelOf for UniqueFrame<M> { }
+
 impl <M: AnyFrameMeta> UniqueFrame<M> {
 
     pub open spec fn from_unused_spec(paddr: Paddr, metadata: M, pre: MetaRegionModel)

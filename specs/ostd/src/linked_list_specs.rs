@@ -21,7 +21,7 @@ impl CursorModel {
                 }
             } else {
                 Self {
-                    fore: Seq::<LinkModel>::empty(),
+                    fore: Seq::<MetaSlotModel>::empty(),
                     rear: self.fore,
                     list_model: self.list_model
                 }
@@ -44,7 +44,7 @@ impl CursorModel {
             } else {
                 Self {
                     fore: self.rear,
-                    rear: Seq::<LinkModel>::empty(),
+                    rear: Seq::<MetaSlotModel>::empty(),
                     list_model: self.list_model
                 }
             } 
@@ -55,9 +55,6 @@ impl CursorModel {
 
     #[rustc_allow_incoherent_impl]
     pub open spec fn remove(self) -> Self {
-        let cur = self.current().unwrap();
-//        let fore = if self.fore.len() > 0 { LinkedListModel::update_next(self.fore, self.fore.len() - 1, cur.next) } else { self.fore };        
-//        let rear = if self.rear.len() > 1 { LinkedListModel::update_prev(self.rear, 1, cur.prev) } else { self.rear };
         let rear = self.rear.remove(0);
 
         Self {
@@ -68,27 +65,14 @@ impl CursorModel {
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn insert(self, link: LinkModel) -> Self {
+    pub open spec fn insert(self, link: MetaSlotModel) -> Self {
         let fore = self.fore.insert(self.fore.len() - 1, link);
-//        let rear = if self.rear.len() > 0 { LinkedListModel::update_prev(self.rear, 0, link.prev) } else { self.rear };
-//        let fore = if fore.len() > 0 { LinkedListModel::update_next(self.fore, self.fore.len() - 1, link.next) } else { fore };        
         
         Self {
             fore: fore,
             rear: self.rear,
             list_model: LinkedListModel { list: fore.add(self.rear) }
         }
-    }
-}
-
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedListOwner<M> {
-    #[rustc_allow_incoherent_impl]
-    pub open spec fn remove_list_spec(list: Seq<LinkOwner>, i: int) -> Seq<LinkOwner>
-    {
-        let cur = list[i];
-//        let list = if i > 0 { LinkedListOwner::update_next(list, i-1, cur.next) } else { list };
-//        let list = if i < list.len() - 1 { LinkedListOwner::update_prev(list, i+1, cur.prev) } else { list };
-        list.remove(i)
     }
 }
 
@@ -99,7 +83,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorOwner<M> {
         recommends
             self.index < self.length(),
     {
-        &&& post.list_own.list == LinkedListOwner::<M>::remove_list_spec(self.list_own.list, self.index)
+        &&& post.list_own.list == self.list_own.list.remove(self.index)
         &&& post.index == self.index
     }
  
@@ -112,7 +96,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorOwner<M> {
     { admit() }
  
     #[rustc_allow_incoherent_impl]
-    pub open spec fn insert_owner_spec(self, link: LinkOwner, post: Self) -> bool
+    pub open spec fn insert_owner_spec(self, link: MetaSlotOwner, post: Self) -> bool
         recommends
             self.index < self.length()
     {
@@ -122,7 +106,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorOwner<M> {
     }
 
     #[rustc_allow_incoherent_impl]
-    pub proof fn insert_owner_spec_implies_model_spec(self, link: LinkOwner, post: Self)
+    pub proof fn insert_owner_spec_implies_model_spec(self, link: MetaSlotOwner, post: Self)
         requires
             self.insert_owner_spec(link, post)
         ensures

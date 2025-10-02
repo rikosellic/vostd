@@ -436,6 +436,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
             }
             if owner.index < owner.length() - 1 {
                 assert(owner.list_own.inv_at(owner.index+1));
+                owner.list_own.perms[owner.index+1]@.pptr_implies_addr();
             }
         }
 
@@ -479,6 +480,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
             }
             if 0 < owner.index {
                 assert(owner.list_own.inv_at(owner.index-1));
+                owner.list_own.perms[owner.index-1]@.pptr_implies_addr();
             }
         }
 
@@ -540,7 +542,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
             old(owner).list_own.region_consistency(*old(regions))
         ensures
             old(owner).length() == 0 ==> res.is_none(),
-            res.is_some() ==> res.unwrap().0.model(&res.unwrap().1@).slot == old(owner).current().unwrap().slot@,
+            res.is_some() ==> res.unwrap().0.model(&res.unwrap().1@).slot == old(owner).list_own.list[old(owner).index]@,
             res.is_some() ==> self.model(&*owner) == old(self).model(&old(owner)).remove(),
     {
         let ghost owner0 = *owner;
@@ -555,6 +557,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
         let paddr = mapping::meta_to_frame(meta_ptr);
 
         let tracked Tracked(cur_perm) = owner.list_own.perms.tracked_remove(owner.index);
+        let tracked mut cur_own = owner.list_own.list.tracked_remove(owner.index);
 
         #[verus_spec(with Tracked(regions), Tracked(cur_perm))]
         let (frame, frame_own) = UniqueFrame::<Link<M>>::from_raw(paddr);
@@ -567,8 +570,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
 
         assert(frame_meta == frame_own@.meta_perm@.pptr()) by { admit() };
         let opt_prev = frame_meta.borrow(Tracked(frame_own.borrow().meta_perm.borrow())).prev;
-
-        assert(owner.list_own.list == owner0.list_own.list);
 
         if let Some(prev) = opt_prev {
             // SAFETY: We own the previous node by `&mut self` and the node is
@@ -612,7 +613,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
 
         update_field!(self.list => size -= 1; owner.list_perm);
 
-        assert(owner0.remove_owner_spec(*owner));
         proof { owner0.remove_owner_spec_implies_model_spec(*owner); }
 
         Some((frame, frame_own))
@@ -642,7 +642,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
             old(regions).slot_owners[frame_to_index(frame.ptr.addr())].in_list@.is_for(
                 old(regions).slots[frame_to_index(frame.ptr.addr())]@.mem_contents().value().in_list),
         ensures
-            self.model(owner) == old(self).model(old(owner)).insert(frame.model(frame_own)),
+            self.model(owner) == old(self).model(old(owner)).insert(frame_own.slot_own@@),
             self.wf(&*owner),
             owner.inv(),
     {
@@ -655,10 +655,10 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
         assert(frame_own.meta_perm@.pptr() == frame_ptr) by { admit() };
         assert(frame_own.inv()) by { admit() };
 
-        assert(frame_ptr.addr() == frame_own.link_own.paddr) by { admit() };
-        assert(frame_own.link_perm@.mem_contents().value().prev is None) by { admit() };
-        assert(frame_own.link_perm@.mem_contents().value().next is None) by { admit() };
-        assert(FRAME_METADATA_RANGE().start <= frame_own.link_perm@.addr() < FRAME_METADATA_RANGE().start + MAX_NR_PAGES()*META_SLOT_SIZE()) by { admit() };
+        assert(frame_ptr.addr() == frame_own.meta_own.self_addr) by { admit() };
+        assert(frame_own.meta_perm@.mem_contents().value().prev is None) by { admit() };
+        assert(frame_own.meta_perm@.mem_contents().value().next is None) by { admit() };
+        assert(FRAME_METADATA_RANGE().start <= frame_own.meta_perm@.addr() < FRAME_METADATA_RANGE().start + MAX_NR_PAGES()*META_SLOT_SIZE()) by { admit() };
 
 
         if let Some(current) = self.current {
@@ -728,8 +728,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
         slot.in_list.store(Tracked(slot_own.in_list.borrow_mut()), id);
         proof { regions.slot_owners.tracked_insert(frame_to_index(frame.ptr.addr()), slot_own) }
 
-        CursorOwner::<M>::list_insert(Tracked(owner), Tracked(&mut frame_own.link_own), Tracked(frame_own.link_perm.borrow()));
-        assert(owner.list_own.list[owner.index-1].slot@.in_list == owner.list_own.list_id) by { admit() };
+        CursorOwner::<M>::list_insert(Tracked(owner), Tracked(&mut frame_own.meta_own), Tracked(frame_own.meta_perm.borrow()));
+        assert(owner.list_own.list[owner.index-1].in_list@.value() == owner.list_own.list_id) by { admit() };
 
         // Forget the frame to transfer the ownership to the list.
 //        let _ = frame.into_raw();
@@ -746,7 +746,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
         assert(forall |i:int| owner.index+1 <= i < owner.length() ==> owner.list_own.perms.contains_key(i)) by { admit() };
         assert(forall |i:int| owner.index+1 <= i < owner.length() ==> owner0.list_own.inv_at(i-1) == owner.list_own.inv_at(i));
 
-        proof { owner0.insert_owner_spec_implies_model_spec(frame_own.link_own, *owner); }
+        proof { owner0.insert_owner_spec_implies_model_spec(frame_own.meta_own, *owner); }
     }
 
     /// Provides a reference to the linked list.

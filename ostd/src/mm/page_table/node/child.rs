@@ -7,6 +7,8 @@ use vstd::simple_pptr::*;
 
 use aster_common::prelude::*;
 
+use vstd_extra::ownership::*;
+
 use core::mem::ManuallyDrop;
 
 use super::{PageTableNode, PageTableNodeRef};
@@ -56,6 +58,7 @@ impl<C: PageTableConfig> Child<C> {
         requires
             pte.paddr() % PAGE_SIZE() == 0,
             pte.paddr() < MAX_PADDR(),
+            old(regions).inv(),
             !old(regions).slots.contains_key(frame_to_index(pte.paddr())),
             old(regions).dropped_slots.contains_key(frame_to_index(pte.paddr()))
     {

@@ -228,16 +228,12 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             Tracked(slot_perm) : Tracked<& vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
     #[rustc_allow_incoherent_impl]
-    pub fn reference_count(&self) -> (cnt: u64)
+    pub fn reference_count(&self) -> u64
         requires
             slot_perm.pptr() == self.ptr,
             slot_perm.is_init(),
             old(slot_own).ref_count@.is_for(slot_perm.value().ref_count),
-        ensures
-            cnt == old(regions).slot_owners[frame_to_index(self.ptr.addr())]@.ref_count,
-            regions.slot_owners == old(regions).slot_owners,
-            regions.dropped_slots == old(regions).dropped_slots,
-            forall |i:usize| i != frame_to_index(self.ptr.addr()) ==> regions.slots[i] == old(regions).slots[i]
+        returns old(slot_own)@.ref_count,
     {
         #[verus_spec(with Tracked(slot_perm))]
         let slot = self.slot();

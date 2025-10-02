@@ -186,6 +186,10 @@ impl<R, T: Repr<R>> PointsTo<R, T> {
             _T: PhantomData
         }
     }
+
+    pub broadcast proof fn pptr_implies_addr(&self)
+        ensures self.addr() == self.pptr().addr()
+    { }
 }
 
 /*#[verifier::inline]
