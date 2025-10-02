@@ -252,12 +252,14 @@ impl<'a, 'slot, 'rcu, C: PageTableConfig> Entry<'slot, 'rcu, C> {
     #[verus_spec(
         with Tracked(owner): Tracked<EntryOwner<C>>
     )]
+    #[verifier::external_body]
     pub fn new_at(guard: PPtr<PageTableGuard<'rcu, C>>, idx: usize) -> Self
         requires
             owner.inv(),
             owner.guard_perm@.pptr() == guard,
     {
         // SAFETY: The index is within the bound.
+        #[verus_spec(with Tracked(owner))]
         let pte = guard.borrow(Tracked(owner.guard_perm.borrow())).read_pte(idx);
         Self {
             pte,

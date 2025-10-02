@@ -85,6 +85,8 @@ impl<'slot, 'rcu, C: PageTableConfig> Inv for EntryOwner<'slot, 'rcu, C> {
         &&& self.meta_perm@.pptr().addr == self.slot_own@.storage@.addr()
         &&& self.meta_perm@.is_init()
         &&& self.meta_perm@.wf()
+
+        &&& meta_to_frame(self.slot_own@.self_addr) < VMALLOC_BASE_VADDR() - LINEAR_MAPPING_BASE_VADDR()
     }
 }
 

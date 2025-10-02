@@ -177,6 +177,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             slot_perm.is_init(),
             slot_perm.value().wf(&slot_own),
             slot_own.inv()
+        returns slot_perm.value().frame_paddr_spec(slot_own@)
     {
         #[verus_spec(with Tracked(slot_perm))]
         let slot = self.slot();
@@ -293,7 +294,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         with Tracked(regions) : Tracked<&mut MetaRegionOwners>
     )]
     #[rustc_allow_incoherent_impl]
-    pub(in crate::mm) fn from_raw(paddr: Paddr) -> Self
+    pub fn from_raw(paddr: Paddr) -> Self
         requires
             paddr % PAGE_SIZE() == 0,
             paddr < MAX_PADDR(),

@@ -431,7 +431,7 @@ pub(super) unsafe fn page_walk<C: PageTableConfig>(
 ///
 /// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
 #[verifier::external_body]
-pub unsafe fn load_pte<E: PageTableEntryTrait>(ptr: *mut E, ordering: Ordering) -> E {
+pub fn load_pte<E: PageTableEntryTrait>(ptr: vstd_extra::array_ptr::ArrayPtr<E, CONST_NR_ENTRIES>, ordering: Ordering) -> E {
     unimplemented!()
 /*    // SAFETY: The safety is upheld by the caller.
     let atomic = unsafe { AtomicUsize::from_ptr(ptr.cast()) };

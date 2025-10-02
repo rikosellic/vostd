@@ -258,14 +258,25 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     ///
     /// The caller must ensure that the index is within the bound.
     #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
-    pub fn read_pte(&self, idx: usize) -> C::E {
-        debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = paddr_to_vaddr(self.start_paddr()) as *mut C::E;
+    #[verus_spec(
+        with Tracked(owner): Tracked<EntryOwner<C>>
+    )]
+    pub fn read_pte(&self, idx: usize) -> C::E
+        requires
+            self.inner.inner.ptr == owner.slot_perm@.pptr(),
+            owner.inv(),
+            idx < NR_ENTRIES(),
+    {
+        // debug_assert!(idx < nr_subpage_per_huge::<C>());
+        let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(paddr_to_vaddr(
+            #[verus_spec(with Tracked(owner.slot_own.borrow()), Tracked(owner.slot_perm.borrow()))]
+            self.start_paddr()
+        ));
+
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
         // - All page table entries are aligned and accessed with atomic operations only.
-        unsafe { load_pte(ptr.add(idx), Ordering::Relaxed) }
+        load_pte(ptr.add(idx), Ordering::Relaxed)
     }
 
     /// Writes a page table entry at a given index.
@@ -291,16 +302,11 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             owner.inv(),
             idx < NR_ENTRIES(),
     {
-        let ghost ptr_inner = self.inner.inner.ptr;
-        let ptr = self.ptr;
-        assert(ptr == ptr_inner) by { admit() };
-
-        #[verus_spec(with Tracked(owner.slot_own.borrow()), Tracked(owner.slot_perm.borrow()))]
-        let pa = self.start_paddr();
-        assert(pa < VMALLOC_BASE_VADDR() - LINEAR_MAPPING_BASE_VADDR()) by { admit() };
-
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(paddr_to_vaddr(pa));
+        let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(paddr_to_vaddr(
+            #[verus_spec(with Tracked(owner.slot_own.borrow()), Tracked(owner.slot_perm.borrow()))]
+            self.start_paddr()
+        ));
 
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
