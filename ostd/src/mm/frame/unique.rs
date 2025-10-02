@@ -92,7 +92,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrame<Link<M>> {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrame<Link<M>> {
+impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
     /// Gets the physical address of the start of the frame.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
@@ -183,9 +183,10 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrame<Link<M>> {
     #[verifier::external_body]
     #[verus_spec(
         with Tracked(region) : Tracked<&mut MetaRegionOwners>,
-            Tracked(perm) : Tracked<PointsTo<MetaSlotStorage, Link<M>>>
+            Tracked(perm) : Tracked<PointsTo<MetaSlotStorage, M>>,
+            Tracked(owner) : Tracked<M::Owner>
     )]
-    pub(crate) fn from_raw(paddr: Paddr) -> (res: (Self, Tracked<UniqueFrameOwner<Link<M>>>))
+    pub fn from_raw(paddr: Paddr) -> (res: (Self, Tracked<UniqueFrameOwner<M>>))
         requires
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
@@ -197,20 +198,20 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrame<Link<M>> {
             res.1@.slot_own == region.slot_owners[frame_to_index(paddr)],
             res.1@.meta_perm == perm,
     {
-        unimplemented!()
-
-/*        let vaddr = mapping::frame_to_meta(paddr);
+        let vaddr = mapping::frame_to_meta(paddr);
         let ptr = vstd::simple_pptr::PPtr::<MetaSlot>::from_addr(vaddr);
 
         (Self {
             ptr,
             _marker: PhantomData,
-        }, Tracked(UniqueFrameLinkOwner::<M>::from_raw_owner(*region, paddr)))*/
+        }, Tracked(UniqueFrameOwner::<M>::from_raw_owner(Tracked(owner),
+                    Tracked(region.slot_owners[frame_to_index(paddr)]),
+                    Tracked(perm))))
     }
 
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub(super) fn slot(&self) -> &MetaSlot {
+    pub fn slot(&self) -> &MetaSlot {
         unimplemented!()
         // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
         // mutably borrowed, so taking an immutable reference to it is safe.
