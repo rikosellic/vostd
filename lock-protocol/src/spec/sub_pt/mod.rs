@@ -51,7 +51,10 @@ pub tracked struct SubPageTable<C: PageTableConfig> {
     pub instance: SubPageTableStateMachine::Instance<C>,
     pub frames: SubPageTableStateMachine::frames<C>,
     pub i_ptes: SubPageTableStateMachine::i_ptes<C>,
-    pub ptes: SubPageTableStateMachine::ptes<C>,
+    pub ptes: SubPageTableStateMachine::ptes<
+        C,
+    >,
+    // pub forgot_guards: SubTreeForgotGuard<C: PageTableConfig>,
 }
 
 impl<C: PageTableConfig> SubPageTable<C> {
