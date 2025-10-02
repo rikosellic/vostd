@@ -82,6 +82,13 @@ pub struct PageTablePageMeta<C: PageTableConfig> {
 }
 
 impl<C: PageTableConfig> PageTablePageMeta<C> {
+    #[verifier::external_body]
+    pub fn get_stray(&self) -> PCell<bool>
+        returns self.stray
+    {
+        unimplemented!()
+    }
+
     pub open spec fn into_spec(self) -> StoredPageTablePageMeta {
         StoredPageTablePageMeta {
             nr_children: self.nr_children,

@@ -432,12 +432,13 @@ impl MetaSlot {
     #[verus_spec(
         with Tracked(owner): Tracked<&MetaSlotOwner>
     )]
-    pub(super) fn as_meta_ptr<M: AnyFrameMeta + Repr<MetaSlotStorage>>(&self) -> (res: ReprPtr<MetaSlotStorage, M>)
+    pub fn as_meta_ptr<M: AnyFrameMeta + Repr<MetaSlotStorage>>(&self) -> (res: ReprPtr<MetaSlotStorage, M>)
         requires
             owner.inv(),
             self.wf(owner)
         ensures
-            res.ptr.addr() == owner.storage@.addr()
+            res.ptr.addr() == owner.storage@.addr(),
+            res.addr == owner.storage@.addr()
     {
         #[verus_spec(with Tracked(owner))]
         let addr = self.storage_addr_of();

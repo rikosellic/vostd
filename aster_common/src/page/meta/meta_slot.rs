@@ -127,7 +127,8 @@ impl MetaSlot {
             owner.inv(),
             addr == owner.storage@.addr()
         ensures
-            res.ptr == owner.storage@.pptr()
+            res.ptr == owner.storage@.pptr(),
+            res.addr == addr
     {
         ReprPtr::<MetaSlotStorage, T> {
             addr: addr,

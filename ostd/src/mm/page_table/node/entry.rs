@@ -8,6 +8,7 @@ use vstd::simple_pptr::*;
 use vstd_extra::ownership::*;
 
 use core::mem::ManuallyDrop;
+use core::marker::PhantomData;
 
 use super::{Child, ChildRef, PageTableGuard, PageTableNode};
 use crate::{
@@ -46,7 +47,7 @@ impl<'a, 'slot, 'rcu, C: PageTableConfig> Entry<'slot, 'rcu, C> {
             self.wf(&owner),
     {
         let guard = self.node.borrow(Tracked(owner.guard_perm.borrow()));
-        self.pte.is_present() && !self.pte.is_last(#[verus_spec(with Tracked(owner.slot_own.borrow()), Tracked(owner.slot_perm.borrow()), Tracked(owner.node_perm.borrow()))] guard.level())
+        self.pte.is_present() && !self.pte.is_last(#[verus_spec(with Tracked(owner.slot_own.borrow()), Tracked(owner.slot_perm.borrow()), Tracked(owner.meta_perm.borrow()))] guard.level())
     }
 
 /*    /// Gets a reference to the child.
@@ -122,7 +123,7 @@ impl<'a, 'slot, 'rcu, C: PageTableConfig> Entry<'slot, 'rcu, C> {
         // SAFETY:
         //  - The PTE is not referenced by other `ChildRef`s (since we have `&mut self`).
         //  - The level matches the current node.
-        #[verus_spec(with Tracked(owner.slot_own.borrow()), Tracked(owner.slot_perm.borrow()), Tracked(owner.node_perm.borrow()))]
+        #[verus_spec(with Tracked(owner.slot_own.borrow()), Tracked(owner.slot_perm.borrow()), Tracked(owner.meta_perm.borrow()))]
         let level = guard.level();
 
         #[verus_spec(with Tracked(regions))]
@@ -240,21 +241,30 @@ impl<'a, 'slot, 'rcu, C: PageTableConfig> Entry<'slot, 'rcu, C> {
         let pt_ref = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
         // SAFETY: The node is locked and there are no other guards.
         Some(unsafe { pt_ref.make_guard_unchecked(guard) })
-    }
+    }*/
 
     /// Create a new entry at the node with guard.
     ///
     /// # Safety
     ///
     /// The caller must ensure that the index is within the bounds of the node.
-    pub(super) unsafe fn new_at(guard: &'a mut PageTableGuard<'rcu, C>, idx: usize) -> Self {
+    #[rustc_allow_incoherent_impl]
+    #[verus_spec(
+        with Tracked(owner): Tracked<EntryOwner<C>>
+    )]
+    pub fn new_at(guard: PPtr<PageTableGuard<'rcu, C>>, idx: usize) -> Self
+        requires
+            owner.inv(),
+            owner.guard_perm@.pptr() == guard,
+    {
         // SAFETY: The index is within the bound.
-        let pte = unsafe { guard.read_pte(idx) };
+        let pte = guard.borrow(Tracked(owner.guard_perm.borrow())).read_pte(idx);
         Self {
             pte,
             idx,
             node: guard,
+            slot: PhantomData
         }
-    }*/
+    }
 }
 }

@@ -118,15 +118,18 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             Tracked(slot_perm) : Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>,
             Tracked(perm) : Tracked<&'a PointsTo<MetaSlotStorage, M>>
     )]
-    #[verifier::external_body]
     #[rustc_allow_incoherent_impl]
     pub fn meta(&self) -> &'a M
         requires
+            self.ptr == slot_perm.pptr(),
             slot_perm.is_init(),
-            slot_perm.value().wf(&slot_own)
-/*            old(regions).slots.contains_key(frame_to_index(self.ptr.addr())),
-            old(regions).slots[frame_to_index(self.ptr.addr())]@.pptr() == self.ptr,
-            old(regions).slots[frame_to_index(self.ptr.addr())]@.mem_contents() is Init,*/
+            slot_perm.value().wf(&slot_own),
+            slot_own.inv(),
+            perm.pptr().ptr.0 == slot_own.storage@.addr(),
+            perm.pptr().addr == slot_own.storage@.addr(),
+            perm.is_init(),
+            perm.wf()
+        returns &perm.value()
     {
         // SAFETY: The type is tracked by the type system.
         
@@ -135,6 +138,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
 
         #[verus_spec(with Tracked(slot_own))]
         let ptr = slot.as_meta_ptr();
+        assert(ptr.ptr.0 == slot_own.storage@.addr());
 
         ptr.borrow(Tracked(perm))
     }
