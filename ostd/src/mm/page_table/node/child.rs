@@ -2,6 +2,11 @@
 
 //! This module specifies the type of the children of a page table node.
 
+use vstd::prelude::*;
+use vstd::simple_pptr::*;
+
+use aster_common::prelude::*;
+
 use core::mem::ManuallyDrop;
 
 use super::{PageTableNode, PageTableNodeRef};
@@ -12,17 +17,21 @@ use crate::{
 
 use aster_common::prelude::*;
 
+verus!{
 impl<C: PageTableConfig> Child<C> {
-    /// Returns whether the child is not present.
-    #[rustc_allow_incoherent_impl]
-    pub(in crate::mm) fn is_none(&self) -> bool {
-        matches!(self, Child::None)
-    }
 
     #[rustc_allow_incoherent_impl]
-    pub(super) fn into_pte(self) -> C::E {
+    #[verus_spec(
+        with Tracked(slot_own): Tracked<&MetaSlotOwner>,
+            Tracked(slot_perm): Tracked<&PointsTo<MetaSlot>>
+    )]
+    pub fn into_pte(self) -> C::E
+        requires
+            FRAME_METADATA_RANGE().start <= frame_to_index(self.get_node().unwrap().ptr.addr()) < FRAME_METADATA_RANGE().end,
+    {
         match self {
             Child::PageTable(node) => {
+                #[verus_spec(with Tracked(slot_own), Tracked(slot_perm))]
                 let paddr = node.start_paddr();
                 let _ = ManuallyDrop::new(node);
                 C::E::new_pt(paddr)
@@ -40,7 +49,16 @@ impl<C: PageTableConfig> Child<C> {
     ///
     /// The level must match the original level of the child.
     #[rustc_allow_incoherent_impl]
-    pub(super) unsafe fn from_pte(pte: C::E, level: PagingLevel) -> Self {
+    #[verus_spec(
+        with Tracked(regions) : Tracked<&mut MetaRegionOwners>
+    )]
+    pub fn from_pte(pte: C::E, level: PagingLevel) -> Self
+        requires
+            pte.paddr() % PAGE_SIZE() == 0,
+            pte.paddr() < MAX_PADDR(),
+            !old(regions).slots.contains_key(frame_to_index(pte.paddr())),
+            old(regions).dropped_slots.contains_key(frame_to_index(pte.paddr()))
+    {
         if !pte.is_present() {
             return Child::None;
         }
@@ -50,7 +68,8 @@ impl<C: PageTableConfig> Child<C> {
         if !pte.is_last(level) {
             // SAFETY: The caller ensures that this node was created by
             // `into_pte`, so that restoring the forgotten reference is safe.
-            let node = unsafe { PageTableNode::from_raw(paddr) };
+            #[verus_spec(with Tracked(regions))]
+            let node = PageTableNode::from_raw(paddr);
 //            debug_assert_eq!(node.level(), level - 1);
             return Child::PageTable(/*RcuDrop::new(*/node/*)*/);
         }
@@ -60,7 +79,7 @@ impl<C: PageTableConfig> Child<C> {
 }
 
 /// A reference to the child of a page table node.
-pub(in crate::mm) enum ChildRef<'a, C: PageTableConfig> {
+pub enum ChildRef<'a, C: PageTableConfig> {
     /// A child page table node.
     PageTable(PageTableNodeRef<'a, C>),
     /// Physical address of a mapped physical frame.
@@ -70,7 +89,7 @@ pub(in crate::mm) enum ChildRef<'a, C: PageTableConfig> {
     Frame(Paddr, PagingLevel, PageProperty),
     None,
 }
-
+}
 /* TODO: borrow_paddr
 impl<C: PageTableConfig> ChildRef<'_, C> {
     /// Converts a PTE to a child.

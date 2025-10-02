@@ -29,9 +29,10 @@ mod child;
 mod entry;
 
 use vstd::prelude::*;
+use vstd::cell::PCell;
+use vstd::simple_pptr::PPtr;
 
 use core::{
-    cell::SyncUnsafeCell,
     marker::PhantomData,
     ops::Deref,
     sync::atomic::{Ordering},
@@ -53,7 +54,11 @@ use crate::{
 };
 
 use vstd::atomic::PAtomicU8;
+use vstd::simple_pptr;
+
+use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::*;
+use vstd_extra::array_ptr;
 use aster_common::prelude::*;
 
 verus! {
@@ -62,16 +67,22 @@ impl<C: PageTableConfig> PageTableNode<C> {
 
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(regions) : Tracked<&mut MetaRegionOwners>,
-            perm: Tracked<&PointsTo<MetaSlotStorage, PageTablePageMeta<C>>>
+        with Tracked(slot_own) : Tracked<&MetaSlotOwner>,
+            Tracked(slot_perm): Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>,
+            Tracked(perm) : Tracked<&PointsTo<MetaSlotStorage, PageTablePageMeta<C>>>
     )]
     pub fn level(&self) -> PagingLevel
         requires
-            old(regions).slots.contains_key(frame_to_index(self.ptr.addr())),
-            old(regions).slots[frame_to_index(self.ptr.addr())]@.pptr() == self.ptr,
-            old(regions).slots[frame_to_index(self.ptr.addr())]@.mem_contents() is Init
+            self.ptr == slot_perm.pptr(),
+            slot_perm.is_init(),
+            slot_perm.value().wf(slot_own),
+            slot_own.inv(),
+            perm.pptr().ptr.0 == slot_own.storage@.addr(),
+            perm.pptr().addr == slot_own.storage@.addr(),
+            perm.is_init(),
+            perm.wf()
     {
-        #[verus_spec(with Tracked(regions), perm)]
+        #[verus_spec(with Tracked(slot_own), Tracked(slot_perm), Tracked(perm))]
         let meta = self.meta();
         meta.level
     }
@@ -190,30 +201,51 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     /// Panics if the index is not within the bound of
     /// [`nr_subpage_per_huge<C>`].
     #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
-    pub(super) fn entry(&mut self, idx: usize) -> Entry<'_, 'rcu, C> {
-        unimplemented!()
-/*        assert!(idx < nr_subpage_per_huge::<C>());
+    #[verus_spec(
+        with Tracked(owner): Tracked<EntryOwner<C>>
+    )]
+    pub fn entry<'slot>(guard: PPtr<Self>, idx: usize) -> Entry<'slot, 'rcu, C>
+        requires
+            owner.inv(),
+            owner.guard_perm@.pptr() == guard,
+    {
+//        assert!(idx < nr_subpage_per_huge::<C>());
         // SAFETY: The index is within the bound.
-        unsafe { Entry::new_at(self, idx) }*/
+        #[verus_spec(with Tracked(owner))]
+        Entry::new_at(guard, idx)
     }
 
     /// Gets the number of valid PTEs in the node.
     #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
-    pub(super) fn nr_children(&self) -> u16 {
-        unimplemented!()
+    #[verus_spec(
+        with Tracked(owner): Tracked<EntryOwner<C>>
+    )]
+    pub fn nr_children(&self) -> u16
+        requires
+            self.inner.inner.ptr == owner.slot_perm@.pptr(),
+            owner.inv(),
+    {
         // SAFETY: The lock is held so we have an exclusive access.
-//        unsafe { *self.meta().nr_children.get() }
+        #[verus_spec(with Tracked(owner.slot_own.borrow()), Tracked(owner.slot_perm.borrow()), Tracked(owner.meta_perm.borrow()))]
+        let meta = self.meta();
+
+        *meta.nr_children.borrow(Tracked(owner.meta_own.borrow().nr_children.borrow()))
     }
 
     /// Returns if the page table node is detached from its parent.
     #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
-    pub(super) fn stray_mut(&mut self) -> &/*mut*/ bool {
-        unimplemented!()
+    #[verus_spec(
+        with Tracked(owner): Tracked<EntryOwner<C>>
+    )]
+    pub fn stray_mut(&mut self) -> PCell<bool>
+        requires
+            old(self).inner.inner.ptr == owner.slot_perm@.pptr(),
+            owner.inv(),
+    {
         // SAFETY: The lock is held so we have an exclusive access.
-//        unsafe { &/*mut*/ *self.meta().stray.get() }
+        #[verus_spec(with Tracked(owner.slot_own.borrow()), Tracked(owner.slot_perm.borrow()), Tracked(owner.meta_perm.borrow()))]
+        let meta = self.meta();
+        meta.get_stray()
     }
 
     /// Reads a non-owning PTE at the given index.
@@ -226,14 +258,25 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     ///
     /// The caller must ensure that the index is within the bound.
     #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
-    pub fn read_pte(&self, idx: usize) -> C::E {
-        debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = paddr_to_vaddr(self.start_paddr()) as *mut C::E;
+    #[verus_spec(
+        with Tracked(owner): Tracked<EntryOwner<C>>
+    )]
+    pub fn read_pte(&self, idx: usize) -> C::E
+        requires
+            self.inner.inner.ptr == owner.slot_perm@.pptr(),
+            owner.inv(),
+            idx < NR_ENTRIES(),
+    {
+        // debug_assert!(idx < nr_subpage_per_huge::<C>());
+        let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(paddr_to_vaddr(
+            #[verus_spec(with Tracked(owner.slot_own.borrow()), Tracked(owner.slot_perm.borrow()))]
+            self.start_paddr()
+        ));
+
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
         // - All page table entries are aligned and accessed with atomic operations only.
-        unsafe { load_pte(ptr.add(idx), Ordering::Relaxed) }
+        load_pte(ptr.add(idx), Ordering::Relaxed)
     }
 
     /// Writes a page table entry at a given index.
@@ -250,23 +293,49 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     ///  2. The PTE must represent a valid [`Child`] whose level is compatible
     ///     with the page table node.
     #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
-    pub(super) unsafe fn write_pte(&mut self, idx: usize, pte: C::E) {
-        debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = paddr_to_vaddr(self.start_paddr()) as *mut C::E;
+    #[verus_spec(
+        with Tracked(owner): Tracked<EntryOwner<C>>
+    )]
+    pub fn write_pte(&mut self, idx: usize, pte: C::E)
+        requires
+            old(self).inner.inner.ptr == owner.slot_perm@.pptr(),
+            owner.inv(),
+            idx < NR_ENTRIES(),
+    {
+        // debug_assert!(idx < nr_subpage_per_huge::<C>());
+        let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(paddr_to_vaddr(
+            #[verus_spec(with Tracked(owner.slot_own.borrow()), Tracked(owner.slot_perm.borrow()))]
+            self.start_paddr()
+        ));
+
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
         // - All page table entries are aligned and accessed with atomic operations only.
-        unsafe { store_pte(ptr.add(idx), pte, Ordering::Release) }
+        store_pte(ptr.add(idx), pte, Ordering::Release)
     }
 
     /// Gets the mutable reference to the number of valid PTEs in the node.
     #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
-    fn nr_children_mut(&mut self) -> &/*mut*/ u16 {
-        unimplemented!()
+    #[verus_spec(
+        with Tracked(slot_own): Tracked<&MetaSlotOwner>,
+            Tracked(slot_perm): Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>,
+            Tracked(meta_perm): Tracked<&'a PointsTo<MetaSlotStorage, PageTablePageMeta<C>>>
+    )]
+    fn nr_children_mut<'a>(&'a mut self) -> &PCell<u16>
+        requires
+            old(self).inner.inner.ptr == slot_perm.pptr(),
+            slot_perm.is_init(),
+            slot_perm.value().wf(slot_own),
+            slot_own.inv(),
+            meta_perm.pptr().ptr.0 == slot_own.storage@.addr(),
+            meta_perm.pptr().addr == slot_own.storage@.addr(),
+            meta_perm.is_init(),
+            meta_perm.wf()
+    {
         // SAFETY: The lock is held so we have an exclusive access.
-//        unsafe { &mut *self.meta().nr_children.get() }
+        #[verus_spec(with Tracked(slot_own), Tracked(slot_perm), Tracked(meta_perm))]
+        let meta = self.meta();
+        &meta.nr_children
     }
 }
 }
@@ -280,8 +349,8 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
     #[rustc_allow_incoherent_impl]
     pub fn new(level: PagingLevel) -> Self {
         Self {
-            nr_children: /*SyncUnsafeCell::new(*/0/*)*/,
-            stray: /*SyncUnsafeCell::new(*/false/*)*/,
+            nr_children: PCell::new(0).0,
+            stray: PCell::new(false).0,
             level,
             lock: PAtomicU8::new(0).0,
             _phantom: PhantomData,

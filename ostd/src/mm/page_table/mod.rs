@@ -48,7 +48,6 @@ pub enum PageTableError {
     UnalignedVaddr,
 }
 
-}
 /*/// Splits the address range into largest page table items.
 ///
 /// Each of the returned items is a tuple of the physical address and the
@@ -431,11 +430,13 @@ pub(super) unsafe fn page_walk<C: PageTableConfig>(
 /// # Safety
 ///
 /// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
-pub unsafe fn load_pte<E: PageTableEntryTrait>(ptr: *mut E, ordering: Ordering) -> E {
-    // SAFETY: The safety is upheld by the caller.
+#[verifier::external_body]
+pub fn load_pte<E: PageTableEntryTrait>(ptr: vstd_extra::array_ptr::ArrayPtr<E, CONST_NR_ENTRIES>, ordering: Ordering) -> E {
+    unimplemented!()
+/*    // SAFETY: The safety is upheld by the caller.
     let atomic = unsafe { AtomicUsize::from_ptr(ptr.cast()) };
     let pte_raw = atomic.load(ordering);
-    E::from_usize(pte_raw)
+    E::from_usize(pte_raw)*/
 }
 
 /// Stores a page table entry with an atomic instruction.
@@ -443,9 +444,12 @@ pub unsafe fn load_pte<E: PageTableEntryTrait>(ptr: *mut E, ordering: Ordering) 
 /// # Safety
 ///
 /// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
-pub unsafe fn store_pte<E: PageTableEntryTrait>(ptr: *mut E, new_val: E, ordering: Ordering) {
-    let new_raw = new_val.as_usize();
+#[verifier::external_body]
+pub fn store_pte<E: PageTableEntryTrait>(ptr: vstd_extra::array_ptr::ArrayPtr<E, CONST_NR_ENTRIES>, new_val: E, ordering: Ordering) {
+    unimplemented!()
+/*    let new_raw = new_val.as_usize();
     // SAFETY: The safety is upheld by the caller.
     let atomic = unsafe { AtomicUsize::from_ptr(ptr.cast()) };
-    atomic.store(new_raw, ordering)
+    atomic.store(new_raw, ordering)*/
+}
 }

@@ -66,13 +66,13 @@ impl Default for MapTrackingStatus {
 #[rustc_has_incoherent_inherent_impls]
 pub struct PageTablePageMeta<C: PageTableConfig> {
     /// The number of valid PTEs. It is mutable if the lock is held.
-    pub nr_children: /*SyncUnsafeCell<*/u16/*>*/,
+    pub nr_children: PCell<u16>,
     /// If the page table is detached from its parent.
     ///
     /// A page table can be detached from its parent while still being accessed,
     /// since we use a RCU scheme to recycle page tables. If this flag is set,
     /// it means that the parent is recycling the page table.
-    pub stray: /*SyncUnsafeCell<*/bool/*>*/,
+    pub stray: PCell<bool>,
     /// The level of the page table page. A page table page cannot be
     /// referenced by page tables of different levels.
     pub level: PagingLevel,
@@ -82,6 +82,13 @@ pub struct PageTablePageMeta<C: PageTableConfig> {
 }
 
 impl<C: PageTableConfig> PageTablePageMeta<C> {
+    #[verifier::external_body]
+    pub fn get_stray(&self) -> PCell<bool>
+        returns self.stray
+    {
+        unimplemented!()
+    }
+
     pub open spec fn into_spec(self) -> StoredPageTablePageMeta {
         StoredPageTablePageMeta {
             nr_children: self.nr_children,
@@ -169,11 +176,12 @@ impl<C: PageTableConfig> Repr<MetaSlotStorage> for PageTablePageMeta<C> {
     }
 
     proof fn from_to_repr(self)
-        ensures Self::from_repr(self.to_repr()) == self
     { }
 
     proof fn to_from_repr(r: MetaSlotStorage)
-        ensures Self::from_repr(r).to_repr() == r
+    { }
+
+    proof fn to_repr_wf(self)
     { }
 }
 

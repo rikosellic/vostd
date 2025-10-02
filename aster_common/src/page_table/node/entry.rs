@@ -1,5 +1,5 @@
 use vstd::prelude::*;
-use vstd::simple_pptr;
+use vstd::simple_pptr::*;
 use vstd::cell;
 
 use crate::prelude::{
@@ -9,6 +9,7 @@ use crate::prelude::{
 use vstd_extra::ownership::*;
 
 use std::ops::Deref;
+use std::marker::PhantomData;
 
 verus! {
 
@@ -24,13 +25,14 @@ pub struct PageTableGuard<'rcu, C: PageTableConfig> {
 impl<'rcu, C: PageTableConfig> Deref for PageTableGuard<'rcu, C> {
     type Target = PageTableNodeRef<'rcu, C>;
 
+    #[verus_spec(ensures returns self.inner)]
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
 #[rustc_has_incoherent_inherent_impls]
-pub struct Entry<'a, 'rcu, C: PageTableConfig> {
+pub struct Entry<'slot, 'rcu, C: PageTableConfig> {
     /// The page table entry.
     ///
     /// We store the page table entry here to optimize the number of reads from
@@ -42,35 +44,24 @@ pub struct Entry<'a, 'rcu, C: PageTableConfig> {
     /// The index of the entry in the node.
     pub idx: usize,
     /// The node that contains the entry.
-    pub node: &'a /*mut*/ PageTableGuard<'rcu, C>,
+    pub node: PPtr<PageTableGuard<'rcu, C>>,
+
+    /// For proof purposes, we need to track the lifetime of the metaslot that holds this entry,
+    /// so we put it in a PhantomData field
+    pub slot: PhantomData<&'slot MetaSlot>,
 }
 
-impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
-    pub open spec fn new_spec(pte: C::E, idx: usize, node: &'a PageTableGuard<'rcu, C>) -> Self {
-        Self { pte, idx, node }
+impl<'slot, 'rcu, C: PageTableConfig> Entry<'slot, 'rcu, C> {
+    pub open spec fn new_spec(pte: C::E, idx: usize, node: PPtr<PageTableGuard<'rcu, C>>) -> Self {
+        let slot = PhantomData;
+        Self { pte, idx, node, slot }
     }
 
     #[verifier::when_used_as_spec(new_spec)]
-    pub fn new(pte: C::E, idx: usize, node: &'a PageTableGuard<'rcu, C>) -> Self {
-        Self { pte, idx, node }
+    pub fn new(pte: C::E, idx: usize, node: PPtr<PageTableGuard<'rcu, C>>) -> Self {
+        let slot = PhantomData;
+        Self { pte, idx, node, slot }
     }
-
-/*    pub fn is_node(
-        &self,
-        Tracked(p_slot): Tracked<&simple_pptr::PointsTo<MetaSlot>>,
-        owner: MetaSlotOwner,
-    ) -> bool
-        requires
-            self.node.inv(),
-            p_slot.pptr() == self.node.ptr,
-            p_slot.is_init(),
-            p_slot.value().wf(&owner),
-            is_variant(owner.view().storage.value(), "PTNode"),
-    {
-        self.pte.is_present() && !self.pte.is_last(
-            self.node.level(Tracked(p_slot), owner),
-        )
-    }*/
 }
 
 } // verus!

@@ -10,120 +10,18 @@ use crate::prelude::LinkedList;
 
 verus! {
 
-pub ghost struct LinkModel {
-    pub paddr: Paddr,
-    pub slot: MetaSlotModel,
-//    pub prev: Option<PPtr<Link<M>>>,
-//    pub next: Option<PPtr<Link<M>>>,
-}
-
-impl Inv for LinkModel {
-    open spec fn inv(&self) -> bool { true }
-}
-
-pub tracked struct LinkOwner {
-    pub paddr: Paddr,
-    pub slot: MetaSlotOwner,
-
-//    pub prev: Option<PPtr<Link<M>>>,
-//    pub next: Option<PPtr<Link<M>>>
-}
-
-impl Inv for LinkOwner {
-    open spec fn inv(&self) -> bool {
-        true
-//        self.self_perm@.mem_contents() is Init
-    }
-}
-
-impl InvView for LinkOwner {
-    type V = LinkModel;
-
-    open spec fn view(&self) -> Self::V {
-        LinkModel {
-            paddr: self.paddr,
-            slot: self.slot.view(),
-//            prev: self.prev,
-//            next: self.next,
-        }
-    }
-
-    proof fn view_preserves_inv(&self) { }
-}
-
 impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for Link<M> {
-    type Owner = LinkOwner;
+    type Owner = MetaSlotOwner;
 
-    open spec fn wf(&self, owner: &Self::Owner) -> bool { true
-//        &&& owner.self_perm@.mem_contents().value() == self
-//        &&& owner.next == self.next
-//        &&& owner.prev == self.prev
+    open spec fn wf(&self, owner: &Self::Owner) -> bool {
+        true
     }
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotInner>> ModelOf for Link<M> { }
 
-pub tracked struct UniqueFrameLinkOwner<M: AnyFrameMeta + Repr<MetaSlotInner>> {
-    pub link_own : LinkOwner,
-    pub link_perm : Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, Link<M>>>,
-    pub frame_own : UniqueFrameOwner<Link<M>>
-}
-
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Inv for UniqueFrameLinkOwner<M> {
-    open spec fn inv(&self) -> bool {
-        self.link_perm@.wf()
-//        &&& self.link_own.self_perm@.mem_contents() is Init
-//        &&& self.link_own.self_perm@.mem_contents().value() == self.frame_own.data
-    }
-}
-
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> InvView for UniqueFrameLinkOwner<M> {
-    type V = LinkModel;
-
-    open spec fn view(&self) -> Self::V {
-        self.link_own@
-    }
-
-    proof fn view_preserves_inv(&self) { }
-}
-
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for UniqueFrame<Link<M>> {
-    type Owner = UniqueFrameLinkOwner<M>;
-
-    open spec fn wf(&self, owner: &Self::Owner) -> bool {
-        &&& owner.link_perm@.is_init()
-//        &&& self.ptr == owner.frame_own.slot@.storage@.pptr()
-//        &&& owner.link_perm@.pptr() == (&owner.frame_own@.slot.storage.value())
-    }
-}
-
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> ModelOf for UniqueFrame<Link<M>> { }
-
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrameLinkOwner<M> {
-    pub closed spec fn from_raw_owner(region: MetaRegionOwners, paddr: Paddr) -> Self;
-}
-
 pub ghost struct LinkedListModel {
-    pub list: Seq<LinkModel>,
-}
-
-impl LinkedListModel {
-    pub open spec fn front(&self) -> Option<LinkModel> {
-        if self.list.len() > 0 {
-            Some(self.list[0])
-        } else {
-            None
-        }
-    }
-
-    pub open spec fn back(&self) -> Option<LinkModel> {
-        if self.list.len() > 0 {
-            Some(self.list[self.list.len() - 1])
-        } else {
-            None
-        }
-    }
-
+    pub list: Seq<MetaSlotModel>,
 }
 
 impl Inv for LinkedListModel {
@@ -132,7 +30,7 @@ impl Inv for LinkedListModel {
 
 #[rustc_has_incoherent_inherent_impls]
 pub tracked struct LinkedListOwner<M: AnyFrameMeta + Repr<MetaSlotInner>> {
-    pub list: Seq<LinkOwner>,
+    pub list: Seq<MetaSlotOwner>,
     pub perms: Map<int, Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, Link<M>>>>,
     pub list_id: u64,
 }
@@ -150,11 +48,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedListOwner<M> {
     pub open spec fn inv_at(self, i: int) -> bool
     {
         &&& self.perms.contains_key(i)
-        &&& self.perms[i]@.addr() == self.list[i].paddr
+        &&& self.perms[i]@.addr() == self.list[i].self_addr
         &&& self.perms[i]@.wf()
         &&& FRAME_METADATA_RANGE().start <= self.perms[i]@.addr() < FRAME_METADATA_RANGE().start + MAX_NR_PAGES() * META_SLOT_SIZE()
         &&& self.perms[i]@.is_init()
-        &&& self.perms[i]@.mem_contents().value().wf(&self.list[i])
+        &&& self.perms[i]@.value().wf(&self.list[i])
         &&& i == 0 <==> self.perms[i]@.mem_contents().value().prev is None
         &&& i == self.list.len() - 1 <==> self.perms[i]@.mem_contents().value().next is None
         &&& 0 < i ==>
@@ -164,20 +62,20 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedListOwner<M> {
             self.perms[i]@.mem_contents().value().next is Some &&
             self.perms[i]@.mem_contents().value().next.unwrap() == self.perms[i+1]@.pptr()
         &&& self.list[i].inv()
-        &&& self.list[i].slot@.in_list == self.list_id
+        &&& self.list[i].in_list@.points_to(self.list_id)
     }
 
-    pub open spec fn view_helper(owners: Seq<LinkOwner>) -> Seq<LinkModel>
+    pub open spec fn view_helper(owners: Seq<MetaSlotOwner>) -> Seq<MetaSlotModel>
         decreases owners.len()
     {
         if owners.len() == 0 {
-            Seq::<LinkModel>::empty()
+            Seq::<MetaSlotModel>::empty()
         } else {
             seq![owners[0].view()].add(Self::view_helper(owners.remove(0)))
         }
     }
 
-    pub proof fn view_preserves_len(owners: Seq<LinkOwner>)
+    pub proof fn view_preserves_len(owners: Seq<MetaSlotOwner>)
         ensures Self::view_helper(owners).len() == owners.len()
         decreases owners.len()
     {
@@ -223,7 +121,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedListOwner<M> {
     pub open spec fn region_consistency(self, regions:MetaRegionOwners) -> bool {
         forall |i:int|
             0 <= i < self.list.len() ==>
-            self.list[i].slot == regions.slot_owners[frame_to_index(meta_to_frame(self.list[i].paddr))]
+            self.list[i] == regions.slot_owners[frame_to_index(meta_to_frame(self.list[i].self_addr))]
     }
 }
 
@@ -235,10 +133,10 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for LinkedList<M> {
         &&& self.back is None <==> owner.list.len() == 0
         &&& owner.list.len() > 0 ==>
             self.front is Some &&
-            self.front.unwrap().addr() == owner.list[0].paddr &&
+            self.front.unwrap().addr() == owner.list[0].self_addr &&
             owner.perms[0]@.pptr() == self.front.unwrap() &&
             self.back is Some &&
-            self.back.unwrap().addr() == owner.list[owner.list.len()-1].paddr &&
+            self.back.unwrap().addr() == owner.list[owner.list.len()-1].self_addr &&
             owner.perms[owner.list.len()-1]@.pptr() == self.back.unwrap()
         &&& self.size == owner.list.len()
         &&& self.list_id == owner.list_id
@@ -249,8 +147,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> ModelOf for LinkedList<M> { }
 
 #[rustc_has_incoherent_inherent_impls]
 pub ghost struct CursorModel {
-    pub ghost fore: Seq<LinkModel>,
-    pub ghost rear: Seq<LinkModel>,
+    pub ghost fore: Seq<MetaSlotModel>,
+    pub ghost rear: Seq<MetaSlotModel>,
     pub ghost list_model: LinkedListModel
 }
 
@@ -295,7 +193,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for CursorMut<M> {
     {
         &&& 0 <= owner.index < owner.length() ==>
             self.current.is_some() &&
-            self.current.unwrap().addr() == owner.list_own.list[owner.index].paddr &&
+            self.current.unwrap().addr() == owner.list_own.list[owner.index].self_addr &&
             owner.list_own.perms[owner.index]@.pptr() == self.current.unwrap()
         &&& owner.index == owner.list_own.list.len() ==>
                 self.current.is_none()
@@ -308,7 +206,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for CursorMut<M> {
 impl<M: AnyFrameMeta + Repr<MetaSlotInner>> ModelOf for CursorMut<M> { }
 
 impl CursorModel {
-    pub open spec fn current(self) -> Option<LinkModel> {
+    pub open spec fn current(self) -> Option<MetaSlotModel> {
         if self.rear.len() > 0 {
             Some(self.rear[0])
         } else {
@@ -322,18 +220,10 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorOwner<M> {
         self.list_own.list.len() as int
     }
 
-    pub open spec fn current(self) -> Option<LinkOwner> {
-        if 0 <= self.index < self.length() {
-            Some(self.list_own.list[self.index])
-        } else {
-            None
-        }
-    }
-
     #[verifier::external_body]
-    pub fn list_insert(Tracked(cursor): Tracked<&mut Self>, Tracked(link): Tracked<&mut LinkOwner>, Tracked(perm): Tracked<&vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, Link<M>>>)
+    pub fn list_insert(Tracked(cursor): Tracked<&mut Self>, Tracked(owner): Tracked<&mut MetaSlotOwner>, Tracked(perm): Tracked<&vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, Link<M>>>)
         ensures
-            cursor.list_own.list == old(cursor).list_own.list.insert(old(cursor).index, *old(link)),
+            cursor.list_own.list == old(cursor).list_own.list.insert(old(cursor).index, *old(owner)),
             cursor.list_own.list_id == old(cursor).list_own.list_id,
             forall |idx:int| 0 <= idx < cursor.length() ==> cursor.list_own.perms.contains_key(idx),
             forall |idx:int| 0 <= idx < cursor.index ==> cursor.list_own.perms[idx] == old(cursor).list_own.perms[idx],
@@ -341,7 +231,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorOwner<M> {
             cursor.list_own.perms[old(cursor).index]@ == perm,
             cursor.index == old(cursor).index+1,
             cursor.list_perm == old(cursor).list_perm,
-            link == old(link),
+            owner == old(owner),
     {
         unimplemented!()
     }

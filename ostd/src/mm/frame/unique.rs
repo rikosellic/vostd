@@ -7,7 +7,6 @@ use vstd::simple_pptr;
 use vstd::atomic::PermissionU64;
 
 use aster_common::prelude::*;
-use aster_common::prelude::frame_list_model::*;
 
 use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::*;
@@ -186,7 +185,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrame<Link<M>> {
         with Tracked(region) : Tracked<&mut MetaRegionOwners>,
             Tracked(perm) : Tracked<PointsTo<MetaSlotStorage, Link<M>>>
     )]
-    pub(crate) fn from_raw(paddr: Paddr) -> (res: (Self, Tracked<UniqueFrameLinkOwner<M>>))
+    pub(crate) fn from_raw(paddr: Paddr) -> (res: (Self, Tracked<UniqueFrameOwner<Link<M>>>))
         requires
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
@@ -195,9 +194,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrame<Link<M>> {
             res.0.wf(&res.1@),
 //            res.1@.frame_own@ == UniqueFrameModel::from_raw_spec(old(region)@, paddr),
 //            res.0.ptr == region.slots[frame_to_index(paddr)]@.pptr(),
-            res.1@.frame_own.slot == region.slot_owners[frame_to_index(paddr)],
-            res.1@.link_own.slot == region.slot_owners[frame_to_index(paddr)],
-            res.1@.link_perm == perm,
+            res.1@.slot_own == region.slot_owners[frame_to_index(paddr)],
+            res.1@.meta_perm == perm,
     {
         unimplemented!()
 

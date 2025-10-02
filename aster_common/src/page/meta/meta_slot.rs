@@ -40,8 +40,8 @@ pub struct StoredLink {
 }
 
 pub struct StoredPageTablePageMeta {
-    pub nr_children: u16,
-    pub stray: bool,
+    pub nr_children: PCell<u16>,
+    pub stray: PCell<bool>,
     pub level: PagingLevel,
     pub lock: PAtomicU8,
 }
@@ -121,16 +121,14 @@ pub const fn meta_slot_size() -> (res: usize)
 }
 
 impl MetaSlot {
-    #[verus_spec(
-        with Tracked(owner): Tracked<MetaSlotOwner>
-    )]
-    pub fn cast_storage<T: Repr<MetaSlotStorage>>(&self, addr: usize) -> (res: ReprPtr<MetaSlotStorage, T>)
+    pub fn cast_storage<T: Repr<MetaSlotStorage>>(&self, addr: usize, Tracked(owner): Tracked<&MetaSlotOwner>) -> (res: ReprPtr<MetaSlotStorage, T>)
         requires
-            self.wf(&owner),
+            self.wf(owner),
             owner.inv(),
             addr == owner.storage@.addr()
         ensures
-            res.ptr == owner.storage@.pptr()
+            res.ptr == owner.storage@.pptr(),
+            res.addr == addr
     {
         ReprPtr::<MetaSlotStorage, T> {
             addr: addr,
