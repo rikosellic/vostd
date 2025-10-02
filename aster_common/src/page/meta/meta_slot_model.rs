@@ -166,7 +166,7 @@ impl MetaSlotOwner {
 }*/
 
 pub tracked struct UniqueFrameOwner<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> {
-    pub meta_own: M::Owner,
+    pub meta_own: Tracked<M::Owner>,
     pub meta_perm: Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, M>>,
     pub slot_own: Tracked<MetaSlotOwner>,
 }
@@ -262,8 +262,16 @@ impl UniqueFrameModel {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrameOwner<Link<M>> {
-    pub closed spec fn from_raw_owner(region: MetaRegionOwners, paddr: Paddr) -> Self;
+impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
+    pub open spec fn from_raw_owner(owner: Tracked<M::Owner>,
+                                    slot_own: Tracked<MetaSlotOwner>,
+                                    perm: Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, M>>) -> Self {
+        UniqueFrameOwner::<M> {
+            meta_own: owner,
+            meta_perm: perm,
+            slot_own: slot_own
+        }
+    }
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Link<M> {

@@ -125,8 +125,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M>
         let (cursor, cursor_own) = Self::cursor_front_mut(ptr);
         let mut cursor = cursor;
         let tracked mut cursor_own = cursor_own;
-
-        assert(frame_own == UniqueFrameOwner::<Link<M>>::from_raw_owner(*regions, cursor.current.unwrap().addr())) by { admit() };
         
         assert(cursor_own@.length() > 0 ==> cursor.current.unwrap().addr() % META_SLOT_SIZE() == 0) by { admit() };
 
@@ -188,8 +186,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M>
         let (cursor, cursor_own) = Self::cursor_back_mut(ptr);
         let mut cursor = cursor;
         let tracked mut cursor_own = cursor_own;
-
-        assert(frame_own == UniqueFrameOwner::<Link<M>>::from_raw_owner(*regions, cursor.current.unwrap().addr())) by { admit() };
         
         assert(cursor_own@.length() > 0 ==> cursor.current.unwrap().addr() % META_SLOT_SIZE() == 0) by { admit() };
 
@@ -483,8 +479,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
         let paddr = mapping::meta_to_frame(meta_ptr);
 
         let tracked Tracked(cur_perm) = owner.list_own.perms.tracked_remove(owner.index);
+        let tracked mut cur_own = owner.list_own.list.tracked_remove(owner.index);
 
-        #[verus_spec(with Tracked(regions), Tracked(cur_perm))]
+        #[verus_spec(with Tracked(regions), Tracked(cur_perm), Tracked(cur_own))]
         let (frame, frame_own) = UniqueFrame::<Link<M>>::from_raw(paddr);
         let mut frame = frame;
         let mut frame_own = frame_own;
