@@ -172,7 +172,7 @@ pub tracked struct UniqueFrameOwner<M: AnyFrameMeta + Repr<MetaSlotStorage> + Ow
 }
 
 pub ghost struct UniqueFrameModel<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> {
-    pub meta: M,
+    pub meta: <M::Owner as InvView>::V,
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Inv for UniqueFrameOwner<M> {
@@ -206,7 +206,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> InvView for UniqueFrameO
 
     open spec fn view(&self) -> Self::V {
         UniqueFrameModel {
-            meta: self.meta_perm@.value(),
+            meta: self.meta_own@@,
         }
     }
 
@@ -247,16 +247,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         ensures
             UniqueFrame::from_unused_spec(paddr, metadata, pre).1.inv(),
     { }
-
-    pub open spec fn replace_spec(&self, metadata: M, pre: UniqueFrameModel<M>)
-        -> UniqueFrameModel<M>
-        recommends
-            pre.inv(),
-    {
-        UniqueFrameModel {
-            meta: metadata
-        }
-    }
 }
 
 /*impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameModel<M> {
