@@ -141,7 +141,7 @@ impl<R, T: Repr<R>> PointsTo<R, T> {
         &&& T::wf(self.points_to@.value())
     }
 
-    pub closed spec fn addr_spec(self) -> usize
+    pub open spec fn addr_spec(self) -> usize
     {
         self.addr
     }
@@ -178,7 +178,7 @@ impl<R, T: Repr<R>> PointsTo<R, T> {
         self.mem_contents().value()
     }
 
-    pub closed spec fn pptr(&self) -> ReprPtr<R, T>
+    pub open spec fn pptr(&self) -> ReprPtr<R, T>
     {
         ReprPtr {
             addr: self.addr,

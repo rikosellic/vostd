@@ -22,7 +22,7 @@ use crate::mm::{Paddr, PagingConsts, PagingLevel};
 
 verus! {
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrame<Link<M>> {
+impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
     /// Gets a [`UniqueFrame`] with a specific usage from a raw, unused page.
     ///
     /// The caller should provide the initial metadata of the page.
@@ -59,7 +59,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrame<Link<M>> {
     /// Gets the metadata of this page.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn meta(&self) -> (l: &Link<M>)
+    pub fn meta(&self) -> (l: &M)
         ensures
 //            perm.mem_contents().value() == l,
     {
@@ -70,18 +70,21 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrame<Link<M>> {
 
     /// Gets the mutable metadata of this page.
     #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
     #[verus_spec(
-        with Tracked(regions): Tracked<&mut MetaRegionOwners>
+        with Tracked(owner) : Tracked<&MetaSlotOwner>,
+            Tracked(perm) : Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
-    pub fn meta_mut(&mut self) -> (res: ReprPtr<MetaSlotStorage, Link<M>>)
+    #[verifier::external_body]
+    pub fn meta_mut(&mut self) -> (res: ReprPtr<MetaSlotStorage, M>)
+        requires
+            owner.inv(),
+//            perm.is_init(),
+//            perm.pptr() == old(self).ptr,
+//            perm.value().wf(owner)
         ensures
-//            res.1@.points_to.pptr() == regions.slot_owners[frame_to_index(meta_to_frame(self.ptr.addr()))].storage@.pptr(),
             res.addr() == self.ptr.addr(),
-            res.ptr == regions.slot_owners[frame_to_index(meta_to_frame(self.ptr.addr()))].storage@.pptr(),
-//            res.1@.is_init(),
-//            res.1@.wf(),
-            regions == old(regions)
+            res.ptr.addr() == self.ptr.addr(),
+            self == old(self)
     {
         // SAFETY: The type is tracked by the type system.
         // And we have the exclusive access to the metadata.
@@ -89,7 +92,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrame<Link<M>> {
 //        let perm = owner.cast_perm();
 //        regions.slot_owners.tracked_insert(frame_to_index(meta_to_frame(self.ptr.addr())), owner);
 
-        self.slot().as_meta_ptr()
+        #[verus_spec(with Tracked(perm))]
+        let slot = self.slot();        
+
+        #[verus_spec(with Tracked(owner))]
+        slot.as_meta_ptr()
     }
 }
 
@@ -181,38 +188,49 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
     /// The caller must ensure that the physical address is valid and points to
     /// a forgotten frame that was previously casted by [`Self::into_raw`].
     #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
-    #[verus_spec(
-        with Tracked(region) : Tracked<&mut MetaRegionOwners>,
-            Tracked(perm) : Tracked<PointsTo<MetaSlotStorage, M>>,
-            Tracked(owner) : Tracked<M::Owner>
+    #[verus_spec(res =>
+        with Tracked(regions) : Tracked<&mut MetaRegionOwners>,
+            Tracked(meta_perm) : Tracked<PointsTo<MetaSlotStorage, M>>,
+            Tracked(meta_own) : Tracked<M::Owner>
     )]
+    #[verifier::external_body]
     pub fn from_raw(paddr: Paddr) -> (res: (Self, Tracked<UniqueFrameOwner<M>>))
         requires
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
+            old(regions).dropped_slots.contains_key(frame_to_index(paddr)),
         ensures
-//            res.1@ == UniqueFrameLinkOwner::<M>::from_raw_owner(*old(region), paddr),
+            res.0.ptr.addr() == frame_to_meta(paddr),
             res.0.wf(&res.1@),
-//            res.1@.frame_own@ == UniqueFrameModel::from_raw_spec(old(region)@, paddr),
-//            res.0.ptr == region.slots[frame_to_index(paddr)]@.pptr(),
-            res.1@.slot_own == region.slot_owners[frame_to_index(paddr)],
-            res.1@.meta_perm == perm,
+            res.1@.meta_own@ == meta_own,
+            res.1@.meta_perm@ == meta_perm,
+            res.1@.slot_perm == old(regions).dropped_slots[frame_to_index(paddr)],
+            !regions.dropped_slots.contains_key(frame_to_index(paddr)),
+            regions.slots == old(regions).slots,
+            regions.slot_owners == old(regions).slot_owners,
     {
         let vaddr = mapping::frame_to_meta(paddr);
         let ptr = vstd::simple_pptr::PPtr::<MetaSlot>::from_addr(vaddr);
 
+        let tracked slot_own = regions.dropped_slots.tracked_remove(frame_to_index(paddr));
+
         (Self {
             ptr,
             _marker: PhantomData,
-        }, Tracked(UniqueFrameOwner::<M>::from_raw_owner(Tracked(owner),
-                    Tracked(region.slot_owners[frame_to_index(paddr)]),
-                    Tracked(perm))))
+        },  UniqueFrameOwner::<M>::from_raw_owner(Tracked(meta_own), Tracked(slot_own.get()), Tracked(meta_perm)))
     }
 
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn slot(&self) -> &MetaSlot {
+    #[verus_spec(
+        with Tracked(slot_perm): Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>
+    )]
+    pub fn slot<'a>(&self) -> &'a MetaSlot
+        requires
+            slot_perm.pptr() == self.ptr,
+            slot_perm.is_init(),
+        returns slot_perm.value()
+    {
         unimplemented!()
         // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
         // mutably borrowed, so taking an immutable reference to it is safe.

@@ -1,6 +1,7 @@
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 use vstd::seq_lib::*;
+use vstd::atomic::*;
 use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::Repr;
 
@@ -12,9 +13,6 @@ verus! {
 
 pub ghost struct LinkModel {
     pub paddr: Paddr,
-    pub slot: MetaSlotModel,
-//    pub prev: Option<PPtr<Link<M>>>,
-//    pub next: Option<PPtr<Link<M>>>,
 }
 
 impl Inv for LinkModel {
@@ -23,16 +21,12 @@ impl Inv for LinkModel {
 
 pub tracked struct LinkOwner {
     pub paddr: Paddr,
-    pub slot: MetaSlotOwner,
-
-//    pub prev: Option<PPtr<Link<M>>>,
-//    pub next: Option<PPtr<Link<M>>>
+    pub in_list: Tracked<PermissionU64>,
 }
 
 impl Inv for LinkOwner {
     open spec fn inv(&self) -> bool {
         true
-//        self.self_perm@.mem_contents() is Init
     }
 }
 
@@ -42,9 +36,6 @@ impl InvView for LinkOwner {
     open spec fn view(&self) -> Self::V {
         LinkModel {
             paddr: self.paddr,
-            slot: self.slot.view(),
-//            prev: self.prev,
-//            next: self.next,
         }
     }
 
@@ -120,20 +111,22 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedListOwner<M> {
     {
         &&& self.perms.contains_key(i)
         &&& self.perms[i]@.addr() == self.list[i].paddr
+        &&& self.perms[i]@.points_to@.addr() == self.list[i].paddr
         &&& self.perms[i]@.wf()
+        &&& self.perms[i]@.addr() % META_SLOT_SIZE() == 0
         &&& FRAME_METADATA_RANGE().start <= self.perms[i]@.addr() < FRAME_METADATA_RANGE().start + MAX_NR_PAGES() * META_SLOT_SIZE()
         &&& self.perms[i]@.is_init()
-        &&& self.perms[i]@.mem_contents().value().wf(&self.list[i])
+        &&& self.perms[i]@.value().wf(&self.list[i])
         &&& i == 0 <==> self.perms[i]@.mem_contents().value().prev is None
-        &&& i == self.list.len() - 1 <==> self.perms[i]@.mem_contents().value().next is None
+        &&& i == self.list.len() - 1 <==> self.perms[i]@.value().next is None
         &&& 0 < i ==>
-            self.perms[i]@.mem_contents().value().prev is Some &&
-            self.perms[i]@.mem_contents().value().prev.unwrap() == self.perms[i-1]@.pptr()
+            self.perms[i]@.value().prev is Some &&
+            self.perms[i]@.value().prev.unwrap() == self.perms[i-1]@.pptr()
         &&& i < self.list.len() - 1 ==>
-            self.perms[i]@.mem_contents().value().next is Some &&
-            self.perms[i]@.mem_contents().value().next.unwrap() == self.perms[i+1]@.pptr()
+            self.perms[i]@.value().next is Some &&
+            self.perms[i]@.value().next.unwrap() == self.perms[i+1]@.pptr()
         &&& self.list[i].inv()
-        &&& self.list[i].slot@.in_list == self.list_id
+        &&& self.list[i].in_list@.points_to(self.list_id)
     }
 
     pub open spec fn view_helper(owners: Seq<LinkOwner>) -> Seq<LinkModel>
@@ -188,12 +181,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedListOwner<M> {
         };
         links.update(i, new_link)
     }*/
-
-    pub open spec fn region_consistency(self, regions:MetaRegionOwners) -> bool {
-        forall |i:int|
-            0 <= i < self.list.len() ==>
-            self.list[i].slot == regions.slot_owners[frame_to_index(meta_to_frame(self.list[i].paddr))]
-    }
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for LinkedList<M> {
