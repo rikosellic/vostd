@@ -102,8 +102,12 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             old(regions).inv(),
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
-            old(regions).slots.contains_key(frame_to_index(paddr))
+            old(regions).slots.contains_key(frame_to_index(paddr)),
+            old(regions).slot_owners[frame_to_index(paddr)].usage is Unused,
+            old(regions).slot_owners[frame_to_index(paddr)].in_list@.points_to(0),
+            old(regions).slot_owners[frame_to_index(paddr)].self_addr == frame_to_meta(paddr),
         ensures
+            res.is_ok() ==> regions.view() == MetaSlot::get_from_unused_spec::<M>(paddr, metadata, false, old(regions).view()).1,
     {
         #[verus_spec(with Tracked(regions))]
         let from_unused = MetaSlot::get_from_unused(paddr, metadata, false);

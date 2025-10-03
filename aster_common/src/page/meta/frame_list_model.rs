@@ -21,7 +21,7 @@ impl Inv for LinkModel {
 
 pub tracked struct LinkOwner {
     pub paddr: Paddr,
-    pub in_list: Tracked<PermissionU64>,
+    pub in_list: u64,
 }
 
 impl Inv for LinkOwner {
@@ -126,7 +126,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedListOwner<M> {
             self.perms[i]@.value().next is Some &&
             self.perms[i]@.value().next.unwrap() == self.perms[i+1]@.pptr()
         &&& self.list[i].inv()
-        &&& self.list[i].in_list@.points_to(self.list_id)
+        &&& self.list[i].in_list == self.list_id
     }
 
     pub open spec fn view_helper(owners: Seq<LinkOwner>) -> Seq<LinkModel>
@@ -364,8 +364,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorOwner<M> {
             index: list_own.list.len() as int,
         }
     }
+}
 
-
+impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrameOwner<Link<M>> {
+    pub open spec fn frame_link_inv(&self) -> bool {
+        &&& self.meta_perm@.value().prev is None
+        &&& self.meta_perm@.value().next is None
+        &&& self.meta_own@.paddr == self.slot_perm@.addr()
+    }
 }
 
 }

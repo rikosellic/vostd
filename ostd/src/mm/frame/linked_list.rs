@@ -104,6 +104,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M>
             old(regions).inv(),
             old(regions).slot_owners[frame_to_index(meta_to_frame(frame.ptr.addr()))].in_list@.is_for(
                 old(frame_own).slot_perm@.value().in_list),
+            old(frame_own).frame_link_inv(),
     {
         #[verus_spec(with Tracked(owner), Tracked(perm))]
         let (cursor, cursor_own) = Self::cursor_front_mut(ptr);
@@ -163,6 +164,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M>
             old(regions).inv(),
             old(regions).slot_owners[frame_to_index(meta_to_frame(frame.ptr.addr()))].in_list@.is_for(
                 old(frame_own).slot_perm@.value().in_list),
+            old(frame_own).frame_link_inv(),
     {
         #[verus_spec(with Tracked(owner), Tracked(perm))]
         let (cursor, cursor_own) = Self::cursor_back_mut(ptr);
@@ -529,6 +531,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
             old(owner).length() == 0 ==> res.is_none(),
             res.is_some() ==> res.unwrap().0.model(&res.unwrap().1@).meta == old(owner).list_own.list[old(owner).index]@,
             res.is_some() ==> self.model(&*owner) == old(self).model(&old(owner)).remove(),
+            res.is_some() ==> res.unwrap().1@.frame_link_inv(),
     {
         let ghost owner0 = *owner;
 
@@ -623,6 +626,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
             old(regions).slot_owners[frame_to_index(meta_to_frame(frame.ptr.addr()))].in_list@.is_for(
                 old(frame_own).slot_perm@.value().in_list),
             old(frame_own).meta_perm@.addr() == frame.ptr.addr(),
+            old(frame_own).frame_link_inv(),
         ensures
             self.model(owner) == old(self).model(old(owner)).insert(frame_own.meta_own@@),
             self.wf(&*owner),
@@ -637,11 +641,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
 
         #[verus_spec(with Tracked(slot_own), Tracked(frame_own.slot_perm.borrow()))]
         let frame_ptr = frame.meta_mut();
-
-        assert(frame_own.meta_perm@.mem_contents().value().prev is None) by { admit() };
-        assert(frame_own.meta_perm@.mem_contents().value().next is None) by { admit() };
-        assert(FRAME_METADATA_RANGE().start <= frame_own.meta_perm@.addr() < FRAME_METADATA_RANGE().start + MAX_NR_PAGES()*META_SLOT_SIZE()) by { admit() };
-
 
         if let Some(current) = self.current {
             assert(owner.list_own.inv_at(owner.index));
@@ -664,14 +663,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
                 update_field!(frame_ptr => next <- Some(prev); frame_own.meta_perm);
 
                 update_field!(current => prev <- Some(frame_ptr); owner.list_own.perms, owner.index);
-
             } else {
                 update_field!(frame_ptr => next <- Some(current); frame_own.meta_perm);
 
                 update_field!(current => prev <- Some(frame_ptr); owner.list_own.perms, owner.index);
 
                 update_field!(self.list => front <- Some(frame_ptr); owner.list_perm);
-                
             }
         } else {
             // We are at the "ghost" non-element.
@@ -698,35 +695,23 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
         #[verus_spec(with Tracked(frame_own.slot_perm.borrow()))]
         let slot = frame.slot();
         
-        assert(slot == regions.slots[frame_to_index(frame.ptr.addr())]@.mem_contents().value()) by { admit() };
-        assert(regions.slot_owners[frame_to_index(frame.ptr.addr())].in_list@.is_for(
-                regions.slots[frame_to_index(frame.ptr.addr())]@.mem_contents().value().in_list)) by { admit() };
-        assert(frame.ptr.addr() == frame_ptr.addr()) by { admit() };
-
-        assert(regions.slot_owners.contains_key(frame_to_index(meta_to_frame(frame.ptr.addr()))));
         let tracked mut slot_own = regions.slot_owners.tracked_remove(frame_to_index(meta_to_frame(frame.ptr.addr())));
 
         slot.in_list.store(Tracked(slot_own.in_list.borrow_mut()), #[verus_spec(with Tracked(&mut owner.list_own))] LinkedList::<M>::lazy_get_id(self.list));
-
-        proof { regions.slot_owners.tracked_insert(frame_to_index(meta_to_frame(frame.ptr.addr())), slot_own) }
+        proof {
+            regions.slot_owners.tracked_insert(frame_to_index(meta_to_frame(frame.ptr.addr())), slot_own);
+            frame_own.meta_own@.in_list = owner.list_own.list_id;
+        }
 
         CursorOwner::<M>::list_insert(Tracked(owner), Tracked(frame_own.meta_own.borrow_mut()), Tracked(frame_own.meta_perm.borrow()));
-        assert(owner.list_own.list[owner.index-1].in_list@.value() == owner.list_own.list_id) by { admit() };
 
         // Forget the frame to transfer the ownership to the list.
 //        let _ = frame.into_raw();
 
         update_field!(self.list => size += 1; owner.list_perm);
 
-        assert(forall |i:int| 0 <= i < owner.index-2 ==> owner.list_own.list[i] == owner0.list_own.list[i]);
-        assert(forall |i:int| 0 <= i < owner.index-2 ==> owner.list_own.perms[i] == owner0.list_own.perms[i]);
-        assert(forall |i:int| 0 <= i < owner.index-2 ==> owner.list_own.perms.contains_key(i)) by { admit() };
-        assert(forall |i:int| 0 <= i < owner.index-2 ==> owner0.list_own.inv_at(i) ==> owner.list_own.inv_at(i));
-
-        assert(forall |i:int| owner.index+1 <= i < owner.length() ==> owner.list_own.list[i] == owner0.list_own.list[i-1]);
-        assert(forall |i:int| owner.index+1 <= i < owner.length() ==> owner.list_own.perms[i] == owner0.list_own.perms[i-1]);
-        assert(forall |i:int| owner.index+1 <= i < owner.length() ==> owner.list_own.perms.contains_key(i)) by { admit() };
-        assert(forall |i:int| owner.index+1 <= i < owner.length() ==> owner0.list_own.inv_at(i-1) == owner.list_own.inv_at(i));
+        assert(forall |i:int| 0 <= i < owner.index-1 ==> owner0.list_own.inv_at(i) ==> owner.list_own.inv_at(i));
+        assert(forall |i:int| owner.index <= i < owner.length() ==> owner0.list_own.inv_at(i-1) == owner.list_own.inv_at(i));
 
         proof { owner0.insert_owner_spec_implies_model_spec(frame_own.meta_own@, *owner); }
     }

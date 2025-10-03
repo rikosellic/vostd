@@ -236,20 +236,22 @@ impl MetaSlot {
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
             old(regions).inv(),
-            old(regions).slots.contains_key(frame_to_index(paddr))
+            old(regions).slots.contains_key(frame_to_index(paddr)),
+            old(regions).slot_owners[frame_to_index(paddr)].usage is Unused,
+            old(regions).slot_owners[frame_to_index(paddr)].in_list@.points_to(0),
+            old(regions).slot_owners[frame_to_index(paddr)].self_addr == frame_to_meta(paddr),
         ensures
             res.is_ok() ==>
             MetaSlot::get_from_unused_spec::<M>(paddr, metadata, as_unique_ptr, old(regions).view()) == (res.unwrap(), regions.view()),
     {
+        let ghost old_regions = *regions;
+
         proof { regions.inv_implies_correct_addr(paddr); }
 
         let tracked mut slot_own = regions.slot_owners.tracked_remove(frame_to_index(paddr));
         let tracked mut slot_perm = regions.slots.tracked_remove(frame_to_index(paddr));
 
         let slot = get_slot(paddr, Tracked(&slot_own))?;
-
-        let ghost old_regions = *regions;
-
 
         // `Acquire` pairs with the `Release` in `drop_last_in_place` and ensures the metadata
         // initialization won't be reordered before this memory compare-and-exchange.
@@ -279,11 +281,12 @@ impl MetaSlot {
         }
 
         proof {
+            slot_own.usage = PageUsage::Frame;
             regions.slots.tracked_insert(frame_to_index(paddr), slot_perm);
             regions.slot_owners.tracked_insert(frame_to_index(paddr), slot_own);
         }
 
-        assert(MetaSlot::get_from_unused_spec::<M>(paddr, metadata, as_unique_ptr, old_regions.view()).1 == regions.view()) by { admit() };
+        assert(regions@.slots == old_regions@.slots.insert(frame_to_index(paddr), slot_own@));
 
         Ok(slot)
     }
@@ -460,12 +463,18 @@ impl MetaSlot {
     #[verus_spec(
         with Tracked(slot_own): Tracked<&mut MetaSlotOwner>
     )]
-    pub(super) fn write_meta<M: AnyFrameMeta>(&self, metadata: M)
+    pub fn write_meta<M: AnyFrameMeta + Repr<MetaSlotStorage>>(&self, metadata: M)
         requires
 //            old(regions).slots.contains_key()
             old(slot_own).storage@.pptr() == self.storage
         ensures
-            slot_own.ref_count == old(slot_own).ref_count
+            slot_own.ref_count == old(slot_own).ref_count,
+            slot_own.storage@.is_init(),
+            slot_own.storage@.value() == metadata.to_repr(),
+            slot_own.vtable_ptr@.is_init(),
+            slot_own.vtable_ptr@.value() == metadata.vtable_ptr(),
+            slot_own.in_list == old(slot_own).in_list,
+            slot_own.self_addr == old(slot_own).self_addr,
     {
 //        const { assert!(size_of::<M>() <= FRAME_METADATA_MAX_SIZE) };
 //        const { assert!(align_of::<M>() <= FRAME_METADATA_MAX_ALIGN) };

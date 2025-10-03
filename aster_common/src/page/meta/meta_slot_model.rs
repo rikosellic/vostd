@@ -183,6 +183,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Inv for UniqueFrameOwner
         &&& self.slot_perm@.value().storage.addr() == self.meta_perm@.points_to@.addr()
         &&& self.meta_perm@.is_init()
         &&& self.meta_perm@.wf()
+        &&& self.meta_perm@.addr() % META_SLOT_SIZE() == 0
+        &&& FRAME_METADATA_RANGE().start <= self.meta_perm@.addr() < FRAME_METADATA_RANGE().start + MAX_NR_PAGES()*META_SLOT_SIZE()
 //    &&& self.slot_own@.inv()
 //    &&& self.slot_own@.ref_count@.value() == REF_COUNT_UNIQUE
 //    &&& self.slot_own@.vtable_ptr@.is_init()
@@ -223,31 +225,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> OwnerOf for UniqueFrame<
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> ModelOf for UniqueFrame<M> { }
-
-impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
-
-    pub open spec fn from_unused_spec(paddr: Paddr, metadata: M, pre: MetaRegionModel)
-        -> (Self, MetaRegionModel)
-        recommends
-            paddr % PAGE_SIZE() == 0,
-            paddr < MAX_PADDR(),
-            pre.inv(),
-            pre.slots[frame_to_index(paddr)].ref_count == REF_COUNT_UNUSED,
-    {
-        let (ptr, post) = MetaSlot::get_from_unused_spec(paddr, metadata, true, pre);
-        (UniqueFrame { ptr, _marker: PhantomData }, post)
-    }
-
-    pub proof fn from_unused_properties(paddr: Paddr, metadata: M, pre: MetaRegionModel)
-        requires
-            paddr % 4096 == 0,
-            paddr < MAX_PADDR(),
-            pre.inv(),
-            pre.slots[paddr / 4096].ref_count == REF_COUNT_UNUSED,
-        ensures
-            UniqueFrame::from_unused_spec(paddr, metadata, pre).1.inv(),
-    { }
-}
 
 /*impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameModel<M> {
     pub open spec fn from_raw_spec(region: MetaRegionModel, paddr: Paddr) -> Self {
