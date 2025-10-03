@@ -234,9 +234,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M>
             regions.slots.tracked_insert(frame_to_index(frame), slot_perm);
         }
 
-        #[verus_spec(with Tracked(owner))]
-        let id = Self::lazy_get_id(ptr);
-        in_list == id
+        in_list == #[verus_spec(with Tracked(owner))] Self::lazy_get_id(ptr)
     }
 
     /// Gets a cursor at the specified frame if the frame is in the list.
@@ -266,10 +264,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M>
 
         let slot = slot_ptr.take(Tracked(slot_perm.borrow_mut()));
         let in_list = slot.in_list.load(Tracked(slot_own.in_list.borrow_mut())); 
-
-        #[verus_spec(with Tracked(owner))]
-        let id = Self::lazy_get_id(ptr);
-        let contains = in_list == id;
+        let contains = in_list == #[verus_spec(with Tracked(owner))] Self::lazy_get_id(ptr);
 
         #[verus_spec(with Tracked(&slot_own))]
         let meta_ptr : ReprPtr<MetaSlotStorage, Link<M>> = slot.as_meta_ptr();
@@ -370,7 +365,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M>
     )]
     fn lazy_get_id(ptr: PPtr<Self>) -> (id:u64)
         ensures
-            old(owner).list_id != 0 ==> id == old(owner).list_id && owner == old(owner),
+            old(owner).list_id != 0 ==> id == old(owner).list_id && owner == old(owner)
     {
         unimplemented!()
 /*        // FIXME: Self-incrementing IDs may overflow, while `core::pin::Pin`
@@ -710,7 +705,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
 
         assert(regions.slot_owners.contains_key(frame_to_index(meta_to_frame(frame.ptr.addr()))));
         let tracked mut slot_own = regions.slot_owners.tracked_remove(frame_to_index(meta_to_frame(frame.ptr.addr())));
-        slot.in_list.store(Tracked(slot_own.in_list.borrow_mut()), LinkedList::<M>::lazy_get_id(self.list));
+
+        slot.in_list.store(Tracked(slot_own.in_list.borrow_mut()), #[verus_spec(with Tracked(&mut owner.list_own))] LinkedList::<M>::lazy_get_id(self.list));
+
         proof { regions.slot_owners.tracked_insert(frame_to_index(meta_to_frame(frame.ptr.addr())), slot_own) }
 
         CursorOwner::<M>::list_insert(Tracked(owner), Tracked(frame_own.meta_own.borrow_mut()), Tracked(frame_own.meta_perm.borrow()));
