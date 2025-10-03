@@ -532,7 +532,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
             old(owner).length() > 0 ==> old(regions).slots.contains_key(frame_to_index(old(self).current.unwrap().addr()))
         ensures
             old(owner).length() == 0 ==> res.is_none(),
-            res.is_some() ==> res.unwrap().0.model(&res.unwrap().1@).slot == old(owner).list_own.list[old(owner).index]@,
+            res.is_some() ==> res.unwrap().0.model(&res.unwrap().1@).meta == old(owner).list_own.list[old(owner).index]@,
             res.is_some() ==> self.model(&*owner) == old(self).model(&old(owner)).remove(),
     {
         let ghost owner0 = *owner;
@@ -629,7 +629,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
                 old(frame_own).slot_perm@.value().in_list),
             old(frame_own).meta_perm@.addr() == frame.ptr.addr(),
         ensures
-            self.model(owner) == old(self).model(old(owner)).insert(frame_own.slot_own@@),
+            self.model(owner) == old(self).model(old(owner)).insert(frame_own.meta_own@@),
             self.wf(&*owner),
             owner.inv(),
     {
@@ -707,8 +707,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
         assert(regions.slot_owners[frame_to_index(frame.ptr.addr())].in_list@.is_for(
                 regions.slots[frame_to_index(frame.ptr.addr())]@.mem_contents().value().in_list)) by { admit() };
         assert(frame.ptr.addr() == frame_ptr.addr()) by { admit() };
-
-        let tracked mut slot_own = regions.slot_owners.tracked_remove(frame_to_index(frame.ptr.addr()));
 
         assert(regions.slot_owners.contains_key(frame_to_index(meta_to_frame(frame.ptr.addr()))));
         let tracked mut slot_own = regions.slot_owners.tracked_remove(frame_to_index(meta_to_frame(frame.ptr.addr())));
