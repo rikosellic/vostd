@@ -102,6 +102,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             old(regions).inv(),
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
+            old(regions).slots.contains_key(frame_to_index(paddr))
         ensures
     {
         #[verus_spec(with Tracked(regions))]

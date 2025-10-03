@@ -32,7 +32,7 @@ impl<'rcu, C: PageTableConfig> Deref for PageTableGuard<'rcu, C> {
 }
 
 #[rustc_has_incoherent_inherent_impls]
-pub struct Entry<'slot, 'rcu, C: PageTableConfig> {
+pub struct Entry<'rcu, C: PageTableConfig> {
     /// The page table entry.
     ///
     /// We store the page table entry here to optimize the number of reads from
@@ -45,22 +45,16 @@ pub struct Entry<'slot, 'rcu, C: PageTableConfig> {
     pub idx: usize,
     /// The node that contains the entry.
     pub node: PPtr<PageTableGuard<'rcu, C>>,
-
-    /// For proof purposes, we need to track the lifetime of the metaslot that holds this entry,
-    /// so we put it in a PhantomData field
-    pub slot: PhantomData<&'slot MetaSlot>,
 }
 
-impl<'slot, 'rcu, C: PageTableConfig> Entry<'slot, 'rcu, C> {
+impl<'rcu, C: PageTableConfig> Entry<'rcu, C> {
     pub open spec fn new_spec(pte: C::E, idx: usize, node: PPtr<PageTableGuard<'rcu, C>>) -> Self {
-        let slot = PhantomData;
-        Self { pte, idx, node, slot }
+        Self { pte, idx, node }
     }
 
     #[verifier::when_used_as_spec(new_spec)]
     pub fn new(pte: C::E, idx: usize, node: PPtr<PageTableGuard<'rcu, C>>) -> Self {
-        let slot = PhantomData;
-        Self { pte, idx, node, slot }
+        Self { pte, idx, node }
     }
 }
 

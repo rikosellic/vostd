@@ -236,6 +236,7 @@ impl MetaSlot {
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
             old(regions).inv(),
+            old(regions).slots.contains_key(frame_to_index(paddr))
         ensures
             res.is_ok() ==>
             MetaSlot::get_from_unused_spec::<M>(paddr, metadata, as_unique_ptr, old(regions).view()) == (res.unwrap(), regions.view()),
