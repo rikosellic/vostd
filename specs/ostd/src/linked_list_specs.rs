@@ -21,7 +21,7 @@ impl CursorModel {
                 }
             } else {
                 Self {
-                    fore: Seq::<MetaSlotModel>::empty(),
+                    fore: Seq::<LinkModel>::empty(),
                     rear: self.fore,
                     list_model: self.list_model
                 }
@@ -44,7 +44,7 @@ impl CursorModel {
             } else {
                 Self {
                     fore: self.rear,
-                    rear: Seq::<MetaSlotModel>::empty(),
+                    rear: Seq::<LinkModel>::empty(),
                     list_model: self.list_model
                 }
             } 
@@ -65,7 +65,7 @@ impl CursorModel {
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn insert(self, link: MetaSlotModel) -> Self {
+    pub open spec fn insert(self, link: LinkModel) -> Self {
         let fore = self.fore.insert(self.fore.len() - 1, link);
         
         Self {
@@ -96,7 +96,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorOwner<M> {
     { admit() }
  
     #[rustc_allow_incoherent_impl]
-    pub open spec fn insert_owner_spec(self, link: MetaSlotOwner, post: Self) -> bool
+    pub open spec fn insert_owner_spec(self, link: LinkOwner, post: Self) -> bool
         recommends
             self.index < self.length()
     {
@@ -106,7 +106,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorOwner<M> {
     }
 
     #[rustc_allow_incoherent_impl]
-    pub proof fn insert_owner_spec_implies_model_spec(self, link: MetaSlotOwner, post: Self)
+    pub proof fn insert_owner_spec_implies_model_spec(self, link: LinkOwner, post: Self)
         requires
             self.insert_owner_spec(link, post)
         ensures
