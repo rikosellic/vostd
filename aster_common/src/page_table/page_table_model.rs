@@ -6,8 +6,11 @@ use vstd_extra::ghost_tree;
 use vstd_extra::ownership::*;
 use vstd_extra::prelude::TreeNodeValue;
 use vstd_extra::cast_ptr::{Repr};
+use vstd_extra::array_ptr;
 
 use crate::prelude::*;
+
+use std::ops::Deref;
 
 verus! {
 
@@ -56,31 +59,20 @@ impl<C: PageTableConfig> OwnerOf for PageTablePageMeta<C> {
     }
 }
 
-pub tracked struct EntryOwner<'rcu, C: PageTableConfig> {
-//    pub slot_own : Tracked<&'static MetaSlotOwner>,
-    pub meta_own : Tracked<PageMetaOwner>,
-
-    pub guard_perm : Tracked<PointsTo<PageTableGuard<'rcu, C>>>,
+pub tracked struct NodeOwner<C:PageTableConfig> {
+    pub meta_own : PageMetaOwner,
     pub slot_perm : Tracked<PointsTo<MetaSlot>>,
     pub meta_perm : Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, PageTablePageMeta<C>>>,
 }
 
-pub ghost struct EntryModel<C: PageTableConfig> {
-    pub node : PageTablePageMeta<C>,
-}
-
-impl<'rcu, C: PageTableConfig> Inv for EntryOwner<'rcu, C> {
+impl<C: PageTableConfig> Inv for NodeOwner<C> {
     open spec fn inv(&self) -> bool {
-//        &&& self.slot_perm@.value().wf(self.slot_own@)
-//        &&& self.slot_own@.inv()
-        &&& self.guard_perm@.is_init()
-        &&& self.guard_perm@.value().inner.inner.ptr == self.slot_perm@.pptr()
         &&& self.slot_perm@.is_init()
         &&& self.slot_perm@.value().storage == self.meta_perm@.points_to@.pptr()
         &&& self.meta_perm@.points_to@.is_init()
         &&& <PageTablePageMeta<C> as Repr<MetaSlotStorage>>::wf(self.meta_perm@.points_to@.value())
-        &&& self.meta_own@.inv()
-        &&& self.meta_perm@.value().wf(&self.meta_own@)
+        &&& self.meta_own.inv()
+        &&& self.meta_perm@.value().wf(&self.meta_own)
         &&& self.meta_perm@.pptr().ptr.0 == self.slot_perm@.value().storage.addr()
         &&& self.meta_perm@.pptr().addr == self.slot_perm@.value().storage.addr()
         &&& self.meta_perm@.is_init()
@@ -90,24 +82,63 @@ impl<'rcu, C: PageTableConfig> Inv for EntryOwner<'rcu, C> {
     }
 }
 
-impl<'rcu, C: PageTableConfig> EntryOwner<'rcu, C> {
+impl<C: PageTableConfig> InvView for NodeOwner<C> {
+    type V = NodeModel<C>;
+
+    open spec fn view(&self) -> <Self as InvView>::V {
+        NodeModel {
+            meta: self.meta_perm@.value()
+        }
+    }
+
+    proof fn view_preserves_inv(&self) { }
+}
+
+pub ghost struct NodeModel<C: PageTableConfig> {
+    pub meta : PageTablePageMeta<C>,
+}
+
+impl<C: PageTableConfig> Inv for NodeModel<C> {
+    open spec fn inv(&self) -> bool { true }
+}
+
+impl<C: PageTableConfig> OwnerOf for PageTableNode<C> {
+    type Owner = NodeOwner<C>;
+
+    open spec fn wf(&self, owner: &Self::Owner) -> bool {
+        true
+    }
+}
+
+impl<C: PageTableConfig> NodeOwner<C> {
     pub open spec fn relate_slot_owner(self, slot_own: &MetaSlotOwner) -> bool {
         &&& slot_own.inv()
-        &&& self.slot_perm@.value().wf(slot_own)
+        &&& self.slot_perm@.value().wf(&slot_own)
         &&& self.slot_perm@.addr() == slot_own.self_addr
     }
 }
 
-impl< C: PageTableConfig> Inv for EntryModel<C> {
-    open spec fn inv(&self) -> bool { true }
+pub tracked struct EntryOwner<'rcu, C: PageTableConfig> {
+    pub node_own : NodeOwner<C>,
+    pub guard_perm : Tracked<PointsTo<PageTableGuard<'rcu, C>>>,
+    pub children_perm : Option<array_ptr::PointsTo<Entry<'rcu, C>, CONST_NR_ENTRIES>>,
+}
+
+impl<'rcu, C: PageTableConfig> Inv for EntryOwner<'rcu, C> {
+    open spec fn inv(&self) -> bool {
+        &&& self.guard_perm@.is_init()
+        &&& self.guard_perm@.value().inner.inner.ptr == self.node_own.slot_perm@.pptr()
+        &&& self.guard_perm@.value().inner.inner.wf(&self.node_own)
+        &&& self.node_own.inv()
+    }
 }
 
 impl<'rcu, C: PageTableConfig> InvView for EntryOwner<'rcu, C> {
-    type V = EntryModel<C>;
+    type V = NodeModel<C>;
 
     open spec fn view(&self) -> <Self as InvView>::V {
-        EntryModel {
-            node: self.meta_perm@.value()
+        NodeModel {
+            meta: self.node_own.meta_perm@.value()
         }
     }
 
@@ -118,11 +149,66 @@ impl<'rcu, C: PageTableConfig> OwnerOf for Entry<'rcu, C> {
     type Owner = EntryOwner<'rcu, C>;
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool {
+        &&& self.idx < NR_ENTRIES()
         &&& self.pte.paddr() % PAGE_SIZE() == 0
         &&& self.pte.paddr() < MAX_PADDR()
         &&& self.node == owner.guard_perm@.pptr()
     }
 }
+
+pub tracked struct OwnerInTree<'rcu, C: PageTableConfig> {
+    pub tree_node: Option<EntryOwner<'rcu, C>>
+}
+
+impl<'rcu, C: PageTableConfig> Inv for OwnerInTree<'rcu, C> {
+    open spec fn inv(&self) -> bool {
+        match self.tree_node {
+            Some(owner) => owner.inv(),
+            None => true
+        }
+    }
+}
+
+impl<'rcu, C: PageTableConfig> TreeNodeValue for OwnerInTree<'rcu, C> {
+    open spec fn default() -> Self {
+        Self {
+            tree_node: None
+        }
+    }
+
+    proof fn default_preserves_inv()
+        ensures
+            #[trigger] Self::default().inv(),
+    { }
+}
+
+pub tracked struct OwnerAsTreeNode<'rcu, C: PageTableConfig> {
+    pub inner: ghost_tree::Node<OwnerInTree<'rcu, C>, CONST_NR_ENTRIES, CONST_NR_LEVELS>,
+}
+
+impl<'rcu, C: PageTableConfig> Deref for OwnerAsTreeNode<'rcu, C> {
+    type Target = ghost_tree::Node<OwnerInTree<'rcu, C>, CONST_NR_ENTRIES, CONST_NR_LEVELS>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<'rcu, C: PageTableConfig> OwnerAsTreeNode<'rcu, C> {
+    pub open spec fn valid_ptrs(&self) -> bool {
+        forall |i: usize|
+            0 <= i < NR_ENTRIES() ==>
+            self.inner.children[i as int] is Some ==>
+            {
+            &&& self.inner.value.tree_node.unwrap().children_perm.unwrap().is_init(i as int)
+            &&& self.inner.children[i as int].unwrap().value.tree_node is Some
+            &&& self.inner.value.tree_node.unwrap().children_perm.unwrap().opt_value()[i as int].value().wf(
+                &self.inner.children[i as int].unwrap().value.tree_node.unwrap())
+            }
+    }
+}
+
+/* ****** Phase I models ****** */
 
 pub tracked struct PageTableNodeOwner {
     pub paddr: usize,
@@ -184,34 +270,6 @@ impl InvView for PageTableNodeOwner {
     }
 
     proof fn view_preserves_inv(&self) { }
-}
-
-impl<C: PageTableConfig> OwnerOf for PageTableNode<C> {
-    type Owner = PageTableNodeOwner;
-
-    open spec fn wf(&self, owner: &Self::Owner) -> bool {
-        true
-    }
-}
-
-impl TreeNodeValue for PageTableNodeOwner {
-    open spec fn default() -> Self {
-        Self {
-            paddr: 0,
-            is_pt: true,
-            is_tracked: true,
-            nr_raws: 0,
-            is_locked: false,
-            in_cpu: 0,
-            nr_parents: 0,
-            entries: [None; CONST_NR_ENTRIES],
-        }
-    }
-
-    proof fn default_preserves_inv()
-        ensures
-            #[trigger] Self::default().inv(),
-    { }
 }
 
 impl TreeNodeValue for PageTableNodeModel {

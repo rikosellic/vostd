@@ -46,10 +46,14 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         requires
             owner.inv(),
             self.wf(&owner),
-            owner.relate_slot_owner(slot_own),
+            owner.node_own.relate_slot_owner(slot_own),
     {
         let guard = self.node.borrow(Tracked(owner.guard_perm.borrow()));
-        self.pte.is_present() && !self.pte.is_last(#[verus_spec(with Tracked(slot_own), Tracked(owner.slot_perm.borrow()), Tracked(owner.meta_perm.borrow()))] guard.level())
+
+        self.pte.is_present() &&
+            !self.pte.is_last(#[verus_spec(with Tracked(slot_own),
+                                                Tracked(owner.node_own.slot_perm.borrow()),
+                                                Tracked(owner.node_own.meta_perm.borrow()))] guard.level())
     }
 
 /*    /// Gets a reference to the child.
@@ -60,32 +64,46 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         unsafe { ChildRef::from_pte(&self.pte, self.node.level()) }
     }*/
 
-/*    /// Operates on the mapping properties of the entry.
+    /// Operates on the mapping properties of the entry.
     ///
     /// It only modifies the properties if the entry is present.
     #[rustc_allow_incoherent_impl]
-    pub fn protect(&mut self, op: &mut impl FnMut(&mut PageProperty)) {
+    #[verus_spec(
+        with Tracked(owner) : Tracked<&mut EntryOwner<'rcu, C>>,
+            Tracked(slot_own) : Tracked<&MetaSlotOwner>
+    )]
+    pub fn protect(&mut self, op: impl FnOnce(PageProperty) -> PageProperty)
+        requires
+            old(owner).inv(),
+            old(self).wf(&*old(owner)),
+            old(owner).node_own.relate_slot_owner(slot_own),
+            op.requires((old(self).pte.prop(),))
+    {
         if !self.pte.is_present() {
             return;
         }
 
         let prop = self.pte.prop();
-        let mut new_prop = prop;
-        op(&mut new_prop);
+        let new_prop = op(prop);
 
-        if prop == new_prop {
+/*        if prop == new_prop {
             return;
-        }
+        }*/
 
         self.pte.set_prop(new_prop);
+
+        let mut guard = self.node.take(Tracked(owner.guard_perm.borrow_mut()));
 
         // SAFETY:
         //  1. The index is within the bounds.
         //  2. We replace the PTE with a new one, which differs only in
         //     `PageProperty`, so the level still matches the current
         //     page table node.
-//        unsafe { self.node.write_pte(self.idx, self.pte) };
-    }*/
+        #[verus_spec(with Tracked(&mut owner.node_own), Tracked(slot_own))]
+        guard.write_pte(self.idx, self.pte);
+
+        self.node.put(Tracked(owner.guard_perm.borrow_mut()), guard)
+    }
 
     /// Replaces the entry with a new child.
     ///
@@ -126,7 +144,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         // SAFETY:
         //  - The PTE is not referenced by other `ChildRef`s (since we have `&mut self`).
         //  - The level matches the current node.
-        #[verus_spec(with Tracked(slot_own), Tracked(owner.slot_perm.borrow()), Tracked(owner.meta_perm.borrow()))]
+        #[verus_spec(with Tracked(slot_own), Tracked(owner.node_own.slot_perm.borrow()), Tracked(owner.node_own.meta_perm.borrow()))]
         let level = guard.level();
 
         #[verus_spec(with Tracked(regions))]
@@ -142,7 +160,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             nr_children.put(Tracked(nr_children_perm), _tmp-1);
         }
 
-        #[verus_spec(with Tracked(slot_own), Tracked(owner.slot_perm.borrow()))]
+        #[verus_spec(with Tracked(slot_own), Tracked(owner.node_own.slot_perm.borrow()))]
         let new_pte = new_child.into_pte();
 
         // SAFETY:
@@ -263,7 +281,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             owner.guard_perm@.pptr() == guard,
     {
         // SAFETY: The index is within the bound.
-        #[verus_spec(with Tracked(owner), Tracked(slot_own))]
+        #[verus_spec(with Tracked(owner.node_own), Tracked(slot_own))]
         let pte = guard.borrow(Tracked(owner.guard_perm.borrow())).read_pte(idx);
         Self {
             pte,

@@ -208,7 +208,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     pub fn entry<'slot>(guard: PPtr<Self>, idx: usize) -> Entry<'rcu, C>
         requires
             owner.inv(),
-            owner.slot_perm@.value().wf(slot_own),
+            owner.node_own.relate_slot_owner(slot_own),
             owner.guard_perm@.pptr() == guard,
     {
 //        assert!(idx < nr_subpage_per_huge::<C>());
@@ -220,27 +220,27 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     /// Gets the number of valid PTEs in the node.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<EntryOwner<C>>,
+        with Tracked(owner) : Tracked<NodeOwner<C>>,
             Tracked(slot_own) : Tracked<&MetaSlotOwner>
     )]
     pub fn nr_children(&self) -> u16
         requires
             self.inner.inner.ptr == owner.slot_perm@.pptr(),
             owner.inv(),
-            owner.slot_perm@.value().wf(slot_own),
+            owner.relate_slot_owner(slot_own),
             slot_own.inv()
     {
         // SAFETY: The lock is held so we have an exclusive access.
         #[verus_spec(with Tracked(slot_own), Tracked(owner.slot_perm.borrow()), Tracked(owner.meta_perm.borrow()))]
         let meta = self.meta();
 
-        *meta.nr_children.borrow(Tracked(owner.meta_own.borrow().nr_children.borrow()))
+        *meta.nr_children.borrow(Tracked(owner.meta_own.nr_children.borrow()))
     }
 
     /// Returns if the page table node is detached from its parent.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<EntryOwner<C>>,
+        with Tracked(owner) : Tracked<NodeOwner<C>>,
             Tracked(slot_own) : Tracked<&MetaSlotOwner>
     )]
     pub fn stray_mut(&mut self) -> PCell<bool>
@@ -266,7 +266,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     /// The caller must ensure that the index is within the bound.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<EntryOwner<C>>,
+        with Tracked(owner) : Tracked<NodeOwner<C>>,
             Tracked(slot_own) : Tracked<&MetaSlotOwner>
     )]
     pub fn read_pte(&self, idx: usize) -> C::E
@@ -303,14 +303,14 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     ///     with the page table node.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<EntryOwner<C>>,
+        with Tracked(owner) : Tracked<&mut NodeOwner<C>>,
             Tracked(slot_own) : Tracked<&MetaSlotOwner>
     )]
     pub fn write_pte(&mut self, idx: usize, pte: C::E)
         requires
-            old(self).inner.inner.ptr == owner.slot_perm@.pptr(),
-            owner.inv(),
-            owner.relate_slot_owner(slot_own),
+            old(self).inner.inner.ptr == old(owner).slot_perm@.pptr(),
+            old(owner).inv(),
+            old(owner).relate_slot_owner(slot_own),
             idx < NR_ENTRIES(),
     {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
