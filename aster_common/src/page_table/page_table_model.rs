@@ -6,8 +6,11 @@ use vstd_extra::ghost_tree;
 use vstd_extra::ownership::*;
 use vstd_extra::prelude::TreeNodeValue;
 use vstd_extra::cast_ptr::{Repr};
+use vstd_extra::array_ptr;
 
 use crate::prelude::*;
+
+use std::ops::Deref;
 
 verus! {
 
@@ -62,7 +65,7 @@ pub tracked struct NodeOwner<C:PageTableConfig> {
     pub meta_perm : Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, PageTablePageMeta<C>>>,
 }
 
-impl<'rcu, C: PageTableConfig> Inv for NodeOwner<C> {
+impl<C: PageTableConfig> Inv for NodeOwner<C> {
     open spec fn inv(&self) -> bool {
         &&& self.slot_perm@.is_init()
         &&& self.slot_perm@.value().storage == self.meta_perm@.points_to@.pptr()
@@ -79,7 +82,7 @@ impl<'rcu, C: PageTableConfig> Inv for NodeOwner<C> {
     }
 }
 
-impl<'rcu, C: PageTableConfig> InvView for NodeOwner<C> {
+impl<C: PageTableConfig> InvView for NodeOwner<C> {
     type V = NodeModel<C>;
 
     open spec fn view(&self) -> <Self as InvView>::V {
@@ -95,11 +98,11 @@ pub ghost struct NodeModel<C: PageTableConfig> {
     pub meta : PageTablePageMeta<C>,
 }
 
-impl< C: PageTableConfig> Inv for NodeModel<C> {
+impl<C: PageTableConfig> Inv for NodeModel<C> {
     open spec fn inv(&self) -> bool { true }
 }
 
-impl<'rcu, C: PageTableConfig> OwnerOf for PageTableNode<C> {
+impl<C: PageTableConfig> OwnerOf for PageTableNode<C> {
     type Owner = NodeOwner<C>;
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool {
@@ -118,6 +121,7 @@ impl<C: PageTableConfig> NodeOwner<C> {
 pub tracked struct EntryOwner<'rcu, C: PageTableConfig> {
     pub node_own : NodeOwner<C>,
     pub guard_perm : Tracked<PointsTo<PageTableGuard<'rcu, C>>>,
+    pub children_perm : Option<array_ptr::PointsTo<Entry<'rcu, C>, CONST_NR_ENTRIES>>,
 }
 
 impl<'rcu, C: PageTableConfig> Inv for EntryOwner<'rcu, C> {
@@ -151,6 +155,60 @@ impl<'rcu, C: PageTableConfig> OwnerOf for Entry<'rcu, C> {
         &&& self.node == owner.guard_perm@.pptr()
     }
 }
+
+pub tracked struct OwnerInTree<'rcu, C: PageTableConfig> {
+    pub tree_node: Option<EntryOwner<'rcu, C>>
+}
+
+impl<'rcu, C: PageTableConfig> Inv for OwnerInTree<'rcu, C> {
+    open spec fn inv(&self) -> bool {
+        match self.tree_node {
+            Some(owner) => owner.inv(),
+            None => true
+        }
+    }
+}
+
+impl<'rcu, C: PageTableConfig> TreeNodeValue for OwnerInTree<'rcu, C> {
+    open spec fn default() -> Self {
+        Self {
+            tree_node: None
+        }
+    }
+
+    proof fn default_preserves_inv()
+        ensures
+            #[trigger] Self::default().inv(),
+    { }
+}
+
+pub tracked struct OwnerAsTreeNode<'rcu, C: PageTableConfig> {
+    pub inner: ghost_tree::Node<OwnerInTree<'rcu, C>, CONST_NR_ENTRIES, CONST_NR_LEVELS>,
+}
+
+impl<'rcu, C: PageTableConfig> Deref for OwnerAsTreeNode<'rcu, C> {
+    type Target = ghost_tree::Node<OwnerInTree<'rcu, C>, CONST_NR_ENTRIES, CONST_NR_LEVELS>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<'rcu, C: PageTableConfig> OwnerAsTreeNode<'rcu, C> {
+    pub open spec fn valid_ptrs(&self) -> bool {
+        forall |i: usize|
+            0 <= i < NR_ENTRIES() ==>
+            self.inner.children[i as int] is Some ==>
+            {
+            &&& self.inner.value.tree_node.unwrap().children_perm.unwrap().is_init(i as int)
+            &&& self.inner.children[i as int].unwrap().value.tree_node is Some
+            &&& self.inner.value.tree_node.unwrap().children_perm.unwrap().opt_value()[i as int].value().wf(
+                &self.inner.children[i as int].unwrap().value.tree_node.unwrap())
+            }
+    }
+}
+
+/* ****** Phase I models ****** */
 
 pub tracked struct PageTableNodeOwner {
     pub paddr: usize,
@@ -212,26 +270,6 @@ impl InvView for PageTableNodeOwner {
     }
 
     proof fn view_preserves_inv(&self) { }
-}
-
-impl TreeNodeValue for PageTableNodeOwner {
-    open spec fn default() -> Self {
-        Self {
-            paddr: 0,
-            is_pt: true,
-            is_tracked: true,
-            nr_raws: 0,
-            is_locked: false,
-            in_cpu: 0,
-            nr_parents: 0,
-            entries: [None; CONST_NR_ENTRIES],
-        }
-    }
-
-    proof fn default_preserves_inv()
-        ensures
-            #[trigger] Self::default().inv(),
-    { }
 }
 
 impl TreeNodeValue for PageTableNodeModel {
