@@ -7,6 +7,8 @@ use vstd::simple_pptr::*;
 
 use aster_common::prelude::*;
 
+use vstd_extra::ownership::*;
+
 use core::mem::ManuallyDrop;
 
 use super::{PageTableNode, PageTableNodeRef};
@@ -15,23 +17,29 @@ use crate::{
 //    sync::RcuDrop,
 };
 
-use aster_common::prelude::*;
-
 verus!{
 impl<C: PageTableConfig> Child<C> {
 
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(slot_own): Tracked<&MetaSlotOwner>,
-            Tracked(slot_perm): Tracked<&PointsTo<MetaSlot>>
+        with slot_own: Option<Tracked<&MetaSlotOwner>>,
+            slot_perm: Option<Tracked<&PointsTo<MetaSlot>>>
     )]
     pub fn into_pte(self) -> C::E
         requires
-            FRAME_METADATA_RANGE().start <= frame_to_index(self.get_node().unwrap().ptr.addr()) < FRAME_METADATA_RANGE().end,
+            self is PageTable ==>
+            {
+                &&& slot_own is Some
+                &&& slot_own.unwrap()@.inv()
+                &&& slot_perm is Some
+                &&& slot_perm.unwrap()@.pptr() == self.get_node().unwrap().ptr
+                &&& slot_perm.unwrap()@.is_init()
+                &&& slot_perm.unwrap()@.value().wf(&slot_own.unwrap()@)
+            }
     {
         match self {
             Child::PageTable(node) => {
-                #[verus_spec(with Tracked(slot_own), Tracked(slot_perm))]
+                #[verus_spec(with Tracked(slot_own.tracked_unwrap().borrow()), Tracked(slot_perm.tracked_unwrap().borrow()))]
                 let paddr = node.start_paddr();
                 let _ = ManuallyDrop::new(node);
                 C::E::new_pt(paddr)
