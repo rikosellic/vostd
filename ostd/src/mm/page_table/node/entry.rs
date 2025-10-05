@@ -160,7 +160,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             nr_children.put(Tracked(nr_children_perm), _tmp-1);
         }
 
-        #[verus_spec(with Tracked(slot_own), Tracked(owner.node_own.slot_perm.borrow()))]
+        #[verus_spec(with Some(Tracked(slot_own)), Some(Tracked(owner.node_own.slot_perm.borrow())))]
         let new_pte = new_child.into_pte();
 
         // SAFETY:
