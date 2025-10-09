@@ -208,7 +208,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     pub fn entry<'slot>(guard: PPtr<Self>, idx: usize) -> Entry<'rcu, C>
         requires
             owner.inv(),
-            owner.node_own.relate_slot_owner(slot_own),
+            owner.relate_slot_owner(slot_own),
             owner.guard_perm@.pptr() == guard,
     {
 //        assert!(idx < nr_subpage_per_huge::<C>());
@@ -220,7 +220,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     /// Gets the number of valid PTEs in the node.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<NodeOwner<C>>,
+        with Tracked(owner) : Tracked<EntryOwner<C>>,
             Tracked(slot_own) : Tracked<&MetaSlotOwner>
     )]
     pub fn nr_children(&self) -> u16
@@ -231,16 +231,16 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             slot_own.inv()
     {
         // SAFETY: The lock is held so we have an exclusive access.
-        #[verus_spec(with Tracked(slot_own), Tracked(owner.slot_perm.borrow()), Tracked(owner.meta_perm.borrow()))]
+        #[verus_spec(with Tracked(slot_own), Tracked(owner.slot_perm.borrow()), Tracked(owner.node_own.meta_perm.borrow()))]
         let meta = self.meta();
 
-        *meta.nr_children.borrow(Tracked(owner.meta_own.nr_children.borrow()))
+        *meta.nr_children.borrow(Tracked(owner.node_own.meta_own.nr_children.borrow()))
     }
 
     /// Returns if the page table node is detached from its parent.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<NodeOwner<C>>,
+        with Tracked(owner) : Tracked<EntryOwner<C>>,
             Tracked(slot_own) : Tracked<&MetaSlotOwner>
     )]
     pub fn stray_mut(&mut self) -> PCell<bool>
@@ -250,7 +250,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             owner.relate_slot_owner(slot_own),
     {
         // SAFETY: The lock is held so we have an exclusive access.
-        #[verus_spec(with Tracked(slot_own), Tracked(owner.slot_perm.borrow()), Tracked(owner.meta_perm.borrow()))]
+        #[verus_spec(with Tracked(slot_own), Tracked(owner.slot_perm.borrow()), Tracked(owner.node_own.meta_perm.borrow()))]
         let meta = self.meta();
         meta.get_stray()
     }
@@ -267,18 +267,23 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
         with Tracked(owner) : Tracked<NodeOwner<C>>,
-            Tracked(slot_own) : Tracked<&MetaSlotOwner>
+            Tracked(slot_own) : Tracked<&MetaSlotOwner>,
+            Tracked(slot_perm) : Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
     pub fn read_pte(&self, idx: usize) -> C::E
         requires
-            self.inner.inner.ptr == owner.slot_perm@.pptr(),
+            self.inner.inner.ptr == slot_perm.pptr(),
             owner.inv(),
-            owner.relate_slot_owner(slot_own),
+            slot_own.inv(),
+            slot_perm.is_init(),
+            slot_perm.value().wf(&slot_own),
+            slot_perm.addr() == slot_own.self_addr,
+            meta_to_frame(slot_perm.addr()) < VMALLOC_BASE_VADDR() - LINEAR_MAPPING_BASE_VADDR(),
             idx < NR_ENTRIES(),
     {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
         let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(paddr_to_vaddr(
-            #[verus_spec(with Tracked(&slot_own), Tracked(owner.slot_perm.borrow()))]
+            #[verus_spec(with Tracked(&slot_own), Tracked(slot_perm))]
             self.start_paddr()
         ));
 
@@ -304,18 +309,23 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
         with Tracked(owner) : Tracked<&mut NodeOwner<C>>,
-            Tracked(slot_own) : Tracked<&MetaSlotOwner>
+            Tracked(slot_own) : Tracked<&MetaSlotOwner>,
+            Tracked(slot_perm) : Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
     pub fn write_pte(&mut self, idx: usize, pte: C::E)
         requires
-            old(self).inner.inner.ptr == old(owner).slot_perm@.pptr(),
+            old(self).inner.inner.ptr == slot_perm.pptr(),
             old(owner).inv(),
-            old(owner).relate_slot_owner(slot_own),
+            slot_own.inv(),
+            slot_perm.is_init(),
+            slot_perm.value().wf(&slot_own),
+            slot_perm.addr() == slot_own.self_addr,
+            meta_to_frame(slot_perm.addr()) < VMALLOC_BASE_VADDR() - LINEAR_MAPPING_BASE_VADDR(),
             idx < NR_ENTRIES(),
     {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
         let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(paddr_to_vaddr(
-            #[verus_spec(with Tracked(&slot_own), Tracked(owner.slot_perm.borrow()))]
+            #[verus_spec(with Tracked(&slot_own), Tracked(slot_perm))]
             self.start_paddr()
         ));
 

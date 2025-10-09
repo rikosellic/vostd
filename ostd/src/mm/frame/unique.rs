@@ -204,7 +204,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
             res.0.wf(&res.1@),
             res.1@.meta_own@ == meta_own,
             res.1@.meta_perm@ == meta_perm,
-            res.1@.slot_perm == old(regions).dropped_slots[frame_to_index(paddr)],
+            regions.slots[frame_to_index(paddr)] == old(regions).dropped_slots[frame_to_index(paddr)],
             !regions.dropped_slots.contains_key(frame_to_index(paddr)),
             regions.slots == old(regions).slots,
             regions.slot_owners == old(regions).slot_owners,
@@ -213,11 +213,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         let ptr = vstd::simple_pptr::PPtr::<MetaSlot>::from_addr(vaddr);
 
         let tracked slot_own = regions.dropped_slots.tracked_remove(frame_to_index(paddr));
+        proof { regions.slots.tracked_insert(frame_to_index(paddr), slot_own) }
 
         (Self {
             ptr,
             _marker: PhantomData,
-        },  UniqueFrameOwner::<M>::from_raw_owner(Tracked(meta_own), Tracked(slot_own.get()), Tracked(meta_perm)))
+        },  UniqueFrameOwner::<M>::from_raw_owner(Tracked(meta_own), frame_to_index(paddr), Tracked(meta_perm)))
     }
 
     #[rustc_allow_incoherent_impl]

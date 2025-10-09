@@ -168,7 +168,7 @@ impl MetaSlotOwner {
 pub tracked struct UniqueFrameOwner<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> {
     pub meta_own: Tracked<M::Owner>,
     pub meta_perm: Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, M>>,
-    pub slot_perm: Tracked<PointsTo<MetaSlot>>,
+    pub slot_index: usize,
 }
 
 pub ghost struct UniqueFrameModel<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> {
@@ -177,27 +177,17 @@ pub ghost struct UniqueFrameModel<M: AnyFrameMeta + Repr<MetaSlotStorage> + Owne
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Inv for UniqueFrameOwner<M> {
     open spec fn inv(&self) -> bool {
-        &&& frame_to_index(meta_to_frame(self.slot_perm@.addr())) < max_meta_slots()
-        &&& self.slot_perm@.is_init()
-        &&& self.slot_perm@.value().storage.addr() == self.meta_perm@.addr()
-        &&& self.slot_perm@.value().storage.addr() == self.meta_perm@.points_to@.addr()
         &&& self.meta_perm@.is_init()
         &&& self.meta_perm@.wf()
-//    &&& self.slot_own@.inv()
-//    &&& self.slot_own@.ref_count@.value() == REF_COUNT_UNIQUE
-//    &&& self.slot_own@.vtable_ptr@.is_init()
-//    &&& self.slot_own@.storage@.is_init()
+        &&& self.slot_index == frame_to_index(meta_to_frame(self.meta_perm@.addr()))
+        &&& self.slot_index < max_meta_slots()
+        &&& (self.slot_index - FRAME_METADATA_RANGE().start) as usize % META_SLOT_SIZE() == 0
     }
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Inv for UniqueFrameModel<M> {
     open spec fn inv(&self) -> bool {
         true
-/*    &&& self.slot.inv()
-    &&& self.slot.status == MetaSlotStatus::UNIQUE
-    &&& self.slot.ref_count == REF_COUNT_UNIQUE
-    &&& self.slot.vtable_ptr.is_init()
-    &&& self.slot.storage.is_init()*/
     }
 }
 
@@ -213,11 +203,24 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> InvView for UniqueFrameO
     proof fn view_preserves_inv(&self) { }
 }
 
+impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
+
+    pub open spec fn perm_inv(&self, perm: PointsTo<MetaSlot>) -> bool {
+        &&& perm.is_init()
+        &&& perm.value().storage.addr() == self.meta_perm@.addr()
+        &&& perm.value().storage.addr() == self.meta_perm@.points_to@.addr()
+    }
+
+    pub open spec fn global_inv(&self, regions: MetaRegionOwners) -> bool {
+        &&& regions.slots.contains_key(self.slot_index) ==> self.perm_inv(regions.slots[self.slot_index]@)
+        &&& regions.dropped_slots.contains_key(self.slot_index) ==> self.perm_inv(regions.dropped_slots[self.slot_index]@)
+    }
+}
+
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> OwnerOf for UniqueFrame<M> {
     type Owner = UniqueFrameOwner<M>;
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool {
-        &&& self.ptr == owner.slot_perm@.pptr()
         &&& self.ptr.addr() == owner.meta_perm@.addr()
     }
 }
@@ -259,12 +262,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
     pub fn from_raw_owner(owner: Tracked<M::Owner>,
-                                    slot_perm: Tracked<PointsTo<MetaSlot>>,
-                                    perm: Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, M>>) -> Tracked<Self> {
+                            index: usize,
+                            perm: Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, M>>) -> Tracked<Self> {
         Tracked(UniqueFrameOwner::<M> {
             meta_own: owner,
             meta_perm: perm,
-            slot_perm: slot_perm
+            slot_index: index,
         })
     }
 }
