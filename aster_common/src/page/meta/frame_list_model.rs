@@ -370,7 +370,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrameOwner<Link<M>> {
     pub open spec fn frame_link_inv(&self) -> bool {
         &&& self.meta_perm@.value().prev is None
         &&& self.meta_perm@.value().next is None
-        &&& self.meta_own@.paddr == self.slot_perm@.addr()
+        &&& self.meta_own@.paddr == self.meta_perm@.addr()
     }
 }
 
