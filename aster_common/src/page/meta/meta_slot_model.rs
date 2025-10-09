@@ -226,14 +226,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> OwnerOf for UniqueFrame<
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> ModelOf for UniqueFrame<M> { }
 
-/*impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameModel<M> {
-    pub open spec fn from_raw_spec(region: MetaRegionModel, paddr: Paddr) -> Self {
-        Self {
-            slot: region.slots[frame_to_index(paddr)],
-        }
-    }
-}*/
-
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
     pub fn from_raw_owner(owner: Tracked<M::Owner>,
                                     slot_perm: Tracked<PointsTo<MetaSlot>>,

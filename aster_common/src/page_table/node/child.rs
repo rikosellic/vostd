@@ -25,6 +25,13 @@ impl<C: PageTableConfig> Child<C> {
         }
     }
 
+    pub open spec fn get_frame_tuple(self) -> Option<(Paddr, PagingLevel, PageProperty)> {
+        match self {
+            Self::Frame(paddr, level, prop) => Some((paddr, level, prop)),
+            _ => None
+        }
+    }
+
     #[verifier::inline]
     pub open spec fn is_none_spec(&self) -> bool {
         match self {

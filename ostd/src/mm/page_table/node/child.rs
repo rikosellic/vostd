@@ -9,6 +9,8 @@ use aster_common::prelude::*;
 
 use vstd_extra::ownership::*;
 
+use ostd_specs::*;
+
 use core::mem::ManuallyDrop;
 
 use super::{PageTableNode, PageTableNodeRef};
@@ -25,7 +27,7 @@ impl<C: PageTableConfig> Child<C> {
         with slot_own: Option<Tracked<&MetaSlotOwner>>,
             slot_perm: Option<Tracked<&PointsTo<MetaSlot>>>
     )]
-    pub fn into_pte(self) -> C::E
+    pub fn into_pte(self) -> (res:C::E)
         requires
             self is PageTable ==>
             {
@@ -36,6 +38,10 @@ impl<C: PageTableConfig> Child<C> {
                 &&& slot_perm.unwrap()@.is_init()
                 &&& slot_perm.unwrap()@.value().wf(&slot_own.unwrap()@)
             }
+        ensures
+            self is PageTable ==> res == self.into_pte_pt_spec(*slot_own.unwrap()@, *slot_perm.unwrap()@),
+            self is Frame ==> res == self.into_pte_frame_spec(self.get_frame_tuple().unwrap()),
+            self is None ==> res == self.into_pte_none_spec(),
     {
         match self {
             Child::PageTable(node) => {
@@ -60,13 +66,17 @@ impl<C: PageTableConfig> Child<C> {
     #[verus_spec(
         with Tracked(regions) : Tracked<&mut MetaRegionOwners>
     )]
-    pub fn from_pte(pte: C::E, level: PagingLevel) -> Self
+    pub fn from_pte(pte: C::E, level: PagingLevel) -> (res: Self)
         requires
             pte.paddr() % PAGE_SIZE() == 0,
             pte.paddr() < MAX_PADDR(),
             old(regions).inv(),
             !old(regions).slots.contains_key(frame_to_index(pte.paddr())),
             old(regions).dropped_slots.contains_key(frame_to_index(pte.paddr()))
+        ensures
+            !pte.is_present() ==> res == Child::<C>::None,
+            pte.is_present() && pte.is_last(level) ==> res == Child::<C>::from_pte_frame_spec(pte, level),
+            pte.is_present() && !pte.is_last(level) ==> res == Child::<C>::from_pte_pt_spec(pte.paddr(), *regions)
     {
         if !pte.is_present() {
             return Child::None;

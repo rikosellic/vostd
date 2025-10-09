@@ -193,4 +193,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
     { }
 }
 
+impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
+    #[rustc_allow_incoherent_impl]
+    pub open spec fn from_raw_spec(paddr: Paddr) -> Self {
+        Frame::<M>{
+            ptr: PPtr::<MetaSlot>(frame_to_meta(paddr), PhantomData),
+            _marker: PhantomData
+        }
+    }
+}
+
 }
