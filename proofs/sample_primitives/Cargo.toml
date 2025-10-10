@@ -26,5 +26,5 @@ check_lifetime = true
 sample = { path = "../../code/sample" }
 sample_specs = { path = "../../specs/sample" }
 vstd = { path = "../../tools/verus/source/vstd" }
-builtin = { path = "../../tools/verus/source/builtin" }
-builtin_macros = { path = "../../tools/verus/source/builtin_macros" }
+verus_builtin = { path = "../../tools/verus/source/builtin" }
+verus_builtin_macros = { path = "../../tools/verus/source/builtin_macros" }

@@ -39,9 +39,6 @@ pub const REF_COUNT_UNIQUE: u64 = u64::MAX - 1;
 
 pub const REF_COUNT_MAX: u64 = i64::MAX as u64;
 
-} // verus!
-verus! {
-
 pub tracked struct MetaSlotOwner {
     pub storage: Tracked<PointsTo<MetaSlotStorage>>,
     pub ref_count: Tracked<PermissionU64>,
@@ -130,14 +127,14 @@ impl OwnerOf for MetaSlot {
     type Owner = MetaSlotOwner;
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool {
-    &&& self.storage == owner.storage@.pptr()
-    &&& self.ref_count.id() == owner.ref_count@.id()
-    &&& self.vtable_ptr == owner.vtable_ptr@.pptr()
-    &&& self.in_list.id() == owner.in_list@.id()
+        &&& self.storage == owner.storage@.pptr()
+        &&& self.ref_count.id() == owner.ref_count@.id()
+        &&& self.vtable_ptr == owner.vtable_ptr@.pptr()
+        &&& self.in_list.id() == owner.in_list@.id()
     }
 }
 
-impl ModelOf for MetaSlot { }
+impl ModelOf for MetaSlot {}
 
 impl MetaSlotOwner {
     pub fn cast_perm<T: Repr<MetaSlotStorage>>(self) -> Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, T>>

@@ -41,17 +41,18 @@ pub open spec fn is_mem_contents_all_uninit<V, const N: usize>(
     forall|index: int| 0 <= index < N ==> #[trigger] arr[index].is_uninit()
 }
 
-pub open spec fn mem_contents_unwrap<V, const N: usize>(arr: [raw_ptr::MemContents<V>; N]) -> (res:
-    raw_ptr::MemContents<[V; N]>)
+pub uninterp spec fn mem_contents_unwrap<V, const N: usize>(
+    arr: [raw_ptr::MemContents<V>; N],
+) -> (res: raw_ptr::MemContents<[V; N]>)
     recommends
         is_mem_contents_all_init(arr) || is_mem_contents_all_uninit(arr),
 ;
 
-pub open spec fn mem_contents_wrap<V, const N: usize>(data: raw_ptr::MemContents<[V; N]>) -> (res:
-    [raw_ptr::MemContents<V>; N]);
+pub uninterp spec fn mem_contents_wrap<V, const N: usize>(
+    data: raw_ptr::MemContents<[V; N]>,
+) -> (res: [raw_ptr::MemContents<V>; N]);
 
-#[verifier::external_body]
-pub proof fn axiom_mem_contents_unwrap_init_correctness<V, const N: usize>(
+pub axiom fn axiom_mem_contents_unwrap_init_correctness<V, const N: usize>(
     arr: [raw_ptr::MemContents<V>; N],
     res: raw_ptr::MemContents<[V; N]>,
 )
@@ -61,12 +62,9 @@ pub proof fn axiom_mem_contents_unwrap_init_correctness<V, const N: usize>(
     ensures
         res.is_init(),
         forall|index: int| 0 <= index < N ==> #[trigger] res.value()[index] == arr[index].value(),
-{
-    unimplemented!();
-}
+;
 
-#[verifier::external_body]
-pub proof fn axiom_mem_contents_unwrap_uninit_correctness<V, const N: usize>(
+pub axiom fn axiom_mem_contents_unwrap_uninit_correctness<V, const N: usize>(
     arr: [raw_ptr::MemContents<V>; N],
     res: raw_ptr::MemContents<[V; N]>,
 )
@@ -75,12 +73,9 @@ pub proof fn axiom_mem_contents_unwrap_uninit_correctness<V, const N: usize>(
         is_mem_contents_all_uninit(arr),
     ensures
         res.is_uninit(),
-{
-    unimplemented!();
-}
+;
 
-#[verifier::external_body]
-pub proof fn axiom_mem_contents_wrap_correctness<V, const N: usize>(
+pub axiom fn axiom_mem_contents_wrap_correctness<V, const N: usize>(
     data: raw_ptr::MemContents<[V; N]>,
     res: [raw_ptr::MemContents<V>; N],
 )
@@ -90,9 +85,7 @@ pub proof fn axiom_mem_contents_wrap_correctness<V, const N: usize>(
         data.is_uninit() ==> is_mem_contents_all_uninit(res),
         data.is_init() ==> is_mem_contents_all_init(res) && forall|index: int|
             0 <= index < N ==> #[trigger] res[index].value() == data.value()[index],
-{
-    unimplemented!();
-}
+;
 
 impl<V, const N: usize> PointsToArrayData<V, N> {
     #[verifier::external_body]
@@ -118,18 +111,18 @@ impl<V, const N: usize> PointsToArrayData<V, N> {
 impl<T, const N: usize> View for PointsToArray<T, N> {
     type V = PointsToArrayData<T, N>;
 
-    spec fn view(&self) -> Self::V;
+    uninterp spec fn view(&self) -> Self::V;
 }
 
 impl<V, const N: usize> PointsToArray<V, N> {
     #[verifier::inline]
     pub open spec fn ptr(&self) -> *mut [V; N] {
-        self.view().ptr
+        self@.ptr
     }
 
     #[verifier::inline]
     pub open spec fn opt_value(&self) -> [raw_ptr::MemContents<V>; N] {
-        self.view().value
+        self@.value
     }
 
     #[verifier::inline]
@@ -337,11 +330,11 @@ pub tracked struct PointsTo<V, const N: usize> {
     dealloc: Option<raw_ptr::Dealloc>,
 }
 
-#[verusfmt::skip]
-broadcast use
+broadcast use {
     raw_ptr::group_raw_ptr_axioms,
-//    set_lib::group_set_lib_axioms,
-    set::group_set_axioms;
+    set_lib::group_set_lib_default,
+    set::group_set_axioms,
+};
 
 impl<V, const N: usize> ArrayPtr<V, N> {
     /// Spec: cast the pointer to an integer
@@ -353,9 +346,9 @@ impl<V, const N: usize> ArrayPtr<V, N> {
     /// Impl: cast the pointer to an integer
     #[inline(always)]
     #[verifier::when_used_as_spec(addr_spec)]
-    pub exec fn addr(&self) -> (res: usize)
-        ensures
-            res == self.addr,
+    pub exec fn addr(&self) -> usize
+        returns
+            self.addr,
     {
         self.addr
     }
@@ -497,8 +490,8 @@ impl<V, const N: usize> PointsToArray<V, N> {
         N,
     >)
         ensures
-            res.view().ptr == pt.view().ptr,
-            res.view().value == mem_contents_wrap(pt.view().opt_value),
+            res@.ptr == pt@.ptr,
+            res@.value == mem_contents_wrap(pt@.opt_value),
     {
         Tracked::<PointsToArray<V, N>>::assume_new().get()
     }
@@ -506,8 +499,8 @@ impl<V, const N: usize> PointsToArray<V, N> {
     #[verifier::external_body]
     pub proof fn into_ptr(tracked self) -> (tracked res: raw_ptr::PointsTo<[V; N]>)
         ensures
-            res.view().ptr == self.view().ptr,
-            res.view().opt_value == mem_contents_unwrap(self.view().value),
+            res@.ptr == self@.ptr,
+            res@.opt_value == mem_contents_unwrap(self@.value),
     {
         Tracked::<raw_ptr::PointsTo<[V; N]>>::assume_new().get()
     }
@@ -528,13 +521,12 @@ impl<V, const N: usize> Copy for ArrayPtr<V, N> {
 
 #[verifier::external_body]
 #[inline(always)]
-pub exec fn layout_for_array_is_valid<V, const N: usize>()
+pub exec fn layout_for_array_is_valid<V: Sized, const N: usize>()
     ensures
         layout::valid_layout(
             layout::size_of::<[V; N]>() as usize,
             layout::align_of::<[V; N]>() as usize,
         ),
-        layout::is_sized::<[V; N]>(),
         layout::size_of::<[V; N]>() as usize as nat == layout::size_of::<[V; N]>(),
         layout::align_of::<[V; N]>() as usize as nat == layout::align_of::<[V; N]>(),
     opens_invariants none
@@ -566,7 +558,7 @@ impl<V, const N: usize> ArrayPtr<V, N> {
         let tracked arr_perm = PointsToArray::into_array(ptr_perm);
         proof {
             arr_perm.is_nonnull();
-            axiom_mem_contents_wrap_correctness(ptr_perm.opt_value(), arr_perm.view().value);
+            axiom_mem_contents_wrap_correctness(ptr_perm.opt_value(), arr_perm@.value);
             assert(arr_perm.is_uninit_all());
         }
         let tracked pt = PointsTo { points_to: arr_perm, exposed, dealloc: Some(dealloc) };
@@ -633,10 +625,7 @@ impl<V, const N: usize> ArrayPtr<V, N> {
         }
         let tracked perm_ptr: raw_ptr::PointsTo<[V; N]> = points_to.into_ptr();
         proof {
-            axiom_mem_contents_unwrap_uninit_correctness(
-                points_to.view().value,
-                perm_ptr.opt_value(),
-            );
+            axiom_mem_contents_unwrap_uninit_correctness(points_to@.value, perm_ptr.opt_value());
             assert(perm_ptr.is_uninit());
         }
         let tracked perm_raw = perm_ptr.into_raw();
@@ -843,6 +832,8 @@ impl<V, const N: usize> ArrayPtr<V, N> {
             forall|i: int|
                 0 <= i < N && i != index ==> perm.opt_value()[i] == old(perm).opt_value()[i],
             perm.opt_value()[index as int] == raw_ptr::MemContents::Init(value),
+        opens_invariants none
+        no_unwind
     {
         proof {
             perm.leak_contents(index as int);

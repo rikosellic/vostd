@@ -4,6 +4,10 @@ use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::*;
 use aster_common::prelude::*;
 use aster_common::prelude::frame_list_model::*;
+use aster_common::prelude::*;
+use vstd::prelude::*;
+use vstd_extra::ownership::*;
+use vstd_extra::prelude::*;
 
 verus! {
 
@@ -17,13 +21,13 @@ impl CursorModel {
                 Self {
                     fore: self.fore.insert(self.fore.len() as int, cur),
                     rear: self.rear.remove(0),
-                    list_model: self.list_model
+                    list_model: self.list_model,
                 }
             } else {
                 Self {
                     fore: Seq::<LinkModel>::empty(),
                     rear: self.fore,
-                    list_model: self.list_model
+                    list_model: self.list_model,
                 }
             }
         } else {
@@ -35,11 +39,11 @@ impl CursorModel {
     pub open spec fn move_prev_spec(self) -> Self {
         if self.list_model.list.len() > 0 {
             if self.fore.len() > 0 {
-                let cur = self.fore[self.fore.len()-1];
+                let cur = self.fore[self.fore.len() - 1];
                 Self {
-                    fore: self.fore.remove(self.fore.len()-1),
+                    fore: self.fore.remove(self.fore.len() - 1),
                     rear: self.rear.insert(0, cur),
-                    list_model: self.list_model
+                    list_model: self.list_model,
                 }
             } else {
                 Self {
@@ -47,7 +51,7 @@ impl CursorModel {
                     rear: Seq::<LinkModel>::empty(),
                     list_model: self.list_model
                 }
-            } 
+            }
         } else {
             self
         }
@@ -90,7 +94,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorOwner<M> {
     #[rustc_allow_incoherent_impl]
     pub proof fn remove_owner_spec_implies_model_spec(self, post: Self)
         requires
-            self.remove_owner_spec(post)
+            self.remove_owner_spec(post),
         ensures
             post@ == self@.remove()
     { admit() }
@@ -118,50 +122,26 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorOwner<M> {
         if self.length() == 0 {
             self
         } else if self.index == self.length() {
-            Self {
-                list_own: self.list_own,
-                list_perm: self.list_perm,
-                index: 0,
-            }
+            Self { list_own: self.list_own, list_perm: self.list_perm, index: 0 }
         } else if self.index == self.length() - 1 {
-            Self {
-                list_own: self.list_own,
-                list_perm: self.list_perm,
-                index: self.index+1,
-            }
+            Self { list_own: self.list_own, list_perm: self.list_perm, index: self.index + 1 }
         } else {
-            Self {
-                list_own: self.list_own,
-                list_perm: self.list_perm,
-                index: self.index+1,
-            }
+            Self { list_own: self.list_own, list_perm: self.list_perm, index: self.index + 1 }
         }
     }
- 
+
     #[rustc_allow_incoherent_impl]
     pub open spec fn move_prev_owner_spec(self) -> Self {
         if self.length() == 0 {
             self
         } else if self.index == self.length() {
-            Self {
-                list_own: self.list_own,
-                list_perm: self.list_perm,
-                index: self.index-1,
-            }
+            Self { list_own: self.list_own, list_perm: self.list_perm, index: self.index - 1 }
         } else if self.index == 0 {
-            Self {
-                list_own: self.list_own,
-                list_perm: self.list_perm,
-                index: self.length(),
-            }
+            Self { list_own: self.list_own, list_perm: self.list_perm, index: self.length() }
         } else {
-            Self {
-                list_own: self.list_own,
-                list_perm: self.list_perm,
-                index: self.index-1,
-            }
+            Self { list_own: self.list_own, list_perm: self.list_perm, index: self.index - 1 }
         }
     }
 }
 
-}
+} // verus!

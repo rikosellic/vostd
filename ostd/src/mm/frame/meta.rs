@@ -239,12 +239,18 @@ impl MetaSlot {
             old(regions).slot_owners[frame_to_index(paddr)].in_list@.points_to(0),
             old(regions).slot_owners[frame_to_index(paddr)].self_addr == frame_to_meta(paddr),
         ensures
-            res.is_ok() ==>
-            MetaSlot::get_from_unused_spec::<M>(paddr, metadata, as_unique_ptr, old(regions).view()) == (res.unwrap(), regions.view()),
+            res.is_ok() ==> MetaSlot::get_from_unused_spec::<M>(
+                paddr,
+                metadata,
+                as_unique_ptr,
+                old(regions).view(),
+            ) == (res.unwrap(), regions.view()),
     {
         let ghost old_regions = *regions;
 
-        proof { regions.inv_implies_correct_addr(paddr); }
+        proof {
+            regions.inv_implies_correct_addr(paddr);
+        }
 
         let tracked mut slot_own = regions.slot_owners.tracked_remove(frame_to_index(paddr));
         let tracked mut slot_perm = regions.slots.tracked_remove(frame_to_index(paddr));

@@ -20,7 +20,7 @@ use super::{meta::get_slot, MetaSlot};
 
 use vstd_extra::cast_ptr::*;
 use vstd_extra::ownership::*;
-use vstd_extra::update_field;
+use vstd_extra::{borrow_field, update_field};
 
 use aster_common::prelude::frame_list_model::*;
 use aster_common::prelude::*;
@@ -46,12 +46,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M>
     #[verus_spec(
         with Tracked(owner): Tracked<LinkedListOwner<M>>
     )]
-    pub fn size(&self) -> (s:usize)
+    pub fn size(&self) -> (s: usize)
         requires
             self.wf(&owner),
-            owner.inv()
+            owner.inv(),
         ensures
-            s == self.model(&owner).list.len()
+            s == self.model(&owner).list.len(),
     {
         proof { LinkedListOwner::<M>::view_preserves_len(owner.list); }
         self.size
@@ -62,17 +62,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M>
     #[verus_spec(
         with Tracked(owner): Tracked<LinkedListOwner<M>>
     )]
-    pub fn is_empty(&self) -> (b:bool)
+    pub fn is_empty(&self) -> (b: bool)
         requires
             self.wf(&owner),
-            owner.inv()
+            owner.inv(),
         ensures
-            b ==> self.size == 0 &&
-                self.front is None &&
-                self.back is None,
-            !b ==> self.size > 0 &&
-                self.front is Some &&
-                self.back is Some
+            b ==> self.size == 0 && self.front is None && self.back is None,
+            !b ==> self.size > 0 && self.front is Some && self.back is Some,
     {
         let is_empty = self.size == 0;
         is_empty
@@ -321,7 +317,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M>
                     perm: Tracked<vstd::simple_pptr::PointsTo<LinkedList<M>>>
     )]
     pub fn cursor_back_mut(ptr: PPtr<Self>) -> (res: (CursorMut<M>, Tracked<CursorOwner<M>>))
-        requires    
+        requires
             perm@.pptr() == ptr,
             perm@.is_init(),
             perm@.mem_contents().value().wf(&owner),
@@ -469,14 +465,20 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M>
 
             if owner@.list_model.list.len() > 0 {
                 if owner@.fore.len() > 0 {
-                    assert(self.model(&owner.move_prev_owner_spec()).fore == old_self.model(&owner).move_prev_spec().fore);
-                    assert(self.model(&owner.move_prev_owner_spec()).rear == old_self.model(&owner).move_prev_spec().rear);
+                    assert(self.model(&owner.move_prev_owner_spec()).fore == old_self.model(
+                        &owner,
+                    ).move_prev_spec().fore);
+                    assert(self.model(&owner.move_prev_owner_spec()).rear == old_self.model(
+                        &owner,
+                    ).move_prev_spec().rear);
                     if owner@.rear.len() > 0 {
                         assert(owner.list_own.inv_at(owner.index));
                     }
                 } else {
                     assert(owner.list_own.inv_at(owner.index));
-                    assert(self.model(&owner.move_prev_owner_spec()).rear == old_self.model(&owner).move_prev_spec().rear);
+                    assert(self.model(&owner.move_prev_owner_spec()).rear == old_self.model(
+                        &owner,
+                    ).move_prev_spec().rear);
                     assert(owner@.rear == owner@.list_model.list);
                 }
             }

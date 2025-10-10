@@ -258,13 +258,16 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr())
                 < FRAME_METADATA_RANGE().end,
             old(regions).slots.contains_key(frame_to_index(meta_to_frame(self.ptr.addr()))),
-            !old(regions).dropped_slots.contains_key(frame_to_index(meta_to_frame(self.ptr.addr()))),
+            !old(regions).dropped_slots.contains_key(
+                frame_to_index(meta_to_frame(self.ptr.addr())),
+            ),
             old(regions).inv(),
         ensures
             res == meta_to_frame(self.ptr.addr()),
             regions.slot_owners == old(regions).slot_owners,
             regions.dropped_slots == old(regions).dropped_slots,
-            forall |i:usize| i != frame_to_index(self.ptr.addr()) ==> regions.slots[i] == old(regions).slots[i]
+            forall|i: usize|
+                i != frame_to_index(self.ptr.addr()) ==> regions.slots[i] == old(regions).slots[i],
     {
         let tracked owner = regions.slot_owners.tracked_borrow(self.ptr.addr());
         let tracked perm = regions.slots.tracked_remove(self.ptr.addr());
@@ -305,13 +308,18 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         ensures
             regions.slots.contains_key(frame_to_index(paddr)),
             !regions.dropped_slots.contains_key(frame_to_index(paddr)),
-            regions.slots[frame_to_index(paddr)] == old(regions).dropped_slots[frame_to_index(paddr)],
-            forall |i:usize| i != frame_to_index(paddr) ==> regions.slots[i] == old(regions).slots[i],
-            forall |i:usize| i != frame_to_index(paddr) ==> regions.dropped_slots[i] == old(regions).dropped_slots[i],
+            regions.slots[frame_to_index(paddr)] == old(regions).dropped_slots[frame_to_index(
+                paddr,
+            )],
+            forall|i: usize|
+                i != frame_to_index(paddr) ==> regions.slots[i] == old(regions).slots[i],
+            forall|i: usize|
+                i != frame_to_index(paddr) ==> regions.dropped_slots[i] == old(
+                    regions,
+                ).dropped_slots[i],
             regions.slot_owners == old(regions).slot_owners,
-            res.ptr == regions.slots[frame_to_index(paddr)]@.pptr()
+            res.ptr == regions.slots[frame_to_index(paddr)]@.pptr(),
     {
-
         let vaddr = frame_to_meta(paddr);
         let ptr = PPtr::from_addr(vaddr);
 

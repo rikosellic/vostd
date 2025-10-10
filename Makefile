@@ -3,6 +3,7 @@
 VERIFICATION_TARGETS := \
 	aster_common \
 	ostd \
+	ostd_specs \
 	vstd_extra
 
 # Disabled:
