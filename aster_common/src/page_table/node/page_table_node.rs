@@ -8,19 +8,21 @@ use crate::prelude::*;
 
 verus! {
 
-#[rustc_has_incoherent_inherent_impls]
-pub struct PageTableNode {
-    pub page: Page<PageTablePageMeta>,
-}
+/// A smart pointer to a page table node.
+///
+/// This smart pointer is an owner of a page table node. Thus creating and
+/// dropping it will affect the reference count of the page table node. If
+/// dropped it as the last reference, the page table node and subsequent
+/// children will be freed.
+///
+/// [`PageTableNode`] is read-only. To modify the page table node, lock and use
+/// [`PageTableGuard`].
+pub type PageTableNode<C> = Frame<PageTablePageMeta<C>>;
 
-impl PageTableNode {
-    pub open spec fn inv(self) -> bool {
-        self.page.inv_ptr() && self.page.paddr() < VMALLOC_BASE_VADDR()
-            - LINEAR_MAPPING_BASE_VADDR()
-    }
+impl<C: PageTableConfig> PageTableNode<C> {
 
     pub open spec fn paddr_spec(&self) -> Paddr {
-        self.page.paddr()
+        self.ptr.addr()
     }
 
     #[verifier::when_used_as_spec(paddr_spec)]
@@ -29,25 +31,25 @@ impl PageTableNode {
             self.inv(),
         ensures
             res == self.paddr_spec(),
-            res % PAGE_SIZE() == 0,
-            res < MAX_PADDR(),
+//            res % PAGE_SIZE() == 0,
+//            res < MAX_PADDR(),
     {
-        self.page.paddr()
+        self.ptr.addr()
     }
 
-    pub fn meta<'a>(
+/*    pub fn meta<'a>(
         &'a self,
         Tracked(p_slot): Tracked<&'a simple_pptr::PointsTo<MetaSlot>>,
         owner: MetaSlotOwner,
-    ) -> (res: &PageTablePageMetaInner)
+    ) -> (res: &PageTablePageMeta<C>)
         requires
             self.inv(),
-            p_slot.pptr() == self.page.ptr,
+            p_slot.pptr() == self.ptr,
             p_slot.is_init(),
             p_slot.value().wf(&owner),
             is_variant(owner.view().storage.value(), "PTNode"),
     {
-        self.page.meta_pt(Tracked(p_slot), owner)
+        self.meta_pt(Tracked(p_slot), owner)
     }
 
     pub fn level(
@@ -57,13 +59,15 @@ impl PageTableNode {
     ) -> (res: PagingLevel)
         requires
             self.inv(),
-            p_slot.pptr() == self.page.ptr,
+            p_slot.pptr() == self.ptr,
             p_slot.is_init(),
             p_slot.value().wf(&owner),
             is_variant(owner.view().storage.value(), "PTNode"),
     {
         self.meta(Tracked(p_slot), owner).level
-    }/*    pub fn is_tracked(
+    }
+
+    pub fn is_tracked(
         &self,
         Tracked(p_slot): Tracked<&simple_pptr::PointsTo<MetaSlot>>,
         Tracked(p_inner): Tracked<&cell::PointsTo<MetaSlotInner>>,

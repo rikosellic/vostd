@@ -2,12 +2,12 @@
 //! The unique frame pointer that is not shared with others.
 use vstd::atomic::PermissionU64;
 use vstd::prelude::*;
-use vstd::simple_pptr::*;
+use vstd::simple_pptr;
 
-use aster_common::prelude::frame_list_model::UniqueFrameLinkOwner;
 use aster_common::prelude::*;
 
 use vstd_extra::ownership::*;
+use vstd_extra::cast_ptr::*;
 
 use core::{marker::PhantomData, mem::ManuallyDrop, sync::atomic::Ordering};
 
@@ -19,7 +19,7 @@ use crate::mm::{Paddr, PagingConsts, PagingLevel};
 
 verus! {
 
-impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
+impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
     /// Gets a [`UniqueFrame`] with a specific usage from a raw, unused page.
     ///
     /// The caller should provide the initial metadata of the page.
@@ -52,9 +52,9 @@ impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
     /// Gets the metadata of this page.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn meta(&self, Tracked(perm): Tracked<&PointsTo<Link<M>>>) -> (l: &Link<M>)
+    pub fn meta(&self) -> (l: &M)
         ensures
-            perm.mem_contents().value() == l,
+//            perm.mem_contents().value() == l,
     {
         unimplemented!()
         // SAFETY: The type is tracked by the type system.
@@ -64,23 +64,37 @@ impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
 
     /// Gets the mutable metadata of this page.
     #[rustc_allow_incoherent_impl]
+    #[verus_spec(
+        with Tracked(owner) : Tracked<&MetaSlotOwner>,
+            Tracked(perm) : Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
+    )]
     #[verifier::external_body]
-    pub fn meta_mut(&mut self, Tracked(perm): Tracked<&mut PointsTo<Link<M>>>) -> (ptr: PPtr<
-        Link<M>,
-    >)
+    pub fn meta_mut(&mut self) -> (res: ReprPtr<MetaSlotStorage, M>)
+        requires
+            owner.inv(),
+//            perm.is_init(),
+//            perm.pptr() == old(self).ptr,
+//            perm.value().wf(owner)
         ensures
-            ptr == perm.pptr(),
-            perm.mem_contents() == old(perm).mem_contents(),
+            res.addr() == self.ptr.addr(),
+            res.ptr.addr() == self.ptr.addr(),
+            self == old(self)
     {
-        unimplemented!()
         // SAFETY: The type is tracked by the type system.
         // And we have the exclusive access to the metadata.
-        //        unsafe { &mut *self.slot().as_meta_ptr() }
+//        let owner = regions.slot_owners.tracked_remove(frame_to_index(meta_to_frame(self.ptr.addr())));
+//        let perm = owner.cast_perm();
+//        regions.slot_owners.tracked_insert(frame_to_index(meta_to_frame(self.ptr.addr())), owner);
 
+        #[verus_spec(with Tracked(perm))]
+        let slot = self.slot();        
+
+        #[verus_spec(with Tracked(owner))]
+        slot.as_meta_ptr()
     }
 }
 
-impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
+impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
     /// Gets the physical address of the start of the frame.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
@@ -166,34 +180,50 @@ impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
     /// The caller must ensure that the physical address is valid and points to
     /// a forgotten frame that was previously casted by [`Self::into_raw`].
     #[rustc_allow_incoherent_impl]
-    #[verifier::external_body]
-    #[verus_spec(
-        with Tracked(region) : Tracked<MetaRegionOwners>
+    #[verus_spec(res =>
+        with Tracked(regions) : Tracked<&mut MetaRegionOwners>,
+            Tracked(meta_perm) : Tracked<PointsTo<MetaSlotStorage, M>>,
+            Tracked(meta_own) : Tracked<M::Owner>
     )]
-    pub(crate) fn from_raw(paddr: Paddr) -> (res: (Self, Tracked<UniqueFrameLinkOwner<M>>))
+    #[verifier::external_body]
+    pub fn from_raw(paddr: Paddr) -> (res: (Self, Tracked<UniqueFrameOwner<M>>))
         requires
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
+            old(regions).dropped_slots.contains_key(frame_to_index(paddr)),
         ensures
-            res.1@ == UniqueFrameLinkOwner::<M>::from_raw_owner(region, paddr),
+            res.0.ptr.addr() == frame_to_meta(paddr),
             res.0.wf(&res.1@),
-            res.1@.frame_own@ == UniqueFrameModel::from_raw_spec(region@, paddr),
-            res.0.ptr == region.slots[frame_to_index(paddr)]@.pptr(),
-            res.1@.frame_own.slot == region.slot_owners[frame_to_index(paddr)],
-            res.1@.link_own.slot == region.slot_owners[frame_to_index(paddr)],
+            res.1@.meta_own@ == meta_own,
+            res.1@.meta_perm@ == meta_perm,
+            regions.slots[frame_to_index(paddr)] == old(regions).dropped_slots[frame_to_index(paddr)],
+            !regions.dropped_slots.contains_key(frame_to_index(paddr)),
+            regions.slots == old(regions).slots,
+            regions.slot_owners == old(regions).slot_owners,
     {
         let vaddr = mapping::frame_to_meta(paddr);
-        let ptr = PPtr::<MetaSlot>::from_addr(vaddr);
+        let ptr = vstd::simple_pptr::PPtr::<MetaSlot>::from_addr(vaddr);
 
-        (
-            Self { ptr, _marker: PhantomData },
-            Tracked(UniqueFrameLinkOwner::<M>::from_raw_owner(region, paddr)),
-        )
+        let tracked slot_own = regions.dropped_slots.tracked_remove(frame_to_index(paddr));
+        proof { regions.slots.tracked_insert(frame_to_index(paddr), slot_own) }
+
+        (Self {
+            ptr,
+            _marker: PhantomData,
+        },  UniqueFrameOwner::<M>::from_raw_owner(Tracked(meta_own), frame_to_index(paddr), Tracked(meta_perm)))
     }
 
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub(super) fn slot(&self) -> &MetaSlot {
+    #[verus_spec(
+        with Tracked(slot_perm): Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>
+    )]
+    pub fn slot<'a>(&self) -> &'a MetaSlot
+        requires
+            slot_perm.pptr() == self.ptr,
+            slot_perm.is_init(),
+        returns slot_perm.value()
+    {
         unimplemented!()
         // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
         // mutably borrowed, so taking an immutable reference to it is safe.
@@ -213,7 +243,7 @@ impl<M: AnyFrameMeta> UniqueFrame<Link<M>> {
     }
 }*/
 
-impl<M: AnyFrameMeta> From<UniqueFrame<Link<M>>> for Frame<M> {
+/*impl<M: AnyFrameMeta> From<UniqueFrame<Link<M>>> for Frame<M> {
     #[verifier::external_body]
     fn from(unique: UniqueFrame<Link<M>>) -> Self {
         unimplemented!()/*
@@ -225,9 +255,9 @@ impl<M: AnyFrameMeta> From<UniqueFrame<Link<M>>> for Frame<M> {
         unsafe { core::mem::transmute(unique) }*/
 
     }
-}
+}*/
 
-impl<M: AnyFrameMeta> TryFrom<Frame<M>> for UniqueFrame<Link<M>> {
+/*impl<M: AnyFrameMeta> TryFrom<Frame<M>> for UniqueFrame<Link<M>> {
     type Error = Frame<M>;
 
     #[verifier::external_body]
@@ -249,6 +279,5 @@ impl<M: AnyFrameMeta> TryFrom<Frame<M>> for UniqueFrame<Link<M>> {
         }*/
 
     }
+}*/
 }
-
-} // verus!

@@ -1,18 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref, ptr::NonNull};
 
-use aster_common::prelude::AnyFrameMeta;
+use aster_common::prelude::*;
+use vstd_extra::manually_drop::*;
 
 use super::Frame;
 use crate::{mm::Paddr /*, sync::non_null::NonNullPtr*/};
 
-/// A struct that can work as `&'a Frame<M>`.
-pub struct FrameRef<'a, M: AnyFrameMeta> {
-    inner: ManuallyDrop<Frame<M>>,
-    _marker: PhantomData<&'a Frame<M>>,
-}
-/*
-impl FrameRef<'_> {
+impl<M: AnyFrameMeta> FrameRef<'_, M> {
     /// Borrows the [`Frame`] at the physical address as a [`FrameRef`].
     ///
     /// # Safety
@@ -21,22 +16,13 @@ impl FrameRef<'_> {
     ///  - the frame outlives the created reference, so that the reference can
     ///    be seen as borrowed from that frame.
     ///  - the type of the [`FrameRef`] (`M`) matches the borrowed frame.
-    #[verifier::external_body]
-    pub(in crate::mm) unsafe fn borrow_paddr(raw: Paddr) -> Self {
-        unimplemented!()
-/*        Self {
+    #[rustc_allow_incoherent_impl]
+    pub fn borrow_paddr(raw: Paddr) -> Self {
+        Self {
             // SAFETY: The caller ensures the safety.
-            inner: ManuallyDrop::new(unsafe { Frame::from_raw(raw) }),
+            inner: /*ManuallyDrop::new(unsafe {*/ Frame::from_raw(raw) /*})*/,
             _marker: PhantomData,
-        }*/
-    }
-}*/
-
-impl<M: AnyFrameMeta> Deref for FrameRef<'_, M> {
-    type Target = Frame<M>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
+        }
     }
 }
 

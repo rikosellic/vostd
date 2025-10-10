@@ -27,19 +27,6 @@ use crate::{
 
 mod util;
 
-pub(crate) const NR_ENTRIES_PER_PAGE: usize = 512;
-
-#[derive(Clone, Debug, Default)]
-pub struct PagingConsts {}
-
-impl PagingConstsTrait for PagingConsts {
-    const BASE_PAGE_SIZE: usize = 4096;
-    const NR_LEVELS: PagingLevel = 4;
-    const ADDRESS_WIDTH: usize = 48;
-    const VA_SIGN_EXT: bool = true;
-    const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 2;
-    const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
-}
 /*
 bitflags::bitflags! {
     #[derive(Pod)]

@@ -1,35 +1,42 @@
 // SPDX-License-Identifier: MPL-2.0
 //! This module specifies the type of the children of a page table node.
-use core::mem::ManuallyDrop;
 
-use super::{PageTableEntryTrait, PageTableNode, PageTableNodeRef};
+use vstd::prelude::*;
+use vstd::simple_pptr::*;
+
+use aster_common::prelude::*;
+
+use vstd_extra::ownership::*;
+
+use core::mem::ManuallyDrop;
 use crate::{
-    mm::{page_prop::PageProperty, page_table::PageTableConfig, Paddr, PagingLevel},
-    sync::RcuDrop,
+    mm::{Paddr, PagingLevel},
+//    sync::RcuDrop,
 };
 
-/// A page table entry that owns the child of a page table node if present.
-#[derive(Debug)]
-pub(in crate::mm) enum Child<C: PageTableConfig> {
-    /// A child page table node.
-    PageTable(RcuDrop<PageTableNode<C>>),
-    /// Physical address of a mapped physical frame.
-    ///
-    /// It is associated with the virtual page property and the level of the
-    /// mapping node, which decides the size of the frame.
-    Frame(Paddr, PagingLevel, PageProperty),
-    None,
-}
-
+verus!{
 impl<C: PageTableConfig> Child<C> {
-    /// Returns whether the child is not present.
-    pub(in crate::mm) fn is_none(&self) -> bool {
-        matches!(self, Child::None)
-    }
 
-    pub(super) fn into_pte(self) -> C::E {
+    #[rustc_allow_incoherent_impl]
+    #[verus_spec(
+        with slot_own: Option<Tracked<&MetaSlotOwner>>,
+            slot_perm: Option<Tracked<&PointsTo<MetaSlot>>>
+    )]
+    pub fn into_pte(self) -> C::E
+        requires
+            self is PageTable ==>
+            {
+                &&& slot_own is Some
+                &&& slot_own.unwrap()@.inv()
+                &&& slot_perm is Some
+                &&& slot_perm.unwrap()@.pptr() == self.get_node().unwrap().ptr
+                &&& slot_perm.unwrap()@.is_init()
+                &&& slot_perm.unwrap()@.value().wf(&slot_own.unwrap()@)
+            }
+    {
         match self {
             Child::PageTable(node) => {
+                #[verus_spec(with Tracked(slot_own.tracked_unwrap().borrow()), Tracked(slot_perm.tracked_unwrap().borrow()))]
                 let paddr = node.start_paddr();
                 let _ = ManuallyDrop::new(node);
                 C::E::new_pt(paddr)
@@ -46,7 +53,17 @@ impl<C: PageTableConfig> Child<C> {
     ///  - must not be referenced by a living [`ChildRef`].
     ///
     /// The level must match the original level of the child.
-    pub(super) unsafe fn from_pte(pte: C::E, level: PagingLevel) -> Self {
+    #[rustc_allow_incoherent_impl]
+    #[verus_spec(
+        with Tracked(regions) : Tracked<&mut MetaRegionOwners>
+    )]
+    pub fn from_pte(pte: C::E, level: PagingLevel) -> Self
+        requires
+            pte.paddr() % PAGE_SIZE() == 0,
+            pte.paddr() < MAX_PADDR(),
+            !old(regions).slots.contains_key(frame_to_index(pte.paddr())),
+            old(regions).dropped_slots.contains_key(frame_to_index(pte.paddr()))
+    {
         if !pte.is_present() {
             return Child::None;
         }
@@ -56,9 +73,10 @@ impl<C: PageTableConfig> Child<C> {
         if !pte.is_last(level) {
             // SAFETY: The caller ensures that this node was created by
             // `into_pte`, so that restoring the forgotten reference is safe.
-            let node = unsafe { PageTableNode::from_raw(paddr) };
-            debug_assert_eq!(node.level(), level - 1);
-            return Child::PageTable(RcuDrop::new(node));
+            #[verus_spec(with Tracked(regions))]
+            let node = PageTableNode::from_raw(paddr);
+//            debug_assert_eq!(node.level(), level - 1);
+            return Child::PageTable(/*RcuDrop::new(*/node/*)*/);
         }
 
         Child::Frame(paddr, level, pte.prop())
@@ -66,8 +84,7 @@ impl<C: PageTableConfig> Child<C> {
 }
 
 /// A reference to the child of a page table node.
-#[derive(Debug)]
-pub(in crate::mm) enum ChildRef<'a, C: PageTableConfig> {
+pub enum ChildRef<'a, C: PageTableConfig> {
     /// A child page table node.
     PageTable(PageTableNodeRef<'a, C>),
     /// Physical address of a mapped physical frame.
@@ -77,7 +94,8 @@ pub(in crate::mm) enum ChildRef<'a, C: PageTableConfig> {
     Frame(Paddr, PagingLevel, PageProperty),
     None,
 }
-
+}
+/* TODO: borrow_paddr
 impl<C: PageTableConfig> ChildRef<'_, C> {
     /// Converts a PTE to a child.
     ///
@@ -106,4 +124,4 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
 
         ChildRef::Frame(paddr, level, pte.prop())
     }
-}
+}*/

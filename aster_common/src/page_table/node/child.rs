@@ -1,24 +1,30 @@
 use vstd::prelude::*;
 
-use crate::prelude::{DynPage, Paddr, PageProperty, PagingLevel, RawPageTableNode};
+use crate::prelude::{DynPage, Paddr, PageProperty, PageTableConfig, PageTableNode, PagingLevel, RawPageTableNode};
 
 verus! {
 
-/// A child of a page table node.
-///
-/// This is a owning handle to a child of a page table node. If the child is
-/// either a page table node or a page, it holds a reference count to the
-/// corresponding page.
+/// A page table entry that owns the child of a page table node if present.
 #[rustc_has_incoherent_inherent_impls]
-pub enum Child {
-    PageTable(RawPageTableNode),
-    Page(DynPage, PageProperty),
-    /// Pages not tracked by handles.
-    Untracked(Paddr, PagingLevel, PageProperty),
-    None,
+pub enum Child<C: PageTableConfig> {
+    /// A child page table node.
+    pub PageTable(/*RcuDrop<*/PageTableNode<C>/*>*/),
+    /// Physical address of a mapped physical frame.
+    ///
+    /// It is associated with the virtual page property and the level of the
+    /// mapping node, which decides the size of the frame.
+    pub Frame(Paddr, PagingLevel, PageProperty),
+    pub None,
 }
 
-impl Child {
+impl<C: PageTableConfig> Child<C> {
+    pub open spec fn get_node(self) -> Option<PageTableNode<C>> {
+        match self {
+            Self::PageTable(node) => Some(node),
+            _ => None
+        }
+    }
+
     #[verifier::inline]
     pub open spec fn is_none_spec(&self) -> bool {
         match self {
@@ -27,12 +33,12 @@ impl Child {
         }
     }
 
+    /// Returns whether the child is not present.
     #[verifier::when_used_as_spec(is_none_spec)]
-    pub fn is_none(&self) -> bool {
-        match self {
-            Child::None => true,
-            _ => false,
-        }
+    pub fn is_none(&self) -> (b:bool)
+        ensures b == self.is_none_spec()
+    {
+        matches!(self, Child::None)
     }
 }
 

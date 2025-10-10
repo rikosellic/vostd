@@ -37,7 +37,6 @@ pub mod unique;
 pub mod untyped;
 
 mod frame_ref;
-pub use frame_ref::FrameRef;
 
 #[cfg(ktest)]
 mod test;
@@ -53,31 +52,18 @@ use core::{
 };
 
 //pub use allocator::GlobalFrameAllocator;
-use meta::{mapping, FrameMeta, GetFrameError, MetaSlot, REF_COUNT_UNUSED};
+use meta::{GetFrameError, REF_COUNT_UNUSED};
 //pub use segment::Segment;
 use untyped::{/*AnyUFrameMeta,*/ UFrame};
 
 use super::{PagingLevel, PAGE_SIZE};
-use crate::mm::{Paddr, PagingConsts, Vaddr};
+use crate::mm::{Paddr, Vaddr};
 
 use aster_common::prelude::*;
 use vstd_extra::ownership::*;
+use vstd_extra::cast_ptr::*;
 
 verus! {
-
-/// A smart pointer to a frame.
-///
-/// A frame is a contiguous range of bytes in physical memory. The [`Frame`]
-/// type is a smart pointer to a frame that is reference-counted.
-///
-/// Frames are associated with metadata. The type of the metadata `M` is
-/// determines the kind of the frame. If `M` implements [`AnyUFrameMeta`], the
-/// frame is a untyped frame. Otherwise, it is a typed frame.
-#[repr(transparent)]
-pub struct Frame<M: AnyFrameMeta> {
-    pub ptr: PPtr<MetaSlot>,
-    pub _marker: PhantomData<M>,
-}
 
 /*
 unsafe impl<M: AnyFrameMeta + ?Sized> Send for Frame<M> {}
@@ -109,11 +95,13 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     #[verus_spec(
         with Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
-    pub fn from_unused(paddr: Paddr, metadata: M) -> (res: Result<Self, GetFrameError>)
+    #[rustc_allow_incoherent_impl]
+    pub fn from_unused(paddr: Paddr, metadata: M) -> (res:Result<Self, GetFrameError>)
         requires
             old(regions).inv(),
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
+            old(regions).slots.contains_key(frame_to_index(paddr))
         ensures
     {
         #[verus_spec(with Tracked(regions))]
@@ -123,22 +111,31 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
 
     /// Gets the metadata of this page.
     #[verus_spec(
-        with Tracked(regions) : Tracked<&'a mut MetaRegionOwners>,
-            Tracked(perm) : Tracked<&'a vstd::simple_pptr::PointsTo<M>>
+        with Tracked(slot_own) : Tracked<&MetaSlotOwner>,
+            Tracked(slot_perm) : Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>,
+            Tracked(perm) : Tracked<&'a PointsTo<MetaSlotStorage, M>>
     )]
-    #[verifier::external_body]
+    #[rustc_allow_incoherent_impl]
     pub fn meta(&self) -> &'a M
         requires
-            old(regions).slots.contains_key(frame_to_index(self.ptr.addr())),
-            old(regions).slots[frame_to_index(self.ptr.addr())]@.pptr() == self.ptr,
-            old(regions).slots[frame_to_index(self.ptr.addr())]@.mem_contents() is Init,
+            self.ptr == slot_perm.pptr(),
+            slot_perm.is_init(),
+            slot_perm.value().wf(&slot_own),
+            slot_own.inv(),
+            perm.pptr().ptr.0 == slot_own.storage@.addr(),
+            perm.pptr().addr == slot_own.storage@.addr(),
+            perm.is_init(),
+            perm.wf()
+        returns &perm.value()
     {
         // SAFETY: The type is tracked by the type system.
-        #[verus_spec(with Tracked(regions))]
+        
+        #[verus_spec(with Tracked(slot_perm))]
         let slot = self.slot();
 
-        #[verus_spec(with Tracked(regions), Ghost(self.ptr.addr()))]
+        #[verus_spec(with Tracked(slot_own))]
         let ptr = slot.as_meta_ptr();
+        assert(ptr.ptr.0 == slot_own.storage@.addr());
 
         ptr.borrow(Tracked(perm))
     }
@@ -153,6 +150,7 @@ impl<M: AnyFrameMeta> Frame<M> {
     #[verus_spec(
         with Tracked(regions) : Tracked<&mut MetaRegionOwners>
     )]
+    #[rustc_allow_incoherent_impl]
     pub fn from_in_use(paddr: Paddr) -> Result<Self, GetFrameError> {
         #[verus_spec(with Tracked(regions))]
         let from_in_use = MetaSlot::get_from_in_use(paddr);
@@ -163,25 +161,22 @@ impl<M: AnyFrameMeta> Frame<M> {
 impl<'a, M: AnyFrameMeta> Frame<M> {
     /// Gets the physical address of the start of the frame.
     #[verus_spec(
-        with Tracked(regions) : Tracked<& MetaRegionOwners>
+        with Tracked(slot_own) : Tracked<&MetaSlotOwner>,
+            Tracked(slot_perm) : Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
+    #[rustc_allow_incoherent_impl]
     pub fn start_paddr(&self) -> Paddr
         requires
-            FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr())
-                < FRAME_METADATA_RANGE().end,
-            regions.slots.contains_key(frame_to_index(self.ptr.addr())),
-            regions.slots[frame_to_index(self.ptr.addr())]@.pptr() == self.ptr,
-            regions.slots[frame_to_index(self.ptr.addr())]@.mem_contents() is Init,
+            slot_perm.pptr() == self.ptr,
+            slot_perm.is_init(),
+            slot_perm.value().wf(&slot_own),
+            slot_own.inv()
+        returns slot_perm.value().frame_paddr_spec(slot_own@)
     {
-        #[verus_spec(with Tracked(&regions))]
+        #[verus_spec(with Tracked(slot_perm))]
         let slot = self.slot();
-        assert(frame_to_index(meta_to_frame(frame_to_meta(self.ptr.addr()))) == frame_to_index(
-            self.ptr.addr(),
-        )) by { admit() };
-        assert(regions.slots[frame_to_index(
-            meta_to_frame(frame_to_meta(self.ptr.addr())),
-        )]@.mem_contents().value() == slot) by { admit() };
-        #[verus_spec(with Tracked(&regions), Ghost(frame_to_meta(self.ptr.addr())))]
+
+        #[verus_spec(with Tracked(slot_own))]
         slot.frame_paddr()
     }
 
@@ -192,11 +187,13 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     ///
     /// Currently, the level is always 1, which means the frame is a regular
     /// page frame.
+    #[rustc_allow_incoherent_impl]
     pub const fn map_level(&self) -> PagingLevel {
         1
     }
 
     /// Gets the size of this page in bytes.
+    #[rustc_allow_incoherent_impl]
     pub const fn size(&self) -> usize {
         PAGE_SIZE()
     }
@@ -220,30 +217,20 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     /// reference count can be changed by other threads at any time including
     /// potentially between calling this method and acting on the result.
     #[verus_spec(
-        with Tracked(regions): Tracked<&mut MetaRegionOwners>
+        with Tracked(slot_own): Tracked<&mut MetaSlotOwner>,
+            Tracked(slot_perm) : Tracked<& vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
+    #[rustc_allow_incoherent_impl]
     pub fn reference_count(&self) -> u64
         requires
-            old(regions).slots.contains_key(frame_to_index(self.ptr.addr())),
-            old(regions).slots[frame_to_index(self.ptr.addr())]@.pptr() == self.ptr,
-            old(regions).slots[frame_to_index(self.ptr.addr())]@.is_init(),
-            old(regions).slot_owners.contains_key(frame_to_index(self.ptr.addr())),
-            old(regions).slot_owners[frame_to_index(self.ptr.addr())].ref_count@.is_for(
-                old(regions).slots[frame_to_index(
-                    self.ptr.addr(),
-                )]@.mem_contents().value().ref_count,
-            ),
+            slot_perm.pptr() == self.ptr,
+            slot_perm.is_init(),
+            old(slot_own).ref_count@.is_for(slot_perm.value().ref_count),
     {
-        let tracked slot_own = regions.slot_owners.tracked_remove(frame_to_index(self.ptr.addr()));
 
-        #[verus_spec(with Tracked(regions))]
+        #[verus_spec(with Tracked(slot_perm))]
         let slot = self.slot();
-        let refcnt = slot.ref_count.load(Tracked(slot_own.ref_count.borrow()));
-        proof {
-            regions.slot_owners.tracked_insert(frame_to_index(self.ptr.addr()), slot_own);
-        }
-
-        refcnt
+        slot.ref_count.load(Tracked(slot_own.ref_count.borrow()))
     }
 
     /// Borrows a reference from the given frame.
@@ -261,7 +248,8 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     #[verus_spec(
         with Tracked(regions) : Tracked<&mut MetaRegionOwners>
     )]
-    pub(in crate::mm) fn into_raw(self) -> Paddr
+    #[rustc_allow_incoherent_impl]
+    pub fn into_raw(self) -> Paddr
         requires
             FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr())
                 < FRAME_METADATA_RANGE().end,
@@ -271,15 +259,15 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             ),
             old(regions).inv(),
     {
+        let tracked owner = regions.slot_owners.tracked_borrow(self.ptr.addr());
+        let tracked perm = regions.slots.tracked_remove(self.ptr.addr());
+
         // TODO: implement ManuallyDrop
         // let this = ManuallyDrop::new(self);
-        #[verus_spec(with Tracked(regions))]
+        #[verus_spec(with Tracked(owner), Tracked(perm.borrow()))]
         let paddr = self.start_paddr();
 
-        let tracked perm = regions.slots.tracked_remove(frame_to_index(paddr));
-        proof {
-            regions.dropped_slots.tracked_insert(frame_to_index(paddr), perm);
-        }
+        proof { regions.dropped_slots.tracked_insert(frame_to_index(paddr), perm); }
 
         paddr
     }
@@ -299,7 +287,8 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     #[verus_spec(
         with Tracked(regions) : Tracked<&mut MetaRegionOwners>
     )]
-    pub(in crate::mm) fn from_raw(paddr: Paddr) -> Self
+    #[rustc_allow_incoherent_impl]
+    pub fn from_raw(paddr: Paddr) -> Self
         requires
             paddr % PAGE_SIZE() == 0,
             paddr < MAX_PADDR(),
@@ -318,20 +307,18 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     }
 
     #[verus_spec(
-        with Tracked(regions): Tracked<&'a MetaRegionOwners>
+        with Tracked(slot_perm): Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
+    #[rustc_allow_incoherent_impl]
     pub fn slot(&self) -> (slot: &'a MetaSlot)
         requires
-            regions.slots.contains_key(frame_to_index(self.ptr.addr())),
-            regions.slots[frame_to_index(self.ptr.addr())]@.pptr() == self.ptr,
-            regions.slots[frame_to_index(self.ptr.addr())]@.mem_contents() is Init,
-        ensures
-            slot == regions.slots[frame_to_index(self.ptr.addr())]@.mem_contents().value(),
+            slot_perm.pptr() == self.ptr,
+            slot_perm.is_init(),
+        returns slot_perm.value()
     {
         // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
         // mutably borrowed, so taking an immutable reference to it is safe.
-        let tracked perm = regions.slots.tracked_borrow(frame_to_index(self.ptr.addr()));
-        self.ptr.borrow(Tracked(perm.borrow()))
+        self.ptr.borrow(Tracked(slot_perm))
     }
 }
 
@@ -434,5 +421,5 @@ pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) {
     let slot = unsafe { &*(vaddr as *const MetaSlot) };
 
     // SAFETY: We have already held a reference to the frame.
-    unsafe { slot.inc_ref_count() };
+    slot.inc_ref_count();
 }

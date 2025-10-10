@@ -1,33 +1,194 @@
-use core::marker::PhantomData;
-use vstd::layout;
 use vstd::prelude::*;
-use vstd::raw_ptr;
+use vstd::raw_ptr::MemContents;
+use vstd::simple_pptr::{self, PPtr};
 use vstd::set;
 use vstd::set_lib;
+use vstd::layout;
+use core::marker::PhantomData;
 
 verus! {
 
+pub trait Repr<R:Sized> : Sized {
+    spec fn wf(r: R) -> bool;
+
+    spec fn to_repr_spec(self) -> R;
+
+    #[verifier::when_used_as_spec(to_repr_spec)]
+    fn to_repr(self) -> (res: R)
+        ensures res == self.to_repr_spec();
+
+    spec fn from_repr_spec(r: R) -> Self;
+
+    #[verifier::when_used_as_spec(from_repr_spec)]
+    fn from_repr(r: R) -> (res: Self)
+        requires Self::wf(r)
+        ensures res == Self::from_repr_spec(r);
+
+    fn from_borrowed<'a>(r: &'a R) -> (res: &'a Self)
+        requires Self::wf(*r)
+        ensures *res == Self::from_repr_spec(*r);
+
+    proof fn from_to_repr(self)
+        ensures Self::from_repr(self.to_repr()) == self;
+
+    proof fn to_from_repr(r: R)
+        requires Self::wf(r)
+        ensures Self::from_repr(r).to_repr() == r;
+
+    proof fn to_repr_wf(self)
+        ensures Self::wf(self.to_repr());
+}
+
 /// Concrete representation of a pointer to an array
 /// The length of the array is not stored in the pointer
-pub struct ArrayPtr<V, const N: usize> {
+pub struct ReprPtr<R, T: Repr<R>> {
     pub addr: usize,
-    pub index: usize,
-    pub _type: PhantomData<[V; N]>,
+    pub ptr: PPtr<R>,
+    pub _T: PhantomData<T>,
 }
 
-#[verifier::external_body]
-#[verifier::accept_recursive_types(V)]
-pub tracked struct PointsToArray<V, const N: usize> {
-    phantom: core::marker::PhantomData<[V; N]>,
-    no_copy: NoCopy,
+impl<R, T: Repr<R>> Clone for ReprPtr<R, T> {
+    fn clone(&self) -> Self {
+        Self {
+            addr: self.addr,
+            ptr: self.ptr,
+            _T: PhantomData,
+        }
+    }
 }
 
-pub ghost struct PointsToArrayData<V, const N: usize> {
-    pub ptr: *mut [V; N],
-    pub value: [raw_ptr::MemContents<V>; N],
+impl<R, T: Repr<R>> Copy for ReprPtr<R, T> {
+
 }
 
-#[verifier::inline]
+impl<R, T: Repr<R>> ReprPtr<R, T> {
+    pub open spec fn addr_spec(self) -> usize {
+        self.addr
+    }
+
+    #[verifier::when_used_as_spec(addr_spec)]
+    pub fn addr(self) -> (u: usize)
+        ensures
+            u == self.addr
+    {
+        self.addr
+    }
+
+    pub exec fn take(self, Tracked(perm): Tracked<&mut PointsTo<R, T>>) -> (v : T)
+        requires
+            old(perm).pptr() == self,
+            old(perm).is_init(),
+            old(perm).wf()
+        ensures
+            perm.pptr() == old(perm).pptr(),
+            perm.mem_contents() == MemContents::Uninit::<T>,
+            v == old(perm).value()
+    {
+        proof {
+            T::from_to_repr(perm.value());
+        }
+        T::from_repr(self.ptr.take(Tracked(perm.points_to.borrow_mut())))
+    }
+
+    pub exec fn put(self, Tracked(perm): Tracked<&mut PointsTo<R, T>>, v: T)
+        requires
+            old(perm).pptr() == self,
+            old(perm).mem_contents() == MemContents::Uninit::<T>,
+        ensures
+            perm.pptr() == old(perm).pptr(),
+            perm.mem_contents() == MemContents::Init(v),
+            perm.wf()
+    {
+        proof {
+            v.from_to_repr();
+            v.to_repr_wf();
+        }
+        self.ptr.put(Tracked(perm.points_to.borrow_mut()), v.to_repr())
+    }
+
+    pub exec fn borrow<'a>(self, Tracked(perm): Tracked<&'a PointsTo<R, T>>) -> (v : &'a T)
+        requires
+            perm.pptr() == self,
+            perm.is_init(),
+            perm.wf()
+        ensures
+            *v === perm.value(),
+    {
+        T::from_borrowed(self.ptr.borrow(Tracked(perm.points_to.borrow())))
+    }
+}
+
+#[verifier::accept_recursive_types(T)]
+pub tracked struct PointsTo<R, T: Repr<R>> {
+    pub addr: usize,
+    pub points_to: Tracked<simple_pptr::PointsTo<R>>,
+    pub _T: PhantomData<T>
+}
+
+impl<R, T: Repr<R>> PointsTo<R, T> {
+    pub fn new(addr: usize, points_to: Tracked<simple_pptr::PointsTo<R>>) -> Tracked<Self>
+    {
+        Tracked(
+            Self {
+                addr: addr,
+                points_to: points_to,
+                _T: PhantomData
+        })
+    }
+
+    pub closed spec fn wf(self) -> bool
+    {
+        &&& T::wf(self.points_to@.value())
+    }
+
+    pub open spec fn addr_spec(self) -> usize
+    {
+        self.addr
+    }
+
+    #[verifier::when_used_as_spec(addr_spec)]
+    pub fn addr(self) -> (u:usize)
+        ensures u == self.addr_spec()
+    {
+        self.addr
+    }
+
+    pub closed spec fn mem_contents(self) -> MemContents<T>
+    {
+        match self.points_to@.mem_contents() {
+            MemContents::<R>::Uninit => MemContents::<T>::Uninit,
+            MemContents::<R>::Init(r) => MemContents::<T>::Init(T::from_repr(r)),
+        }
+    }
+
+    pub open spec fn is_init(&self) -> bool
+    {
+        self.mem_contents().is_init()
+    }
+
+    pub open spec fn is_uninit(&self) -> bool
+    {
+        self.mem_contents().is_uninit()
+    }
+
+    pub open spec fn value(&self) -> T
+        recommends
+            self.is_init(),
+    {
+        self.mem_contents().value()
+    }
+
+    pub open spec fn pptr(&self) -> ReprPtr<R, T>
+    {
+        ReprPtr {
+            addr: self.addr,
+            ptr: self.points_to@.pptr(),
+            _T: PhantomData
+        }
+    }
+}
+
+/*#[verifier::inline]
 pub open spec fn is_mem_contents_all_init<V, const N: usize>(
     arr: [raw_ptr::MemContents<V>; N],
 ) -> bool {
@@ -365,20 +526,8 @@ impl<V, const N: usize> ArrayPtr<V, N> {
     pub exec fn from_addr(addr: usize) -> (res: Self)
         ensures
             res.addr == addr,
-            res.index == 0,
     {
-        Self { addr, index: 0, _type: PhantomData }
-    }
-
-    pub open spec fn add_spec(self, off:usize) -> Self {
-        Self { addr: self.addr, index: (self.index+off) as usize, _type: PhantomData }
-    }
-
-    pub exec fn add(self, off:usize) -> Self
-        requires self.index + off <= N      // C standard style: don't exceed one-past the end of the array
-        returns self.add_spec(off)
-    {
-        Self { addr: self.addr, index: (self.index+off) as usize, _type: PhantomData }
+        Self { addr, _type: PhantomData }
     }
 }
 
@@ -389,8 +538,8 @@ impl<V, const N: usize> PointsTo<V, N> {
     }
 
     /// Spec: cast the permission to a pointer
-    pub open spec fn is_pptr(&self, ptr: ArrayPtr<V, N>) -> bool {
-        ptr.addr == self.addr()
+    pub open spec fn pptr(&self) -> ArrayPtr<V, N> {
+        ArrayPtr { addr: self.addr(), _type: PhantomData }
     }
 
     /// Spec: invariants for the ArrayPtr permissions
@@ -462,7 +611,7 @@ impl<V, const N: usize> PointsTo<V, N> {
             old(self).wf(),
         ensures
             self.wf(),
-            self.addr() == old(self).addr(),
+            self.pptr() == old(self).pptr(),
             self.is_uninit(index),
             forall|i: int|
                 0 <= i < N && i != index ==> self.opt_value()[i] == old(self).opt_value()[i],
@@ -548,7 +697,7 @@ impl<V, const N: usize> ArrayPtr<V, N> {
             layout::size_of::<[V; N]>() > 0,
         ensures
             res.1@.wf(),
-            res.1@.is_pptr(res.0),
+            res.1@.pptr() == res.0,
             res.1@.is_uninit_all(),
     {
         layout_for_array_is_valid::<V, N>();
@@ -573,7 +722,7 @@ impl<V, const N: usize> ArrayPtr<V, N> {
         proof {
             assert(pt.is_uninit_all());
         }
-        let ptr = ArrayPtr { addr: p as usize, index: 0, _type: PhantomData };
+        let ptr = ArrayPtr { addr: p as usize, _type: PhantomData };
         (ptr, Tracked(pt))
     }
 
@@ -581,11 +730,11 @@ impl<V, const N: usize> ArrayPtr<V, N> {
     pub exec fn make_as(&self, Tracked(perm): Tracked<&mut PointsTo<V, N>>, value: V) where V: Copy
         requires
             old(perm).wf(),
-            old(perm).is_pptr(*self),
+            old(perm).pptr() == self,
             old(perm).is_uninit_all(),
         ensures
             perm.wf(),
-            perm.is_pptr(*self),
+            perm.pptr() == self,
             perm.is_init_all(),
             forall|i: int| 0 <= i < N ==> perm.opt_value()[i] == raw_ptr::MemContents::Init(value),
     {
@@ -600,14 +749,14 @@ impl<V, const N: usize> ArrayPtr<V, N> {
             layout::size_of::<[V; N]>() > 0,
         ensures
             res.1@.wf(),
-            res.1@.is_pptr(res.0),
+            res.1@.pptr() == res.0,
             forall|i: int|
                 0 <= i < N ==> #[trigger] res.1@.opt_value()[i] == raw_ptr::MemContents::Init(dft),
     {
         let (p, Tracked(perm)) = ArrayPtr::empty();
         proof {
             assert(perm.wf());
-            assert(perm.is_pptr(p));
+            assert(perm.pptr() == p);
             assert(perm.is_uninit_all());
         }
         p.make_as(Tracked(&mut perm), dft);
@@ -617,7 +766,7 @@ impl<V, const N: usize> ArrayPtr<V, N> {
     pub exec fn free(self, Tracked(perm): Tracked<PointsTo<V, N>>)
         requires
             perm.wf(),
-            perm.is_pptr(self),
+            perm.pptr() == self,
             perm.is_uninit_all(),
     {
         if core::mem::size_of::<[V; N]>() == 0 {
@@ -654,24 +803,24 @@ impl<V, const N: usize> ArrayPtr<V, N> {
     /// The value is moved into the array.
     /// Requires the slot at `index` to be uninitialized.
     #[inline(always)]
-    pub exec fn insert(&self, Tracked(perm): Tracked<&mut PointsTo<V, N>>, value: V)
+    pub exec fn insert(&self, Tracked(perm): Tracked<&mut PointsTo<V, N>>, index: usize, value: V)
         requires
             old(perm).wf(),
-            old(perm).is_pptr(*self),
-            old(perm).is_uninit(self.index as int),
-            self.index < N,
+            old(perm).pptr() == self,
+            old(perm).is_uninit(index as int),
+            index < N,
         ensures
             perm.wf(),
-            perm.is_pptr(*self),
-            perm.is_init(self.index as int),
+            perm.pptr() == self,
+            perm.is_init(index as int),
             forall|i: int|
-                0 <= i < N && i != self.index ==> perm.opt_value()[i] == old(perm).opt_value()[i],
-            perm.opt_value()[self.index as int] == raw_ptr::MemContents::Init(value),
+                0 <= i < N && i != index ==> perm.opt_value()[i] == old(perm).opt_value()[i],
+            perm.opt_value()[index as int] == raw_ptr::MemContents::Init(value),
     {
         let ptr: *mut [V; N] = raw_ptr::with_exposed_provenance(self.addr, Tracked(perm.exposed));
 
-        assert(perm.points_to().is_uninit(self.index as int));
-        ptr_mut_write_at(ptr, Tracked(&mut perm.points_to), self.index, value);
+        assert(perm.points_to().is_uninit(index as int));
+        ptr_mut_write_at(ptr, Tracked(&mut perm.points_to), index, value);
     }
 
     /// Take the `value` at `index`
@@ -679,25 +828,25 @@ impl<V, const N: usize> ArrayPtr<V, N> {
     /// Requires the slot at `index` to be initialized.
     /// Afterwards, the slot is uninitialized.
     #[inline(always)]
-    pub exec fn take_at(&self, Tracked(perm): Tracked<&mut PointsTo<V, N>>) -> (res:
+    pub exec fn take_at(&self, Tracked(perm): Tracked<&mut PointsTo<V, N>>, index: usize) -> (res:
         V) where V: Copy
         requires
             old(perm).wf(),
-            old(perm).is_pptr(*self),
-            old(perm).is_init(self.index as int),
-            self.index < N,
+            old(perm).pptr() == self,
+            old(perm).is_init(index as int),
+            index < N,
         ensures
             perm.wf(),
-            perm.is_pptr(*self),
-            perm.is_uninit(self.index as int),
+            perm.pptr() == self,
+            perm.is_uninit(index as int),
             forall|i: int|
-                0 <= i < N && i != self.index ==> perm.opt_value()[i] == old(perm).opt_value()[i],
-            res == old(perm).opt_value()[self.index as int].value(),
+                0 <= i < N && i != index ==> perm.opt_value()[i] == old(perm).opt_value()[i],
+            res == old(perm).opt_value()[index as int].value(),
     {
         let ptr: *mut [V; N] = raw_ptr::with_exposed_provenance(self.addr, Tracked(perm.exposed));
 
-        assert(perm.points_to().is_init(self.index as int));
-        ptr_mut_read_at(ptr, Tracked(&mut perm.points_to), self.index)
+        assert(perm.points_to().is_init(index as int));
+        ptr_mut_read_at(ptr, Tracked(&mut perm.points_to), index)
     }
 
     /// Take all the values of the array
@@ -708,11 +857,11 @@ impl<V, const N: usize> ArrayPtr<V, N> {
     pub exec fn take_all(&self, Tracked(perm): Tracked<&mut PointsTo<V, N>>) -> (res: [V; N])
         requires
             old(perm).wf(),
-            old(perm).is_pptr(*self),
+            old(perm).pptr() == self,
             old(perm).is_init_all(),
         ensures
             perm.wf(),
-            perm.is_pptr(*self),
+            perm.pptr() == self,
             perm.is_uninit_all(),
             res@ == old(perm).value(),
     {
@@ -730,7 +879,7 @@ impl<V, const N: usize> ArrayPtr<V, N> {
     pub exec fn into_inner(self, Tracked(perm): Tracked<PointsTo<V, N>>) -> (res: [V; N])
         requires
             perm.wf(),
-            perm.is_pptr(self),
+            perm.pptr() == self,
             perm.is_init_all(),
         ensures
             res@ == perm.value(),
@@ -754,12 +903,12 @@ impl<V, const N: usize> ArrayPtr<V, N> {
     ) -> (res: V) where V: Copy
         requires
             old(perm).wf(),
-            old(perm).is_pptr(*self),
+            old(perm).pptr() == self,
             old(perm).is_init(index as int),
             index < N,
         ensures
             perm.wf(),
-            perm.is_pptr(*self),
+            perm.pptr() == self,
             perm.is_init(index as int),
             forall|i: int|
                 0 <= i < N && i != index ==> perm.opt_value()[i] == old(perm).opt_value()[i],
@@ -789,7 +938,7 @@ impl<V, const N: usize> ArrayPtr<V, N> {
     ) -> (res: &'a V)
         requires
             perm.wf(),
-            perm.is_pptr(*self),
+            perm.pptr() == self,
             perm.is_init(index as int),
             index < N,
         ensures
@@ -812,7 +961,7 @@ impl<V, const N: usize> ArrayPtr<V, N> {
     pub exec fn borrow<'a>(&self, Tracked(perm): Tracked<&'a PointsTo<V, N>>) -> (res: &'a [V; N])
         requires
             perm.wf(),
-            perm.is_pptr(*self),
+            perm.pptr() == self,
             perm.is_init_all(),
         ensures
             forall|i: int| 0 <= i < N ==> #[trigger] res[i] == perm.opt_value()[i].value(),
@@ -834,11 +983,11 @@ impl<V, const N: usize> ArrayPtr<V, N> {
     )
         requires
             old(perm).wf(),
-            old(perm).is_pptr(*self),
+            old(perm).pptr() == self,
             index < N,
         ensures
             perm.wf(),
-            perm.is_pptr(*self),
+            perm.pptr() == self,
             perm.is_init(index as int),
             forall|i: int|
                 0 <= i < N && i != index ==> perm.opt_value()[i] == old(perm).opt_value()[i],
@@ -862,11 +1011,11 @@ impl<V, const N: usize> ArrayPtr<V, N> {
     )
         requires
             old(perm).wf(),
-            old(perm).is_pptr(*self),
+            old(perm).pptr() == self,
             index < N,
         ensures
             perm.wf(),
-            perm.is_pptr(*self),
+            perm.pptr() == self,
             perm.is_init(index as int),
             forall|i: int|
                 0 <= i < N && i != index ==> perm.opt_value()[i] == old(perm).opt_value()[i],
@@ -885,7 +1034,7 @@ impl<V, const N: usize> ArrayPtr<V, N> {
 
         requires
             perm.wf(),
-            perm.is_pptr(*self),
+            perm.pptr() == self,
             perm.is_init(index as int),
             index < N,
         ensures
@@ -894,5 +1043,5 @@ impl<V, const N: usize> ArrayPtr<V, N> {
         *self.borrow_at(Tracked(perm), index)
     }
 }
-
+*/
 } // verus!

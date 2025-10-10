@@ -5,34 +5,40 @@ use vstd::prelude::*;
 use core::marker::PhantomData;
 use core::ops::Range;
 
+use crate::page_table::node::entry::PageTableGuard;
 use crate::prelude::*;
-use crate::task::DisabledPreemptGuard;
-use crate::x86_64::PagingConsts;
 
 use model::ConcreteCursor;
 
 verus! {
 
+/// The cursor for traversal over the page table.
+///
+/// A slot is a PTE at any levels, which correspond to a certain virtual
+/// memory range sized by the "page size" of the current level.
+///
+/// A cursor is able to move to the next slot, to read page properties,
+/// and even to jump to a virtual address directly.
 #[rustc_has_incoherent_inherent_impls]
-pub struct Cursor<'a, M: PageTableMode> {
-    /// The lock guards of the cursor. The level 1 page table lock guard is at
-    /// index 0, and the level N page table lock guard is at index N - 1.
+pub struct Cursor<'rcu, C: PageTableConfig> {
+    /// The current path of the cursor.
     ///
-    /// When destructing the cursor, the locks will be released in the order
-    /// from low to high, exactly the reverse order of the acquisition.
-    /// This behavior is ensured by the default drop implementation of Rust:
-    /// <https://doc.rust-lang.org/reference/destructors.html>.
-    pub guards: [Option<PageTableNode>; 4],
-    /// The level of the page table that the cursor points to.
+    /// The level 1 page table lock guard is at index 0, and the level N page
+    /// table lock guard is at index N - 1.
+    pub path: [Option<PageTableGuard<'rcu, C>>; MAX_NR_LEVELS()],
+    /// The cursor should be used in a RCU read side critical section.
+//    rcu_guard: &'rcu dyn InAtomicMode,
+    /// The level of the page table that the cursor currently points to.
     pub level: PagingLevel,
-    /// From `guard_level` to `level`, the locks are held in `guards`.
+    /// The top-most level that the cursor is allowed to access.
+    ///
+    /// From `level` to `guard_level`, the nodes are held in `path`.
     pub guard_level: PagingLevel,
-    /// The current virtual address that the cursor points to.
+    /// The virtual address that the cursor currently points to.
     pub va: Vaddr,
     /// The virtual address range that is locked.
     pub barrier_va: Range<Vaddr>,
-    pub preempt_guard: DisabledPreemptGuard,
-    pub phantom: PhantomData<&'a PageTable<M>>,
+    pub _phantom: PhantomData<&'rcu PageTable<C>>,
 }
 
 pub enum PageTableItem {
@@ -71,8 +77,8 @@ pub const fn align_down(x: usize, align: usize) -> (res: usize)
     res
 }
 
-impl<'a, M: PageTableMode> Cursor<'a, M> {
-    #[rustc_allow_incoherent_impl]
+impl<'a, C: PageTableConfig> Cursor<'a, C> {
+/*    #[rustc_allow_incoherent_impl]
     pub open spec fn relate_locked_region(self, model: ConcreteCursor) -> bool
         recommends
             model.inv(),
@@ -91,7 +97,7 @@ impl<'a, M: PageTableMode> Cursor<'a, M> {
             model.locked_subtree@.is_leaf() || barrier_start_path@.index(barrier_lv)
                 != barrier_end_path@.index(barrier_lv)
         }
-    }
+    }*/
 
     #[rustc_allow_incoherent_impl]
     pub open spec fn relate(self, model: ConcreteCursor) -> bool
@@ -100,7 +106,7 @@ impl<'a, M: PageTableMode> Cursor<'a, M> {
     {
         &&& self.level == NR_LEVELS() - model.path.len()
         &&& self.va == model.path.vaddr()
-        &&& self.relate_locked_region(model)
+//        &&& self.relate_locked_region(model)
     }
 
     #[rustc_allow_incoherent_impl]
@@ -124,14 +130,9 @@ impl<'a, M: PageTableMode> Cursor<'a, M> {
         self.va
     }
 
-    #[rustc_allow_incoherent_impl]
-    pub fn preempt_guard(&self) -> &DisabledPreemptGuard {
-        &self.preempt_guard
-    }
-
     /// Goes down a level to a child page table.
     #[rustc_allow_incoherent_impl]
-    fn push_level(&mut self, node: PageTableNode, Tracked(model): Tracked<&ConcreteCursor>)
+    fn push_level(&mut self, node: PageTableNode<C>, Tracked(model): Tracked<&ConcreteCursor>)
         requires
             old(self).inv(),
             1 < old(self).level <= NR_LEVELS(),
@@ -147,7 +148,7 @@ impl<'a, M: PageTableMode> Cursor<'a, M> {
             model.lemma_push_level_spec_preserves_vaddr(model.path.inner.len() as int)
         };
 
-        self.guards.set((self.level - 1) as usize, Some(node));
+//        self.guards.set((self.level - 1) as usize, Some(node));
     }
 
     /// Goes up a level.
@@ -177,7 +178,7 @@ impl<'a, M: PageTableMode> Cursor<'a, M> {
             model.lemma_pop_level_spec_preserves_vaddr(NR_LEVELS() - self.level)
         };
 
-        self.guards.set((self.level - 1) as usize, None);
+//        self.guards.set((self.level - 1) as usize, None);
         self.level = self.level + 1;
     }
 

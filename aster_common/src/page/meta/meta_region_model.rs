@@ -25,38 +25,49 @@ pub ghost struct MetaRegionModel {
 
 impl Inv for MetaRegionOwners {
     open spec fn inv(&self) -> bool {
-        &&& self.slots.dom().finite()
-        //    &&& self.slots.dom() == self.slot_owners.dom()
-        &&& {
-            // All accessible slots are within the valid address range.
-            forall|i: usize| i < max_meta_slots() <==> #[trigger] self.slots.contains_key(i)
+    &&& self.slots.dom().finite()
+    &&& {
+        // All accessible slots are within the valid address range.
+        forall |i: usize|
+            i < max_meta_slots() <==> #[trigger] self.slot_owners.contains_key(i)
         }
-        &&& {
-            forall|i: usize| i < max_meta_slots() <==> #[trigger] self.dropped_slots.contains_key(i)
+    &&& {
+        forall |i: usize|
+            #[trigger] self.slots.contains_key(i) ==> i < max_meta_slots()
         }
-        &&& {
-            // Invariant for each slot holds.
-            forall|i: usize| #[trigger]
-                self.slots.contains_key(i) ==> {
-                    &&& self.slot_owners.contains_key(i)
-                    &&& self.slot_owners[i].inv()
-                    &&& self.slots[i]@.is_init()
-                    &&& self.slots[i]@.addr() == meta_addr(i)
-                    &&& self.slots[i]@.value().wf(&self.slot_owners[i])
-                    &&& self.slot_owners[i].self_ptr@.addr() == self.slots[i]@.addr()
-                }
+    &&& {
+        forall |i: usize|
+            #[trigger] self.dropped_slots.contains_key(i) ==> i < max_meta_slots() 
         }
-        &&& {
-            // Invariant for each slot holds.
-            forall|i: usize| #[trigger]
-                self.dropped_slots.contains_key(i) ==> {
-                    &&& self.slot_owners.contains_key(i)
-                    &&& self.slot_owners[i].inv()
-                    &&& self.dropped_slots[i]@.is_init()
-                    &&& self.dropped_slots[i]@.addr() == meta_addr(i)
-                    &&& self.dropped_slots[i]@.value().wf(&self.slot_owners[i])
-                    &&& self.slot_owners[i].self_ptr@.addr() == self.dropped_slots[i]@.addr()
-                }
+    &&& {
+        // Invariant for each slot holds.
+        forall |i: usize|
+            #[trigger]
+            self.slot_owners.contains_key(i) ==> self.slot_owners[i].inv()
+        }
+    &&& {
+        forall |i: usize|
+            #[trigger]
+            self.slots.contains_key(i) ==>
+            {
+            &&& self.slots[i]@.is_init()
+            &&& self.slots[i]@.addr() == meta_addr(i)
+            &&& self.slots[i]@.value().wf(&self.slot_owners[i])
+            &&& self.slot_owners[i].self_addr == self.slots[i]@.addr()
+            &&& !self.dropped_slots.contains_key(i)
+            }
+        }
+    &&& {
+        forall |i: usize|
+            #[trigger]
+            self.dropped_slots.contains_key(i) ==>
+            {
+            &&& self.dropped_slots[i]@.is_init()
+            &&& self.dropped_slots[i]@.addr() == meta_addr(i)
+            &&& self.dropped_slots[i]@.value().wf(&self.slot_owners[i])
+            &&& self.slot_owners[i].self_addr == self.dropped_slots[i]@.addr()
+            &&& !self.slots.contains_key(i)
+            }
         }
     }
 }
@@ -108,9 +119,7 @@ impl MetaRegionOwners {
             paddr % PAGE_SIZE() == 0,
             self.inv(),
         ensures
-            self.slots.contains_key(frame_to_index_spec(paddr) as usize),
-            self.slots[frame_to_index_spec(paddr) as usize]@.addr() == frame_to_meta(paddr),
-            self.slots[frame_to_index_spec(paddr) as usize]@.is_init(),
+            self.slot_owners.contains_key(frame_to_index_spec(paddr) as usize),
     {
         assert((frame_to_index_spec(paddr)) < max_meta_slots() as usize);
     }/*    pub proof fn wf_helper(self, region: MetaRegion, i: usize)
