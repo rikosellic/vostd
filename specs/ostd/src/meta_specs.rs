@@ -1,21 +1,23 @@
-use vstd::prelude::*;
 use vstd::cell;
+use vstd::prelude::*;
 use vstd::simple_pptr::{self, PPtr};
 
-use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::*;
+use vstd_extra::ownership::*;
 
 use aster_common::prelude::*;
 
 use std::marker::PhantomData;
 
-verus!{
+verus! {
 
 impl MetaSlot {
-
     #[rustc_allow_incoherent_impl]
-    pub open spec fn from_unused_slot_spec<M: AnyFrameMeta>(paddr: Paddr, metadata: M, as_unique_ptr: bool) -> MetaSlotModel
-    {
+    pub open spec fn from_unused_slot_spec<M: AnyFrameMeta>(
+        paddr: Paddr,
+        metadata: M,
+        as_unique_ptr: bool,
+    ) -> MetaSlotModel {
         let (rc, status) = if as_unique_ptr {
             (REF_COUNT_UNIQUE, MetaSlotStatus::UNIQUE)
         } else {
@@ -33,8 +35,7 @@ impl MetaSlot {
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn get_from_unused_spec<M: AnyFrameMeta>
-    (
+    pub open spec fn get_from_unused_spec<M: AnyFrameMeta>(
         paddr: Paddr,
         metadata: M,
         as_unique_ptr: bool,
@@ -49,35 +50,37 @@ impl MetaSlot {
     {
         let ptr = get_slot_spec(paddr);
         let idx = frame_to_index(paddr);
-        
+
         let post = MetaRegionModel {
             slots: pre.slots.insert(
-                idx, 
-                Self::from_unused_slot_spec(paddr, metadata, as_unique_ptr)
-            )
+                idx,
+                Self::from_unused_slot_spec(paddr, metadata, as_unique_ptr),
+            ),
         };
         (ptr, post)
     }
 
     /// All other slots remain unchanged.
     #[rustc_allow_incoherent_impl]
-    pub open spec fn update_index_tracked(idx: usize, pre: MetaRegionOwners, post: MetaRegionOwners)
-        -> bool
+    pub open spec fn update_index_tracked(
+        idx: usize,
+        pre: MetaRegionOwners,
+        post: MetaRegionOwners,
+    ) -> bool
         recommends
-            pre.slots.contains_key(idx)
+            pre.slots.contains_key(idx),
     {
-    &&& pre.slots.dom() == post.slots.dom()
-    &&& pre.dropped_slots.dom() == post.dropped_slots.dom()
-    &&& pre.slot_owners.dom() == post.slot_owners.dom()
-    &&& forall |i: usize| #[trigger]
-        pre.slots.contains_key(i) && i != idx ==>
-            pre.slots[i] == post.slots[i]
-    &&& forall |i: usize| #[trigger]
-        pre.dropped_slots.contains_key(i) && i != idx ==>
-            pre.dropped_slots[i] == post.dropped_slots[i]
-    &&& forall |i: usize| #[trigger]
-        pre.slot_owners.contains_key(i) && i != idx ==>
-            pre.slot_owners[i] == post.slot_owners[i]
+        &&& pre.slots.dom() == post.slots.dom()
+        &&& pre.dropped_slots.dom() == post.dropped_slots.dom()
+        &&& pre.slot_owners.dom() == post.slot_owners.dom()
+        &&& forall|i: usize| #[trigger]
+            pre.slots.contains_key(i) && i != idx ==> pre.slots[i] == post.slots[i]
+        &&& forall|i: usize| #[trigger]
+            pre.dropped_slots.contains_key(i) && i != idx ==> pre.dropped_slots[i]
+                == post.dropped_slots[i]
+        &&& forall|i: usize| #[trigger]
+            pre.slot_owners.contains_key(i) && i != idx ==> pre.slot_owners[i]
+                == post.slot_owners[i]
     }
 
     #[rustc_allow_incoherent_impl]
@@ -97,15 +100,17 @@ impl MetaSlot {
     {
         let idx = paddr / 4096;
         {
-        &&& Self::update_index_tracked(idx, pre, post)
-        &&& Self::get_from_unused_spec(paddr, metadata, as_unique_ptr, pre.view()).1 ==
-            post.view()
+            &&& Self::update_index_tracked(idx, pre, post)
+            &&& Self::get_from_unused_spec(paddr, metadata, as_unique_ptr, pre.view()).1
+                == post.view()
         }
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn get_from_in_use_spec(paddr: Paddr, pre: MetaRegionModel) 
-        -> (PPtr<MetaSlot>, MetaRegionModel)
+    pub open spec fn get_from_in_use_spec(paddr: Paddr, pre: MetaRegionModel) -> (
+        PPtr<MetaSlot>,
+        MetaRegionModel,
+    )
         recommends
             paddr % 4096 == 0,
             paddr < MAX_PADDR(),
@@ -117,11 +122,9 @@ impl MetaSlot {
         let pre_slot = pre.slots[idx];
         let post = MetaRegionModel {
             slots: pre.slots.insert(
-                idx, MetaSlotModel {
-                    ref_count: (pre_slot.ref_count + 1) as u64,
-                    ..pre_slot
-                }
-            )
+                idx,
+                MetaSlotModel { ref_count: (pre_slot.ref_count + 1) as u64, ..pre_slot },
+            ),
         };
         (ptr, post)
     }
@@ -141,36 +144,32 @@ impl MetaSlot {
     {
         let idx = paddr / 4096;
         {
-        &&& Self::update_index_tracked(idx, pre, post)
-        &&& Self::get_from_in_use_spec(paddr, pre.view()).1 == post.view()
+            &&& Self::update_index_tracked(idx, pre, post)
+            &&& Self::get_from_in_use_spec(paddr, pre.view()).1 == post.view()
         }
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn inc_ref_count_spec(&self, pre: MetaSlotModel)
-        -> (MetaSlotModel)
+    pub open spec fn inc_ref_count_spec(&self, pre: MetaSlotModel) -> (MetaSlotModel)
         recommends
             pre.inv(),
             pre.status == MetaSlotStatus::SHARED,
     {
-        MetaSlotModel {
-            ref_count: (pre.ref_count + 1) as u64,
-            ..pre
-        }
+        MetaSlotModel { ref_count: (pre.ref_count + 1) as u64, ..pre }
     }
 
     #[rustc_allow_incoherent_impl]
     pub open spec fn frame_paddr_spec(&self, pre: MetaSlotModel) -> Paddr {
         mapping::meta_to_frame_spec(pre.self_addr)
     }
-
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
-
     #[rustc_allow_incoherent_impl]
-    pub open spec fn from_unused_spec(paddr: Paddr, metadata: M, pre: MetaRegionModel)
-        -> (Self, MetaRegionModel)
+    pub open spec fn from_unused_spec(paddr: Paddr, metadata: M, pre: MetaRegionModel) -> (
+        Self,
+        MetaRegionModel,
+    )
         recommends
             paddr % PAGE_SIZE() == 0,
             paddr < MAX_PADDR(),
@@ -190,17 +189,18 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
             pre.slots[paddr / 4096].ref_count == REF_COUNT_UNUSED,
         ensures
             UniqueFrame::from_unused_spec(paddr, metadata, pre).1.inv(),
-    { }
+    {
+    }
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
     #[rustc_allow_incoherent_impl]
     pub open spec fn from_raw_spec(paddr: Paddr) -> Self {
-        Frame::<M>{
+        Frame::<M> {
             ptr: PPtr::<MetaSlot>(frame_to_meta(paddr), PhantomData),
-            _marker: PhantomData
+            _marker: PhantomData,
         }
     }
 }
 
-}
+} // verus!

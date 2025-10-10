@@ -27,7 +27,7 @@ pub struct Cursor<'rcu, C: PageTableConfig> {
     /// table lock guard is at index N - 1.
     pub path: [Option<PageTableGuard<'rcu, C>>; MAX_NR_LEVELS()],
     /// The cursor should be used in a RCU read side critical section.
-//    rcu_guard: &'rcu dyn InAtomicMode,
+    //    rcu_guard: &'rcu dyn InAtomicMode,
     /// The level of the page table that the cursor currently points to.
     pub level: PagingLevel,
     /// The top-most level that the cursor is allowed to access.
@@ -78,7 +78,7 @@ pub const fn align_down(x: usize, align: usize) -> (res: usize)
 }
 
 impl<'a, C: PageTableConfig> Cursor<'a, C> {
-/*    #[rustc_allow_incoherent_impl]
+    /*    #[rustc_allow_incoherent_impl]
     pub open spec fn relate_locked_region(self, model: ConcreteCursor) -> bool
         recommends
             model.inv(),
@@ -98,15 +98,16 @@ impl<'a, C: PageTableConfig> Cursor<'a, C> {
                 != barrier_end_path@.index(barrier_lv)
         }
     }*/
-
     #[rustc_allow_incoherent_impl]
     pub open spec fn relate(self, model: ConcreteCursor) -> bool
         recommends
             model.inv(),
     {
         &&& self.level == NR_LEVELS() - model.path.len()
-        &&& self.va == model.path.vaddr()
-//        &&& self.relate_locked_region(model)
+        &&& self.va
+            == model.path.vaddr()
+        //        &&& self.relate_locked_region(model)
+
     }
 
     #[rustc_allow_incoherent_impl]
@@ -148,7 +149,7 @@ impl<'a, C: PageTableConfig> Cursor<'a, C> {
             model.lemma_push_level_spec_preserves_vaddr(model.path.inner.len() as int)
         };
 
-//        self.guards.set((self.level - 1) as usize, Some(node));
+        //        self.guards.set((self.level - 1) as usize, Some(node));
     }
 
     /// Goes up a level.
@@ -178,7 +179,7 @@ impl<'a, C: PageTableConfig> Cursor<'a, C> {
             model.lemma_pop_level_spec_preserves_vaddr(NR_LEVELS() - self.level)
         };
 
-//        self.guards.set((self.level - 1) as usize, None);
+        //        self.guards.set((self.level - 1) as usize, None);
         self.level = self.level + 1;
     }
 

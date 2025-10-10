@@ -60,8 +60,8 @@ use super::{PagingLevel, PAGE_SIZE};
 use crate::mm::{Paddr, Vaddr};
 
 use aster_common::prelude::*;
-use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::*;
+use vstd_extra::ownership::*;
 
 verus! {
 
@@ -83,7 +83,6 @@ impl<M: AnyFrameMeta + ?Sized> PartialEq for Frame<M> {
 }
 impl<M: AnyFrameMeta + ?Sized> Eq for Frame<M> {}
 */
-
 impl<'a, M: AnyFrameMeta> Frame<M> {
     /// Gets a [`Frame`] with a specific usage from a raw, unused page.
     ///
@@ -96,7 +95,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         with Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
     #[rustc_allow_incoherent_impl]
-    pub fn from_unused(paddr: Paddr, metadata: M) -> (res:Result<Self, GetFrameError>)
+    pub fn from_unused(paddr: Paddr, metadata: M) -> (res: Result<Self, GetFrameError>)
         requires
             old(regions).inv(),
             paddr < MAX_PADDR(),
@@ -106,7 +105,12 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             old(regions).slot_owners[frame_to_index(paddr)].in_list@.points_to(0),
             old(regions).slot_owners[frame_to_index(paddr)].self_addr == frame_to_meta(paddr),
         ensures
-            res.is_ok() ==> regions.view() == MetaSlot::get_from_unused_spec::<M>(paddr, metadata, false, old(regions).view()).1,
+            res.is_ok() ==> regions.view() == MetaSlot::get_from_unused_spec::<M>(
+                paddr,
+                metadata,
+                false,
+                old(regions).view(),
+            ).1,
     {
         #[verus_spec(with Tracked(regions))]
         let from_unused = MetaSlot::get_from_unused(paddr, metadata, false);
@@ -129,11 +133,11 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             perm.pptr().ptr.0 == slot_own.storage@.addr(),
             perm.pptr().addr == slot_own.storage@.addr(),
             perm.is_init(),
-            perm.wf()
-        returns &perm.value()
+            perm.wf(),
+        returns
+            &perm.value(),
     {
         // SAFETY: The type is tracked by the type system.
-        
         #[verus_spec(with Tracked(slot_perm))]
         let slot = self.slot();
 
@@ -174,8 +178,9 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             slot_perm.pptr() == self.ptr,
             slot_perm.is_init(),
             slot_perm.value().wf(&slot_own),
-            slot_own.inv()
-        returns slot_perm.value().frame_paddr_spec(slot_own@)
+            slot_own.inv(),
+        returns
+            slot_perm.value().frame_paddr_spec(slot_own@),
     {
         #[verus_spec(with Tracked(slot_perm))]
         let slot = self.slot();
@@ -230,7 +235,8 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             slot_perm.pptr() == self.ptr,
             slot_perm.is_init(),
             old(slot_own).ref_count@.is_for(slot_perm.value().ref_count),
-        returns old(slot_own)@.ref_count,
+        returns
+            old(slot_own)@.ref_count,
     {
         #[verus_spec(with Tracked(slot_perm))]
         let slot = self.slot();
@@ -253,7 +259,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         with Tracked(regions) : Tracked<&mut MetaRegionOwners>
     )]
     #[rustc_allow_incoherent_impl]
-    pub fn into_raw(self) -> (res:Paddr)
+    pub fn into_raw(self) -> (res: Paddr)
         requires
             FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr())
                 < FRAME_METADATA_RANGE().end,
@@ -277,7 +283,9 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         #[verus_spec(with Tracked(owner), Tracked(perm.borrow()))]
         let paddr = self.start_paddr();
 
-        proof { regions.dropped_slots.tracked_insert(frame_to_index(paddr), perm); }
+        proof {
+            regions.dropped_slots.tracked_insert(frame_to_index(paddr), perm);
+        }
 
         paddr
     }
@@ -298,7 +306,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         with Tracked(regions) : Tracked<&mut MetaRegionOwners>
     )]
     #[rustc_allow_incoherent_impl]
-    pub fn from_raw(paddr: Paddr) -> (res:Self)
+    pub fn from_raw(paddr: Paddr) -> (res: Self)
         requires
             paddr % PAGE_SIZE() == 0,
             paddr < MAX_PADDR(),
@@ -339,7 +347,8 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         requires
             slot_perm.pptr() == self.ptr,
             slot_perm.is_init(),
-        returns slot_perm.value()
+        returns
+            slot_perm.value(),
     {
         // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
         // mutably borrowed, so taking an immutable reference to it is safe.

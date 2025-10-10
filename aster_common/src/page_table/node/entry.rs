@@ -3,13 +3,14 @@ use vstd::prelude::*;
 use vstd::simple_pptr::{self, PPtr};
 
 use crate::prelude::{
-    FrameRef, MetaSlot, MetaSlotOwner, PageTableConfig, PageTableEntry, PageTableEntryTrait, PageTablePageMeta, PageTableNode
+    FrameRef, MetaSlot, MetaSlotOwner, PageTableConfig, PageTableEntry, PageTableEntryTrait,
+    PageTableNode, PageTablePageMeta,
 };
 
 use vstd_extra::ownership::*;
 
-use std::ops::Deref;
 use std::marker::PhantomData;
+use std::ops::Deref;
 
 verus! {
 

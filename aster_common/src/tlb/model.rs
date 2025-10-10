@@ -17,9 +17,8 @@ impl TlbModel {
     }
 
     pub open spec fn relate_page_table(&self, pt: PageTableModel) -> bool {
-//        self.pt_paddr == pt.tree.root_paddr() &&
-        forall|va| #[trigger]
-            self.cached.contains_key(va) ==> pt.flat.contains_key(va as Vaddr)
+        //        self.pt_paddr == pt.tree.root_paddr() &&
+        forall|va| #[trigger] self.cached.contains_key(va) ==> pt.flat.contains_key(va as Vaddr)
     }
 
     pub open spec fn has_tlb_entry(&self, va: int) -> bool {

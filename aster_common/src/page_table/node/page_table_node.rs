@@ -20,7 +20,6 @@ verus! {
 pub type PageTableNode<C> = Frame<PageTablePageMeta<C>>;
 
 impl<C: PageTableConfig> PageTableNode<C> {
-
     pub open spec fn paddr_spec(&self) -> Paddr {
         self.ptr.addr()
     }
@@ -30,14 +29,14 @@ impl<C: PageTableConfig> PageTableNode<C> {
         requires
             self.inv(),
         ensures
-            res == self.paddr_spec(),
-//            res % PAGE_SIZE() == 0,
-//            res < MAX_PADDR(),
+            res
+                == self.paddr_spec(),
+    //            res % PAGE_SIZE() == 0,
+    //            res < MAX_PADDR(),
+
     {
         self.ptr.addr()
-    }
-
-/*    pub fn meta<'a>(
+    }/*    pub fn meta<'a>(
         &'a self,
         Tracked(p_slot): Tracked<&'a simple_pptr::PointsTo<MetaSlot>>,
         owner: MetaSlotOwner,

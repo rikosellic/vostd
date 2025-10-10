@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 //! This module specifies the type of the children of a page table node.
-
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
@@ -10,33 +9,35 @@ use vstd_extra::ownership::*;
 
 use ostd_specs::*;
 
-use core::mem::ManuallyDrop;
 use crate::{
     mm::{Paddr, PagingLevel},
-//    sync::RcuDrop,
+    //    sync::RcuDrop,
 };
+use core::mem::ManuallyDrop;
 
-verus!{
+verus! {
+
 impl<C: PageTableConfig> Child<C> {
-
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
         with slot_own: Option<Tracked<&MetaSlotOwner>>,
             slot_perm: Option<Tracked<&PointsTo<MetaSlot>>>
     )]
-    pub fn into_pte(self) -> (res:C::E)
+    pub fn into_pte(self) -> (res: C::E)
         requires
-            self is PageTable ==>
-            {
+            self is PageTable ==> {
                 &&& slot_own is Some
                 &&& slot_own.unwrap()@.inv()
                 &&& slot_perm is Some
                 &&& slot_perm.unwrap()@.pptr() == self.get_node().unwrap().ptr
                 &&& slot_perm.unwrap()@.is_init()
                 &&& slot_perm.unwrap()@.value().wf(&slot_own.unwrap()@)
-            }
+            },
         ensures
-            self is PageTable ==> res == self.into_pte_pt_spec(*slot_own.unwrap()@, *slot_perm.unwrap()@),
+            self is PageTable ==> res == self.into_pte_pt_spec(
+                *slot_own.unwrap()@,
+                *slot_perm.unwrap()@,
+            ),
             self is Frame ==> res == self.into_pte_frame_spec(self.get_frame_tuple().unwrap()),
             self is None ==> res == self.into_pte_none_spec(),
     {
@@ -46,7 +47,7 @@ impl<C: PageTableConfig> Child<C> {
                 let paddr = node.start_paddr();
                 let _ = ManuallyDrop::new(node);
                 C::E::new_pt(paddr)
-            }
+            },
             Child::Frame(paddr, level, prop) => C::E::new_page(paddr, level, prop),
             Child::None => C::E::new_absent(),
         }
@@ -69,16 +70,21 @@ impl<C: PageTableConfig> Child<C> {
             pte.paddr() < MAX_PADDR(),
             old(regions).inv(),
             !old(regions).slots.contains_key(frame_to_index(pte.paddr())),
-            old(regions).dropped_slots.contains_key(frame_to_index(pte.paddr()))
+            old(regions).dropped_slots.contains_key(frame_to_index(pte.paddr())),
         ensures
             !pte.is_present() ==> res == Child::<C>::None,
-            pte.is_present() && pte.is_last(level) ==> res == Child::<C>::from_pte_frame_spec(pte, level),
-            pte.is_present() && !pte.is_last(level) ==> res == Child::<C>::from_pte_pt_spec(pte.paddr(), *regions)
+            pte.is_present() && pte.is_last(level) ==> res == Child::<C>::from_pte_frame_spec(
+                pte,
+                level,
+            ),
+            pte.is_present() && !pte.is_last(level) ==> res == Child::<C>::from_pte_pt_spec(
+                pte.paddr(),
+                *regions,
+            ),
     {
         if !pte.is_present() {
             return Child::None;
         }
-
         let paddr = pte.paddr();
 
         if !pte.is_last(level) {
@@ -86,10 +92,9 @@ impl<C: PageTableConfig> Child<C> {
             // `into_pte`, so that restoring the forgotten reference is safe.
             #[verus_spec(with Tracked(regions))]
             let node = PageTableNode::from_raw(paddr);
-//            debug_assert_eq!(node.level(), level - 1);
-            return Child::PageTable(/*RcuDrop::new(*/node/*)*/);
+            //            debug_assert_eq!(node.level(), level - 1);
+            return Child::PageTable(  /*RcuDrop::new(*/ node  /*)*/ );
         }
-
         Child::Frame(paddr, level, pte.prop())
     }
 }
@@ -105,7 +110,8 @@ pub enum ChildRef<'a, C: PageTableConfig> {
     Frame(Paddr, PagingLevel, PageProperty),
     None,
 }
-}
+
+} // verus!
 /* TODO: borrow_paddr
 impl<C: PageTableConfig> ChildRef<'_, C> {
     /// Converts a PTE to a child.

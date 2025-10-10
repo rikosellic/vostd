@@ -7,8 +7,8 @@ use vstd::cell;
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
-use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::{self, Repr};
+use vstd_extra::ownership::*;
 
 use crate::prelude::*;
 
@@ -65,8 +65,8 @@ impl Inv for MetaSlotOwner {
             &&& self.vtable_ptr@.is_uninit()
             &&& self.in_list@.value() == 0
         }
-    &&& FRAME_METADATA_RANGE().start <= self.self_addr < FRAME_METADATA_RANGE().end
-    &&& self.self_addr % META_SLOT_SIZE() == 0
+        &&& FRAME_METADATA_RANGE().start <= self.self_addr < FRAME_METADATA_RANGE().end
+        &&& self.self_addr % META_SLOT_SIZE() == 0
     }
 }
 
@@ -134,11 +134,14 @@ impl OwnerOf for MetaSlot {
     }
 }
 
-impl ModelOf for MetaSlot {}
+impl ModelOf for MetaSlot {
+
+}
 
 impl MetaSlotOwner {
-    pub fn cast_perm<T: Repr<MetaSlotStorage>>(self) -> Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, T>>
-    {
+    pub fn cast_perm<T: Repr<MetaSlotStorage>>(self) -> Tracked<
+        vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, T>,
+    > {
         vstd_extra::cast_ptr::PointsTo::new(self.self_addr, self.storage)
     }
 }
@@ -167,7 +170,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Inv for UniqueFrameOwner
         &&& self.slot_index < max_meta_slots()
         &&& (self.slot_index - FRAME_METADATA_RANGE().start) as usize % META_SLOT_SIZE() == 0
         &&& self.meta_perm@.addr() % META_SLOT_SIZE() == 0
-        &&& FRAME_METADATA_RANGE().start <= self.meta_perm@.addr() < FRAME_METADATA_RANGE().start + MAX_NR_PAGES()*META_SLOT_SIZE()
+        &&& FRAME_METADATA_RANGE().start <= self.meta_perm@.addr() < FRAME_METADATA_RANGE().start
+            + MAX_NR_PAGES() * META_SLOT_SIZE()
     }
 }
 
@@ -181,16 +185,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> InvView for UniqueFrameO
     type V = UniqueFrameModel<M>;
 
     open spec fn view(&self) -> Self::V {
-        UniqueFrameModel {
-            meta: self.meta_own@@,
-        }
+        UniqueFrameModel { meta: self.meta_own@@ }
     }
 
-    proof fn view_preserves_inv(&self) { }
+    proof fn view_preserves_inv(&self) {
+    }
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
-
     pub open spec fn perm_inv(&self, perm: PointsTo<MetaSlot>) -> bool {
         &&& perm.is_init()
         &&& perm.addr() == self.meta_perm@.addr()
@@ -199,8 +201,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
     }
 
     pub open spec fn global_inv(&self, regions: MetaRegionOwners) -> bool {
-        &&& regions.slots.contains_key(self.slot_index) ==> self.perm_inv(regions.slots[self.slot_index]@)
-        &&& regions.dropped_slots.contains_key(self.slot_index) ==> self.perm_inv(regions.dropped_slots[self.slot_index]@)
+        &&& regions.slots.contains_key(self.slot_index) ==> self.perm_inv(
+            regions.slots[self.slot_index]@,
+        )
+        &&& regions.dropped_slots.contains_key(self.slot_index) ==> self.perm_inv(
+            regions.dropped_slots[self.slot_index]@,
+        )
     }
 }
 
@@ -212,17 +218,17 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> OwnerOf for UniqueFrame<
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> ModelOf for UniqueFrame<M> { }
+impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> ModelOf for UniqueFrame<M> {
+
+}
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
-    pub fn from_raw_owner(owner: Tracked<M::Owner>,
-                            index: usize,
-                            perm: Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, M>>) -> Tracked<Self> {
-        Tracked(UniqueFrameOwner::<M> {
-            meta_own: owner,
-            meta_perm: perm,
-            slot_index: index,
-        })
+    pub fn from_raw_owner(
+        owner: Tracked<M::Owner>,
+        index: usize,
+        perm: Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, M>>,
+    ) -> Tracked<Self> {
+        Tracked(UniqueFrameOwner::<M> { meta_own: owner, meta_perm: perm, slot_index: index })
     }
 }
 
@@ -230,36 +236,29 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Link<M> {
     pub open spec fn into_spec(self) -> StoredLink {
         let next = match self.next {
             Some(link) => Some(link.addr),
-            None => None
+            None => None,
         };
         let prev = match self.prev {
             Some(link) => Some(link.addr),
-            None => None
+            None => None,
         };
-        StoredLink {
-            next: next,
-            prev: prev,
-            slot: self.meta.to_repr(),
-        }
+        StoredLink { next: next, prev: prev, slot: self.meta.to_repr() }
     }
 
     #[verifier::when_used_as_spec(into_spec)]
     pub fn into(self) -> (res: StoredLink)
-        ensures res == self.into_spec()
+        ensures
+            res == self.into_spec(),
     {
         let next = match self.next {
             Some(link) => Some(link.addr),
-            None => None
+            None => None,
         };
         let prev = match self.prev {
             Some(link) => Some(link.addr),
-            None => None
+            None => None,
         };
-        StoredLink {
-            next: next,
-            prev: prev,
-            slot: self.meta.to_repr(),
-        }
+        StoredLink { next: next, prev: prev, slot: self.meta.to_repr() }
     }
 }
 

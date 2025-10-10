@@ -26,43 +26,36 @@
 mod child;
 mod entry;
 
-use vstd::prelude::*;
 use vstd::cell::PCell;
+use vstd::prelude::*;
 use vstd::simple_pptr::PPtr;
 
-use core::{
-    marker::PhantomData,
-    ops::Deref,
-    sync::atomic::{Ordering},
-};
+use core::{marker::PhantomData, ops::Deref, sync::atomic::Ordering};
 
-pub(in crate::mm) use self::{
-    child::{ChildRef},
-};
+pub(in crate::mm) use self::child::ChildRef;
 use super::{nr_subpage_per_huge, PageTableConfig, PageTableEntryTrait};
 use crate::{
     mm::{
         paddr_to_vaddr,
         page_table::{load_pte, store_pte},
-//        FrameAllocOptions, Infallible,
+        //        FrameAllocOptions, Infallible,
         PagingLevel,
-//        VmReader,
+        //        VmReader,
     },
-//    task::atomic_mode::InAtomicMode,
+    //    task::atomic_mode::InAtomicMode,
 };
 
 use vstd::atomic::PAtomicU8;
 use vstd::simple_pptr;
 
-use vstd_extra::ownership::*;
-use vstd_extra::cast_ptr::*;
-use vstd_extra::array_ptr;
 use aster_common::prelude::*;
+use vstd_extra::array_ptr;
+use vstd_extra::cast_ptr::*;
+use vstd_extra::ownership::*;
 
 verus! {
 
 impl<C: PageTableConfig> PageTableNode<C> {
-
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
         with Tracked(slot_own) : Tracked<&MetaSlotOwner>,
@@ -78,14 +71,12 @@ impl<C: PageTableConfig> PageTableNode<C> {
             perm.pptr().ptr.0 == slot_own.storage@.addr(),
             perm.pptr().addr == slot_own.storage@.addr(),
             perm.is_init(),
-            perm.wf()
+            perm.wf(),
     {
         #[verus_spec(with Tracked(slot_own), Tracked(slot_perm), Tracked(perm))]
         let meta = self.meta();
         meta.level
-    }
-
-    /* TODO: stub out allocator
+    }/* TODO: stub out allocator
     /// Allocates a new empty page table node.
     pub(super) fn alloc(level: PagingLevel) -> Self {
         let meta = PageTablePageMeta::new(level);
@@ -98,7 +89,6 @@ impl<C: PageTableConfig> PageTableNode<C> {
 
         frame
     } */
-
     /*
     /// Activates the page table assuming it is a root page table.
     ///
@@ -147,10 +137,11 @@ impl<C: PageTableConfig> PageTableNode<C> {
         // SAFETY: The safety is upheld by the caller.
         unsafe { activate_page_table(self.clone().into_raw(), CachePolicy::Writeback) };
     }*/
+
 }
 
 //impl<'a> PageTableNodeRef<'a> {
-    /* TODO: Stub out InAtomicMode
+/* TODO: Stub out InAtomicMode
     /// Locks the page table node.
     ///
     /// An atomic mode guard is required to
@@ -189,8 +180,8 @@ impl<C: PageTableConfig> PageTableNode<C> {
     {
         PageTableGuard { inner: self }
     }*/
-//}
 
+//}
 impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     /// Borrows an entry in the node at a given index.
     ///
@@ -209,7 +200,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             owner.relate_slot_owner(slot_own),
             owner.guard_perm@.pptr() == guard,
     {
-//        assert!(idx < nr_subpage_per_huge::<C>());
+        //        assert!(idx < nr_subpage_per_huge::<C>());
         // SAFETY: The index is within the bound.
         #[verus_spec(with Tracked(owner), Tracked(slot_own))]
         Entry::new_at(guard, idx)
@@ -226,7 +217,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             self.inner.inner.ptr == owner.slot_perm@.pptr(),
             owner.inv(),
             owner.relate_slot_owner(slot_own),
-            slot_own.inv()
+            slot_own.inv(),
     {
         // SAFETY: The lock is held so we have an exclusive access.
         #[verus_spec(with Tracked(slot_own), Tracked(owner.slot_perm.borrow()), Tracked(owner.node_own.meta_perm.borrow()))]
@@ -280,10 +271,12 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             idx < NR_ENTRIES(),
     {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(paddr_to_vaddr(
-            #[verus_spec(with Tracked(&slot_own), Tracked(slot_perm))]
-            self.start_paddr()
-        ));
+        let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(
+            paddr_to_vaddr(
+                #[verus_spec(with Tracked(&slot_own), Tracked(slot_perm))]
+                self.start_paddr(),
+            ),
+        );
 
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
@@ -322,10 +315,12 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             idx < NR_ENTRIES(),
     {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(paddr_to_vaddr(
-            #[verus_spec(with Tracked(&slot_own), Tracked(slot_perm))]
-            self.start_paddr()
-        ));
+        let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(
+            paddr_to_vaddr(
+                #[verus_spec(with Tracked(&slot_own), Tracked(slot_perm))]
+                self.start_paddr(),
+            ),
+        );
 
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
@@ -349,7 +344,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             meta_perm.pptr().ptr.0 == slot_own.storage@.addr(),
             meta_perm.pptr().addr == slot_own.storage@.addr(),
             meta_perm.is_init(),
-            meta_perm.wf()
+            meta_perm.wf(),
     {
         // SAFETY: The lock is held so we have an exclusive access.
         #[verus_spec(with Tracked(slot_own), Tracked(slot_perm), Tracked(meta_perm))]
@@ -357,13 +352,13 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         &meta.nr_children
     }
 }
-}
+
+} // verus!
 /*impl<C: PageTableConfig> Drop for PageTableGuard<'_, C> {
     fn drop(&mut self) {
         self.inner.meta().lock.store(0, Ordering::Release);
     }
 }*/
-
 impl<C: PageTableConfig> PageTablePageMeta<C> {
     #[rustc_allow_incoherent_impl]
     pub fn new(level: PagingLevel) -> Self {

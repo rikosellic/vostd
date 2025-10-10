@@ -1,30 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 //! This module provides accessors to the page table entries in a node.
-
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
 use vstd_extra::ownership::*;
 
-use core::mem::ManuallyDrop;
-use core::marker::PhantomData;
-use crate::{
-    mm::{
-        nr_subpage_per_huge,
-        page_prop::PageProperty,
-        page_size,
-        page_table::{PageTableNodeRef},
-    },
-//    sync::RcuDrop,
-//    task::atomic_mode::InAtomicMode,
-};
 use super::{Child, ChildRef, PageTableGuard, PageTableNode};
-
+use crate::{
+    mm::{nr_subpage_per_huge, page_prop::PageProperty, page_size, page_table::PageTableNodeRef},
+    //    sync::RcuDrop,
+    //    task::atomic_mode::InAtomicMode,
+};
+use core::marker::PhantomData;
+use core::mem::ManuallyDrop;
 
 use aster_common::prelude::*;
 use vstd_extra::cast_ptr;
 
-verus!{
+verus! {
 
 impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     /// Returns if the entry does not map to anything.
@@ -33,7 +26,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     pub fn is_none(&self) -> bool {
         !self.pte.is_present()
     }
- 
+
     /// Returns if the entry maps to a page table node.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
@@ -49,20 +42,21 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     {
         let guard = self.node.borrow(Tracked(owner.guard_perm.borrow()));
 
-        self.pte.is_present() &&
-            !self.pte.is_last(#[verus_spec(with Tracked(slot_own),
+        self.pte.is_present() && !self.pte.is_last(
+            #[verus_spec(with Tracked(slot_own),
                                                 Tracked(owner.slot_perm.borrow()),
-                                                Tracked(owner.node_own.meta_perm.borrow()))] guard.level())
+                                                Tracked(owner.node_own.meta_perm.borrow()))]
+            guard.level(),
+        )
     }
 
-/*    /// Gets a reference to the child.
+    /*    /// Gets a reference to the child.
     pub(in crate::mm) fn to_ref(&self) -> ChildRef<'rcu, C> {
         // SAFETY:
         //  - The PTE outlives the reference (since we have `&self`).
         //  - The level matches the current node.
         unsafe { ChildRef::from_pte(&self.pte, self.node.level()) }
     }*/
-
     /// Operates on the mapping properties of the entry.
     ///
     /// It only modifies the properties if the entry is present.
@@ -76,16 +70,15 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             old(owner).inv(),
             old(self).wf(&*old(owner)),
             old(owner).relate_slot_owner(slot_own),
-            op.requires((old(self).pte.prop(),))
+            op.requires((old(self).pte.prop(),)),
     {
         if !self.pte.is_present() {
-            return;
+            return ;
         }
-
         let prop = self.pte.prop();
         let new_prop = op(prop);
 
-/*        if prop == new_prop {
+        /*        if prop == new_prop {
             return;
         }*/
 
@@ -126,9 +119,10 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             !old(regions).slots.contains_key(frame_to_index(old(self).pte.paddr())),
             old(regions).dropped_slots.contains_key(frame_to_index(old(self).pte.paddr())),
             new_child is PageTable,
-            FRAME_METADATA_RANGE().start <= frame_to_index(new_child.get_node().unwrap().ptr.addr()) < FRAME_METADATA_RANGE().end
+            FRAME_METADATA_RANGE().start <= frame_to_index(new_child.get_node().unwrap().ptr.addr())
+                < FRAME_METADATA_RANGE().end,
     {
-/*        match &new_child {
+        /*        match &new_child {
             Child::PageTable(node) => {
                 assert_eq!(node.level(), self.node.level() - 1);
             }
@@ -137,7 +131,6 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             }
             Child::None => {}
         }*/
-
         let mut guard = self.node.take(Tracked(owner.guard_perm.borrow_mut()));
 
         // SAFETY:
@@ -152,13 +145,12 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         if old_child.is_none() && !new_child.is_none() {
             let nr_children = guard.nr_children_mut();
             let _tmp = nr_children.take(Tracked(nr_children_perm));
-            nr_children.put(Tracked(nr_children_perm), _tmp+1);
+            nr_children.put(Tracked(nr_children_perm), _tmp + 1);
         } else if !old_child.is_none() && new_child.is_none() {
             let nr_children = guard.nr_children_mut();
             let _tmp = nr_children.take(Tracked(nr_children_perm));
-            nr_children.put(Tracked(nr_children_perm), _tmp-1);
+            nr_children.put(Tracked(nr_children_perm), _tmp - 1);
         }
-
         #[verus_spec(with Some(Tracked(slot_own)), Some(Tracked(owner.slot_perm.borrow())))]
         let new_pte = new_child.into_pte();
 
@@ -262,7 +254,6 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         // SAFETY: The node is locked and there are no other guards.
         Some(unsafe { pt_ref.make_guard_unchecked(guard) })
     }*/
-
     /// Create a new entry at the node with guard.
     ///
     /// # Safety
@@ -282,11 +273,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         // SAFETY: The index is within the bound.
         #[verus_spec(with Tracked(owner.node_own), Tracked(slot_own), Tracked(owner.slot_perm.borrow()))]
         let pte = guard.borrow(Tracked(owner.guard_perm.borrow())).read_pte(idx);
-        Self {
-            pte,
-            idx,
-            node: guard
-        }
+        Self { pte, idx, node: guard }
     }
 }
-}
+
+} // verus!
