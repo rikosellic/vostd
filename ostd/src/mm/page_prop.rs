@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Definitions of page mapping properties.
-
 use core::fmt::Debug;
 
 pub use aster_common::prelude::*;

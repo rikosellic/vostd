@@ -9,12 +9,12 @@ pub mod paging_consts;
 
 use vstd::prelude::*;
 
+pub use cpu::*;
+pub use kspace::*;
 pub use mm::*;
 pub use page_table_entry::*;
 pub use page_table_flags::*;
 pub use paging_consts::*;
-pub use cpu::*;
-pub use kspace::*;
 
 verus! {
 

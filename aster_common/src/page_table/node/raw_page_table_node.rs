@@ -2,8 +2,8 @@ use vstd::prelude::*;
 
 use core::marker::PhantomData;
 
-use crate::prelude::{PageTableEntry, PagingConsts, PagingLevel};
 use crate::prelude::Paddr;
+use crate::prelude::{PageTableEntry, PagingConsts, PagingLevel};
 
 verus! {
 

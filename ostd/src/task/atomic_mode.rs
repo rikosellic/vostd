@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Atomic Mode
 //!
 //! Multitasking, while powerful, can sometimes lead to undesirable
@@ -26,7 +25,6 @@
 //! 2. Switching to user space.
 //!
 //! This module provides API to detect such "sleep-like" actions.
-
 use core::sync::atomic::Ordering;
 
 /// Marks a function as one that might sleep.

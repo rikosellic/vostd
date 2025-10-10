@@ -1,10 +1,8 @@
-use vstd::prelude::*;
-use vstd::cell::{self, PCell};
-use vstd::simple_pptr::{self, PPtr};
-use vstd::atomic_ghost::*;
-use vstd::atomic::PAtomicU64;
 use vstd::atomic::PAtomicU8;
-
+use vstd::atomic::PAtomicU64;
+use vstd::cell::{self, PCell};
+use vstd::prelude::*;
+use vstd::simple_pptr::{self, PPtr};
 use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::*;
 
@@ -112,7 +110,8 @@ pub proof fn size_of_meta_slot()
 #[inline(always)]
 #[verifier::allow_in_spec]
 pub const fn meta_slot_size() -> (res: usize)
-    returns 64usize
+    returns
+        64usize,
 {
     proof { size_of_meta_slot(); }
     size_of::<MetaSlot>()

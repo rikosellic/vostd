@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Manages the kernel heap using slab or buddy allocation strategies.
-
 use core::{
     alloc::{AllocError, GlobalAlloc, Layout},
     ptr::NonNull,

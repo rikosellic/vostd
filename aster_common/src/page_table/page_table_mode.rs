@@ -1,8 +1,8 @@
-use vstd::prelude::*;
 use crate::prelude::*;
+use vstd::prelude::*;
 
-use core::fmt::Debug;
 use core::clone::Clone;
+use core::fmt::Debug;
 use core::ops::Range;
 
 verus! {
@@ -33,7 +33,8 @@ pub trait PageTableMode: Debug {
     #[verifier::when_used_as_spec(covers_spec)]
     fn covers(r: &Range<Vaddr>) -> (res: bool)
         ensures
-//            res == Self::covers_spec(r),
+    //            res == Self::covers_spec(r),
+
     {
         (Self::VADDR_RANGE().start <= r.start) && (r.end <= Self::VADDR_RANGE().end)
     }

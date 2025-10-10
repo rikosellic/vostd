@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! This module provides accessors to the page table entries in a node.
 
 use vstd::prelude::*;
@@ -9,8 +8,6 @@ use vstd_extra::ownership::*;
 
 use core::mem::ManuallyDrop;
 use core::marker::PhantomData;
-
-use super::{Child, ChildRef, PageTableGuard, PageTableNode};
 use crate::{
     mm::{
         nr_subpage_per_huge,
@@ -21,6 +18,8 @@ use crate::{
 //    sync::RcuDrop,
 //    task::atomic_mode::InAtomicMode,
 };
+use super::{Child, ChildRef, PageTableGuard, PageTableNode};
+
 
 use aster_common::prelude::*;
 use vstd_extra::cast_ptr;

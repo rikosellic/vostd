@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 use crate::prelude::Vaddr;
 
 #[repr(C)]
@@ -33,7 +32,7 @@ extern "C" {
 ///
 /// For example, we have the following assembly code snippets in an input file:
 /// ```
-/// .label1:    
+/// .label1:
 ///     rep movsb
 ///     mov rax, rcx
 /// .label2:

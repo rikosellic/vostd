@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! This module provides a trait and some auxiliary types to help abstract and
 //! work with non-null pointers.
-
 mod either;
 
 use alloc::sync::Weak;

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! I/O port allocator.
 use core::ops::Range;
 

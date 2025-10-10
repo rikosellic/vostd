@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Console output.
-
 use core::fmt::{self, Arguments, Write};
 
 use crate::sync::{LocalIrqDisabled, SpinLock};

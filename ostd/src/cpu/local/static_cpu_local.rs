@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Statically-allocated CPU-local objects.
-
 use core::marker::PhantomData;
 
 use super::{AnyStorage, CpuLocal, __cpu_local_end, __cpu_local_start};

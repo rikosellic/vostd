@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 /// Asserts that a boolean expression is `true` at compile-time.
 ///
 /// Rust provides [`const` blocks], which can be used flexibly within methods, but cannot be used

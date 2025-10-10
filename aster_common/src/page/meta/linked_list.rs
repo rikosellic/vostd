@@ -77,12 +77,7 @@ pub struct LinkedList<M: AnyFrameMeta + Repr<MetaSlotInner>>
 impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M> {
     /// Creates a new linked list.
     pub const fn new() -> Self {
-        Self {
-            front: None,
-            back: None,
-            size: 0,
-            list_id: 0,
-        }
+        Self { front: None, back: None, size: 0, list_id: 0 }
     }
 }
 
@@ -104,4 +99,4 @@ pub struct CursorMut<M: AnyFrameMeta + Repr<MetaSlotInner>>
     pub current: Option<ReprPtr<MetaSlotStorage, Link<M>>>,
 }
 
-}
+} // verus!

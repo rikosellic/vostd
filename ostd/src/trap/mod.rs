@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Handles trap across kernel and user space.
-
 mod handler;
 mod irq;
 

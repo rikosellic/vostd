@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! CPU-related definitions.
-
 pub mod local;
 pub mod set;
 

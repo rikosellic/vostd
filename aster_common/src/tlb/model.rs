@@ -1,8 +1,8 @@
-use vstd::prelude::*;
-use crate::x86_64::PageTableEntry;
-use crate::prelude::Vaddr;
+use super::{align::*, TlbFlushOp};
 use crate::page_table::PageTableModel;
-use super::{TlbFlushOp, align::*};
+use crate::prelude::Vaddr;
+use crate::x86_64::PageTableEntry;
+use vstd::prelude::*;
 
 verus! {
 

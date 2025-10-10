@@ -1,6 +1,6 @@
-use vstd::prelude::*;
 use vstd::arithmetic::power2::*;
 use vstd::layout::is_power_2;
+use vstd::prelude::*;
 
 use vstd_extra::extra_num::*;
 
@@ -13,9 +13,10 @@ pub struct PagingConsts {}
 
 impl Clone for PagingConsts {
     fn clone(&self) -> (res: Self)
-        returns *self
+        returns
+            *self,
     {
-        PagingConsts {}
+        PagingConsts {  }
     }
 }
 

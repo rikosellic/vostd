@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Symmetric multiprocessing (SMP) boot support.
-
 use alloc::{boxed::Box, collections::btree_map::BTreeMap, vec::Vec};
 
 use spin::Once;

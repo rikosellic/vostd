@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! The page table cursor for mapping and querying over the page table.
 //!
 //! # The page table lock protocol
@@ -26,7 +25,6 @@
 //! will only be able to access the page table entries in the locked range.
 //! Upon destruction, the cursor will release the locks in the reverse order of
 //! acquisition.
-
 mod locking;
 
 use core::{fmt::Debug, marker::PhantomData, mem::ManuallyDrop, ops::Range};

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! TLB flush operations.
-
 use alloc::vec::Vec;
 use core::{
     ops::Range,

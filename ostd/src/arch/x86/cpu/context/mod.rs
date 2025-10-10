@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! CPU execution context control.
-
 use alloc::boxed::Box;
 use core::{
     arch::x86_64::{_fxrstor64, _fxsave64, _xrstor64, _xsave64},

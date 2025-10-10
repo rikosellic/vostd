@@ -1,7 +1,7 @@
+use vstd::atomic::*;
+use vstd::cell;
 use vstd::prelude::*;
 use vstd::simple_pptr::{self, *};
-use vstd::cell;
-use vstd::atomic::*;
 
 use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::*;
@@ -132,9 +132,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> AnyFrameMeta for Link<M>
 {
     fn on_drop(&mut self) { }
 
-    fn is_untyped(&self) -> bool { false }
+    fn is_untyped(&self) -> bool {
+        false
+    }
 
     spec fn vtable_ptr(&self) -> usize;
 }
 
-}
+} // verus!

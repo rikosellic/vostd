@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 use log::{info, warn};
 use queue::Queue;
 use spin::Once;

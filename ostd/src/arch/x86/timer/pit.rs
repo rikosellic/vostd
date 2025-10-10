@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 #![expect(dead_code)]
 
 //! The Programmable Interval Timer (PIT) chip (Intel 8253/8254) basically consists of an oscillator,

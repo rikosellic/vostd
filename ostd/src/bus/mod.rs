@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Bus operations
-
 pub mod mmio;
 pub mod pci;
 

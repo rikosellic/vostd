@@ -1,6 +1,6 @@
-use vstd::prelude::*;
 use crate::prelude::*;
 use core::fmt::Debug;
+use vstd::prelude::*;
 
 verus! {
 

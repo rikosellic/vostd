@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! This module specifies the type of the children of a page table node.
 
 use vstd::prelude::*;
@@ -12,8 +11,6 @@ use vstd_extra::ownership::*;
 use ostd_specs::*;
 
 use core::mem::ManuallyDrop;
-
-use super::{PageTableNode, PageTableNodeRef};
 use crate::{
     mm::{Paddr, PagingLevel},
 //    sync::RcuDrop,

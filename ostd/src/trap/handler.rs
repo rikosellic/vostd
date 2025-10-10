@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 use spin::Once;
 
 use super::{disable_local, irq::process_top_half, DisabledLocalIrqGuard};

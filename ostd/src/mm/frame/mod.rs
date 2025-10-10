@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Frame (physical memory page) management.
 //!
 //! A frame is an aligned, contiguous range of bytes in physical memory. The
@@ -30,7 +29,6 @@
 //! module. The reference count and usage of a frame are stored in the metadata
 //! as well, leaving the handle only a pointer to the metadata slot. Users
 //! can create custom metadata types by implementing the [`AnyFrameMeta`] trait.
-
 //pub mod allocator;
 pub mod linked_list;
 pub mod meta;
@@ -43,9 +41,9 @@ mod frame_ref;
 #[cfg(ktest)]
 mod test;
 
+use vstd::atomic::PermissionU64;
 use vstd::prelude::*;
 use vstd::simple_pptr::PPtr;
-use vstd::atomic::PermissionU64;
 
 use core::{
     marker::PhantomData,
@@ -54,7 +52,7 @@ use core::{
 };
 
 //pub use allocator::GlobalFrameAllocator;
-use meta::{mapping, GetFrameError, MetaSlot, REF_COUNT_UNUSED};
+use meta::{GetFrameError, REF_COUNT_UNUSED};
 //pub use segment::Segment;
 use untyped::{/*AnyUFrameMeta,*/ UFrame};
 
@@ -85,6 +83,7 @@ impl<M: AnyFrameMeta + ?Sized> PartialEq for Frame<M> {
 }
 impl<M: AnyFrameMeta + ?Sized> Eq for Frame<M> {}
 */
+
 impl<'a, M: AnyFrameMeta> Frame<M> {
     /// Gets a [`Frame`] with a specific usage from a raw, unused page.
     ///
@@ -111,10 +110,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     {
         #[verus_spec(with Tracked(regions))]
         let from_unused = MetaSlot::get_from_unused(paddr, metadata, false);
-        Ok(Self {
-            ptr: from_unused?,
-            _marker: PhantomData,
-        })
+        Ok(Self { ptr: from_unused?, _marker: PhantomData })
     }
 
     /// Gets the metadata of this page.
@@ -162,10 +158,7 @@ impl<M: AnyFrameMeta> Frame<M> {
     pub fn from_in_use(paddr: Paddr) -> Result<Self, GetFrameError> {
         #[verus_spec(with Tracked(regions))]
         let from_in_use = MetaSlot::get_from_in_use(paddr);
-        Ok(Self {
-            ptr: from_in_use?,
-            _marker: PhantomData,
-        })
+        Ok(Self { ptr: from_in_use?, _marker: PhantomData })
     }
 }
 
@@ -209,14 +202,13 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         PAGE_SIZE()
     }
 
-/*    /// Gets the dyncamically-typed metadata of this frame.
+    /*    /// Gets the dyncamically-typed metadata of this frame.
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
     pub fn dyn_meta(&self) -> FrameMeta {
         // SAFETY: The metadata is initialized and valid.
         unsafe { &*self.slot().dyn_meta_ptr() }
     }*/
-
     /// Gets the reference count of the frame.
     ///
     /// It returns the number of all references to the frame, including all the
@@ -244,14 +236,12 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         let slot = self.slot();
         slot.ref_count.load(Tracked(slot_own.ref_count.borrow()))
     }
-    
 
     /// Borrows a reference from the given frame.
-/*    pub fn borrow(&self) -> FrameRef<'_, FrameMeta> {
+    /*    pub fn borrow(&self) -> FrameRef<'_, FrameMeta> {
         // SAFETY: Both the lifetime and the type matches `self`.
         unsafe { FrameRef::borrow_paddr(self.start_paddr()) }
     }*/
-
     /// Forgets the handle to the frame.
     ///
     /// This will result in the frame being leaked without calling the custom dropper.
@@ -265,7 +255,8 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     #[rustc_allow_incoherent_impl]
     pub fn into_raw(self) -> (res:Paddr)
         requires
-            FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr()) < FRAME_METADATA_RANGE().end,
+            FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr())
+                < FRAME_METADATA_RANGE().end,
             old(regions).slots.contains_key(frame_to_index(meta_to_frame(self.ptr.addr()))),
             !old(regions).dropped_slots.contains_key(frame_to_index(meta_to_frame(self.ptr.addr()))),
             old(regions).inv(),
@@ -325,12 +316,11 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         let ptr = PPtr::from_addr(vaddr);
 
         let tracked perm = regions.dropped_slots.tracked_remove(frame_to_index(paddr));
-        proof { regions.slots.tracked_insert(frame_to_index(paddr), perm); }
-
-        Self {
-            ptr,
-            _marker: PhantomData,
+        proof {
+            regions.slots.tracked_insert(frame_to_index(paddr), perm);
         }
+
+        Self { ptr, _marker: PhantomData }
     }
 
     #[verus_spec(
@@ -348,7 +338,8 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         self.ptr.borrow(Tracked(slot_perm))
     }
 }
-}
+
+} // verus!
 /*
 impl<M: AnyFrameMeta + ?Sized> Clone for Frame<M> {
     fn clone(&self) -> Self {
@@ -361,7 +352,6 @@ impl<M: AnyFrameMeta + ?Sized> Clone for Frame<M> {
         }
     }
 }*/
-
 /*
 impl<M: AnyFrameMeta + ?Sized> Drop for Frame<M> {
     fn drop(&mut self) {
@@ -381,7 +371,6 @@ impl<M: AnyFrameMeta + ?Sized> Drop for Frame<M> {
     }
 }
 */
-
 /*
 impl<M: AnyFrameMeta> TryFrom<Frame<dyn AnyFrameMeta>> for Frame<M> {
     type Error = Frame<dyn AnyFrameMeta>;
@@ -399,28 +388,24 @@ impl<M: AnyFrameMeta> TryFrom<Frame<dyn AnyFrameMeta>> for Frame<M> {
         }
     }
 }*/
-
 /*impl<M: AnyFrameMeta> From<Frame<M>> for Frame<dyn AnyFrameMeta> {
     fn from(frame: Frame<M>) -> Self {
         // SAFETY: The metadata is coerceable and the struct is transmutable.
         unsafe { core::mem::transmute(frame) }
     }
 }*/
-
 /*impl<M: AnyUFrameMeta> From<Frame<M>> for UFrame {
     fn from(frame: Frame<M>) -> Self {
         // SAFETY: The metadata is coerceable and the struct is transmutable.
         unsafe { core::mem::transmute(frame) }
     }
 }*/
-
 /*impl From<UFrame> for Frame<FrameMeta> {
     fn from(frame: UFrame) -> Self {
         // SAFETY: The metadata is coerceable and the struct is transmutable.
         unsafe { core::mem::transmute(frame) }
     }
 }*/
-
 /*impl TryFrom<Frame<FrameMeta>> for UFrame {
     type Error = Frame<FrameMeta>;
 
@@ -437,7 +422,6 @@ impl<M: AnyFrameMeta> TryFrom<Frame<dyn AnyFrameMeta>> for Frame<M> {
         }
     }
 }*/
-
 /// Increases the reference count of the frame by one.
 ///
 /// # Safety

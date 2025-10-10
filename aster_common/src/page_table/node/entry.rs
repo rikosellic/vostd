@@ -1,9 +1,9 @@
-use vstd::prelude::*;
-use vstd::simple_pptr::*;
 use vstd::cell;
+use vstd::prelude::*;
+use vstd::simple_pptr::{self, PPtr};
 
 use crate::prelude::{
-    FrameRef, PageTableConfig, PageTableEntry, PageTableEntryTrait, PageTablePageMeta, PageTableNode, MetaSlot, MetaSlotOwner
+    FrameRef, MetaSlot, MetaSlotOwner, PageTableConfig, PageTableEntry, PageTableEntryTrait, PageTablePageMeta, PageTableNode
 };
 
 use vstd_extra::ownership::*;

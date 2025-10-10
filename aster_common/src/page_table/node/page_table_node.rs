@@ -1,6 +1,6 @@
+use vstd::cell;
 use vstd::prelude::*;
 use vstd::simple_pptr;
-use vstd::cell;
 
 use vstd_extra::ownership::*;
 
@@ -89,6 +89,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
         let inner = meta.inner.borrow(Tracked(pt_inner));
         inner.is_tracked
     }*/
+
 }
 
 } // verus!

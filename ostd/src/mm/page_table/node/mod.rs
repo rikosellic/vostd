@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! This module defines page table node abstractions and the handle.
 //!
 //! The page table node is also frequently referred to as a page table in many architectural
@@ -24,7 +23,6 @@
 //! page table node while a lock is held. So the modification to the PTEs should be done after
 //! the initialization of the entity that the PTE points to. This is taken care in this module.
 //!
-
 mod child;
 mod entry;
 

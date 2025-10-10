@@ -24,5 +24,5 @@ verify = true
 
 [dependencies]
 vstd = { workspace = true }
-builtin = { workspace = true }
-builtin_macros = { workspace = true }
+verus_builtin = { workspace = true }
+verus_builtin_macros = { workspace = true }

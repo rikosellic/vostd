@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Virtual memory (VM).
-
 /// Virtual addresses.
 pub type Vaddr = usize;
 
@@ -24,7 +22,7 @@ mod test;
 use core::{fmt::Debug, ops::Range};
 
 pub use self::{
-/*    dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
+    /*    dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
     frame::{
         allocator::FrameAllocOptions,
         segment::{Segment, USegment},

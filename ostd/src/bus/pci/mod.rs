@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! PCI bus
 //!
 //! Users can implement the bus under the `PciDriver` to the PCI bus to register devices,
@@ -49,7 +48,6 @@
 //!     PCI_BUS.lock().register_driver(driver_a);
 //! }
 //! ```
-
 pub mod bus;
 pub mod capability;
 pub mod cfg_space;

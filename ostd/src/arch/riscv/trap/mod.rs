@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Handles trap.
-
 mod trap;
 
 use riscv::register::scause::Interrupt;

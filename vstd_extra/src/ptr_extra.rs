@@ -7,20 +7,20 @@ verus! {
 #[macro_export]
 macro_rules! borrow_field {
     (& $ptr:expr) => {
-        ::builtin_macros::verus_exec_expr!(
+        ::verus_builtin_macros::verus_exec_expr!(
         $ptr
     )};
     (&mut $ptr:expr) => {
-        ::builtin_macros::verus_exec_expr!(
+        ::verus_builtin_macros::verus_exec_expr!(
         $ptr
     )};
     (& $ptr:expr => $field:tt, $perm:expr) => {
-        ::builtin_macros::verus_exec_expr!(
+        ::verus_builtin_macros::verus_exec_expr!(
         $ptr.borrow(#[verifier::ghost_wrapper]
             tracked_exec(#[verifier::tracked_block_wrapped] $perm)).$field
     )};
     (&mut $ptr:expr => $field:tt, $perm:expr) => {
-        ::builtin_macros::verus_exec_expr!(
+        ::verus_builtin_macros::verus_exec_expr!(
         $ptr.borrow(#[verifier::ghost_wrapper]
             tracked_exec(#[verifier::tracked_block_wrapped] $perm)).$field
     )}
@@ -64,9 +64,5 @@ macro_rules! update_field {
     }
 }
 
-}
-
-pub use {
-    borrow_field,
-    update_field,
-};
+} // verus!
+pub use {borrow_field, update_field};

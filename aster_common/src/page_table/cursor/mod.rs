@@ -5,9 +5,8 @@ use vstd::prelude::*;
 use core::marker::PhantomData;
 use core::ops::Range;
 
-use crate::x86_64::PagingConsts;
-use crate::prelude::*;
 use crate::page_table::node::entry::PageTableGuard;
+use crate::prelude::*;
 
 use model::ConcreteCursor;
 

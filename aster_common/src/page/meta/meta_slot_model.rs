@@ -2,9 +2,10 @@
 //! - The model of the metadata slot: `MetaSlotModel`.
 //! - The invariants for both MetaSlot and MetaSlotModel.
 //! - The primitives for MetaSlot.
+use vstd::atomic::*;
+use vstd::cell;
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
-use vstd::atomic::*;
 
 use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::{self, Repr};
@@ -33,12 +34,12 @@ pub ghost enum MetaSlotState {
 } */
 
 pub const REF_COUNT_UNUSED: u64 = u64::MAX;
+
 pub const REF_COUNT_UNIQUE: u64 = u64::MAX - 1;
+
 pub const REF_COUNT_MAX: u64 = i64::MAX as u64;
 
-
 } // verus!
-
 verus! {
 
 pub tracked struct MetaSlotOwner {
@@ -52,22 +53,20 @@ pub tracked struct MetaSlotOwner {
 
 impl Inv for MetaSlotOwner {
     open spec fn inv(&self) -> bool {
-    &&& self.ref_count@.value() == REF_COUNT_UNUSED ==> {
-        &&& self.vtable_ptr@.is_uninit()
-        &&& self.in_list@.value() == 0
+        &&& self.ref_count@.value() == REF_COUNT_UNUSED ==> {
+            &&& self.vtable_ptr@.is_uninit()
+            &&& self.in_list@.value() == 0
         }
-    &&& self.ref_count@.value() == REF_COUNT_UNIQUE ==> {
-        &&& self.vtable_ptr@.is_init()
+        &&& self.ref_count@.value() == REF_COUNT_UNIQUE ==> {
+            &&& self.vtable_ptr@.is_init()
         }
-    &&& 0 < self.ref_count@.value() < REF_COUNT_MAX ==> {
-        &&& self.vtable_ptr@.is_init()
+        &&& 0 < self.ref_count@.value() < REF_COUNT_MAX ==> {
+            &&& self.vtable_ptr@.is_init()
         }
-    &&& REF_COUNT_MAX <= self.ref_count@.value() < REF_COUNT_UNUSED ==> {
-        false
-        }
-    &&& self.ref_count@.value() == 0 ==> {
-        &&& self.vtable_ptr@.is_uninit()
-        &&& self.in_list@.value() == 0
+        &&& REF_COUNT_MAX <= self.ref_count@.value() < REF_COUNT_UNUSED ==> { false }
+        &&& self.ref_count@.value() == 0 ==> {
+            &&& self.vtable_ptr@.is_uninit()
+            &&& self.in_list@.value() == 0
         }
     &&& FRAME_METADATA_RANGE().start <= self.self_addr < FRAME_METADATA_RANGE().end
     &&& self.self_addr % META_SLOT_SIZE() == 0
@@ -86,25 +85,19 @@ pub ghost struct MetaSlotModel {
 
 impl Inv for MetaSlotModel {
     open spec fn inv(&self) -> bool {
-    match self.ref_count {
-        REF_COUNT_UNUSED => {
-        &&& self.vtable_ptr.is_uninit()
-        &&& self.in_list == 0
-        },
-        REF_COUNT_UNIQUE => {
-        &&& self.vtable_ptr.is_init()
-        },
-        0 => {
-        &&& self.vtable_ptr.is_uninit()
-        &&& self.in_list == 0
-        },
-        _ if self.ref_count < REF_COUNT_MAX => {
-        &&& self.vtable_ptr.is_init()
-        },
-        _ => {
-        false
-        },
-    }
+        match self.ref_count {
+            REF_COUNT_UNUSED => {
+                &&& self.vtable_ptr.is_uninit()
+                &&& self.in_list == 0
+            },
+            REF_COUNT_UNIQUE => { &&& self.vtable_ptr.is_init() },
+            0 => {
+                &&& self.vtable_ptr.is_uninit()
+                &&& self.in_list == 0
+            },
+            _ if self.ref_count < REF_COUNT_MAX => { &&& self.vtable_ptr.is_init() },
+            _ => { false },
+        }
     }
 }
 
@@ -125,18 +118,12 @@ impl InvView for MetaSlotOwner {
             _ if ref_count < REF_COUNT_MAX => MetaSlotStatus::SHARED,
             _ => MetaSlotStatus::OVERFLOW,
         };
-        MetaSlotModel {
-            status,
-            storage,
-            ref_count,
-            vtable_ptr,
-            in_list,
-            self_addr,
-            usage,
-        }
+        MetaSlotModel { status, storage, ref_count, vtable_ptr, in_list, self_addr, usage }
     }
 
-    proof fn view_preserves_inv(&self) { admit() }
+    proof fn view_preserves_inv(&self) {
+        admit()
+    }
 }
 
 impl OwnerOf for MetaSlot {

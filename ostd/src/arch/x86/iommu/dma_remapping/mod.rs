@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 pub use context_table::RootTable;
 use log::{info, warn};
 use second_stage::IommuPtConfig;

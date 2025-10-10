@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 use alloc::fmt;
 
 /// Always [`Sync`], but unsafe to reference the data.

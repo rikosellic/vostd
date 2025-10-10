@@ -1,8 +1,8 @@
+use crate::mm::Vaddr;
+use crate::prelude::{CachePolicy, Paddr};
+use core::ops::Range;
 use vstd::prelude::*;
 use vstd_extra::prelude::*;
-use crate::mm::Vaddr;
-use core::ops::Range;
-use crate::prelude::{Paddr, CachePolicy};
 
 extern_const!(
 /// Page size.

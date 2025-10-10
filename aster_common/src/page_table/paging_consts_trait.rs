@@ -1,5 +1,5 @@
-use vstd::prelude::*;
 use vstd::layout::is_power_2;
+use vstd::prelude::*;
 
 use crate::prelude::*;
 use core::fmt::Debug;

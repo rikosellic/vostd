@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Kernel memory space management.
 //!
 //! The kernel memory space is currently managed as follows, if the
@@ -33,7 +32,6 @@
 //!
 //! If the address width is (according to [`crate::arch::mm::PagingConsts`])
 //! 39 bits or 57 bits, the memory space just adjust proportionally.
-
 pub(crate) mod kvirt_area;
 
 use core::ops::Range;

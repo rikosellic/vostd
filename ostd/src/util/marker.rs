@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 /// A marker trait that represents a type has the same size as `T`.
 ///
 /// # Safety

@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! Because that the page table implementation requires metadata initialized
 //! and mapped, the boot page table is needed to do early stage page table setup
 //! in order to initialize the running phase page tables.
-
 use core::{
     alloc::Layout,
     result::Result,

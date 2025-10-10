@@ -1,9 +1,7 @@
-use builtin::*;
-use builtin_macros::*;
-use vstd::{prelude::*, atomic_ghost::AtomicBool, atomic_with_ghost};
-use super::spec::AtomicCpuSetSpec;
+use super::super::super::{valid_cpu, CpuId, CPU_NUM, CPU_NUM_SPEC};
 use super::super::CpuSet;
-use super::super::super::{CpuId, valid_cpu, CPU_NUM_SPEC, CPU_NUM};
+use super::spec::AtomicCpuSetSpec;
+use vstd::{atomic_ghost::AtomicBool, atomic_with_ghost, prelude::*};
 
 verus! {
 

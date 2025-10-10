@@ -1,17 +1,15 @@
 pub mod dyn_page;
 pub mod meta;
-//pub mod model;
 
-pub use meta::*;
 pub use dyn_page::*;
-//pub use model::*;
+pub use meta::*;
 
-use vstd::prelude::*;
-use vstd::simple_pptr::{self, PPtr};
-use vstd::cell;
-use core::marker::PhantomData;
 use crate::mm::Paddr;
 use crate::x86_64::mm::{MAX_NR_PAGES, MAX_PADDR, PAGE_SIZE};
+use core::marker::PhantomData;
+use vstd::cell;
+use vstd::prelude::*;
+use vstd::simple_pptr::{self, PPtr};
 
 use crate::prelude::*;
 use crate::prelude::MetaSlotStorage::PTNode;
@@ -83,9 +81,8 @@ impl<M: AnyFrameMeta> Frame<M> {
     {
         let slot = self.ptr.borrow(Tracked(p_slot));
         unimplemented!()
-//        slot.storage.borrow(owner.storage)
+        //        slot.storage.borrow(owner.storage)
     }
-
 
 }
 

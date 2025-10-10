@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! The unique frame pointer that is not shared with others.
-
+use vstd::atomic::PermissionU64;
 use vstd::prelude::*;
 use vstd::simple_pptr;
-use vstd::atomic::PermissionU64;
 
 use aster_common::prelude::*;
 
@@ -38,10 +36,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
     {
         #[verus_spec(with Tracked(regions))]
         let from_unused = MetaSlot::get_from_unused(paddr, metadata, true);
-        Ok(Self {
-            ptr: from_unused?,
-            _marker: PhantomData,
-        })
+        Ok(Self { ptr: from_unused?, _marker: PhantomData })
     }
 
     /*
@@ -54,7 +49,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         // SAFETY: The metadata is initialized with type `M1`.
         unsafe { core::mem::transmute(self) }
     }*/
-
     /// Gets the metadata of this page.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
@@ -64,7 +58,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
     {
         unimplemented!()
         // SAFETY: The type is tracked by the type system.
-//        unsafe { &*self.slot().as_meta_ptr() }
+        //        unsafe { &*self.slot().as_meta_ptr() }
+
     }
 
     /// Gets the mutable metadata of this page.
@@ -107,7 +102,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
     )]
     #[verifier::external_body]
     pub fn start_paddr(&self) -> Paddr {
-//        #[verus_spec(with Tracked(&regions))]
+        //        #[verus_spec(with Tracked(&regions))]
         let slot = self.slot();
         slot.frame_paddr()
     }
@@ -130,7 +125,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         PAGE_SIZE()
     }
 
-/*    /// Gets the dynamically-typed metadata of this frame.
+    /*    /// Gets the dynamically-typed metadata of this frame.
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
     #[rustc_allow_incoherent_impl]
@@ -150,7 +145,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         // access to the frame.
         unsafe { &mut *self.slot().dyn_meta_ptr() }
     }*/
-
     /*
     /// Resets the frame to unused without up-calling the allocator.
     ///
@@ -171,7 +165,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         // The slot is initialized.
         unsafe { this.slot().drop_last_in_place() };
     }*/
-
     /// Converts this frame into a raw physical address.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
@@ -234,7 +227,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         unimplemented!()
         // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
         // mutably borrowed, so taking an immutable reference to it is safe.
-//        unsafe { &*self.ptr }
+        //        unsafe { &*self.ptr }
+
     }
 }
 
@@ -252,14 +246,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
 /*impl<M: AnyFrameMeta> From<UniqueFrame<Link<M>>> for Frame<M> {
     #[verifier::external_body]
     fn from(unique: UniqueFrame<Link<M>>) -> Self {
-        unimplemented!()
-        /*
+        unimplemented!()/*
         // The `Release` ordering make sure that previous writes are visible
         // before the reference count is set to 1. It pairs with
         // `MetaSlot::get_from_in_use`.
         unique.slot().ref_count.store(1, Ordering::Release);
         // SAFETY: The internal representation is now the same.
         unsafe { core::mem::transmute(unique) }*/
+
     }
 }*/
 
@@ -271,8 +265,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
     ///
     /// If the reference count is not 1, the frame is returned back.
     fn try_from(frame: Frame<M>) -> Result<Self, Self::Error> {
-        unimplemented!()
-/*        match frame.slot().ref_count.compare_exchange(
+        unimplemented!()/*        match frame.slot().ref_count.compare_exchange(
             1,
             REF_COUNT_UNIQUE,
             Ordering::Relaxed,
@@ -284,6 +277,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
             }
             Err(_) => Err(frame),
         }*/
+
     }
 }*/
 }

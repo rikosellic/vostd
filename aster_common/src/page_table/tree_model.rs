@@ -1,11 +1,11 @@
-use vstd::prelude::*;
 use vstd::arithmetic::power2::*;
 use vstd::bits::*;
+use vstd::prelude::*;
 
 use vstd_extra::ghost_tree;
 
-use vstd_extra::prelude::Node;
 use crate::prelude::*;
+use vstd_extra::prelude::Node;
 
 verus! {
 

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
 //! The IOMMU support.
-
 mod dma_remapping;
 mod fault;
 mod interrupt_remapping;

@@ -1,7 +1,7 @@
+use vstd::atomic::*;
+use vstd::cell;
 use vstd::prelude::*;
 use vstd::simple_pptr::{self, *};
-use vstd::cell;
-use vstd::atomic::*;
 
 use std::marker::PhantomData;
 use std::ops::Range;
@@ -16,11 +16,15 @@ pub trait InvView: Inv {
     type V: Inv;
 
     spec fn view(&self) -> Self::V
-        recommends self.inv();
+        recommends
+            self.inv(),
+    ;
 
     proof fn view_preserves_inv(&self)
-        requires self.inv(),
-        ensures self.view().inv(),
+        requires
+            self.inv(),
+        ensures
+            self.view().inv(),
     ;
 }
 
@@ -31,7 +35,8 @@ pub trait OwnerOf {
     type Owner: InvView;
 
     spec fn wf(&self, owner: &Self::Owner) -> bool
-        recommends owner.inv(),
+        recommends
+            owner.inv(),
     ;
 }
 
@@ -43,4 +48,5 @@ pub trait ModelOf: OwnerOf {
         owner.view()
     }
 }
-}
+
+} // verus!

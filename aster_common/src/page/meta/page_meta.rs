@@ -253,7 +253,6 @@ impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
         (meta, Tracked(model))
     }
 }*/
-
 } // verus!
 verus! {
 

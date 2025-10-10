@@ -1,6 +1,6 @@
-use vstd::prelude::*;
 use crate::page_table::PageTable;
 use crate::page_table::UserMode;
+use vstd::prelude::*;
 
 verus! {
 
