@@ -42,12 +42,15 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     {
         let guard = self.node.borrow(Tracked(owner.guard_perm.borrow()));
 
-        self.pte.is_present() && !self.pte.is_last(
-            #[verus_spec(with Tracked(slot_own),
-                                                Tracked(owner.slot_perm.borrow()),
-                                                Tracked(owner.node_own.meta_perm.borrow()))]
-            guard.level(),
-        )
+        #[verusfmt::skip]
+        self.pte.is_present() &&
+            !self.pte.is_last(
+                #[verus_spec(with Tracked(slot_own),
+                    Tracked(owner.slot_perm.borrow()),
+                    Tracked(owner.node_own.meta_perm.borrow()))
+                ]
+                guard.level()
+            )
     }
 
     /*    /// Gets a reference to the child.

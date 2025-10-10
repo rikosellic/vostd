@@ -272,9 +272,10 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
         let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(
+            #[verusfmt::skip]
             paddr_to_vaddr(
                 #[verus_spec(with Tracked(&slot_own), Tracked(slot_perm))]
-                self.start_paddr(),
+                self.start_paddr()
             ),
         );
 
@@ -316,9 +317,10 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
         let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(
+            #[verusfmt::skip]
             paddr_to_vaddr(
                 #[verus_spec(with Tracked(&slot_own), Tracked(slot_perm))]
-                self.start_paddr(),
+                self.start_paddr()
             ),
         );
 

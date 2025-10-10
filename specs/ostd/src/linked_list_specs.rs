@@ -1,3 +1,4 @@
+extern crate vstd_extra;
 use aster_common::prelude::frame_list_model::*;
 use aster_common::prelude::*;
 use aster_common::prelude::*;
