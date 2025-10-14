@@ -21,22 +21,6 @@ mod test;
 
 use core::{fmt::Debug, ops::Range};
 
-pub use self::{
-    /*    dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
-    frame::{
-        allocator::FrameAllocOptions,
-        segment::{Segment, USegment},
-        unique::UniqueFrame,
-        untyped::{AnyUFrameMeta, UFrame, UntypedMem},
-        Frame,
-    },
-    io::{
-        Fallible, FallibleVmRead, FallibleVmWrite, Infallible, PodOnce, VmIo, VmIoOnce, VmReader,
-        VmWriter,
-    },*/
-    page_prop::{CachePolicy, PageFlags, PageProperty},
-//    vm_space::VmSpace,
-};
 pub use aster_common::prelude::*;
 
 /// The maximum virtual address of user space (non inclusive).

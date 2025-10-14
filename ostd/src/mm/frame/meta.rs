@@ -40,7 +40,6 @@ use crate::{
         //        frame::allocator::{self, EarlyAllocatedFrameMeta},
         //        kspace::LINEAR_MAPPING_BASE_VADDR,
         paddr_to_vaddr,
-        page_size,
         //        page_table::boot_pt,
         CachePolicy,
         /*Infallible,*/ Paddr,
@@ -144,27 +143,6 @@ pub use impl_frame_meta_for;
 */
 verus! {
 
-/// The error type for getting the frame from a physical address.
-#[derive(Debug)]
-pub enum GetFrameError {
-    /// The frame is in use.
-    InUse,
-    /// The frame is not in use.
-    Unused,
-    /// The frame is being initialized or destructed.
-    Busy,
-    /// The frame is private to an owner of [`UniqueFrame`].
-    ///
-    /// [`UniqueFrame`]: super::unique::UniqueFrame
-    Unique,
-    /// The provided physical address is out of bound.
-    OutOfBound,
-    /// The provided physical address is not aligned.
-    NotAligned,
-    /// Verification only: `compare_exchange` returned `Err`, retry
-    Retry,
-}
-
 /// Gets the reference to a metadata slot.
 pub fn get_slot(paddr: Paddr, Tracked(owner) : Tracked<&MetaSlotOwner>) -> (res: Result<PPtr<MetaSlot>, GetFrameError>)
     requires
@@ -179,7 +157,7 @@ pub fn get_slot(paddr: Paddr, Tracked(owner) : Tracked<&MetaSlotOwner>) -> (res:
     if paddr >= MAX_PADDR() {
         return Err(GetFrameError::OutOfBound);
     }
-    let vaddr = mapping::frame_to_meta(paddr);
+    let vaddr = frame_to_meta(paddr);
     let ptr = PPtr::<MetaSlot>::from_addr(vaddr);
 
     // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
@@ -394,7 +372,7 @@ impl MetaSlot {
     {
         #[verus_spec(with Tracked(owner))]
         let addr = self.addr_of();
-        mapping::meta_to_frame(addr)
+        meta_to_frame(addr)
     }
 
     /*
@@ -589,7 +567,7 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
     boot_pt::with_borrow(|boot_pt| {
         for i in 0..nr_meta_pages {
             let frame_paddr = meta_pages + i * PAGE_SIZE;
-            let vaddr = mapping::frame_to_meta::<PagingConsts>(0) + i * PAGE_SIZE;
+            let vaddr = frame_to_meta::<PagingConsts>(0) + i * PAGE_SIZE;
             let prop = PageProperty {
                 flags: PageFlags::RW,
                 cache: CachePolicy::Writeback,

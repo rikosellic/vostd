@@ -12,13 +12,12 @@ use crate::{
     mm::{
         nr_subpage_per_huge,
         page_prop::PageProperty,
-        page_size,
         page_table::{PageTableNodeRef},
     },
 //    sync::RcuDrop,
 //    task::atomic_mode::InAtomicMode,
 };
-use super::{Child, ChildRef, PageTableGuard, PageTableNode};
+use super::ChildRef;
 
 
 use aster_common::prelude::*;

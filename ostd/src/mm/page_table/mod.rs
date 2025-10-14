@@ -11,7 +11,7 @@ use core::{
 
 use super::{
 //    kspace::KernelPtConfig,
-    nr_subpage_per_huge, page_prop::PageProperty, page_size,
+    nr_subpage_per_huge, page_prop::PageProperty,
 //    vm_space::UserPtConfig,
     Paddr, PagingLevel,
 //    PodOnce,
@@ -37,16 +37,6 @@ mod test;
 //pub(crate) mod boot_pt;
 
 verus!{
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum PageTableError {
-    /// The provided virtual address range is invalid.
-    InvalidVaddrRange(Vaddr, Vaddr),
-    /// The provided virtual address is invalid.
-    InvalidVaddr(Vaddr),
-    /// Using virtual address not aligned.
-    UnalignedVaddr,
-}
 
 /*/// Splits the address range into largest page table items.
 ///
