@@ -38,6 +38,3 @@ test-ledger
 #log
 *.log.json
 *.log.json.gz
-
-# toolchain
-dv/
