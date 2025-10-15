@@ -160,7 +160,7 @@ impl MetaSlot {
 
     #[rustc_allow_incoherent_impl]
     pub open spec fn frame_paddr_spec(&self, pre: MetaSlotModel) -> Paddr {
-        mapping::meta_to_frame_spec(pre.self_addr)
+        meta_to_frame(pre.self_addr)
     }
 }
 

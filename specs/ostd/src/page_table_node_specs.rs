@@ -1,7 +1,8 @@
 use vstd::prelude::*;
 
-use aster_common::prelude::*;
 use vstd_extra::ownership::*;
+
+use aster_common::prelude::*;
 
 verus! {
 
@@ -12,7 +13,7 @@ impl<C: PageTableConfig> Child<C> {
         slot_own: MetaSlotOwner,
         slot_perm: vstd::simple_pptr::PointsTo<MetaSlot>,
     ) -> C::E {
-        C::E::new_pt_spec(mapping::meta_to_frame_spec(slot_own.self_addr))
+        C::E::new_pt_spec(meta_to_frame(slot_own.self_addr))
     }
 
     #[rustc_allow_incoherent_impl]

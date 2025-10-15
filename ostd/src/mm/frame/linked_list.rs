@@ -713,7 +713,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M> {
         slot.in_list.store(
             Tracked(slot_own.in_list.borrow_mut()),
             #[verus_spec(with Tracked(&mut owner.list_own))]
-            LinkedList::<M>::lazy_get_id(self.list),
+            LinkedList::<M>::lazy_get_id(self.list)
         );
         proof {
             regions.slot_owners.tracked_insert(

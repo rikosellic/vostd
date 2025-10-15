@@ -51,7 +51,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             #[verus_spec(with Tracked(slot_own),
                                                 Tracked(owner.slot_perm.borrow()),
                                                 Tracked(owner.node_own.meta_perm.borrow()))]
-            guard.level(),
+            guard.level()
         )
     }
 
