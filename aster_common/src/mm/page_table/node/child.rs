@@ -8,7 +8,7 @@ verus! {
 #[rustc_has_incoherent_inherent_impls]
 pub enum Child<C: PageTableConfig> {
     /// A child page table node.
-    pub PageTable(/*RcuDrop<*/PageTableNode<C>/*>*/),
+    pub PageTable(  /*RcuDrop<*/ PageTableNode<C>  /*>*/ ),
     /// Physical address of a mapped physical frame.
     ///
     /// It is associated with the virtual page property and the level of the
@@ -21,7 +21,14 @@ impl<C: PageTableConfig> Child<C> {
     pub open spec fn get_node(self) -> Option<PageTableNode<C>> {
         match self {
             Self::PageTable(node) => Some(node),
-            _ => None
+            _ => None,
+        }
+    }
+
+    pub open spec fn get_frame_tuple(self) -> Option<(Paddr, PagingLevel, PageProperty)> {
+        match self {
+            Self::Frame(paddr, level, prop) => Some((paddr, level, prop)),
+            _ => None,
         }
     }
 
@@ -35,8 +42,9 @@ impl<C: PageTableConfig> Child<C> {
 
     /// Returns whether the child is not present.
     #[verifier::when_used_as_spec(is_none_spec)]
-    pub fn is_none(&self) -> (b:bool)
-        ensures b == self.is_none_spec()
+    pub fn is_none(&self) -> (b: bool)
+        ensures
+            b == self.is_none_spec(),
     {
         matches!(self, Child::None)
     }

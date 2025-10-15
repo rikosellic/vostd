@@ -368,7 +368,7 @@ impl MetaSlot {
         requires
             owner.inv(),
             self.wf(owner),
-        returns self.frame_paddr_spec(owner@)
+        returns meta_to_frame(owner@.self_addr)
     {
         #[verus_spec(with Tracked(owner))]
         let addr = self.addr_of();

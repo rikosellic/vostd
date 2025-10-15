@@ -41,9 +41,7 @@ pub enum PageTableError {
 ///  - if the provided raw form matches the item that was consumed by
 ///    `item_into_raw`, `item_from_raw` restores the exact item that was
 ///    consumed by `item_into_raw`.
-pub unsafe trait PageTableConfig:
-    Clone + Debug + Send + Sync + 'static
-{
+pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     /// The index range at the top level (`C::NR_LEVELS`) page table.
     ///
     /// When configured with this value, the [`PageTable`] instance will only
@@ -51,9 +49,11 @@ pub unsafe trait PageTableConfig:
     /// this range. The range can be smaller than the actual allowed range
     /// specified by the hardware MMU (limited by `C::ADDRESS_WIDTH`).
     spec fn TOP_LEVEL_INDEX_RANGE_spec() -> Range<usize>;
+
     fn TOP_LEVEL_INDEX_RANGE() -> (r: Range<usize>)
         ensures
-            r == Self::TOP_LEVEL_INDEX_RANGE_spec();
+            r == Self::TOP_LEVEL_INDEX_RANGE_spec(),
+    ;
 
     /// If we can remove the top-level page table entries.
     ///
@@ -63,9 +63,11 @@ pub unsafe trait PageTableConfig:
     open spec fn TOP_LEVEL_CAN_UNMAP_spec() -> bool {
         true
     }
-    fn TOP_LEVEL_CAN_UNMAP() -> (b:bool)
+
+    fn TOP_LEVEL_CAN_UNMAP() -> (b: bool)
         ensures
-            b == Self::TOP_LEVEL_CAN_UNMAP_spec();
+            b == Self::TOP_LEVEL_CAN_UNMAP_spec(),
+    ;
 
     /// The type of the page table entry.
     type E: PageTableEntryTrait;
@@ -132,10 +134,11 @@ impl<C: PageTableConfig> PagingConstsTrait for C {
     fn BASE_PAGE_SIZE() -> usize {
         C::C::BASE_PAGE_SIZE()
     }
-    
+
     open spec fn NR_LEVELS_spec() -> PagingLevel {
         C::C::NR_LEVELS_spec()
     }
+
     fn NR_LEVELS() -> PagingLevel {
         C::C::NR_LEVELS()
     }
@@ -158,11 +161,11 @@ impl<C: PageTableConfig> PagingConstsTrait for C {
 
     open spec fn ADDRESS_WIDTH_spec() -> usize {
         C::C::ADDRESS_WIDTH_spec()
-    } 
+    }
 
     fn ADDRESS_WIDTH() -> usize {
         C::C::ADDRESS_WIDTH()
-    } 
+    }
 
     open spec fn VA_SIGN_EXT_spec() -> bool {
         C::C::VA_SIGN_EXT_spec()
@@ -176,13 +179,17 @@ impl<C: PageTableConfig> PagingConstsTrait for C {
         ensures
             0 < Self::BASE_PAGE_SIZE_spec(),
             is_power_2(Self::BASE_PAGE_SIZE_spec() as int),
-    { admit() }
+    {
+        admit()
+    }
 
     proof fn lemma_PTE_SIZE_properties()
         ensures
             0 < Self::PTE_SIZE_spec() <= Self::BASE_PAGE_SIZE(),
             is_power_2(Self::PTE_SIZE_spec() as int),
-    { admit() }
+    {
+        admit()
+    }
 }
 
 /// The interface for defining architecture-specific page table entries.
@@ -325,6 +332,7 @@ pub fn nr_pte_index_bits<C: PagingConstsTrait>() -> (res: usize)
     ensures
         res == nr_pte_index_bits_spec::<C>(),
 {
+    proof { lemma_nr_subpage_per_huge_bounded::<C>(); }
     nr_subpage_per_huge::<C>().ilog2() as usize
 }
 

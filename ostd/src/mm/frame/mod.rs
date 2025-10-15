@@ -171,7 +171,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             slot_perm.is_init(),
             slot_perm.value().wf(&slot_own),
             slot_own.inv()
-        returns slot_perm.value().frame_paddr_spec(slot_own@)
+        returns meta_to_frame(slot_own@.self_addr)
     {
         #[verus_spec(with Tracked(slot_perm))]
         let slot = self.slot();

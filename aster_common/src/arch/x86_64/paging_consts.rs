@@ -122,8 +122,6 @@ impl PagingConstsTrait for PagingConsts {
         }
         8
     }
-
-
 }
 
 } // verus!
