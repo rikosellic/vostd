@@ -52,7 +52,7 @@ use core::{
 };
 
 //pub use allocator::GlobalFrameAllocator;
-use meta::{GetFrameError, REF_COUNT_UNUSED};
+use meta::REF_COUNT_UNUSED;
 //pub use segment::Segment;
 use untyped::{/*AnyUFrameMeta,*/ UFrame};
 
@@ -449,7 +449,7 @@ impl<M: AnyFrameMeta> TryFrom<Frame<dyn AnyFrameMeta>> for Frame<M> {
 pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) {
     debug_assert!(paddr % PAGE_SIZE() == 0);
 
-    let vaddr: Vaddr = mapping::frame_to_meta(paddr);
+    let vaddr: Vaddr = frame_to_meta(paddr);
     // SAFETY: `vaddr` points to a valid `MetaSlot` that will never be mutably borrowed, so taking
     // an immutable reference to it is always safe.
     let slot = unsafe { &*(vaddr as *const MetaSlot) };

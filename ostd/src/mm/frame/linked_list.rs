@@ -22,7 +22,6 @@ use vstd_extra::cast_ptr::*;
 use vstd_extra::ownership::*;
 use vstd_extra::{borrow_field, update_field};
 
-use aster_common::prelude::frame_list_model::*;
 use aster_common::prelude::*;
 
 use ostd_specs::*;
@@ -545,7 +544,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M> {
         assert(owner.index < owner.length() - 1 ==> owner.list_own.inv_at(owner.index + 1));
 
         let meta_ptr = current.addr();
-        let paddr = mapping::meta_to_frame(meta_ptr);
+        let paddr = meta_to_frame(meta_ptr);
 
         let tracked Tracked(cur_perm) = owner.list_own.perms.tracked_remove(owner.index);
         let tracked mut cur_own = owner.list_own.list.tracked_remove(owner.index);

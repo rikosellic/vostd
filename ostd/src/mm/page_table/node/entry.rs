@@ -5,14 +5,19 @@ use vstd::simple_pptr::*;
 
 use vstd_extra::ownership::*;
 
-use super::{Child, ChildRef, PageTableGuard, PageTableNode};
-use crate::{
-    mm::{nr_subpage_per_huge, page_prop::PageProperty, page_size, page_table::PageTableNodeRef},
-    //    sync::RcuDrop,
-    //    task::atomic_mode::InAtomicMode,
-};
-use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
+use core::marker::PhantomData;
+use crate::{
+    mm::{
+        nr_subpage_per_huge,
+        page_prop::PageProperty,
+        page_table::{PageTableNodeRef},
+    },
+//    sync::RcuDrop,
+//    task::atomic_mode::InAtomicMode,
+};
+use super::ChildRef;
+
 
 use aster_common::prelude::*;
 use vstd_extra::cast_ptr;

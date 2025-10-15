@@ -32,15 +32,15 @@ use vstd::simple_pptr::PPtr;
 
 use core::{marker::PhantomData, ops::Deref, sync::atomic::Ordering};
 
-pub(in crate::mm) use self::child::ChildRef;
-use super::{nr_subpage_per_huge, PageTableConfig, PageTableEntryTrait};
+pub(in crate::mm) use self::{
+    child::{ChildRef},
+};
+use super::nr_subpage_per_huge;
 use crate::{
     mm::{
-        paddr_to_vaddr,
         page_table::{load_pte, store_pte},
-        //        FrameAllocOptions, Infallible,
-        PagingLevel,
-        //        VmReader,
+//        FrameAllocOptions, Infallible,
+//        VmReader,
     },
     //    task::atomic_mode::InAtomicMode,
 };

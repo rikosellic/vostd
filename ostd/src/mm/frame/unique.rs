@@ -12,8 +12,7 @@ use vstd_extra::ownership::*;
 use core::{marker::PhantomData, mem::ManuallyDrop, sync::atomic::Ordering};
 
 use super::{
-    meta::{GetFrameError, REF_COUNT_UNIQUE},
-    Frame, MetaSlot,
+    meta::REF_COUNT_UNIQUE,
 };
 use crate::mm::{Paddr, PagingConsts, PagingLevel};
 
@@ -204,7 +203,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
             regions.slots == old(regions).slots,
             regions.slot_owners == old(regions).slot_owners,
     {
-        let vaddr = mapping::frame_to_meta(paddr);
+        let vaddr = frame_to_meta(paddr);
         let ptr = vstd::simple_pptr::PPtr::<MetaSlot>::from_addr(vaddr);
 
         let tracked slot_own = regions.dropped_slots.tracked_remove(frame_to_index(paddr));
