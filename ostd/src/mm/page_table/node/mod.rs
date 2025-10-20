@@ -36,9 +36,6 @@ use core::{
     sync::atomic::{Ordering},
 };
 
-pub(in crate::mm) use self::{
-    child::{ChildRef},
-};
 use super::nr_subpage_per_huge;
 use crate::{
     mm::{
@@ -55,7 +52,10 @@ use vstd::simple_pptr;
 use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::*;
 use vstd_extra::array_ptr;
+
 use aster_common::prelude::*;
+use aster_common::prelude::frame::*;
+use aster_common::prelude::page_table::*;
 
 verus! {
 
@@ -147,18 +147,21 @@ impl<C: PageTableConfig> PageTableNode<C> {
     }*/
 }
 
-//impl<'a> PageTableNodeRef<'a> {
-    /* TODO: Stub out InAtomicMode
+impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
     /// Locks the page table node.
     ///
     /// An atomic mode guard is required to
     ///  1. prevent deadlocks;
     ///  2. provide a lifetime (`'rcu`) that the nodes are guaranteed to outlive.
-    pub(super) fn lock<'rcu>(self, _guard: &'rcu dyn InAtomicMode) -> PageTableGuard<'rcu, C>
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
+    pub fn lock<'rcu, A: InAtomicMode>(self, _guard: &'rcu A) -> PPtr<PageTableGuard<'rcu, C>>
     where
         'a: 'rcu,
     {
-        while self
+        unimplemented!()
+        // TODO: axiomatize locks
+/*        while self
             .meta()
             .lock
             .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
@@ -166,8 +169,9 @@ impl<C: PageTableConfig> PageTableNode<C> {
         {
             core::hint::spin_loop();
         }
+*/
 
-        PageTableGuard::<'rcu, C> { inner: self }
+//        PageTableGuard::<'rcu, C> { inner: self }
     }
 
     /// Creates a new [`PageTableGuard`] without checking if the page table lock is held.
@@ -178,16 +182,19 @@ impl<C: PageTableConfig> PageTableNode<C> {
     ///
     /// Calling this function when a guard is already created is undefined behavior
     /// unless that guard was already forgotten.
-    pub(super) unsafe fn make_guard_unchecked<'rcu>(
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
+    pub fn make_guard_unchecked<'rcu, A: InAtomicMode>(
         self,
-        _guard: &'rcu dyn InAtomicMode,
-    ) -> PageTableGuard<'rcu, C>
+        _guard: &'rcu A,
+    ) -> PPtr<PageTableGuard<'rcu, C>>
     where
         'a: 'rcu,
     {
-        PageTableGuard { inner: self }
-    }*/
-//}
+        unimplemented!()
+//        PageTableGuard { inner: self }
+    }
+}
 
 impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     /// Borrows an entry in the node at a given index.

@@ -6,6 +6,7 @@ use core::fmt::Debug;
 use vstd_extra::prelude::*;
 
 use super::*;
+use crate::page_table::*;
 
 decl_bms_const!(
     PAGE_FLAG_MAPPING,

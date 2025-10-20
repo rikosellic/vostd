@@ -14,7 +14,7 @@ use crate::{
     //    Error, Result,
 };
 
-use aster_common::prelude::AnyFrameMeta;
+use aster_common::prelude::frame::AnyFrameMeta;
 
 /// The metadata of untyped frame.
 ///

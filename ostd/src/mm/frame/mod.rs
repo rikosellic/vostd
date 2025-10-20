@@ -59,9 +59,11 @@ use untyped::{/*AnyUFrameMeta,*/ UFrame};
 use super::{PagingLevel, PAGE_SIZE};
 use crate::mm::{Paddr, Vaddr};
 
-use aster_common::prelude::*;
 use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::*;
+
+use aster_common::prelude::*;
+use aster_common::prelude::frame::*;
 
 verus! {
 
@@ -234,10 +236,11 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     }
 
     /// Borrows a reference from the given frame.
-    /*    pub fn borrow(&self) -> FrameRef<'_, FrameMeta> {
+    #[rustc_allow_incoherent_impl]
+    pub fn borrow(&self) -> FrameRef<'_, M> {
         // SAFETY: Both the lifetime and the type matches `self`.
-        unsafe { FrameRef::borrow_paddr(self.start_paddr()) }
-    }*/
+        FrameRef::borrow_paddr(self.start_paddr())
+    }
     /// Forgets the handle to the frame.
     ///
     /// This will result in the frame being leaked without calling the custom dropper.

@@ -24,10 +24,11 @@ use super::{
 //};
 
 use aster_common::prelude::*;
+use aster_common::prelude::page_table::*;
 
 mod node;
 use node::*;
-//mod cursor;
+mod cursor;
 
 //pub(crate) use cursor::{Cursor, CursorMut, PageTableFrag};
 
@@ -92,71 +93,68 @@ pub(crate) fn largest_pages<C: PageTableConfig>(
 
         Some((item_start, level))
     })
-}
+}*/
 
 /// Gets the managed virtual addresses range for the page table.
 ///
 /// It returns a [`RangeInclusive`] because the end address, if being
 /// [`Vaddr::MAX`], overflows [`Range<Vaddr>`].
-const fn vaddr_range<C: PageTableConfig>() -> RangeInclusive<Vaddr> {
-    const fn top_level_index_width<C: PageTableConfig>() -> usize {
-        C::ADDRESS_WIDTH() - pte_index_bit_offset::<C>(C::NR_LEVELS())
-    }
+const fn top_level_index_width<C: PageTableConfig>() -> usize {
+    C::ADDRESS_WIDTH() - pte_index_bit_offset::<C>(C::NR_LEVELS())
+}
 
-    const {
+const fn pt_va_range_start<C: PageTableConfig>() -> Vaddr {
+    C::TOP_LEVEL_INDEX_RANGE().start << pte_index_bit_offset::<C>(C::NR_LEVELS())
+}
+
+#[verifier::external_body]
+const fn pt_va_range_end<C: PageTableConfig>() -> Vaddr {
+    C::TOP_LEVEL_INDEX_RANGE()
+        .end
+        .unbounded_shl(pte_index_bit_offset::<C>(C::NR_LEVELS()) as u32)
+        .wrapping_sub(1) // Inclusive end.
+}
+
+const fn sign_bit_of_va<C: PageTableConfig>(va: Vaddr) -> bool {
+    (va >> (C::ADDRESS_WIDTH() - 1)) & 1 != 0
+}
+
+const fn vaddr_range<C: PageTableConfig>() -> Range<Vaddr> {
+
+/*    const {
         assert!(C::TOP_LEVEL_INDEX_RANGE().start < C::TOP_LEVEL_INDEX_RANGE().end);
         assert!(top_level_index_width::<C>() <= nr_pte_index_bits::<C>(),);
         assert!(C::TOP_LEVEL_INDEX_RANGE().start < 1 << top_level_index_width::<C>());
         assert!(C::TOP_LEVEL_INDEX_RANGE().end <= 1 << top_level_index_width::<C>());
-    };
-
-    const fn pt_va_range_start<C: PageTableConfig>() -> Vaddr {
-        C::TOP_LEVEL_INDEX_RANGE().start << pte_index_bit_offset::<C>(C::NR_LEVELS())
-    }
-
-    const fn pt_va_range_end<C: PageTableConfig>() -> Vaddr {
-        C::TOP_LEVEL_INDEX_RANGE()
-            .end
-            .unbounded_shl(pte_index_bit_offset::<C>(C::NR_LEVELS()) as u32)
-            .wrapping_sub(1) // Inclusive end.
-    }
-
-    const fn sign_bit_of_va<C: PageTableConfig>(va: Vaddr) -> bool {
-        (va >> (C::ADDRESS_WIDTH() - 1)) & 1 != 0
-    }
+    };*/
 
     let mut start = pt_va_range_start::<C>();
     let mut end = pt_va_range_end::<C>();
 
-    const {
+/*    const {
         assert!(
             !C::VA_SIGN_EXT()
                 || sign_bit_of_va::<C>(pt_va_range_start::<C>())
                     == sign_bit_of_va::<C>(pt_va_range_end::<C>()),
             "The sign bit of both range endpoints must be the same if sign extension is enabled"
         )
-    }
+    }*/
 
     if C::VA_SIGN_EXT() && sign_bit_of_va::<C>(pt_va_range_start::<C>()) {
         start |= !0 ^ ((1 << C::ADDRESS_WIDTH()) - 1);
         end |= !0 ^ ((1 << C::ADDRESS_WIDTH()) - 1);
     }
 
-    start..=end
-}*/
+    start..end+1
+}
 
-/*/// Checks if the given range is covered by the valid range of the page table.
+/// Checks if the given range is covered by the valid range of the page table.
 const fn is_valid_range<C: PageTableConfig>(r: &Range<Vaddr>) -> bool {
     let va_range = vaddr_range::<C>();
-    (r.start == 0 && r.end == 0) || (*va_range.start() <= r.start && r.end - 1 <= *va_range.end())
+    (r.start == 0 && r.end == 0) || (va_range.start <= r.start && r.end - 1 <= va_range.end)
 }
 
 // Here are some const values that are determined by the paging constants.
-
-/// The number of virtual address bits used to index a PTE in a page.
-const fn nr_pte_index_bits<C: PagingConstsTrait>() -> usize {
-    nr_subpage_per_huge::<C>().ilog2() as usize
-}
 
 /// The index of a VA's PTE in a page table node at the given level.
 const fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> usize {
@@ -171,7 +169,7 @@ const fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> usize
 const fn pte_index_bit_offset<C: PagingConstsTrait>(level: PagingLevel) -> usize {
     C::BASE_PAGE_SIZE().ilog2() as usize + nr_pte_index_bits::<C>() * (level as usize - 1)
 }
-*/
+
 /* TODO: stub out UserPtConfig
 
 impl PageTable<UserPtConfig> {

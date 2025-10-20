@@ -19,9 +19,11 @@ use crate::{
 };
 use super::ChildRef;
 
+use vstd_extra::cast_ptr;
 
 use aster_common::prelude::*;
-use vstd_extra::cast_ptr;
+use aster_common::prelude::frame::*;
+use aster_common::prelude::page_table::*;
 
 verus!{
 
@@ -54,13 +56,19 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
                                                 Tracked(owner.node_own.meta_perm.borrow()))] guard.level())
     }
 
-/*    /// Gets a reference to the child.
-    pub(in crate::mm) fn to_ref(&self) -> ChildRef<'rcu, C> {
+    /// Gets a reference to the child.
+    #[rustc_allow_incoherent_impl]
+    #[verus_spec(
+        with Tracked(owner) : Tracked<EntryOwner<C>>
+    )]
+    pub fn to_ref(&self) -> ChildRef<'rcu, C> {
+        let guard = self.node.borrow(Tracked(owner.guard_perm.borrow()));
+
         // SAFETY:
         //  - The PTE outlives the reference (since we have `&self`).
         //  - The level matches the current node.
-        unsafe { ChildRef::from_pte(&self.pte, self.node.level()) }
-    }*/
+        ChildRef::from_pte(&self.pte, guard.level())
+    }
 
     /// Operates on the mapping properties of the entry.
     ///
@@ -173,15 +181,18 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         old_child
     }
 
-    /* TODO: stub out InAtomicMode
     /// Allocates a new child page table node and replaces the entry with it.
     ///
     /// If the old entry is not none, the operation will fail and return `None`.
     /// Otherwise, the lock guard of the new child page table node is returned.
-    pub(in crate::mm::page_table) fn alloc_if_none(
+    #[verifier::external_body]
+    #[rustc_allow_incoherent_impl]
+    pub fn alloc_if_none<A: InAtomicMode>(
         &mut self,
-        guard: &'rcu dyn InAtomicMode,
-    ) -> Option<PageTableGuard<'rcu, C>> {
+        guard: &'rcu A,
+    ) -> Option<PPtr<PageTableGuard<'rcu, C>>> {
+        unimplemented!()
+        /*
         if !(self.is_none() && self.node.level() > 1) {
             return None;
         }
@@ -209,6 +220,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         let pt_ref = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
         // SAFETY: The node is locked and there are no other guards.
         Some(unsafe { pt_ref.make_guard_unchecked(guard) })
+        */
     }
 
     /// Splits the entry to smaller pages if it maps to a huge page.
@@ -219,11 +231,20 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     ///
     /// If the entry does not map to a untracked huge page, the method returns
     /// `None`.
-    pub(in crate::mm::page_table) fn split_if_mapped_huge(
+    #[rustc_allow_incoherent_impl]
+    #[verus_spec(
+        with Tracked(owner) : Tracked<EntryOwner<C>>
+    )]
+    #[verifier::external_body]
+    pub fn split_if_mapped_huge<A: InAtomicMode>(
         &mut self,
-        guard: &'rcu dyn InAtomicMode,
-    ) -> Option<PageTableGuard<'rcu, C>> {
-        let level = self.node.level();
+        guard: &'rcu A,
+    ) -> Option<PPtr<PageTableGuard<'rcu, C>>> {
+        unimplemented!()
+        /*
+        let guard = self.node.borrow(Tracked(owner.guard_perm.borrow()));
+
+        let level = guard.level();
 
         if !(self.pte.is_last(level) && level > 1) {
             return None;
@@ -248,19 +269,15 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         // SAFETY:
         //  1. The index is within the bounds.
         //  2. The new PTE is a valid child whose level matches the current page table node.
-        unsafe {
-            self.node.write_pte(
-                self.idx,
-                Child::PageTable(RcuDrop::new(new_page)).into_pte(),
-            )
-        };
+        self.node.write_pte(self.idx, Child::PageTable(new_page.into_pte()));
 
         // SAFETY: The page table won't be dropped before the RCU grace period
         // ends, so it outlives `'rcu`.
         let pt_ref = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
         // SAFETY: The node is locked and there are no other guards.
-        Some(unsafe { pt_ref.make_guard_unchecked(guard) })
-    }*/
+        Some(pt_ref.make_guard_unchecked(guard))
+        */
+    }
 
     /// Create a new entry at the node with guard.
     ///

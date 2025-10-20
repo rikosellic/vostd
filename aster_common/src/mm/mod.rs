@@ -1,11 +1,11 @@
-mod frame;
+pub mod frame;
 mod kspace;
-mod page_table;
+pub mod page_table;
 mod page_prop;
 
-pub use frame::*;
+use frame::{AnyFrameMeta, Frame, FrameRef, MetaSlot, MetaSlotOwner, MetaSlotStorage, StoredPageTablePageMeta, meta_to_frame};
 pub use kspace::*;
-pub use page_table::*;
+use page_table::{PageTableConfig, PageTablePageMeta};
 pub use page_prop::*;
 
 use vstd::prelude::*;

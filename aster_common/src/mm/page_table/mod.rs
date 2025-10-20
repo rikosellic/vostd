@@ -1,8 +1,10 @@
 mod owners;
 mod node;
+mod cursor;
 
 pub use owners::*;
 pub use node::*;
+pub use cursor::*;
 
 use vstd::prelude::*;
 
@@ -13,6 +15,10 @@ use core::ops::Range;
 use super::*;
 
 verus!{
+
+impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
+
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PageTableError {

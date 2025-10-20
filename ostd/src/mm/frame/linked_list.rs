@@ -23,6 +23,8 @@ use vstd_extra::ownership::*;
 use vstd_extra::update_field;
 
 use aster_common::prelude::*;
+use aster_common::prelude::frame::*;
+use aster_common::prelude::frame::CursorMut;
 
 use crate::{
     mm::{Paddr, Vaddr},

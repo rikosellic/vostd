@@ -13,6 +13,8 @@
 //! address in the kernel space. So finding the metadata of a frame often
 //! comes with no costs since the translation is a simple arithmetic operation.
 use aster_common::prelude::*;
+use aster_common::prelude::frame::*;
+
 use vstd::atomic::PermissionU64;
 use vstd::cell::{self, PCell};
 use vstd::prelude::*;

@@ -5,6 +5,8 @@ use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
 use aster_common::prelude::*;
+use aster_common::prelude::frame::*;
+use aster_common::prelude::page_table::*;
 
 use vstd_extra::ownership::*;
 
@@ -83,19 +85,6 @@ impl<C: PageTableConfig> Child<C> {
     }
 }
 
-/// A reference to the child of a page table node.
-pub enum ChildRef<'a, C: PageTableConfig> {
-    /// A child page table node.
-    PageTable(PageTableNodeRef<'a, C>),
-    /// Physical address of a mapped physical frame.
-    ///
-    /// It is associated with the virtual page property and the level of the
-    /// mapping node, which decides the size of the frame.
-    Frame(Paddr, PagingLevel, PageProperty),
-    None,
-}
-}
-/* TODO: borrow_paddr
 impl<C: PageTableConfig> ChildRef<'_, C> {
     /// Converts a PTE to a child.
     ///
@@ -106,7 +95,8 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
     ///
     /// The provided level must be the same with the level of the page table
     /// node that contains this PTE.
-    pub(super) unsafe fn from_pte(pte: &C::E, level: PagingLevel) -> Self {
+    #[rustc_allow_incoherent_impl]
+    pub unsafe fn from_pte(pte: &C::E, level: PagingLevel) -> Self {
         if !pte.is_present() {
             return ChildRef::None;
         }
@@ -118,10 +108,11 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
             // contained by the residing node, and the physical address is
             // valid since the entry is present.
             let node = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
-            debug_assert_eq!(node.level(), level - 1);
+//            debug_assert_eq!(node.level(), level - 1);
             return ChildRef::PageTable(node);
         }
 
         ChildRef::Frame(paddr, level, pte.prop())
     }
-}*/
+}
+}

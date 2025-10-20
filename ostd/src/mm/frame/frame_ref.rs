@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref, ptr::NonNull};
 
-use aster_common::prelude::*;
+use vstd::prelude::*;
+
 use vstd_extra::manually_drop::*;
+
+use aster_common::prelude::*;
+use aster_common::prelude::frame::*;
 
 use super::Frame;
 use crate::{mm::Paddr /*, sync::non_null::NonNullPtr*/};
 
+verus! {
 impl<M: AnyFrameMeta> FrameRef<'_, M> {
     /// Borrows the [`Frame`] at the physical address as a [`FrameRef`].
     ///
@@ -65,3 +70,4 @@ impl<M: AnyFrameMeta> FrameRef<'_, M> {
         NonNull::new(ptr_ref.inner.ptr.cast_mut()).unwrap().cast()
     }
 }*/
+}

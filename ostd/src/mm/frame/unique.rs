@@ -5,6 +5,7 @@ use vstd::prelude::*;
 use vstd::simple_pptr;
 
 use aster_common::prelude::*;
+use aster_common::prelude::frame::*;
 
 use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::*;
