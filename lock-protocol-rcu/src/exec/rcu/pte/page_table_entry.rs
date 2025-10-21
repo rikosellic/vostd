@@ -249,24 +249,14 @@ impl PageTableEntryTrait for PageTableEntry {
 #[allow(non_snake_case)]
 impl PageTableEntry {
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn PROP_MASK() -> usize
-        returns  !Self::PHYS_ADDR_MASK() & !(PageTableFlags::HUGE().bits())
     {
         !Self::PHYS_ADDR_MASK() & !(PageTableFlags::HUGE().bits())
     }
 
-    pub open spec fn encode_cache_spec(cache: CachePolicy) -> usize {
-        match cache {
-            CachePolicy::Uncacheable => PageTableFlags::NO_CACHE().bits(),
-            CachePolicy::Writethrough => PageTableFlags::WRITE_THROUGH().bits(),
-            _ => 0,
-        }
-    }
-
-    #[verifier::when_used_as_spec(encode_cache_spec)]
+    #[vstd::contrib::auto_spec]
     pub fn encode_cache(cache: CachePolicy) -> usize
-        returns Self::encode_cache_spec(cache)
     {
         match cache {
             CachePolicy::Uncacheable => PageTableFlags::NO_CACHE().bits(),
@@ -346,19 +336,9 @@ impl PageTableEntry {
                 flag_8 == 0 || flag_8 == 0b10000 || flag_8 == 0b1000;
     }
 
-    #[verifier::inline]
-    pub open spec fn format_huge_page_spec(level: PagingLevel) -> u64 {
-        if level == 1 {
-            0
-        } else {
-            PageTableFlags::HUGE().bits() as u64
-        }
-    }
-
     #[inline(always)]
-    #[verifier::when_used_as_spec(format_huge_page_spec)]
+    #[vstd::contrib::auto_spec]
     pub fn format_huge_page(level: PagingLevel) -> u64
-        returns Self::format_huge_page_spec(level)
     {
         if level == 1 {
             0

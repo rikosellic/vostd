@@ -48,15 +48,8 @@ verus! {
 
 impl PageProperty {
 
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub fn new(flags: PageFlags, cache: CachePolicy) -> Self
-        returns
-        (Self {
-            has_map: true,
-            flags,
-            cache,
-            priv_flags: PrivilegedPageFlags::USER(),
-        })
     {
         Self {
             has_map: true,
@@ -66,15 +59,8 @@ impl PageProperty {
         }
     }
 
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub fn new_absent() -> Self
-        returns
-        (Self {
-            has_map: false,
-            flags: PageFlags::empty(),
-            cache: CachePolicy::Writeback,
-            priv_flags: PrivilegedPageFlags::empty(),
-        })
     {
         Self {
             has_map: false,
@@ -103,32 +89,18 @@ pub enum CachePolicy {
 #[allow(non_snake_case)]
 impl CachePolicy {
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn N() -> (res: usize)
-        returns
-            (CachePolicy::Writeback.value() + 1) as usize
     {
         (CachePolicy::Writeback.value() + 1) as usize
     }
 
-    #[verifier::inline]
-    pub open spec fn value_spec(&self) -> u8 {
-        match self {
-            CachePolicy::Uncacheable => 0,
-            CachePolicy::WriteCombining => 1,
-            CachePolicy::WriteProtected => 2,
-            CachePolicy::Writethrough => 3,
-            CachePolicy::Writeback => 4,
-        }
-    }
-
     #[inline(always)]
-    #[verifier::when_used_as_spec(value_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn value(&self) -> (res: u8)
-        ensures res == self.value()
     {
         match self {
-            CachePolicy::Uncacheable => 0,
+            CachePolicy::Uncacheable => 0u8,
             CachePolicy::WriteCombining => 1,
             CachePolicy::WriteProtected => 2,
             CachePolicy::Writethrough => 3,
@@ -164,125 +136,110 @@ impl PageFlags {
     }
 
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn empty() -> Self
-        returns (Self { bits: 0 })
     {
         Self { bits: 0 }
     }
 
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     #[deprecated(note = "Use `bits()` instead. It is now aligned with asterinas.")]
     pub const fn value(&self) -> u8
-        returns self.bits
     {
         self.bits
     }
 
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn bits(&self) -> u8
-        returns self.bits
     {
         self.bits
     }
 
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub fn from_bits(value: u8) -> Self
-        returns (Self { bits: value })
     {
         Self { bits: value }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn R() -> Self
-        returns (Self { bits: 0b00000001 })
     {
         Self { bits: 0b00000001 }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn W() -> Self
-        returns (Self { bits: 0b00000010 })
     {
         Self { bits: 0b00000010 }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn X() -> Self
-        returns (Self { bits: 0b00000100 })
     {
         Self { bits: 0b00000100 }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn RW() -> Self
-        returns (Self { bits: Self::R().bits() | Self::W().bits() })
     {
         Self { bits: Self::R().bits() | Self::W().bits() }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn RX() -> Self
-        returns (Self { bits: Self::R().bits() | Self::X().bits() })
     {
         Self { bits: Self::R().bits() | Self::X().bits() }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn RWX() -> Self
-        returns
-            (Self { bits: Self::R().bits() | Self::W().bits() | Self::X().bits() })
     {
         Self { bits: Self::R().bits() | Self::W().bits() | Self::X().bits() }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn ACCESSED() -> Self
-        returns (Self { bits: 0b00001000 })
     {
         Self { bits: 0b00001000 }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn DIRTY() -> Self
-        returns (Self { bits: 0b00010000 })
     {
         Self { bits: 0b00010000 }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn AVAIL1() -> Self
-        returns (Self { bits: 0b01000000 })
     {
         Self { bits: 0b01000000 }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn AVAIL2() -> Self
-        returns (Self { bits: 0b10000000 })
     {
         Self { bits: 0b10000000 }
     }
@@ -311,61 +268,54 @@ pub broadcast proof fn lemma_privileged_page_flags_equal_soundness(a: Privileged
 
 impl PrivilegedPageFlags {
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn empty() -> (res: Self)
-        returns (Self { bits: 0 })
     {
         Self { bits: 0 }
     }
 
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     #[deprecated(note = "Use `bits()` instead. It is now aligned with asterinas.")]
     pub const fn value(&self) -> u8
-        returns self.bits
     {
         self.bits
     }
 
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn bits(&self) -> u8
-        returns self.bits
     {
         self.bits
     }
 
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub fn from_bits(value: u8) -> Self
-        returns (Self { bits: value })
     {
         Self { bits: value }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn USER() -> Self
-        returns (Self { bits: 0b00000001 })
     {
         Self { bits: 0b00000001 }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn GLOBAL() -> Self
-        returns (Self { bits: 0b00000010 })
     {
         Self { bits: 0b00000010 }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vstd::contrib::auto_spec]
     pub const fn SHARED() -> Self
-        returns (Self { bits: 0b10000000 })
     {
         Self { bits: 0b10000000 }
     }

@@ -249,9 +249,8 @@ impl PageTableEntryTrait for PageTableEntry {
 #[allow(non_snake_case)]
 impl PageTableEntry {
     #[inline(always)]
-    #[verifier::allow_in_spec]
+    #[vostd::contrib::auto_spec]
     pub const fn PROP_MASK() -> usize
-        returns  !Self::PHYS_ADDR_MASK() & !(PageTableFlags::HUGE().bits())
     {
         !Self::PHYS_ADDR_MASK() & !(PageTableFlags::HUGE().bits())
     }
