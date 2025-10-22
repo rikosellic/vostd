@@ -27,8 +27,18 @@ mod child;
 mod entry;
 
 use vstd::prelude::*;
+
+use vstd::atomic::PAtomicU8;
 use vstd::cell::PCell;
-use vstd::simple_pptr::PPtr;
+use vstd::simple_pptr::{cell, PPtr};
+
+use vstd_extra::ownership::*;
+use vstd_extra::cast_ptr::*;
+use vstd_extra::array_ptr;
+
+use aster_common::prelude::*;
+use aster_common::prelude::frame::*;
+use aster_common::prelude::page_table::*;
 
 use core::{
     marker::PhantomData,
@@ -37,6 +47,7 @@ use core::{
 };
 
 use super::nr_subpage_per_huge;
+
 use crate::{
     mm::{
         page_table::{load_pte, store_pte},
@@ -46,16 +57,6 @@ use crate::{
 //    task::atomic_mode::InAtomicMode,
 };
 
-use vstd::atomic::PAtomicU8;
-use vstd::simple_pptr;
-
-use vstd_extra::ownership::*;
-use vstd_extra::cast_ptr::*;
-use vstd_extra::array_ptr;
-
-use aster_common::prelude::*;
-use aster_common::prelude::frame::*;
-use aster_common::prelude::page_table::*;
 
 verus! {
 
