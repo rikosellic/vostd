@@ -22,10 +22,23 @@ impl<M: AnyFrameMeta> FrameRef<'_, M> {
     ///    be seen as borrowed from that frame.
     ///  - the type of the [`FrameRef`] (`M`) matches the borrowed frame.
     #[rustc_allow_incoherent_impl]
-    pub fn borrow_paddr(raw: Paddr) -> Self {
+    #[verus_spec(
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>
+    )]
+    pub fn borrow_paddr(raw: Paddr) -> Self
+        requires
+            raw % PAGE_SIZE() == 0,
+            raw < MAX_PADDR(),
+            !old(regions).slots.contains_key(frame_to_index(raw)),
+            old(regions).dropped_slots.contains_key(frame_to_index(raw)),
+    {
+        #[verus_spec(with Tracked(regions))]
+        let frame = Frame::from_raw(raw);
         Self {
             // SAFETY: The caller ensures the safety.
-            inner: /*ManuallyDrop::new(unsafe {*/ Frame::from_raw(raw) /*})*/,
+            inner: /*ManuallyDrop::new(unsafe {*/
+                frame
+                /*})*/,
             _marker: PhantomData,
         }
     }

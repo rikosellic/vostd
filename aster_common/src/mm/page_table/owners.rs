@@ -1,6 +1,6 @@
 use vstd::prelude::*;
 
-use vstd_extra::ghost_tree;
+use vstd_extra::ghost_tree::*;
 use vstd_extra::ownership::*;
 use vstd_extra::prelude::TreeNodeValue;
 use vstd_extra::cast_ptr::{Repr};
@@ -39,11 +39,11 @@ impl<'rcu, C: PageTableConfig> TreeNodeValue for OwnerInTree<'rcu, C> {
 }
 
 pub tracked struct OwnerAsTreeNode<'rcu, C: PageTableConfig> {
-    pub inner: ghost_tree::Node<OwnerInTree<'rcu, C>, CONST_NR_ENTRIES, CONST_NR_LEVELS>,
+    pub inner: Node<OwnerInTree<'rcu, C>, CONST_NR_ENTRIES, CONST_NR_LEVELS>,
 }
 
 impl<'rcu, C: PageTableConfig> Deref for OwnerAsTreeNode<'rcu, C> {
-    type Target = ghost_tree::Node<OwnerInTree<'rcu, C>, CONST_NR_ENTRIES, CONST_NR_LEVELS>;
+    type Target = Node<OwnerInTree<'rcu, C>, CONST_NR_ENTRIES, CONST_NR_LEVELS>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
@@ -62,5 +62,14 @@ impl<'rcu, C: PageTableConfig> OwnerAsTreeNode<'rcu, C> {
                 &self.inner.children[i as int].unwrap().value.tree_node.unwrap())
             }
     }
+}
+
+pub tracked struct PageTableOwner<'rcu, C: PageTableConfig> {
+    pub tree: Tree<OwnerInTree<'rcu, C>, CONST_NR_ENTRIES, CONST_NR_LEVELS>,
+//    pub perms: Map<TreePath<CONST_NR_ENTRIES, CONST_NR_LEVELS>, PointsTo<>>
+}
+
+pub tracked struct CursorModel {
+    pub path: TreePath<CONST_NR_ENTRIES>,
 }
 }

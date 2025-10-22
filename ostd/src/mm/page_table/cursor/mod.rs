@@ -88,6 +88,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     /// range. Out-of-bound accesses will result in panics or errors as return values,
     /// depending on the access method.
     #[rustc_allow_incoherent_impl]
+    #[verus_spec(
+        with Tracked(pt_own): Tracked<PageTableOwner<C>>
+    )]
     pub fn new(
         pt: &'rcu PageTable<C>,
         guard: &'rcu A,
@@ -102,7 +105,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
 //        const { assert!(C::NR_LEVELS() as usize <= MAX_NR_LEVELS()) };
 
-        Ok(locking::lock_range(pt, guard, va))
+        Ok(
+            #[verus_spec(with Tracked(pt_own))]
+            locking::lock_range(pt, guard, va))
     }
 
     /// Gets the current virtual address.
@@ -123,7 +128,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
         let rcu_guard = self.rcu_guard;
 
-        loop {
+        loop
+            decreases self.level
+        {
             let cur_va = self.va;
             let level = self.level;
 
@@ -206,7 +213,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
         let rcu_guard = self.rcu_guard;
 
-        while self.va < end {
+        while self.va < end
+            decreases end - self.va
+        {
             let cur_va = self.va;
             let cur_va_range = self.cur_va_range();
             let cur_entry_fits_range = cur_va == cur_va_range.start && cur_va_range.end <= end;
@@ -263,6 +272,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     ///
     /// This method panics if the address has bad alignment.
     #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError> {
 //        assert!(va % C::BASE_PAGE_SIZE() == 0);
         if !self.barrier_va.contains(&va) {
@@ -291,13 +301,15 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     }
 
     /// Traverses forward to the end of [`Self::cur_va_range`].
-    ///
+    //
     /// If reached the end of the current page table node, it (recursively)
     /// moves itself up to the next page of the parent page.
     #[rustc_allow_incoherent_impl]
     fn move_forward(&mut self) {
         let next_va = self.cur_va_range().end;
-        while self.level < self.guard_level && pte_index::<C>(next_va, self.level) == 0 {
+        while self.level < self.guard_level && pte_index::<C>(next_va, self.level) == 0
+            decreases self.guard_level - self.level
+        {
             self.pop_level();
         }
         self.va = next_va;
@@ -436,7 +448,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         let rcu_guard = self.inner.rcu_guard;
 
         // Adjust ourselves to the level of the item.
-        while self.inner.level != level {
+        while self.inner.level != level
+            decreases level - self.inner.level
+        {
             if self.inner.level < level {
                 self.inner.pop_level();
                 continue;

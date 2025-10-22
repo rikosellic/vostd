@@ -31,8 +31,7 @@ pub assume_specification<Idx: Clone> [Range::<Idx>::clone] (range: &Range<Idx>) 
         res == *range;
 
 #[verus_spec(
-    with Tracked(entry_own): Tracked<EntryOwner<C>>,
-        Tracked(child_own): Tracked<EntryOwner<C>>
+    with Tracked(pt_own): Tracked<PageTableOwner<C>>
 )]
 pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
     pt: &'rcu PageTable<C>,
@@ -53,11 +52,13 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
     };
     */
 
-    let mut subtree_root = try_traverse_and_lock_subtree_root(pt, guard, va).unwrap();
+    let subtree_root = try_traverse_and_lock_subtree_root(pt, guard, va).unwrap();
+    let tracked entry_own = pt_own.tree.root.value.tree_node.tracked_unwrap();
+//    let tracked child_node = owner_node.tracked_child()
 
     // Once we have locked the sub-tree that is not stray, we won't read any
     // stray nodes in the following traversal since we must lock before reading.
-    let subtree_guard = subtree_root.borrow(Tracked(child_own.guard_perm.borrow()));
+    let subtree_guard = subtree_root.borrow(Tracked(entry_own.guard_perm.borrow()));
     let guard_level = subtree_guard.level();
     let cur_node_va = align_down(va.start, page_size(guard_level + 1));
     dfs_acquire_lock(guard, subtree_root, cur_node_va, va.clone());
