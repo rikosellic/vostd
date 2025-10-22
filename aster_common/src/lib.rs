@@ -1,9 +1,9 @@
-mod mm;
 mod arch;
+mod mm;
 mod task;
 
-use mm::*;
 use arch::*;
+use mm::*;
 use task::*;
 
 pub mod prelude;

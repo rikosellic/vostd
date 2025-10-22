@@ -1,8 +1,10 @@
-use super::seq_extra::*;
-use super::ownership::Inv;
 use vstd::prelude::*;
+
 use vstd::seq::*;
 use vstd::seq_lib::*;
+
+use super::ownership::Inv;
+use super::seq_extra::*;
 
 verus! {
 
