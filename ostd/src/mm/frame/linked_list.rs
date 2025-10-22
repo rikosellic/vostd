@@ -3,20 +3,11 @@
 //!
 //! This module leverages the customizability of the metadata system (see
 //! [super::meta]) to allow any type of frame to be used in a linked list.
-use vstd::atomic::PermissionU64;
 use vstd::prelude::*;
+
+use vstd::atomic::PermissionU64;
 use vstd::seq_lib::*;
 use vstd::simple_pptr::*;
-
-use core::{
-    ops::{Deref, DerefMut},
-    ptr::NonNull,
-    sync::atomic::{AtomicU64, Ordering},
-};
-
-use core::borrow::BorrowMut;
-
-use super::{meta::get_slot, MetaSlot};
 
 use vstd_extra::cast_ptr::*;
 use vstd_extra::ownership::*;
@@ -26,9 +17,18 @@ use aster_common::prelude::*;
 use aster_common::prelude::frame::*;
 use aster_common::prelude::frame::CursorMut;
 
+use core::borrow::BorrowMut;
+use core::{
+    ops::{Deref, DerefMut},
+    ptr::NonNull,
+    sync::atomic::{AtomicU64, Ordering},
+};
+
 use crate::{
     mm::{Paddr, Vaddr},
 };
+
+use super::{meta::get_slot, MetaSlot};
 
 verus! {
 
