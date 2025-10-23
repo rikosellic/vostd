@@ -61,6 +61,7 @@ impl<'rcu, C: PageTableConfig> OwnerAsTreeNode<'rcu, C> {
     }
 }
 
+#[verusfmt::skip]
 pub tracked struct PageTableOwner<'rcu, C: PageTableConfig> {
     pub tree: Tree<OwnerInTree<'rcu, C>, CONST_NR_ENTRIES, CONST_NR_LEVELS>,
     //    pub perms: Map<TreePath<CONST_NR_ENTRIES, CONST_NR_LEVELS>, PointsTo<>>

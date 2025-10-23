@@ -7,8 +7,8 @@ use vstd::cell;
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
-use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::{self, Repr};
+use vstd_extra::ownership::*;
 
 use super::*;
 
@@ -129,8 +129,8 @@ impl Inv for MetaSlotOwner {
             &&& self.vtable_ptr@.is_uninit()
             &&& self.in_list@.value() == 0
         }
-    &&& FRAME_METADATA_RANGE().start <= self.self_addr < FRAME_METADATA_RANGE().end
-    &&& self.self_addr % META_SLOT_SIZE() == 0
+        &&& FRAME_METADATA_RANGE().start <= self.self_addr < FRAME_METADATA_RANGE().end
+        &&& self.self_addr % META_SLOT_SIZE() == 0
     }
 }
 
@@ -191,19 +191,21 @@ impl OwnerOf for MetaSlot {
     type Owner = MetaSlotOwner;
 
     open spec fn wf(&self, owner: &Self::Owner) -> bool {
-    &&& self.storage == owner.storage@.pptr()
-    &&& self.ref_count.id() == owner.ref_count@.id()
-    &&& self.vtable_ptr == owner.vtable_ptr@.pptr()
-    &&& self.in_list.id() == owner.in_list@.id()
+        &&& self.storage == owner.storage@.pptr()
+        &&& self.ref_count.id() == owner.ref_count@.id()
+        &&& self.vtable_ptr == owner.vtable_ptr@.pptr()
+        &&& self.in_list.id() == owner.in_list@.id()
     }
 }
 
-impl ModelOf for MetaSlot { }
+impl ModelOf for MetaSlot {
+
+}
 
 impl MetaSlotOwner {
-    pub fn cast_perm<T: Repr<MetaSlotStorage>>(self)
-        -> Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, T>>
-    {
+    pub fn cast_perm<T: Repr<MetaSlotStorage>>(self) -> Tracked<
+        vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, T>,
+    > {
         vstd_extra::cast_ptr::PointsTo::new(self.self_addr, self.storage)
     }
 }

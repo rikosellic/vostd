@@ -4,12 +4,12 @@ use std::ops::Deref;
 
 use super::*;
 
-verus!{
+verus! {
 
 /// A struct that can work as `&'a Frame<M>`.
 #[rustc_has_incoherent_inherent_impls]
 pub struct FrameRef<'a, M: AnyFrameMeta> {
-    pub inner: /*ManuallyDrop<*/Frame<M>/*>*/,
+    pub inner: Frame<M>,  // TODO: Manually drop
     pub _marker: PhantomData<&'a Frame<M>>,
 }
 
@@ -22,4 +22,4 @@ impl<M: AnyFrameMeta> Deref for FrameRef<'_, M> {
     }
 }
 
-}
+} // verus!

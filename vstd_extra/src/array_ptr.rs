@@ -372,15 +372,19 @@ impl<V, const N: usize> ArrayPtr<V, N> {
         Self { addr, index: 0, _type: PhantomData }
     }
 
-    pub open spec fn add_spec(self, off:usize) -> Self {
-        Self { addr: self.addr, index: (self.index+off) as usize, _type: PhantomData }
+    pub open spec fn add_spec(self, off: usize) -> Self {
+        Self { addr: self.addr, index: (self.index + off) as usize, _type: PhantomData }
     }
 
-    pub exec fn add(self, off:usize) -> Self
-        requires self.index + off <= N      // C standard style: don't exceed one-past the end of the array
-        returns self.add_spec(off)
+    pub exec fn add(self, off: usize) -> Self
+        requires
+            self.index + off
+                <= N  // C standard style: don't exceed one-past the end of the array
+            ,
+        returns
+            self.add_spec(off),
     {
-        Self { addr: self.addr, index: (self.index+off) as usize, _type: PhantomData }
+        Self { addr: self.addr, index: (self.index + off) as usize, _type: PhantomData }
     }
 }
 
@@ -681,8 +685,9 @@ impl<V, const N: usize> ArrayPtr<V, N> {
     /// Requires the slot at `index` to be initialized.
     /// Afterwards, the slot is uninitialized.
     #[inline(always)]
-    pub exec fn take_at(&self, Tracked(perm): Tracked<&mut PointsTo<V, N>>) -> (res:
-        V) where V: Copy
+    pub exec fn take_at(&self, Tracked(perm): Tracked<&mut PointsTo<V, N>>) -> (res: V) where
+        V: Copy,
+
         requires
             old(perm).wf(),
             old(perm).is_pptr(*self),

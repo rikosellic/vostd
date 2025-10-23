@@ -37,7 +37,8 @@ impl<M: AnyFrameMeta> FrameRef<'_, M> {
         let frame = Frame::from_raw(raw);
         Self {
             // SAFETY: The caller ensures the safety.
-            inner:   /*ManuallyDrop::new(unsafe {*/frame/*})*/
+            inner:   /*ManuallyDrop::new(unsafe {*/
+            frame  /*})*/
             ,
             _marker: PhantomData,
         }

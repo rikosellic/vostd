@@ -224,9 +224,9 @@ impl MetaSlot {
             old(regions).slots.contains_key(
                 frame_to_index(paddr),
             ),
-            //@.mem_contents().value() == ,
-            //            old(regions).slot_owners.dom().contains(frame_to_index(paddr)),
-            //            old(regions).slot_owners[frame_to_index(paddr)].storage@.id() == self.storage.id()
+    //@.mem_contents().value() == ,
+    //            old(regions).slot_owners.dom().contains(frame_to_index(paddr)),
+    //            old(regions).slot_owners[frame_to_index(paddr)].storage@.id() == self.storage.id()
 
     {
         proof {

@@ -36,32 +36,26 @@ use vstd_extra::array_ptr;
 use vstd_extra::cast_ptr::*;
 use vstd_extra::ownership::*;
 
-use aster_common::prelude::*;
 use aster_common::prelude::frame::*;
 use aster_common::prelude::page_table::*;
+use aster_common::prelude::*;
 
-use core::{
-    marker::PhantomData,
-    ops::Deref,
-    sync::atomic::{Ordering},
-};
+use core::{marker::PhantomData, ops::Deref, sync::atomic::Ordering};
 
 use super::nr_subpage_per_huge;
 
 use crate::{
     mm::{
         page_table::{load_pte, store_pte},
-//        FrameAllocOptions, Infallible,
-//        VmReader,
+        //        FrameAllocOptions, Infallible,
+        //        VmReader,
     },
-//    task::atomic_mode::InAtomicMode,
+    //    task::atomic_mode::InAtomicMode,
 };
-
 
 verus! {
 
 impl<C: PageTableConfig> PageTableNode<C> {
-
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
         with Tracked(slot_own) : Tracked<&MetaSlotOwner>,
@@ -77,14 +71,12 @@ impl<C: PageTableConfig> PageTableNode<C> {
             perm.pptr().ptr.0 == slot_own.storage@.addr(),
             perm.pptr().addr == slot_own.storage@.addr(),
             perm.is_init(),
-            perm.wf()
+            perm.wf(),
     {
         #[verus_spec(with Tracked(slot_own), Tracked(slot_perm), Tracked(perm))]
         let meta = self.meta();
         meta.level
-    }
-
-    /* TODO: stub out allocator
+    }/* TODO: stub out allocator
     /// Allocates a new empty page table node.
     pub(super) fn alloc(level: PagingLevel) -> Self {
         let meta = PageTablePageMeta::new(level);
@@ -97,7 +89,6 @@ impl<C: PageTableConfig> PageTableNode<C> {
 
         frame
     } */
-
     /*
     /// Activates the page table assuming it is a root page table.
     ///
@@ -146,6 +137,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
         // SAFETY: The safety is upheld by the caller.
         unsafe { activate_page_table(self.clone().into_raw(), CachePolicy::Writeback) };
     }*/
+
 }
 
 impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
@@ -156,13 +148,12 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
     ///  2. provide a lifetime (`'rcu`) that the nodes are guaranteed to outlive.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
+    #[verusfmt::skip]
     pub fn lock<'rcu, A: InAtomicMode>(self, _guard: &'rcu A) -> PPtr<PageTableGuard<'rcu, C>>
-    where
-        'a: 'rcu,
-    {
+        where 'a: 'rcu {
         unimplemented!()
         // TODO: axiomatize locks
-/*        while self
+        /*        while self
             .meta()
             .lock
             .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
@@ -171,8 +162,8 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
             core::hint::spin_loop();
         }
 */
+        //        PageTableGuard::<'rcu, C> { inner: self }
 
-//        PageTableGuard::<'rcu, C> { inner: self }
     }
 
     /// Creates a new [`PageTableGuard`] without checking if the page table lock is held.
@@ -185,15 +176,12 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
     /// unless that guard was already forgotten.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn make_guard_unchecked<'rcu, A: InAtomicMode>(
-        self,
-        _guard: &'rcu A,
-    ) -> PPtr<PageTableGuard<'rcu, C>>
-    where
-        'a: 'rcu,
-    {
+    #[verusfmt::skip]
+    pub fn make_guard_unchecked<'rcu, A: InAtomicMode>(self, _guard: &'rcu A) -> PPtr<PageTableGuard<'rcu, C>>
+        where 'a: 'rcu {
         unimplemented!()
-//        PageTableGuard { inner: self }
+        //        PageTableGuard { inner: self }
+
     }
 }
 
@@ -215,7 +203,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             owner.relate_slot_owner(slot_own),
             owner.guard_perm@.pptr() == guard,
     {
-//        assert!(idx < nr_subpage_per_huge::<C>());
+        //        assert!(idx < nr_subpage_per_huge::<C>());
         // SAFETY: The index is within the bound.
         #[verus_spec(with Tracked(owner), Tracked(slot_own))]
         Entry::new_at(guard, idx)
@@ -232,7 +220,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             self.inner.inner.ptr == owner.slot_perm@.pptr(),
             owner.inv(),
             owner.relate_slot_owner(slot_own),
-            slot_own.inv()
+            slot_own.inv(),
     {
         // SAFETY: The lock is held so we have an exclusive access.
         #[verus_spec(with Tracked(slot_own), Tracked(owner.slot_perm.borrow()), Tracked(owner.node_own.meta_perm.borrow()))]
@@ -274,6 +262,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             Tracked(slot_own) : Tracked<&MetaSlotOwner>,
             Tracked(slot_perm) : Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
+    #[verusfmt::skip]
     pub fn read_pte(&self, idx: usize) -> C::E
         requires
             self.inner.inner.ptr == slot_perm.pptr(),
@@ -286,10 +275,12 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             idx < NR_ENTRIES(),
     {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(paddr_to_vaddr(
-            #[verus_spec(with Tracked(&slot_own), Tracked(slot_perm))]
-            self.start_paddr()
-        ));
+        let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(
+            paddr_to_vaddr(
+                #[verus_spec(with Tracked(&slot_own), Tracked(slot_perm))]
+                self.start_paddr()
+            )
+        );
 
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
@@ -316,6 +307,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             Tracked(slot_own) : Tracked<&MetaSlotOwner>,
             Tracked(slot_perm) : Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
+    #[verusfmt::skip]
     pub fn write_pte(&mut self, idx: usize, pte: C::E)
         requires
             old(self).inner.inner.ptr == slot_perm.pptr(),
@@ -328,10 +320,12 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             idx < NR_ENTRIES(),
     {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(paddr_to_vaddr(
-            #[verus_spec(with Tracked(&slot_own), Tracked(slot_perm))]
-            self.start_paddr()
-        ));
+        let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(
+            paddr_to_vaddr(
+                #[verus_spec(with Tracked(&slot_own), Tracked(slot_perm))]
+                self.start_paddr()
+            )
+        );
 
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
@@ -355,7 +349,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             meta_perm.pptr().ptr.0 == slot_own.storage@.addr(),
             meta_perm.pptr().addr == slot_own.storage@.addr(),
             meta_perm.is_init(),
-            meta_perm.wf()
+            meta_perm.wf(),
     {
         // SAFETY: The lock is held so we have an exclusive access.
         #[verus_spec(with Tracked(slot_own), Tracked(slot_perm), Tracked(meta_perm))]
@@ -363,13 +357,13 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         &meta.nr_children
     }
 }
-}
+
+} // verus!
 /*impl<C: PageTableConfig> Drop for PageTableGuard<'_, C> {
     fn drop(&mut self) {
         self.inner.meta().lock.store(0, Ordering::Release);
     }
 }*/
-
 impl<C: PageTableConfig> PageTablePageMeta<C> {
     #[rustc_allow_incoherent_impl]
     pub fn new(level: PagingLevel) -> Self {

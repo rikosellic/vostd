@@ -4,7 +4,7 @@ use vstd_extra::cast_ptr::*;
 
 use super::*;
 
-verus!{
+verus! {
 
 #[rustc_has_incoherent_inherent_impls]
 pub struct Link<M: AnyFrameMeta + Repr<MetaSlotInner>> {
@@ -60,8 +60,7 @@ pub struct Link<M: AnyFrameMeta + Repr<MetaSlotInner>> {
 ///
 /// [`from_in_use`]: Frame::from_in_use
 #[rustc_has_incoherent_inherent_impls]
-pub struct LinkedList<M: AnyFrameMeta + Repr<MetaSlotInner>>
-{
+pub struct LinkedList<M: AnyFrameMeta + Repr<MetaSlotInner>> {
     pub front: Option<ReprPtr<MetaSlotStorage, Link<M>>>,
     pub back: Option<ReprPtr<MetaSlotStorage, Link<M>>>,
     /// The number of frames in the list.
@@ -76,8 +75,7 @@ pub struct LinkedList<M: AnyFrameMeta + Repr<MetaSlotInner>>
 /// The cursor points to either a frame or the "ghost" non-element. It points
 /// to the "ghost" non-element when the cursor surpasses the back of the list.
 #[rustc_has_incoherent_inherent_impls]
-pub struct CursorMut<M: AnyFrameMeta + Repr<MetaSlotInner>>
-{
+pub struct CursorMut<M: AnyFrameMeta + Repr<MetaSlotInner>> {
     pub list: PPtr<LinkedList<M>>,
     pub current: Option<ReprPtr<MetaSlotStorage, Link<M>>>,
 }
@@ -89,8 +87,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M> {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Default for LinkedList<M>
-{
+impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Default for LinkedList<M> {
     fn default() -> Self {
         Self::new()
     }
@@ -101,99 +98,96 @@ pub struct MetaSlotInner {}
 pub struct StoredLink {
     pub next: Option<Paddr>,
     pub prev: Option<Paddr>,
-    pub slot: MetaSlotInner
+    pub slot: MetaSlotInner,
 }
 
 impl StoredLink {
     pub open spec fn retrieve_spec<M: AnyFrameMeta + Repr<MetaSlotInner>>(self) -> Link<M> {
         let next = match self.next {
-            Some(addr) => Some(ReprPtr {
-                addr: addr,
-                ptr: PPtr::<MetaSlotStorage>(addr, PhantomData),
-                _T: PhantomData}),
-            None => None
+            Some(addr) => Some(
+                ReprPtr {
+                    addr: addr,
+                    ptr: PPtr::<MetaSlotStorage>(addr, PhantomData),
+                    _T: PhantomData,
+                },
+            ),
+            None => None,
         };
         let prev = match self.prev {
-            Some(addr) => Some(ReprPtr {
-                addr: addr,
-                ptr: PPtr::<MetaSlotStorage>(addr, PhantomData),
-                _T: PhantomData}),
-            None => None
+            Some(addr) => Some(
+                ReprPtr {
+                    addr: addr,
+                    ptr: PPtr::<MetaSlotStorage>(addr, PhantomData),
+                    _T: PhantomData,
+                },
+            ),
+            None => None,
         };
-        Link::<M> {
-            next: next,
-            prev: prev,
-            meta: M::from_repr(self.slot)
-        }
+        Link::<M> { next: next, prev: prev, meta: M::from_repr(self.slot) }
     }
 
     #[verifier::when_used_as_spec(retrieve_spec)]
     pub fn retrieve<M: AnyFrameMeta + Repr<MetaSlotInner>>(self) -> (res: Link<M>)
-        requires M::wf(self.slot)
-        ensures res == self.retrieve_spec::<M>()
+        requires
+            M::wf(self.slot),
+        ensures
+            res == self.retrieve_spec::<M>(),
     {
         let next = match self.next {
-            Some(addr) => Some(ReprPtr {
-                addr: addr,
-                ptr: PPtr::<MetaSlotStorage>::from_addr(addr),
-                _T: PhantomData}),
-            None => None
+            Some(addr) => Some(
+                ReprPtr {
+                    addr: addr,
+                    ptr: PPtr::<MetaSlotStorage>::from_addr(addr),
+                    _T: PhantomData,
+                },
+            ),
+            None => None,
         };
         let prev = match self.prev {
-            Some(addr) => Some(ReprPtr {
-                addr: addr,
-                ptr: PPtr::<MetaSlotStorage>::from_addr(addr),
-                _T: PhantomData}),
-            None => None
+            Some(addr) => Some(
+                ReprPtr {
+                    addr: addr,
+                    ptr: PPtr::<MetaSlotStorage>::from_addr(addr),
+                    _T: PhantomData,
+                },
+            ),
+            None => None,
         };
-        Link::<M> {
-            next: next,
-            prev: prev,
-            meta: M::from_repr(self.slot)
-        }
+        Link::<M> { next: next, prev: prev, meta: M::from_repr(self.slot) }
     }
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Link<M> {
-        pub open spec fn stored_spec(self) -> StoredLink {
+    pub open spec fn stored_spec(self) -> StoredLink {
         let next = match self.next {
             Some(link) => Some(link.addr),
-            None => None
+            None => None,
         };
         let prev = match self.prev {
-            Some(link) => Some(link.addr), 
-            None => None
+            Some(link) => Some(link.addr),
+            None => None,
         };
-        StoredLink {
-            next: next,
-            prev: prev,
-            slot: self.meta.to_repr(),
-        }
+        StoredLink { next: next, prev: prev, slot: self.meta.to_repr() }
     }
-    
+
     #[verifier::when_used_as_spec(stored_spec)]
     pub fn stored(self) -> (res: StoredLink)
-        ensures res == self.stored_spec()
+        ensures
+            res == self.stored_spec(),
     {
         let next = match self.next {
             Some(link) => Some(link.addr),
-            None => None
-        };  
+            None => None,
+        };
         let prev = match self.prev {
             Some(link) => Some(link.addr),
-            None => None
-        };  
-        StoredLink {
-            next: next,
-            prev: prev,
-            slot: self.meta.to_repr(),
-        }
+            None => None,
+        };
+        StoredLink { next: next, prev: prev, slot: self.meta.to_repr() }
     }
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Repr<MetaSlotStorage> for Link<M> {
-
-
     open spec fn wf(r: MetaSlotStorage) -> bool {
         match r {
             MetaSlotStorage::FrameLink(link) => M::wf(link.slot),
@@ -213,37 +207,34 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Repr<MetaSlotStorage> for Link<M> {
         r.get_link().unwrap().retrieve()
     }
 
-    fn from_repr(r: MetaSlotStorage) -> Self
-    {
+    fn from_repr(r: MetaSlotStorage) -> Self {
         r.get_link().unwrap().retrieve()
     }
 
     #[verifier::external_body]
     fn from_borrowed<'a>(r: &'a MetaSlotStorage) -> &'a Self {
         unimplemented!()
-//        &r.get_link().unwrap().into()
+        //        &r.get_link().unwrap().into()
+
     }
 
-    proof fn from_to_repr(self)
-    {
+    proof fn from_to_repr(self) {
         <M as Repr<MetaSlotInner>>::from_to_repr(self.meta);
         admit()
     }
 
-    proof fn to_from_repr(r: MetaSlotStorage)
-    {
+    proof fn to_from_repr(r: MetaSlotStorage) {
         M::to_from_repr(r.get_link().unwrap().slot)
     }
 
-    proof fn to_repr_wf(self)
-    {
+    proof fn to_repr_wf(self) {
         <M as Repr<MetaSlotInner>>::to_repr_wf(self.meta)
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> AnyFrameMeta for Link<M>
-{
-    fn on_drop(&mut self) { }
+impl<M: AnyFrameMeta + Repr<MetaSlotInner>> AnyFrameMeta for Link<M> {
+    fn on_drop(&mut self) {
+    }
 
     fn is_untyped(&self) -> bool {
         false
@@ -252,4 +243,4 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> AnyFrameMeta for Link<M>
     spec fn vtable_ptr(&self) -> usize;
 }
 
-}
+} // verus!
