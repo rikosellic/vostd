@@ -45,7 +45,7 @@ use core::{
     fmt::Debug,
     mem::{size_of, ManuallyDrop, MaybeUninit},
     result::Result,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicU64, AtomicU8, Ordering},
 };
 
 use align_ext::AlignExt;
@@ -56,12 +56,15 @@ use crate::{
     boot::memory_region::MemoryRegionType,
     const_assert,
     mm::{
-        frame::allocator::{self, EarlyAllocatedFrameMeta},
+        frame::{
+            allocator::{self, EarlyAllocatedFrameMeta},
+            linked_list::StoredLink,
+        },
         kspace::LINEAR_MAPPING_BASE_VADDR,
         paddr_to_vaddr, page_size,
         page_table::boot_pt,
-        CachePolicy, Infallible, Paddr, PageFlags, PageProperty, PrivilegedPageFlags, Segment,
-        Vaddr, VmReader, PAGE_SIZE,
+        CachePolicy, Infallible, Paddr, PageFlags, PageProperty, PagingLevel, PrivilegedPageFlags,
+        Segment, Vaddr, VmReader, PAGE_SIZE,
     },
     panic::abort,
     util::ops::range_difference,
@@ -77,7 +80,25 @@ pub const FRAME_METADATA_MAX_ALIGN: usize = META_SLOT_SIZE;
 
 const META_SLOT_SIZE: usize = 64;
 
-#[repr(C)]
+/// The actual storage for a metadata slot for [`MetaSlot`].
+#[repr(u8, align(8))]
+pub enum MetaSlotStorage {
+    Empty([u8; FRAME_METADATA_MAX_SIZE - 1]),
+    FrameLink(StoredLink),
+    PTNode(StoredPageTablePageMeta),
+}
+
+const_assert!(size_of::<MetaSlotStorage>() == FRAME_METADATA_MAX_SIZE);
+
+#[repr(C, align(8))]
+pub struct StoredPageTablePageMeta {
+    pub nr_children: UnsafeCell<u16>,
+    pub stray: UnsafeCell<bool>,
+    pub level: PagingLevel,
+    pub lock: AtomicU8,
+}
+
+#[repr(C, align(8))]
 pub(in crate::mm) struct MetaSlot {
     /// The metadata of a frame.
     ///
@@ -91,7 +112,7 @@ pub(in crate::mm) struct MetaSlot {
     ///
     /// Don't interpret this field as an array of bytes. It is a
     /// placeholder for the metadata of a frame.
-    storage: UnsafeCell<[u8; FRAME_METADATA_MAX_SIZE]>,
+    storage: UnsafeCell<MetaSlotStorage>,
     /// The reference count of the page.
     ///
     /// Specifically, the reference count has the following meaning:
@@ -199,6 +220,8 @@ pub enum GetFrameError {
     OutOfBound,
     /// The provided physical address is not aligned.
     NotAligned,
+    /// `compare_exchange` returned `Err`, retry.
+    Retry,
 }
 
 /// Gets the reference to a metadata slot.
@@ -216,6 +239,24 @@ pub(super) fn get_slot(paddr: Paddr) -> Result<&'static MetaSlot, GetFrameError>
     // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
     // mutably borrowed, so taking an immutable reference to it is safe.
     Ok(unsafe { &*ptr })
+}
+
+impl MetaSlotStorage {
+    /// Gets a [`StoredLink`] from storage if it is a link.
+    pub fn get_link(self) -> Option<StoredLink> {
+        match self {
+            MetaSlotStorage::FrameLink(link) => Some(link),
+            _ => None,
+        }
+    }
+
+    /// Gets a [`StoredPageTablePageMeta`] from storage if it is a page table node.
+    pub fn get_node(self) -> Option<StoredPageTablePageMeta> {
+        match self {
+            MetaSlotStorage::PTNode(node) => Some(node),
+            _ => None,
+        }
+    }
 }
 
 impl MetaSlot {
@@ -260,41 +301,53 @@ impl MetaSlot {
         Ok(slot as *const MetaSlot)
     }
 
+    /// This functions implements the loop for getting a frame from an in-use frame
+    /// for the [`Self::get_from_in_use`] function.
+    pub(super) fn get_from_in_use_loop(slot: &MetaSlot) -> Result<*const Self, GetFrameError> {
+        match slot.ref_count.load(Ordering::Relaxed) {
+            REF_COUNT_UNUSED => return Err(GetFrameError::Unused),
+            REF_COUNT_UNIQUE => return Err(GetFrameError::Unique),
+            0 => return Err(GetFrameError::Busy),
+            last_ref_cnt => {
+                if last_ref_cnt >= REF_COUNT_MAX {
+                    // See `Self::inc_ref_count` for the explanation.
+                    abort();
+                }
+                // Using `Acquire` here to pair with `get_from_unused` or
+                // `<Frame<M> as From<UniqueFrame<M>>>::from` (who must be
+                // performed after writing the metadata).
+                //
+                // It ensures that the written metadata will be visible to us.
+                if slot
+                    .ref_count
+                    .compare_exchange_weak(
+                        last_ref_cnt,
+                        last_ref_cnt + 1,
+                        Ordering::Acquire,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
+                    return Ok(slot as *const MetaSlot);
+                } else {
+                    return Err(GetFrameError::Retry);
+                }
+            }
+        }
+    }
+
     /// Gets another owning pointer to the metadata slot from the given page.
     pub(super) fn get_from_in_use(paddr: Paddr) -> Result<*const Self, GetFrameError> {
         let slot = get_slot(paddr)?;
 
         // Try to increase the reference count for an in-use frame. Otherwise fail.
         loop {
-            match slot.ref_count.load(Ordering::Relaxed) {
-                REF_COUNT_UNUSED => return Err(GetFrameError::Unused),
-                REF_COUNT_UNIQUE => return Err(GetFrameError::Unique),
-                0 => return Err(GetFrameError::Busy),
-                last_ref_cnt => {
-                    if last_ref_cnt >= REF_COUNT_MAX {
-                        // See `Self::inc_ref_count` for the explanation.
-                        abort();
-                    }
-                    // Using `Acquire` here to pair with `get_from_unused` or
-                    // `<Frame<M> as From<UniqueFrame<M>>>::from` (who must be
-                    // performed after writing the metadata).
-                    //
-                    // It ensures that the written metadata will be visible to us.
-                    if slot
-                        .ref_count
-                        .compare_exchange_weak(
-                            last_ref_cnt,
-                            last_ref_cnt + 1,
-                            Ordering::Acquire,
-                            Ordering::Relaxed,
-                        )
-                        .is_ok()
-                    {
-                        return Ok(slot as *const MetaSlot);
-                    }
+            match Self::get_from_in_use_loop(slot) {
+                Err(GetFrameError::Retry) => {
+                    core::hint::spin_loop();
                 }
+                res => return res,
             }
-            core::hint::spin_loop();
         }
     }
 
@@ -354,6 +407,16 @@ impl MetaSlot {
     ///    having exclusive access to the metadata slot.
     pub(super) fn as_meta_ptr<M: AnyFrameMeta>(&self) -> *mut M {
         self.storage.get() as *mut M
+    }
+
+    /// Gets the virtual address of the [`MetaSlot`].
+    pub(super) fn addr_of(&self) -> Vaddr {
+        self as *const Self as Vaddr
+    }
+
+    /// Gets the virtual address of the [`MetaSlotStorage`].
+    pub(super) fn storage_addr_of(&self) -> Vaddr {
+        unimplemented!()
     }
 
     /// Writes the metadata to the slot without reading or dropping the previous value.
@@ -539,7 +602,7 @@ fn alloc_meta_frames(tot_nr_frames: usize) -> (usize, Paddr) {
         // it's valid for writing.
         unsafe {
             slot.write(MetaSlot {
-                storage: UnsafeCell::new([0; FRAME_METADATA_MAX_SIZE]),
+                storage: UnsafeCell::new(MetaSlotStorage::Empty([0; FRAME_METADATA_MAX_SIZE - 1])),
                 ref_count: AtomicU64::new(REF_COUNT_UNUSED),
                 vtable_ptr: UnsafeCell::new(MaybeUninit::uninit()),
                 in_list: AtomicU64::new(0),
