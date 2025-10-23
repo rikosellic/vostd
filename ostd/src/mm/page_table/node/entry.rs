@@ -61,15 +61,33 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     /// Gets a reference to the child.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<EntryOwner<C>>
+        with Tracked(owner): Tracked<EntryOwner<C>>,
+            Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
-    pub fn to_ref(&self) -> ChildRef<'rcu, C> {
+    pub fn to_ref(&self) -> ChildRef<'rcu, C>
+        requires
+            self.wf(&owner),
+            owner.inv(),
+            old(regions).inv(),
+            self.pte.paddr() == meta_to_frame(owner.slot_perm@.addr()),
+            owner.slot_perm@.value().wf(&old(regions).slot_owners[frame_to_index(self.pte.paddr())]),
+            old(regions).dropped_slots.contains_key(frame_to_index(self.pte.paddr())),
+            !old(regions).slots.contains_key(frame_to_index(self.pte.paddr())),
+    {
         let guard = self.node.borrow(Tracked(owner.guard_perm.borrow()));
 
+        assert(regions.slot_owners.contains_key(frame_to_index(self.pte.paddr())));
+
+        #[verus_spec(with Tracked(regions.slot_owners.tracked_borrow(
+            frame_to_index(meta_to_frame(owner.slot_perm@.addr())))),
+            Tracked(owner.slot_perm.borrow()),
+            Tracked(owner.node_own.meta_perm.borrow()))]
+        let level = guard.level();
         // SAFETY:
         //  - The PTE outlives the reference (since we have `&self`).
         //  - The level matches the current node.
-        ChildRef::from_pte(&self.pte, guard.level())
+        #[verus_spec(with Tracked(regions))]
+        ChildRef::from_pte(&self.pte, level)
     }
 
     /// Operates on the mapping properties of the entry.

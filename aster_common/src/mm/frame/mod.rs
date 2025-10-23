@@ -50,6 +50,16 @@ impl<M: AnyFrameMeta> Inv for Frame<M> {
 }
 
 impl<M: AnyFrameMeta> Frame<M> {
+    pub open spec fn paddr(self) -> usize
+    {
+        meta_to_frame(self.ptr.addr())
+    }
+
+    pub open spec fn index(self) -> usize
+    {
+        frame_to_index(self.paddr())
+    }
+
     #[verifier::external_body]
     pub fn meta_pt<'a, C: PageTableConfig>(
         &'a self,

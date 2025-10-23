@@ -100,17 +100,17 @@ pub(crate) fn largest_pages<C: PageTableConfig>(
 /// It returns a [`RangeInclusive`] because the end address, if being
 /// [`Vaddr::MAX`], overflows [`Range<Vaddr>`].
 #[verifier::external_body]
-const fn top_level_index_width<C: PageTableConfig>() -> usize {
+fn top_level_index_width<C: PageTableConfig>() -> usize {
     C::ADDRESS_WIDTH() - pte_index_bit_offset::<C>(C::NR_LEVELS())
 }
 
 #[verifier::external_body]
-const fn pt_va_range_start<C: PageTableConfig>() -> Vaddr {
+fn pt_va_range_start<C: PageTableConfig>() -> Vaddr {
     C::TOP_LEVEL_INDEX_RANGE().start << pte_index_bit_offset::<C>(C::NR_LEVELS())
 }
 
 #[verifier::external_body]
-const fn pt_va_range_end<C: PageTableConfig>() -> Vaddr {
+fn pt_va_range_end<C: PageTableConfig>() -> Vaddr {
     C::TOP_LEVEL_INDEX_RANGE()
         .end
         .unbounded_shl(pte_index_bit_offset::<C>(C::NR_LEVELS()) as u32)
@@ -118,12 +118,12 @@ const fn pt_va_range_end<C: PageTableConfig>() -> Vaddr {
 }
 
 #[verifier::external_body]
-const fn sign_bit_of_va<C: PageTableConfig>(va: Vaddr) -> bool {
+fn sign_bit_of_va<C: PageTableConfig>(va: Vaddr) -> bool {
     (va >> (C::ADDRESS_WIDTH() - 1)) & 1 != 0
 }
 
 #[verifier::external_body]
-const fn vaddr_range<C: PageTableConfig>() -> Range<Vaddr> {
+fn vaddr_range<C: PageTableConfig>() -> Range<Vaddr> {
 
 /*    const {
         assert!(C::TOP_LEVEL_INDEX_RANGE().start < C::TOP_LEVEL_INDEX_RANGE().end);
@@ -154,7 +154,7 @@ const fn vaddr_range<C: PageTableConfig>() -> Range<Vaddr> {
 
 /// Checks if the given range is covered by the valid range of the page table.
 #[verifier::external_body]
-const fn is_valid_range<C: PageTableConfig>(r: &Range<Vaddr>) -> bool {
+fn is_valid_range<C: PageTableConfig>(r: &Range<Vaddr>) -> bool {
     let va_range = vaddr_range::<C>();
     (r.start == 0 && r.end == 0) || (va_range.start <= r.start && r.end - 1 <= va_range.end)
 }
@@ -163,7 +163,7 @@ const fn is_valid_range<C: PageTableConfig>(r: &Range<Vaddr>) -> bool {
 
 /// The index of a VA's PTE in a page table node at the given level.
 #[verifier::external_body]
-const fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> usize {
+fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> usize {
     (va >> pte_index_bit_offset::<C>(level)) & (nr_subpage_per_huge::<C>() - 1)
 }
 
@@ -173,7 +173,7 @@ const fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> usize
 /// x86-64 as an example, the `pte_index_bit_offset(2)` should return 21, which
 /// is 12 (the 4KiB in-page offset) plus 9 (index width in the level-1 table).
 #[verifier::external_body]
-const fn pte_index_bit_offset<C: PagingConstsTrait>(level: PagingLevel) -> usize {
+fn pte_index_bit_offset<C: PagingConstsTrait>(level: PagingLevel) -> usize {
     C::BASE_PAGE_SIZE().ilog2() as usize + nr_pte_index_bits::<C>() * (level as usize - 1)
 }
 

@@ -166,25 +166,4 @@ impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
     spec fn vtable_ptr(&self) -> usize;
 }
 
-
-impl<C: PageTableConfig> PageTableNode<C> {
-
-    pub open spec fn paddr_spec(&self) -> Paddr {
-        self.ptr.addr()
-    }
-
-    #[verifier::when_used_as_spec(paddr_spec)]
-    pub fn paddr(&self) -> (res: Paddr)
-        requires
-            self.inv(),
-        ensures
-            res == self.paddr_spec(),
-//            res % PAGE_SIZE() == 0,
-//            res < MAX_PADDR(),
-    {
-        self.ptr.addr()
-    }
-
 } // verus!
-
-}

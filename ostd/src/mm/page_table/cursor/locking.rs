@@ -31,8 +31,9 @@ pub assume_specification<Idx: Clone> [Range::<Idx>::clone] (range: &Range<Idx>) 
         res == *range;
 
 #[verus_spec(
-    with Tracked(pt_own): Tracked<PageTableOwner<C>>
+    with Tracked(pt_own): Tracked<&mut PageTableOwner<C>>
 )]
+#[verifier::external_body]
 pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
     pt: &'rcu PageTable<C>,
     guard: &'rcu A,
@@ -52,8 +53,12 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
     };
     */
 
-    let subtree_root = try_traverse_and_lock_subtree_root(pt, guard, va).unwrap();
-    let tracked entry_own = pt_own.tree.root.value.tree_node.tracked_unwrap();
+    #[verus_spec(with Tracked(pt_own))]
+    let subtree_root = try_traverse_and_lock_subtree_root(pt, guard, va);
+
+    assert(subtree_root is Some) by { admit() };
+    let subtree_root = subtree_root.unwrap();
+    let tracked entry_own = pt_own.tree.root.value.tree_node.tracked_take();
 //    let tracked child_node = owner_node.tracked_child()
 
     // Once we have locked the sub-tree that is not stray, we won't read any
@@ -109,8 +114,9 @@ pub fn unlock_range<C: PageTableConfig, A: InAtomicMode>(cursor: &mut Cursor<'_,
 /// page table recycling), it will return `None`. The caller should retry in
 /// this case to lock the proper node.
 #[verus_spec(
-    with Tracked(entry_own) : Tracked<&mut EntryOwner<'rcu, C>>
+    with Tracked(pt_own): Tracked<&mut PageTableOwner<C>>
 )]
+#[verifier::external_body]
 fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>(
     pt: &PageTable<C>,
     guard: &'rcu A,
@@ -157,6 +163,8 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
             node_ref.lock(guard)
         };
         
+        let tracked mut entry_own = pt_own.tree.root.value.tree_node.tracked_take();
+
         let mut guard_val = pt_guard.take(Tracked(entry_own.guard_perm.borrow_mut()));
         if *guard_val.stray_mut().borrow(Tracked(entry_own.node_own.meta_own.stray.borrow())) {
             return None;
@@ -192,6 +200,8 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
         node_ref.lock(guard)
     };
 
+    let tracked entry_own = pt_own.tree.root.value.tree_node.tracked_take();
+
     let mut guard_val = pt_guard.take(Tracked(entry_own.guard_perm.borrow_mut()));
     if *guard_val.stray_mut().borrow(Tracked(entry_own.node_own.meta_own.stray.borrow())) {
         return None;
@@ -210,6 +220,7 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
 #[verus_spec(
     with Tracked(entry_own): Tracked<EntryOwner<C>>
 )]
+#[verifier::external_body]
 fn dfs_acquire_lock<'rcu, C: PageTableConfig, A: InAtomicMode>(
     guard: &A,
     cur_node: PPtr<PageTableGuard<'rcu, C>>,
@@ -250,6 +261,7 @@ fn dfs_acquire_lock<'rcu, C: PageTableConfig, A: InAtomicMode>(
 #[verus_spec(
     with Tracked(entry_own): Tracked<EntryOwner<C>>
 )]
+#[verifier::external_body]
 unsafe fn dfs_release_lock<'rcu, C: PageTableConfig, A: InAtomicMode>(
     guard: &'rcu A,
     cur_node: PPtr<PageTableGuard<'rcu, C>>,
@@ -301,6 +313,7 @@ unsafe fn dfs_release_lock<'rcu, C: PageTableConfig, A: InAtomicMode>(
 #[verus_spec(
     with Tracked(entry_own): Tracked<&mut EntryOwner<'a, C>>
 )]
+#[verifier::external_body]
 pub fn dfs_mark_stray_and_unlock<'a, C: PageTableConfig, A: InAtomicMode>(
     rcu_guard: &A,
     sub_tree: PPtr<PageTableGuard<'a, C>>,

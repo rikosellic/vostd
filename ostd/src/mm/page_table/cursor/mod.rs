@@ -31,8 +31,10 @@ use vstd::prelude::*;
 
 use vstd::simple_pptr::*;
 
+use vstd_extra::ownership::*;
+
 use aster_common::prelude::*;
-use aster_common::prelude::frame::Frame;
+use aster_common::prelude::frame::{Frame, MetaSlotOwner};
 use aster_common::prelude::page_table::*;
 
 use core::{fmt::Debug, marker::PhantomData, mem::ManuallyDrop, ops::Range};
@@ -92,7 +94,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     /// depending on the access method.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(pt_own): Tracked<PageTableOwner<C>>
+        with Tracked(pt_own): Tracked<&mut PageTableOwner<C>>
     )]
     pub fn new(
         pt: &'rcu PageTable<C>,
@@ -124,7 +126,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     /// If the cursor is pointing to a valid virtual address that is locked,
     /// it will return the virtual address range and the item at that slot.
     #[rustc_allow_incoherent_impl]
-    pub fn query(&mut self) -> Result<PagesState<C>, PageTableError> {
+    #[verifier::external_body]
+    pub fn query(&mut self) -> Result<PagesState<C>, PageTableError>
+    {
         if self.va >= self.barrier_va.end {
             return Err(PageTableError::InvalidVaddr(self.va));
         }
@@ -142,6 +146,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                 ChildRef::PageTable(pt) => {
                     // SAFETY: The `pt` must be locked and no other guards exist.
                     let guard = pt.make_guard_unchecked(rcu_guard);
+                    assert(1 < self.level <= 4) by { admit() };
                     self.push_level(guard);
                     continue;
                 }
@@ -158,12 +163,13 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     // For page table configs that require the `AVAIL1` flag to be kept
                     // (currently, only kernel page tables), the callers of the unsafe
                     // `protect_next` method uphold this invariant.
-                    let item = ManuallyDrop::new(unsafe { C::item_from_raw(pa, level, prop) });
+                    let item = /*ManuallyDrop::new(unsafe {*/ C::item_from_raw(pa, level, prop) /*})*/;
                     // TODO: Provide a `PageTableItemRef` to reduce copies.
-                    Some((*item).clone())
+                    Some(item.clone())
                 }
             };
 
+            assert(cur_va + page_size(level) < usize::MAX) by { admit() };
             return Ok((cur_va..cur_va + page_size(level), item));
         }
     }
@@ -183,6 +189,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     ///  - the length is longer than the remaining range of the cursor;
     ///  - the length is not page-aligned.
     #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub fn find_next(&mut self, len: usize) -> Option<Vaddr> {
         self.find_next_impl(len, false, false)
     }
@@ -203,6 +210,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     #[verus_spec(
         with Tracked(entry_own): Tracked<EntryOwner<C>>
     )]
+    #[verifier::external_body]
     fn find_next_impl(
         &mut self,
         len: usize,
@@ -313,6 +321,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         while self.level < self.guard_level && pte_index::<C>(next_va, self.level) == 0
             decreases self.guard_level - self.level
         {
+            assert(1 <= self.level < 4) by { admit() };
             self.pop_level();
         }
         self.va = next_va;
@@ -320,7 +329,13 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
     /// Goes up a level.
     #[rustc_allow_incoherent_impl]
-    fn pop_level(&mut self) {
+    fn pop_level(&mut self)
+        requires
+            1 <= old(self).level < 4,
+        ensures
+            self.level == old(self).level + 1,
+            self.guard_level == old(self).guard_level
+    {
         let opt_taken = self.path.get(self.level as usize - 1);
 
 /*        let Some(taken) = self.path[self.level as usize - 1].take() else {
@@ -333,19 +348,39 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
     /// Goes down a level to a child page table.
     #[rustc_allow_incoherent_impl]
-    fn push_level(&mut self, child_pt: PPtr<PageTableGuard<'rcu, C>>) {
+    fn push_level(&mut self, child_pt: PPtr<PageTableGuard<'rcu, C>>)
+        requires
+            1 < old(self).level <= 4,
+//            old(self).path[old(self).level as int - 1] is Some,
+        ensures
+            self.level == old(self).level - 1
+    {
         self.level = self.level - 1;
 //        debug_assert_eq!(self.level, child_pt.level());
 
-        let old = self.path.get(self.level as usize - 1);
+//        let old = self.path.get(self.level as usize - 1);
         self.path.set(self.level as usize - 1, Some(child_pt));
 
 //        debug_assert!(old.is_none());
     }
 
     #[rustc_allow_incoherent_impl]
-    fn cur_entry(&mut self) -> Entry<'rcu, C> {
+    #[verus_spec(
+        with Tracked(pt_own): Tracked<&mut PageTableOwner<C>>,
+            Tracked(slot_own): Tracked<&MetaSlotOwner>
+    )]
+    fn cur_entry(&mut self) -> Entry<'rcu, C>
+        requires
+            1 <= old(self).level <= 4,
+            old(self).path[old(self).level as int - 1] is Some,
+            old(pt_own).tree.root.value.tree_node.tracked_is_some(),
+            old(pt_own).tree.root.value.tree_node.unwrap().inv(),
+            old(pt_own).tree.root.value.tree_node.unwrap().relate_slot_owner(slot_own),
+            old(pt_own).tree.root.value.tree_node.unwrap().guard_perm@.addr() == old(self).path[old(self).level as usize - 1].unwrap().addr(),
+    {
         let node = self.path[self.level as usize - 1].unwrap();
+        let tracked entry_own = pt_own.tree.root.value.tree_node.tracked_take();
+        #[verus_spec(with Tracked(entry_own), Tracked(slot_own))]
         PageTableGuard::<'rcu, C>::entry(node, pte_index::<C>(self.va, self.level))
     }
 
@@ -353,7 +388,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     #[rustc_allow_incoherent_impl]
     fn cur_va_range(&self) -> Range<Vaddr> {
         let page_size = page_size(self.level);
+        assert(page_size > 0) by { admit() };
         let start = align_down(self.va, page_size);
+        assert(start + page_size < usize::MAX) by { admit() };
         start..start + page_size
     }
 }
@@ -372,6 +409,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     /// range. Out-of-bound accesses will result in panics or errors as return values,
     /// depending on the access method.
     #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub fn new(
         pt: &'rcu PageTable<C>,
         guard: &'rcu A,
@@ -439,6 +477,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     ///  - the range being mapped does not affect kernel's memory safety;
     ///  - the physical address to be mapped is valid and safe to use;
     #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub unsafe fn map(&mut self, item: C::Item) -> Result<(), PageTableFrag<C>> {
 //        assert!(self.0.va < self.0.barrier_va.end);
         let (pa, level, prop) = C::item_into_raw(item);
@@ -517,7 +556,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     ///  - the length is longer than the remaining range of the cursor;
     ///  - the length is not page-aligned.
     #[rustc_allow_incoherent_impl]
-    pub unsafe fn take_next(&mut self, len: usize) -> Option<PageTableFrag<C>> {
+    #[verifier::external_body]
+    pub fn take_next(&mut self, len: usize) -> Option<PageTableFrag<C>>
+    {
         self.inner.find_next_impl(len, true, true)?;
 
         let frag = self.replace_cur_entry(Child::None);
@@ -554,14 +595,27 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     ///  - the length is longer than the remaining range of the cursor;
     ///  - the length is not page-aligned.
     #[rustc_allow_incoherent_impl]
-    pub fn protect_next(
-        &mut self,
-        len: usize,
-        op: impl FnOnce(PageProperty) -> PageProperty,
-    ) -> Option<Range<Vaddr>> {
+    #[verus_spec(
+        with Tracked(pt_own): Tracked<&mut PageTableOwner<'rcu, C>>,
+            Tracked(slot_own): Tracked<&MetaSlotOwner>
+    )]
+    #[verifier::external_body]
+    pub fn protect_next(&mut self, len: usize, op: impl FnOnce(PageProperty) -> PageProperty) -> Option<Range<Vaddr>>
+        requires
+            slot_own.inv(),
+            old(pt_own).tree.root.value.tree_node.tracked_is_some(),
+    {
         self.inner.find_next_impl(len, false, true)?;
-
+        
+        #[verus_spec(with Tracked(pt_own), Tracked(slot_own))]
         let mut entry = self.inner.cur_entry();
+        let tracked mut entry_own = pt_own.tree.root.value.tree_node.tracked_take();
+        assert(entry_own.inv()) by { admit() };
+        assert(entry_own.relate_slot_owner(slot_own)) by { admit() };
+        assert(entry.wf(&entry_own)) by { admit() };
+        assert(op.requires((entry.pte.prop(),))) by { admit() };
+
+        #[verus_spec(with Tracked(&mut entry_own), Tracked(slot_own))]
         entry.protect(op);
 
         let protected_va = self.inner.cur_va_range();
@@ -606,7 +660,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
 //                debug_assert_eq!(pt.level(), level - 1);
 
                 if !C::TOP_LEVEL_CAN_UNMAP() && level == C::NR_LEVELS() {
-                    let _ = ManuallyDrop::new(pt); // leak it to make shared PTs stay `'static`.
+                    //let _ = ManuallyDrop::new(pt); // leak it to make shared PTs stay `'static`.
                     assert(false);
                     return None;
 //                    panic!("Unmapping shared kernel page table nodes");

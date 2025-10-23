@@ -34,6 +34,7 @@ impl<C: PageTableConfig> Child<C> {
                 &&& slot_perm.unwrap()@.pptr() == self.get_node().unwrap().ptr
                 &&& slot_perm.unwrap()@.is_init()
                 &&& slot_perm.unwrap()@.value().wf(&slot_own.unwrap()@)
+                &&& slot_perm.unwrap()@.addr() == slot_own.unwrap()@.self_addr
             }
     {
         match self {
@@ -96,7 +97,16 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
     /// The provided level must be the same with the level of the page table
     /// node that contains this PTE.
     #[rustc_allow_incoherent_impl]
-    pub unsafe fn from_pte(pte: &C::E, level: PagingLevel) -> Self {
+    #[verus_spec(
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>
+    )]
+    pub fn from_pte(pte: &C::E, level: PagingLevel) -> Self
+        requires
+            pte.paddr() % PAGE_SIZE() == 0,
+            pte.paddr() < MAX_PADDR(),
+            !old(regions).slots.contains_key(frame_to_index(pte.paddr())),
+            old(regions).dropped_slots.contains_key(frame_to_index(pte.paddr())),
+    {
         if !pte.is_present() {
             return ChildRef::None;
         }
@@ -107,7 +117,8 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
             // SAFETY: The caller ensures that the lifetime of the child is
             // contained by the residing node, and the physical address is
             // valid since the entry is present.
-            let node = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
+            #[verus_spec(with Tracked(regions))]
+            let node = PageTableNodeRef::borrow_paddr(paddr);
 //            debug_assert_eq!(node.level(), level - 1);
             return ChildRef::PageTable(node);
         }
