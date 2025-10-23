@@ -1,17 +1,20 @@
 pub mod frame;
 mod kspace;
-pub mod page_table;
 mod page_prop;
+pub mod page_table;
 
-use frame::{AnyFrameMeta, Frame, FrameRef, MetaSlot, MetaSlotOwner, MetaSlotStorage, StoredPageTablePageMeta, meta_to_frame};
+use frame::{
+    meta_to_frame, AnyFrameMeta, Frame, FrameRef, MetaSlot, MetaSlotOwner, MetaSlotStorage,
+    StoredPageTablePageMeta,
+};
 pub use kspace::*;
-use page_table::{PageTableConfig, PageTablePageMeta};
 pub use page_prop::*;
+use page_table::{PageTableConfig, PageTablePageMeta};
 
 use vstd::prelude::*;
 
-use vstd::arithmetic::div_mod::lemma_div_non_zero;
 use vstd::arithmetic::div_mod::group_div_basics;
+use vstd::arithmetic::div_mod::lemma_div_non_zero;
 use vstd::layout::is_power_2;
 
 use vstd_extra::extern_const;
@@ -127,9 +130,7 @@ pub trait PagingConstsTrait: Debug + Sync {
     #[inline(always)]
     #[verifier::when_used_as_spec(VA_SIGN_EXT_spec)]
     fn VA_SIGN_EXT() -> bool;
-
 }
-
 
 #[verifier::inline]
 pub open spec fn nr_subpage_per_huge_spec<C: PagingConstsTrait>() -> usize {

@@ -59,11 +59,11 @@ use untyped::{/*AnyUFrameMeta,*/ UFrame};
 use super::{PagingLevel, PAGE_SIZE};
 use crate::mm::{Paddr, Vaddr};
 
-use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::*;
+use vstd_extra::ownership::*;
 
-use aster_common::prelude::*;
 use aster_common::prelude::frame::*;
+use aster_common::prelude::*;
 
 verus! {
 
@@ -85,7 +85,6 @@ impl<M: AnyFrameMeta + ?Sized> PartialEq for Frame<M> {
 }
 impl<M: AnyFrameMeta + ?Sized> Eq for Frame<M> {}
 */
-
 impl<'a, M: AnyFrameMeta> Frame<M> {
     /// Gets a [`Frame`] with a specific usage from a raw, unused page.
     ///
@@ -98,12 +97,12 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         with Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
     #[rustc_allow_incoherent_impl]
-    pub fn from_unused(paddr: Paddr, metadata: M) -> (res:Result<Self, GetFrameError>)
+    pub fn from_unused(paddr: Paddr, metadata: M) -> (res: Result<Self, GetFrameError>)
         requires
             old(regions).inv(),
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
-            old(regions).slots.contains_key(frame_to_index(paddr))
+            old(regions).slots.contains_key(frame_to_index(paddr)),
         ensures
     {
         #[verus_spec(with Tracked(regions))]
@@ -127,11 +126,11 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             perm.pptr().ptr.0 == slot_own.storage@.addr(),
             perm.pptr().addr == slot_own.storage@.addr(),
             perm.is_init(),
-            perm.wf()
-        returns &perm.value()
+            perm.wf(),
+        returns
+            &perm.value(),
     {
         // SAFETY: The type is tracked by the type system.
-        
         #[verus_spec(with Tracked(slot_perm))]
         let slot = self.slot();
 
@@ -173,8 +172,9 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             slot_perm.is_init(),
             slot_perm.value().wf(&slot_own),
             slot_perm.addr() == slot_own.self_addr,
-            slot_own.inv()
-        returns self.paddr()
+            slot_own.inv(),
+        returns
+            self.paddr(),
     {
         #[verus_spec(with Tracked(slot_perm))]
         let slot = self.slot();
@@ -230,7 +230,6 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             slot_perm.is_init(),
             old(slot_own).ref_count@.is_for(slot_perm.value().ref_count),
     {
-
         #[verus_spec(with Tracked(slot_perm))]
         let slot = self.slot();
         slot.ref_count.load(Tracked(slot_own.ref_count.borrow()))
@@ -259,6 +258,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         #[verus_spec(with Tracked(regions))]
         FrameRef::borrow_paddr(paddr)
     }
+
     /// Forgets the handle to the frame.
     ///
     /// This will result in the frame being leaked without calling the custom dropper.
@@ -272,8 +272,9 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     #[rustc_allow_incoherent_impl]
     pub fn into_raw(self) -> Paddr
         requires
-//            FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr())
-//                < FRAME_METADATA_RANGE().end,
+    //            FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr())
+    //                < FRAME_METADATA_RANGE().end,
+
             old(regions).slots.contains_key(self.index()),
             !old(regions).dropped_slots.contains_key(self.index()),
             old(regions).inv(),
@@ -287,7 +288,9 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         #[verus_spec(with Tracked(owner), Tracked(perm.borrow()))]
         let paddr = self.start_paddr();
 
-        proof { regions.dropped_slots.tracked_insert(frame_to_index(paddr), perm); }
+        proof {
+            regions.dropped_slots.tracked_insert(frame_to_index(paddr), perm);
+        }
 
         paddr
     }
@@ -334,7 +337,8 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         requires
             slot_perm.pptr() == self.ptr,
             slot_perm.is_init(),
-        returns slot_perm.value()
+        returns
+            slot_perm.value(),
     {
         // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
         // mutably borrowed, so taking an immutable reference to it is safe.

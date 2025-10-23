@@ -9,9 +9,9 @@ use vstd::simple_pptr::{self, PPtr};
 use vstd_extra::cast_ptr::*;
 use vstd_extra::ownership::*;
 
+use super::*;
 use core::ops::Deref;
 use std::marker::PhantomData;
-use super::*;
 
 verus! {
 
@@ -152,7 +152,8 @@ impl MetaSlot {
 
 /// Space-holder of the AnyFrameMeta virtual table.
 pub trait AnyFrameMeta: Repr<MetaSlotStorage> {
-    exec fn on_drop(&mut self) {}
+    exec fn on_drop(&mut self) {
+    }
 
     exec fn is_untyped(&self) -> bool {
         false
@@ -161,4 +162,4 @@ pub trait AnyFrameMeta: Repr<MetaSlotStorage> {
     spec fn vtable_ptr(&self) -> usize;
 }
 
-}
+} // verus!

@@ -63,5 +63,4 @@ pub enum ChildRef<'a, C: PageTableConfig> {
     None,
 }
 
-
 } // verus!

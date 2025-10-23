@@ -1,15 +1,15 @@
 use vstd::prelude::*;
 
-use vstd::simple_pptr::*;
 use vstd::cell;
+use vstd::simple_pptr::*;
 
 use super::*;
 
 verus! {
 
 pub tracked struct PageMetaOwner {
-    pub nr_children : Tracked<vstd::cell::PointsTo<u16>>,
-    pub stray : Tracked<vstd::cell::PointsTo<bool>>,
+    pub nr_children: Tracked<vstd::cell::PointsTo<u16>>,
+    pub stray: Tracked<vstd::cell::PointsTo<bool>>,
 }
 
 impl Inv for PageMetaOwner {
@@ -20,8 +20,8 @@ impl Inv for PageMetaOwner {
 }
 
 pub ghost struct PageMetaModel {
-    pub nr_children : u16,
-    pub stray : bool,
+    pub nr_children: u16,
+    pub stray: bool,
 }
 
 impl Inv for PageMetaModel {
@@ -34,13 +34,11 @@ impl InvView for PageMetaOwner {
     type V = PageMetaModel;
 
     open spec fn view(&self) -> <Self as InvView>::V {
-        PageMetaModel {
-            nr_children: self.nr_children@.value(),
-            stray: self.stray@.value()
-        }
+        PageMetaModel { nr_children: self.nr_children@.value(), stray: self.stray@.value() }
     }
 
-    proof fn view_preserves_inv(&self) { }
+    proof fn view_preserves_inv(&self) {
+    }
 }
 
 impl<C: PageTableConfig> OwnerOf for PageTablePageMeta<C> {
@@ -52,10 +50,9 @@ impl<C: PageTableConfig> OwnerOf for PageTablePageMeta<C> {
     }
 }
 
-
-pub tracked struct NodeOwner<C:PageTableConfig> {
-    pub meta_own : PageMetaOwner,
-    pub meta_perm : Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, PageTablePageMeta<C>>>,
+pub tracked struct NodeOwner<C: PageTableConfig> {
+    pub meta_own: PageMetaOwner,
+    pub meta_perm: Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, PageTablePageMeta<C>>>,
 }
 
 impl<C: PageTableConfig> Inv for NodeOwner<C> {
@@ -70,7 +67,7 @@ impl<C: PageTableConfig> Inv for NodeOwner<C> {
 }
 
 pub ghost struct NodeModel<C: PageTableConfig> {
-    pub meta : PageTablePageMeta<C>,
+    pub meta: PageTablePageMeta<C>,
 }
 
 impl<C: PageTableConfig> Inv for NodeModel<C> {
@@ -83,12 +80,11 @@ impl<C: PageTableConfig> InvView for NodeOwner<C> {
     type V = NodeModel<C>;
 
     open spec fn view(&self) -> <Self as InvView>::V {
-        NodeModel {
-            meta: self.meta_perm@.value()
-        }
+        NodeModel { meta: self.meta_perm@.value() }
     }
 
-    proof fn view_preserves_inv(&self) { }
+    proof fn view_preserves_inv(&self) {
+    }
 }
 
 impl<C: PageTableConfig> OwnerOf for PageTableNode<C> {
@@ -99,4 +95,4 @@ impl<C: PageTableConfig> OwnerOf for PageTableNode<C> {
     }
 }
 
-}
+} // verus!

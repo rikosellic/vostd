@@ -1,5 +1,4 @@
 //pub mod model;
-
 use vstd::prelude::*;
 
 use vstd::simple_pptr::*;
@@ -55,7 +54,7 @@ pub struct Cursor<'rcu, C: PageTableConfig, A: InAtomicMode> {
 /// mutability of the cursor.
 #[rustc_has_incoherent_inherent_impls]
 pub struct CursorMut<'rcu, C: PageTableConfig, A: InAtomicMode> {
-    pub inner: Cursor<'rcu, C, A>
+    pub inner: Cursor<'rcu, C, A>,
 }
 
 impl<C: PageTableConfig, A: InAtomicMode> Iterator for Cursor<'_, C, A> {
@@ -63,15 +62,14 @@ impl<C: PageTableConfig, A: InAtomicMode> Iterator for Cursor<'_, C, A> {
 
     #[verifier::external_body]
     fn next(&mut self) -> Option<Self::Item> {
-        unimplemented!()
-    /*  let result = self.query();
+        unimplemented!()/*  let result = self.query();
         if result.is_ok() {
             self.move_forward();
         }
         result.ok()*/
+
     }
 }
-
 
 pub open spec fn page_size_spec(level: PagingLevel) -> usize {
     PAGE_SIZE() << (nr_subpage_per_huge::<PagingConsts>().ilog2() * (level - 1))
@@ -245,6 +243,7 @@ impl<'a, C: PageTableConfig, A: InAtomicMode> Cursor<'a, C, A> {
         self.va = next_va;
 
     }*/
+
 }
 
 } // verus!

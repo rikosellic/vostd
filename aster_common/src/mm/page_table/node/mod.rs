@@ -1,14 +1,14 @@
-mod owners;
 mod child;
 mod entry;
-mod entry_view;
 mod entry_owners;
+mod entry_view;
+mod owners;
 
-pub use owners::*;
 pub use child::*;
 pub use entry::*;
-pub use entry_view::*;
 pub use entry_owners::*;
+pub use entry_view::*;
+pub use owners::*;
 
 use vstd::prelude::*;
 
@@ -21,7 +21,7 @@ use std::marker::PhantomData;
 
 use super::*;
 
-verus!{
+verus! {
 
 /// The metadata of any kinds of page table pages.
 /// Make sure the the generic parameters don't effect the memory layout.
@@ -57,7 +57,8 @@ pub type PageTableNode<C> = Frame<PageTablePageMeta<C>>;
 impl<C: PageTableConfig> PageTablePageMeta<C> {
     #[verifier::external_body]
     pub fn get_stray(&self) -> PCell<bool>
-        returns self.stray
+        returns
+            self.stray,
     {
         unimplemented!()
     }
@@ -73,7 +74,8 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
 
     #[verifier::when_used_as_spec(into_spec)]
     pub fn into(self) -> (res: StoredPageTablePageMeta)
-        ensures res == self.into_spec()
+        ensures
+            res == self.into_spec(),
     {
         StoredPageTablePageMeta {
             nr_children: self.nr_children,
@@ -97,7 +99,8 @@ impl StoredPageTablePageMeta {
 
     #[verifier::when_used_as_spec(into_spec)]
     pub fn into<C: PageTableConfig>(self) -> (res: PageTablePageMeta<C>)
-        ensures res == self.into_spec::<C>()
+        ensures
+            res == self.into_spec::<C>(),
     {
         PageTablePageMeta::<C> {
             nr_children: self.nr_children,
@@ -109,7 +112,9 @@ impl StoredPageTablePageMeta {
     }
 }
 
-spec fn drop_tree_spec<C: PageTableConfig>(_page: Frame<PageTablePageMeta<C>>) -> Frame<PageTablePageMeta<C>>;
+spec fn drop_tree_spec<C: PageTableConfig>(_page: Frame<PageTablePageMeta<C>>) -> Frame<
+    PageTablePageMeta<C>,
+>;
 
 #[verifier::external_body]
 extern  fn drop_tree<C: PageTableConfig>(_page: &mut Frame<PageTablePageMeta<C>>)
@@ -118,7 +123,6 @@ extern  fn drop_tree<C: PageTableConfig>(_page: &mut Frame<PageTablePageMeta<C>>
 ;
 
 impl<C: PageTableConfig> Repr<MetaSlotStorage> for PageTablePageMeta<C> {
-
     open spec fn wf(r: MetaSlotStorage) -> bool {
         match r {
             MetaSlotStorage::PTNode(_) => true,
@@ -145,23 +149,27 @@ impl<C: PageTableConfig> Repr<MetaSlotStorage> for PageTablePageMeta<C> {
     #[verifier::external_body]
     fn from_borrowed<'a>(r: &'a MetaSlotStorage) -> &'a Self {
         unimplemented!()
-//        &r.get_node().unwrap().into()
+        //        &r.get_node().unwrap().into()
+
     }
 
-    proof fn from_to_repr(self)
-    { }
+    proof fn from_to_repr(self) {
+    }
 
-    proof fn to_from_repr(r: MetaSlotStorage)
-    { }
+    proof fn to_from_repr(r: MetaSlotStorage) {
+    }
 
-    proof fn to_repr_wf(self)
-    { }
+    proof fn to_repr_wf(self) {
+    }
 }
 
 impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
-    fn on_drop(&mut self) { }
+    fn on_drop(&mut self) {
+    }
 
-    fn is_untyped(&self) -> bool { false }
+    fn is_untyped(&self) -> bool {
+        false
+    }
 
     spec fn vtable_ptr(&self) -> usize;
 }

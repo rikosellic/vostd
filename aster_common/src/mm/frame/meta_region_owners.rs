@@ -113,7 +113,6 @@ impl MetaRegionOwners {
     {
         assert((frame_to_index_spec(paddr)) < max_meta_slots() as usize);
     }
-
 }
 
 } // verus!

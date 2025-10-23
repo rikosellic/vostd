@@ -5,13 +5,14 @@ use vstd::prelude::*;
 
 use vstd_extra::manually_drop::*;
 
-use aster_common::prelude::*;
 use aster_common::prelude::frame::*;
+use aster_common::prelude::*;
 
 use super::Frame;
 use crate::{mm::Paddr /*, sync::non_null::NonNullPtr*/};
 
 verus! {
+
 impl<M: AnyFrameMeta> FrameRef<'_, M> {
     /// Borrows the [`Frame`] at the physical address as a [`FrameRef`].
     ///
@@ -36,9 +37,8 @@ impl<M: AnyFrameMeta> FrameRef<'_, M> {
         let frame = Frame::from_raw(raw);
         Self {
             // SAFETY: The caller ensures the safety.
-            inner: /*ManuallyDrop::new(unsafe {*/
-                frame
-                /*})*/,
+            inner:   /*ManuallyDrop::new(unsafe {*/frame/*})*/
+            ,
             _marker: PhantomData,
         }
     }
@@ -83,4 +83,4 @@ impl<M: AnyFrameMeta> FrameRef<'_, M> {
         NonNull::new(ptr_ref.inner.ptr.cast_mut()).unwrap().cast()
     }
 }*/
-}
+} // verus!

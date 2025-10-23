@@ -201,7 +201,8 @@ impl OwnerOf for MetaSlot {
 impl ModelOf for MetaSlot { }
 
 impl MetaSlotOwner {
-    pub fn cast_perm<T: Repr<MetaSlotStorage>>(self) -> Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, T>>
+    pub fn cast_perm<T: Repr<MetaSlotStorage>>(self)
+        -> Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, T>>
     {
         vstd_extra::cast_ptr::PointsTo::new(self.self_addr, self.storage)
     }

@@ -5,7 +5,7 @@ use core::ops::Range;
 
 use super::*;
 
-verus!{
+verus! {
 
 extern_const!(
 /// Kernel virtual address range for storing the page frame metadata.
@@ -14,4 +14,4 @@ pub FRAME_METADATA_RANGE
     = 0xffff_fe00_0000_0000..0xffff_ff00_0000_0000
 );
 
-}
+} // verus!

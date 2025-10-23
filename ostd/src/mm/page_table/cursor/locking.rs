@@ -6,29 +6,28 @@ use vstd::prelude::*;
 
 use vstd::simple_pptr::*;
 
-use crate::{
-    mm::{
-        nr_subpage_per_huge, paddr_to_vaddr,
-        page_table::{
-            load_pte, pte_index, ChildRef, PageTable, PageTableConfig,
-            PageTableEntryTrait, PageTableGuard, PageTableNodeRef, PagingConstsTrait, PagingLevel,
-        },
-        Vaddr,
+use crate::mm::{
+    nr_subpage_per_huge, paddr_to_vaddr,
+    page_table::{
+        load_pte, pte_index, ChildRef, PageTable, PageTableConfig, PageTableEntryTrait,
+        PageTableGuard, PageTableNodeRef, PagingConstsTrait, PagingLevel,
     },
+    Vaddr,
 };
 
 use vstd_extra::array_ptr::*;
 
-use aster_common::prelude::*;
 use aster_common::prelude::page_table::*;
+use aster_common::prelude::*;
 
 use core::ops::IndexMut;
 
 verus! {
 
-pub assume_specification<Idx: Clone> [Range::<Idx>::clone] (range: &Range<Idx>) -> (res: Range<Idx>)
+pub assume_specification<Idx: Clone>[ Range::<Idx>::clone ](range: &Range<Idx>) -> (res: Range<Idx>)
     ensures
-        res == *range;
+        res == *range,
+;
 
 #[verus_spec(
     with Tracked(pt_own): Tracked<&mut PageTableOwner<C>>
@@ -52,14 +51,13 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
         }
     };
     */
-
     #[verus_spec(with Tracked(pt_own))]
     let subtree_root = try_traverse_and_lock_subtree_root(pt, guard, va);
 
     assert(subtree_root is Some) by { admit() };
     let subtree_root = subtree_root.unwrap();
     let tracked entry_own = pt_own.tree.root.value.tree_node.tracked_take();
-//    let tracked child_node = owner_node.tracked_child()
+    //    let tracked child_node = owner_node.tracked_child()
 
     // Once we have locked the sub-tree that is not stray, we won't read any
     // stray nodes in the following traversal since we must lock before reading.
@@ -84,8 +82,7 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
 
 #[verifier::external_body]
 pub fn unlock_range<C: PageTableConfig, A: InAtomicMode>(cursor: &mut Cursor<'_, C, A>) {
-    unimplemented!()
-/*    let end = cursor.guard_level as usize - 1;
+    unimplemented!()/*    let end = cursor.guard_level as usize - 1;
     for i in (0..end) {
         if let Some(guard) = cursor.path[end - i].take() {
             let _ = ManuallyDrop::new(guard);
@@ -102,6 +99,7 @@ pub fn unlock_range<C: PageTableConfig, A: InAtomicMode>(cursor: &mut Cursor<'_,
         cur_node_va,
         cursor.barrier_va.clone(),
     );*/
+
 }
 
 /// Finds and locks an intermediate page table node that covers the range.
@@ -133,9 +131,8 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
             (end - cur_level + 1) > 1 && start_idx == end_idx
         };
         if !level_too_high {
-            break;
+            break ;
         }
-
         let cur_pt_ptr = ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(paddr_to_vaddr(cur_pt_addr));
         // SAFETY:
         //  - The page table node is alive because (1) the root node is alive and
@@ -146,14 +143,14 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
 
         if cur_pte.is_present() {
             if cur_pte.is_last(end - cur_level + 1) {
-                break;
+                break ;
             }
             cur_pt_addr = cur_pte.paddr();
             cur_node_guard = None;
-            continue;
+            continue ;
         }
-
         // In case the child is absent, we should lock and allocate a new page table node.
+
         let mut pt_guard = if let Some(pt_guard) = cur_node_guard.take() {
             pt_guard
         } else {
@@ -162,7 +159,7 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
             let node_ref = PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr);
             node_ref.lock(guard)
         };
-        
+
         let tracked mut entry_own = pt_own.tree.root.value.tree_node.tracked_take();
 
         let mut guard_val = pt_guard.take(Tracked(entry_own.guard_perm.borrow_mut()));
@@ -180,14 +177,14 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
         } else if cur_entry.is_node() {
             let opt_pt = match cur_entry.to_ref() {
                 ChildRef::PageTable(pt) => Some(pt),
-                _ => None
+                _ => None,
             };
             let pt = opt_pt.unwrap();
 
             cur_pt_addr = pt.start_paddr();
             cur_node_guard = None;
         } else {
-            break;
+            break ;
         }
     }
 
@@ -227,13 +224,12 @@ fn dfs_acquire_lock<'rcu, C: PageTableConfig, A: InAtomicMode>(
     cur_node_va: Vaddr,
     va_range: Range<Vaddr>,
 ) {
-//    debug_assert!(!*cur_node.stray_mut());
+    //    debug_assert!(!*cur_node.stray_mut());
     let cur_guard = cur_node.borrow(Tracked(entry_own.guard_perm.borrow()));
     let cur_level = cur_guard.level();
     if cur_level == 1 {
-        return;
+        return ;
     }
-
     let idx_range = dfs_get_idx_range::<C>(cur_level, cur_node_va, &va_range);
     for i in idx_range {
         let child = PageTableGuard::<'rcu, C>::entry(cur_node, i);
@@ -246,8 +242,8 @@ fn dfs_acquire_lock<'rcu, C: PageTableConfig, A: InAtomicMode>(
                 let va_end = va_range.end.min(child_node_va_end);
                 dfs_acquire_lock(guard, pt_guard, child_node_va, va_start..va_end);
                 let _ = ManuallyDrop::new(pt_guard);
-            }
-            ChildRef::None | ChildRef::Frame(_, _, _) => {}
+            },
+            ChildRef::None | ChildRef::Frame(_, _, _) => {},
         }
     }
 }
@@ -271,9 +267,8 @@ unsafe fn dfs_release_lock<'rcu, C: PageTableConfig, A: InAtomicMode>(
     let cur_guard = cur_node.borrow(Tracked(entry_own.guard_perm.borrow()));
     let cur_level = cur_guard.level();
     if cur_level == 1 {
-        return;
+        return ;
     }
-
     let idx_range = dfs_get_idx_range::<C>(cur_level, cur_node_va, &va_range);
     let end = idx_range.end;
     for i in idx_range {
@@ -289,8 +284,8 @@ unsafe fn dfs_release_lock<'rcu, C: PageTableConfig, A: InAtomicMode>(
                 // SAFETY: The caller ensures that all the nodes in the sub-tree are locked and all
                 // guards are forgotten.
                 dfs_release_lock(guard, child_node, child_node_va, va_start..va_end);
-            }
-            ChildRef::None | ChildRef::Frame(_, _, _) => {}
+            },
+            ChildRef::None | ChildRef::Frame(_, _, _) => {},
         }
     }
 }
@@ -326,7 +321,6 @@ pub fn dfs_mark_stray_and_unlock<'a, C: PageTableConfig, A: InAtomicMode>(
     if sub_tree_val.level() == 1 {
         return sub_tree_val.nr_children() as usize;
     }
-
     sub_tree.put(Tracked(entry_own.guard_perm.borrow_mut()), sub_tree_val);
 
     let mut num_frames = 0;
@@ -341,8 +335,8 @@ pub fn dfs_mark_stray_and_unlock<'a, C: PageTableConfig, A: InAtomicMode>(
                 // SAFETY: The caller ensures that all the nodes in the sub-tree are locked and all
                 // guards are forgotten.
                 num_frames += dfs_mark_stray_and_unlock(rcu_guard, locked_pt);
-            }
-            ChildRef::None | ChildRef::Frame(_, _, _) => {}
+            },
+            ChildRef::None | ChildRef::Frame(_, _, _) => {},
         }
     }
 
@@ -355,15 +349,15 @@ fn dfs_get_idx_range<C: PagingConstsTrait>(
     cur_node_va: Vaddr,
     va_range: &Range<Vaddr>,
 ) -> Range<usize> {
-//    debug_assert!(va_range.start >= cur_node_va);
-//    debug_assert!(va_range.end <= cur_node_va.saturating_add(page_size(cur_node_level + 1)));
-
+    //    debug_assert!(va_range.start >= cur_node_va);
+    //    debug_assert!(va_range.end <= cur_node_va.saturating_add(page_size(cur_node_level + 1)));
     let start_idx = (va_range.start - cur_node_va) / page_size(cur_node_level);
     let end_idx = (va_range.end - cur_node_va).div_ceil(page_size(cur_node_level));
 
-//    debug_assert!(start_idx < end_idx);
-//    debug_assert!(end_idx <= nr_subpage_per_huge::<C>());
+    //    debug_assert!(start_idx < end_idx);
+    //    debug_assert!(end_idx <= nr_subpage_per_huge::<C>());
 
     start_idx..end_idx
 }
-}
+
+} // verus!

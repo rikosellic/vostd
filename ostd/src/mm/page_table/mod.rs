@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-
 use vstd::prelude::*;
 
 use core::{
@@ -10,11 +9,13 @@ use core::{
 };
 
 use super::{
-//    kspace::KernelPtConfig,
-    nr_subpage_per_huge, page_prop::PageProperty,
-//    vm_space::UserPtConfig,
-    Paddr, PagingLevel,
-//    PodOnce,
+    //    kspace::KernelPtConfig,
+    nr_subpage_per_huge,
+    page_prop::PageProperty,
+    //    vm_space::UserPtConfig,
+    Paddr,
+    PagingLevel,
+    //    PodOnce,
     Vaddr,
 };
 //use crate::{
@@ -23,8 +24,8 @@ use super::{
 //    Pod,
 //};
 
-use aster_common::prelude::*;
 use aster_common::prelude::page_table::*;
+use aster_common::prelude::*;
 
 mod node;
 use node::*;
@@ -37,7 +38,7 @@ mod test;
 
 //pub(crate) mod boot_pt;
 
-verus!{
+verus! {
 
 /*/// Splits the address range into largest page table items.
 ///
@@ -94,7 +95,6 @@ pub(crate) fn largest_pages<C: PageTableConfig>(
         Some((item_start, level))
     })
 }*/
-
 /// Gets the managed virtual addresses range for the page table.
 ///
 /// It returns a [`RangeInclusive`] because the end address, if being
@@ -111,10 +111,10 @@ fn pt_va_range_start<C: PageTableConfig>() -> Vaddr {
 
 #[verifier::external_body]
 fn pt_va_range_end<C: PageTableConfig>() -> Vaddr {
-    C::TOP_LEVEL_INDEX_RANGE()
-        .end
-        .unbounded_shl(pte_index_bit_offset::<C>(C::NR_LEVELS()) as u32)
-        .wrapping_sub(1) // Inclusive end.
+    C::TOP_LEVEL_INDEX_RANGE().end.unbounded_shl(
+        pte_index_bit_offset::<C>(C::NR_LEVELS()) as u32,
+    ).wrapping_sub(1)  // Inclusive end.
+
 }
 
 #[verifier::external_body]
@@ -124,18 +124,16 @@ fn sign_bit_of_va<C: PageTableConfig>(va: Vaddr) -> bool {
 
 #[verifier::external_body]
 fn vaddr_range<C: PageTableConfig>() -> Range<Vaddr> {
-
-/*    const {
+    /*    const {
         assert!(C::TOP_LEVEL_INDEX_RANGE().start < C::TOP_LEVEL_INDEX_RANGE().end);
         assert!(top_level_index_width::<C>() <= nr_pte_index_bits::<C>(),);
         assert!(C::TOP_LEVEL_INDEX_RANGE().start < 1 << top_level_index_width::<C>());
         assert!(C::TOP_LEVEL_INDEX_RANGE().end <= 1 << top_level_index_width::<C>());
     };*/
-
     let mut start = pt_va_range_start::<C>();
     let mut end = pt_va_range_end::<C>();
 
-/*    const {
+    /*    const {
         assert!(
             !C::VA_SIGN_EXT()
                 || sign_bit_of_va::<C>(pt_va_range_start::<C>())
@@ -148,8 +146,7 @@ fn vaddr_range<C: PageTableConfig>() -> Range<Vaddr> {
         start |= !0 ^ ((1 << C::ADDRESS_WIDTH()) - 1);
         end |= !0 ^ ((1 << C::ADDRESS_WIDTH()) - 1);
     }
-
-    start..end+1
+    start..end + 1
 }
 
 /// Checks if the given range is covered by the valid range of the page table.
@@ -160,7 +157,6 @@ fn is_valid_range<C: PageTableConfig>(r: &Range<Vaddr>) -> bool {
 }
 
 // Here are some const values that are determined by the paging constants.
-
 /// The index of a VA's PTE in a page table node at the given level.
 #[verifier::external_body]
 fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> usize {
@@ -282,10 +278,10 @@ impl<C: PageTableConfig> PageTable<C> {
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
     pub fn empty() -> Self {
-        unimplemented!()
-/*        PageTable {
+        unimplemented!()/*        PageTable {
             root: PageTableNode::alloc(C::NR_LEVELS()),
         }*/
+
     }
 
     #[rustc_allow_incoherent_impl]
@@ -293,7 +289,8 @@ impl<C: PageTableConfig> PageTable<C> {
     pub(in crate::mm) unsafe fn first_activate_unchecked(&self) {
         unimplemented!()
         // SAFETY: The safety is upheld by the caller.
-//        unsafe { self.root.first_activate() };
+        //        unsafe { self.root.first_activate() };
+
     }
 
     /// The physical address of the root page table.
@@ -305,7 +302,8 @@ impl<C: PageTableConfig> PageTable<C> {
     #[verifier::external_body]
     pub fn root_paddr(&self) -> Paddr {
         unimplemented!()
-//        self.root.start_paddr()
+        //        self.root.start_paddr()
+
     }
 
     /// Query about the mapping of a single byte at the given virtual address.
@@ -318,9 +316,7 @@ impl<C: PageTableConfig> PageTable<C> {
     pub fn page_walk(&self, vaddr: Vaddr) -> Option<(Paddr, PageProperty)> {
         // SAFETY: The root node is a valid page table node so the address is valid.
         unsafe { page_walk::<C>(self.root_paddr(), vaddr) }
-    }
-
-    /* TODO: come back after cursor
+    }/* TODO: come back after cursor
     /// Create a new cursor exclusively accessing the virtual address range for mapping.
     ///
     /// If another cursor is already accessing the range, the new cursor may wait until the
@@ -354,6 +350,7 @@ impl<C: PageTableConfig> PageTable<C> {
             root: self.root.clone(),
         }
     }*/
+
 }
 
 /// A software emulation of the MMU address translation process.
@@ -375,10 +372,9 @@ impl<C: PageTableConfig> PageTable<C> {
 /// To mitigate this problem, the page table nodes are by default not
 /// actively recycled, until we find an appropriate solution.
 #[cfg(ktest)]
-pub(super) unsafe fn page_walk<C: PageTableConfig>(
-    root_paddr: Paddr,
-    vaddr: Vaddr,
-) -> Option<(Paddr, PageProperty)> {
+pub(super) unsafe fn page_walk<C: PageTableConfig>(root_paddr: Paddr, vaddr: Vaddr) -> Option<
+    (Paddr, PageProperty),
+> {
     use super::paddr_to_vaddr;
 
     let _guard = crate::trap::disable_local();
@@ -395,14 +391,13 @@ pub(super) unsafe fn page_walk<C: PageTableConfig>(
         if !cur_pte.is_present() {
             return None;
         }
-
         if cur_pte.is_last(cur_level) {
             debug_assert!(cur_level <= C::HIGHEST_TRANSLATION_LEVEL);
-            break;
+            break ;
         }
-
         cur_level -= 1;
-        cur_pte = {
+        cur_pte =
+        {
             let node_addr = paddr_to_vaddr(cur_pte.paddr());
             let offset = pte_index::<C>(vaddr, cur_level);
             // SAFETY: The offset does not exceed the value of PAGE_SIZE.
@@ -411,10 +406,7 @@ pub(super) unsafe fn page_walk<C: PageTableConfig>(
     }
 
     if cur_pte.is_present() {
-        Some((
-            cur_pte.paddr() + (vaddr & (page_size::<C>(cur_level) - 1)),
-            cur_pte.prop(),
-        ))
+        Some((cur_pte.paddr() + (vaddr & (page_size::<C>(cur_level) - 1)), cur_pte.prop()))
     } else {
         None
     }
@@ -426,12 +418,15 @@ pub(super) unsafe fn page_walk<C: PageTableConfig>(
 ///
 /// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
 #[verifier::external_body]
-pub fn load_pte<E: PageTableEntryTrait>(ptr: vstd_extra::array_ptr::ArrayPtr<E, CONST_NR_ENTRIES>, ordering: Ordering) -> E {
-    unimplemented!()
-/*    // SAFETY: The safety is upheld by the caller.
+pub fn load_pte<E: PageTableEntryTrait>(
+    ptr: vstd_extra::array_ptr::ArrayPtr<E, CONST_NR_ENTRIES>,
+    ordering: Ordering,
+) -> E {
+    unimplemented!()/*    // SAFETY: The safety is upheld by the caller.
     let atomic = unsafe { AtomicUsize::from_ptr(ptr.cast()) };
     let pte_raw = atomic.load(ordering);
     E::from_usize(pte_raw)*/
+
 }
 
 /// Stores a page table entry with an atomic instruction.
@@ -440,11 +435,16 @@ pub fn load_pte<E: PageTableEntryTrait>(ptr: vstd_extra::array_ptr::ArrayPtr<E, 
 ///
 /// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
 #[verifier::external_body]
-pub fn store_pte<E: PageTableEntryTrait>(ptr: vstd_extra::array_ptr::ArrayPtr<E, CONST_NR_ENTRIES>, new_val: E, ordering: Ordering) {
-    unimplemented!()
-/*    let new_raw = new_val.as_usize();
+pub fn store_pte<E: PageTableEntryTrait>(
+    ptr: vstd_extra::array_ptr::ArrayPtr<E, CONST_NR_ENTRIES>,
+    new_val: E,
+    ordering: Ordering,
+) {
+    unimplemented!()/*    let new_raw = new_val.as_usize();
     // SAFETY: The safety is upheld by the caller.
     let atomic = unsafe { AtomicUsize::from_ptr(ptr.cast()) };
     atomic.store(new_raw, ordering)*/
+
 }
-}
+
+} // verus!
