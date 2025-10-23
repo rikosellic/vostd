@@ -340,8 +340,7 @@ impl<V, const N: usize> ArrayPtr<V, N> {
     /// Impl: cast the pointer to an integer
     #[inline(always)]
     #[vstd::contrib::auto_spec]
-    pub exec fn addr(&self) -> usize
-    {
+    pub exec fn addr(&self) -> usize {
         self.addr
     }
 
