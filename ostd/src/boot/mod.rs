@@ -5,7 +5,7 @@
 //!  2. the routine booting into the actual kernel;
 //!  3. the routine booting the other processors in the SMP context.
 pub mod memory_region;
-pub mod smp;
+/* pub mod smp;
 
 use alloc::{
     string::{String, ToString},
@@ -127,4 +127,4 @@ pub(crate) fn call_ostd_main() -> ! {
     unsafe {
         __ostd_main();
     }
-}
+}*/

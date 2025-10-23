@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 //! Information of memory regions in the boot phase.
+use vstd::prelude::*;
+
+/* 
 use core::ops::Deref;
 
 use align_ext::AlignExt;
 
-use crate::mm::{kspace::kernel_loaded_offset, Paddr, Vaddr, PAGE_SIZE};
+use crate::mm::{kspace::kernel_loaded_offset, Paddr, Vaddr, PAGE_SIZE};*/
 
 /// The type of initial memory regions that are needed for the kernel.
+#[verus_verify]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum MemoryRegionType {
     /// Maybe points to an unplugged DIMM module. It's bad anyway.
@@ -32,6 +36,7 @@ pub enum MemoryRegionType {
 
 /// The information of initial memory regions that are needed by the kernel.
 /// The sections are **not** guaranteed to not overlap. The region must be page aligned.
+#[verus_verify]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct MemoryRegion {
     base: usize,
@@ -39,6 +44,7 @@ pub struct MemoryRegion {
     typ: MemoryRegionType,
 }
 
+/*
 impl MemoryRegion {
     /// Constructs a valid memory region.
     pub const fn new(base: Paddr, len: usize, typ: MemoryRegionType) -> Self {
@@ -342,3 +348,4 @@ mod test {
         assert_eq!(regions[4].typ(), MemoryRegionType::Usable);
     }
 }
+*/
