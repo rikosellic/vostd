@@ -6,6 +6,7 @@ use vstd_extra::cast_ptr::*;
 use vstd_extra::ownership::*;
 
 use aster_common::prelude::*;
+use aster_common::prelude::frame::*;
 
 use std::marker::PhantomData;
 

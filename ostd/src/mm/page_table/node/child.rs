@@ -122,6 +122,7 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
             pte.paddr() < MAX_PADDR(),
             !old(regions).slots.contains_key(frame_to_index(pte.paddr())),
             old(regions).dropped_slots.contains_key(frame_to_index(pte.paddr())),
+            old(regions).inv()
     {
         if !pte.is_present() {
             return ChildRef::None;
