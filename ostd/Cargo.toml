@@ -11,8 +11,8 @@ repository = "https://github.com/asterinas/asterinas"
 crate-type = ["rlib"]
 name = "ostd"
 # for cargo
-path = "src/.dummy.rs"
-# path = "src/lib.rs"
+# path = "src/.dummy.rs"
+path = "src/lib.rs"
 
 [features]
 verus = []
