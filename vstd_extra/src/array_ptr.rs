@@ -1,9 +1,11 @@
-use core::marker::PhantomData;
-use vstd::layout;
 use vstd::prelude::*;
+
+use vstd::layout;
 use vstd::raw_ptr;
 use vstd::set;
 use vstd::set_lib;
+
+use core::marker::PhantomData;
 
 verus! {
 

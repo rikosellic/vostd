@@ -26,32 +26,32 @@
 mod child;
 mod entry;
 
-use vstd::cell::PCell;
 use vstd::prelude::*;
-use vstd::simple_pptr::PPtr;
-
-use core::{marker::PhantomData, ops::Deref, sync::atomic::Ordering};
-
-pub(in crate::mm) use self::{
-    child::{ChildRef},
-};
-use super::nr_subpage_per_huge;
-use crate::{
-    mm::{
-        page_table::{load_pte, store_pte},
-//        FrameAllocOptions, Infallible,
-//        VmReader,
-    },
-    //    task::atomic_mode::InAtomicMode,
-};
 
 use vstd::atomic::PAtomicU8;
-use vstd::simple_pptr;
+use vstd::cell::PCell;
+use vstd::simple_pptr::{self, PPtr};
 
-use aster_common::prelude::*;
 use vstd_extra::array_ptr;
 use vstd_extra::cast_ptr::*;
 use vstd_extra::ownership::*;
+
+use aster_common::prelude::frame::*;
+use aster_common::prelude::page_table::*;
+use aster_common::prelude::*;
+
+use core::{marker::PhantomData, ops::Deref, sync::atomic::Ordering};
+
+use super::nr_subpage_per_huge;
+
+use crate::{
+    mm::{
+        page_table::{load_pte, store_pte},
+        //        FrameAllocOptions, Infallible,
+        //        VmReader,
+    },
+    //    task::atomic_mode::InAtomicMode,
+};
 
 verus! {
 
@@ -140,18 +140,20 @@ impl<C: PageTableConfig> PageTableNode<C> {
 
 }
 
-//impl<'a> PageTableNodeRef<'a> {
-/* TODO: Stub out InAtomicMode
+impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
     /// Locks the page table node.
     ///
     /// An atomic mode guard is required to
     ///  1. prevent deadlocks;
     ///  2. provide a lifetime (`'rcu`) that the nodes are guaranteed to outlive.
-    pub(super) fn lock<'rcu>(self, _guard: &'rcu dyn InAtomicMode) -> PageTableGuard<'rcu, C>
-    where
-        'a: 'rcu,
-    {
-        while self
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
+    #[verusfmt::skip]
+    pub fn lock<'rcu, A: InAtomicMode>(self, _guard: &'rcu A) -> PPtr<PageTableGuard<'rcu, C>>
+        where 'a: 'rcu {
+        unimplemented!()
+        // TODO: axiomatize locks
+        /*        while self
             .meta()
             .lock
             .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
@@ -159,8 +161,9 @@ impl<C: PageTableConfig> PageTableNode<C> {
         {
             core::hint::spin_loop();
         }
+*/
+        //        PageTableGuard::<'rcu, C> { inner: self }
 
-        PageTableGuard::<'rcu, C> { inner: self }
     }
 
     /// Creates a new [`PageTableGuard`] without checking if the page table lock is held.
@@ -171,15 +174,16 @@ impl<C: PageTableConfig> PageTableNode<C> {
     ///
     /// Calling this function when a guard is already created is undefined behavior
     /// unless that guard was already forgotten.
-    pub(super) unsafe fn make_guard_unchecked<'rcu>(
-        self,
-        _guard: &'rcu dyn InAtomicMode,
-    ) -> PageTableGuard<'rcu, C>
-    where
-        'a: 'rcu,
-    {
-        PageTableGuard { inner: self }
-    }*/
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
+    #[verusfmt::skip]
+    pub fn make_guard_unchecked<'rcu, A: InAtomicMode>(self, _guard: &'rcu A) -> PPtr<PageTableGuard<'rcu, C>>
+        where 'a: 'rcu {
+        unimplemented!()
+        //        PageTableGuard { inner: self }
+
+    }
+}
 
 //}
 impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
@@ -259,6 +263,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             Tracked(slot_own) : Tracked<&MetaSlotOwner>,
             Tracked(slot_perm) : Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
+    #[verusfmt::skip]
     pub fn read_pte(&self, idx: usize) -> C::E
         requires
             self.inner.inner.ptr == slot_perm.pptr(),
@@ -275,7 +280,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             paddr_to_vaddr(
                 #[verus_spec(with Tracked(&slot_own), Tracked(slot_perm))]
                 self.start_paddr()
-            ),
+            )
         );
 
         // SAFETY:
@@ -303,6 +308,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             Tracked(slot_own) : Tracked<&MetaSlotOwner>,
             Tracked(slot_perm) : Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
+    #[verusfmt::skip]
     pub fn write_pte(&mut self, idx: usize, pte: C::E)
         requires
             old(self).inner.inner.ptr == slot_perm.pptr(),
@@ -319,7 +325,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             paddr_to_vaddr(
                 #[verus_spec(with Tracked(&slot_own), Tracked(slot_perm))]
                 self.start_paddr()
-            ),
+            )
         );
 
         // SAFETY:

@@ -3,30 +3,30 @@
 //!
 //! This module leverages the customizability of the metadata system (see
 //! [super::meta]) to allow any type of frame to be used in a linked list.
-use vstd::atomic::PermissionU64;
 use vstd::prelude::*;
+
+use vstd::atomic::PermissionU64;
 use vstd::seq_lib::*;
 use vstd::simple_pptr::*;
 
+use vstd_extra::cast_ptr::*;
+use vstd_extra::ownership::*;
+use vstd_extra::update_field;
+
+use aster_common::prelude::frame::CursorMut;
+use aster_common::prelude::frame::*;
+use aster_common::prelude::*;
+
+use core::borrow::BorrowMut;
 use core::{
     ops::{Deref, DerefMut},
     ptr::NonNull,
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use core::borrow::BorrowMut;
+use crate::mm::{Paddr, Vaddr};
 
 use super::{meta::get_slot, MetaSlot};
-
-use vstd_extra::cast_ptr::*;
-use vstd_extra::ownership::*;
-use vstd_extra::{borrow_field, update_field};
-
-use aster_common::prelude::*;
-
-use ostd_specs::*;
-
-use crate::mm::{Paddr, Vaddr};
 
 verus! {
 
@@ -113,9 +113,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M> {
             Tracked(owner): Tracked<LinkedListOwner<M>>,
             Tracked(frame_own): Tracked<UniqueFrameOwner<Link<M>>>
     )]
-    pub fn pop_front(ptr: PPtr<Self>) -> Option<
-        (UniqueFrame<Link<M>>, Tracked<UniqueFrameOwner<Link<M>>>),
-    >
+    #[verusfmt::skip]
+    pub fn pop_front(ptr: PPtr<Self>) -> Option<(UniqueFrame<Link<M>>, Tracked<UniqueFrameOwner<Link<M>>>)>
         requires
             old(regions).inv(),
             perm.pptr() == ptr,
@@ -620,6 +619,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M> {
             Tracked(owner): Tracked<&mut CursorOwner<M>>,
             Tracked(frame_own): Tracked<&mut UniqueFrameOwner<Link<M>>>
     )]
+    #[verusfmt::skip]
     pub fn insert_before(&mut self, mut frame: UniqueFrame<Link<M>>)
         requires
             old(self).wf(old(owner)),
@@ -644,7 +644,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M> {
         let ghost owner0 = *owner;
         // The frame can't possibly be in any linked lists since the list will
         // own the frame so there can't be any unique pointers to it.
-
         assert(meta_addr(frame_own.slot_index) == frame.ptr.addr()) by { admit() };
 
         assert(regions.slot_owners.contains_key(frame_own.slot_index));
@@ -706,6 +705,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M> {
         #[verus_spec(with Tracked(regions.slots.tracked_borrow(frame_own.slot_index).borrow()))]
         let slot = frame.slot();
 
+        assert(regions.slot_owners.contains_key(frame_to_index(meta_to_frame(frame.ptr.addr()))));
         let tracked mut slot_own = regions.slot_owners.tracked_remove(
             frame_to_index(meta_to_frame(frame.ptr.addr())),
         );
@@ -715,19 +715,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M> {
             #[verus_spec(with Tracked(&mut owner.list_own))]
             LinkedList::<M>::lazy_get_id(self.list)
         );
+
         proof {
             regions.slot_owners.tracked_insert(
                 frame_to_index(meta_to_frame(frame.ptr.addr())),
-                slot_own,
-            );
-            frame_own.meta_own@.in_list = owner.list_own.list_id;
+                slot_own
+            )
         }
-
-        CursorOwner::<M>::list_insert(
-            Tracked(owner),
-            Tracked(frame_own.meta_own.borrow_mut()),
-            Tracked(frame_own.meta_perm.borrow()),
-        );
 
         // Forget the frame to transfer the ownership to the list.
         //        let _ = frame.into_raw();

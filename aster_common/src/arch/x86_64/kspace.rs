@@ -3,6 +3,8 @@ use vstd::prelude::*;
 use vstd_extra::extern_const::*;
 
 use super::*;
+use crate::frame::*;
+
 use core::ops::Range;
 
 extern_const!(

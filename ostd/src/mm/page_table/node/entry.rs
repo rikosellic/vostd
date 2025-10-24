@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: MPL-2.0
 //! This module provides accessors to the page table entries in a node.
 use vstd::prelude::*;
+
 use vstd::simple_pptr::*;
 
+use vstd_extra::cast_ptr;
 use vstd_extra::ownership::*;
 
-use core::mem::ManuallyDrop;
-use core::marker::PhantomData;
-use crate::{
-    mm::{
-        nr_subpage_per_huge,
-        page_prop::PageProperty,
-        page_table::{PageTableNodeRef},
-    },
-//    sync::RcuDrop,
-//    task::atomic_mode::InAtomicMode,
-};
-use super::ChildRef;
-
-
+use aster_common::prelude::frame::*;
+use aster_common::prelude::page_table::*;
 use aster_common::prelude::*;
-use vstd_extra::cast_ptr;
+
+use core::marker::PhantomData;
+use core::mem::ManuallyDrop;
+
+use crate::{
+    mm::{nr_subpage_per_huge, page_prop::PageProperty, page_table::PageTableNodeRef},
+    //    sync::RcuDrop,
+    //    task::atomic_mode::InAtomicMode,
+};
+
+use super::ChildRef;
 
 verus! {
 
@@ -39,6 +39,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             Tracked(slot_own) : Tracked<&MetaSlotOwner>,
             Tracked(inner_perm) : Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, PageTablePageMeta<C>>>
     )]
+    #[verusfmt::skip]
     pub fn is_node(&self) -> bool
         requires
             owner.inv(),
@@ -55,13 +56,40 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         )
     }
 
-    /*    /// Gets a reference to the child.
-    pub(in crate::mm) fn to_ref(&self) -> ChildRef<'rcu, C> {
+    /// Gets a reference to the child.
+    #[rustc_allow_incoherent_impl]
+    #[verus_spec(
+        with Tracked(owner): Tracked<EntryOwner<C>>,
+            Tracked(regions): Tracked<&mut MetaRegionOwners>
+    )]
+    pub fn to_ref(&self) -> ChildRef<'rcu, C>
+        requires
+            self.wf(&owner),
+            owner.inv(),
+            old(regions).inv(),
+            self.pte.paddr() == meta_to_frame(owner.slot_perm@.addr()),
+            owner.slot_perm@.value().wf(
+                &old(regions).slot_owners[frame_to_index(self.pte.paddr())],
+            ),
+            old(regions).dropped_slots.contains_key(frame_to_index(self.pte.paddr())),
+            !old(regions).slots.contains_key(frame_to_index(self.pte.paddr())),
+    {
+        let guard = self.node.borrow(Tracked(owner.guard_perm.borrow()));
+
+        assert(regions.slot_owners.contains_key(frame_to_index(self.pte.paddr())));
+
+        #[verus_spec(with Tracked(regions.slot_owners.tracked_borrow(
+            frame_to_index(meta_to_frame(owner.slot_perm@.addr())))),
+            Tracked(owner.slot_perm.borrow()),
+            Tracked(owner.node_own.meta_perm.borrow()))]
+        let level = guard.level();
         // SAFETY:
         //  - The PTE outlives the reference (since we have `&self`).
         //  - The level matches the current node.
-        unsafe { ChildRef::from_pte(&self.pte, self.node.level()) }
-    }*/
+        #[verus_spec(with Tracked(regions))]
+        ChildRef::from_pte(&self.pte, level)
+    }
+
     /// Operates on the mapping properties of the entry.
     ///
     /// It only modifies the properties if the entry is present.
@@ -171,15 +199,16 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         old_child
     }
 
-    /* TODO: stub out InAtomicMode
     /// Allocates a new child page table node and replaces the entry with it.
     ///
     /// If the old entry is not none, the operation will fail and return `None`.
     /// Otherwise, the lock guard of the new child page table node is returned.
-    pub(in crate::mm::page_table) fn alloc_if_none(
-        &mut self,
-        guard: &'rcu dyn InAtomicMode,
-    ) -> Option<PageTableGuard<'rcu, C>> {
+    #[verifier::external_body]
+    #[rustc_allow_incoherent_impl]
+    #[verusfmt::skip]
+    pub fn alloc_if_none<A: InAtomicMode>(&mut self, guard: &'rcu A)
+        -> Option<PPtr<PageTableGuard<'rcu, C>>> {
+        unimplemented!()/*
         if !(self.is_none() && self.node.level() > 1) {
             return None;
         }
@@ -207,6 +236,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         let pt_ref = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
         // SAFETY: The node is locked and there are no other guards.
         Some(unsafe { pt_ref.make_guard_unchecked(guard) })
+        */
+
     }
 
     /// Splits the entry to smaller pages if it maps to a huge page.
@@ -217,11 +248,18 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     ///
     /// If the entry does not map to a untracked huge page, the method returns
     /// `None`.
-    pub(in crate::mm::page_table) fn split_if_mapped_huge(
-        &mut self,
-        guard: &'rcu dyn InAtomicMode,
-    ) -> Option<PageTableGuard<'rcu, C>> {
-        let level = self.node.level();
+    #[rustc_allow_incoherent_impl]
+    #[verus_spec(
+        with Tracked(owner) : Tracked<EntryOwner<C>>
+    )]
+    #[verifier::external_body]
+    #[verusfmt::skip]
+    pub fn split_if_mapped_huge<A: InAtomicMode>(&mut self, guard: &'rcu A)
+        -> Option<PPtr<PageTableGuard<'rcu, C>>> {
+        unimplemented!()/*
+        let guard = self.node.borrow(Tracked(owner.guard_perm.borrow()));
+
+        let level = guard.level();
 
         if !(self.pte.is_last(level) && level > 1) {
             return None;
@@ -246,19 +284,17 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         // SAFETY:
         //  1. The index is within the bounds.
         //  2. The new PTE is a valid child whose level matches the current page table node.
-        unsafe {
-            self.node.write_pte(
-                self.idx,
-                Child::PageTable(RcuDrop::new(new_page)).into_pte(),
-            )
-        };
+        self.node.write_pte(self.idx, Child::PageTable(new_page.into_pte()));
 
         // SAFETY: The page table won't be dropped before the RCU grace period
         // ends, so it outlives `'rcu`.
         let pt_ref = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
         // SAFETY: The node is locked and there are no other guards.
-        Some(unsafe { pt_ref.make_guard_unchecked(guard) })
-    }*/
+        Some(pt_ref.make_guard_unchecked(guard))
+        */
+
+    }
+
     /// Create a new entry at the node with guard.
     ///
     /// # Safety

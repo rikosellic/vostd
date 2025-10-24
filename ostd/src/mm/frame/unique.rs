@@ -4,6 +4,7 @@ use vstd::atomic::PermissionU64;
 use vstd::prelude::*;
 use vstd::simple_pptr;
 
+use aster_common::prelude::frame::*;
 use aster_common::prelude::*;
 
 use vstd_extra::cast_ptr::*;
@@ -11,9 +12,7 @@ use vstd_extra::ownership::*;
 
 use core::{marker::PhantomData, mem::ManuallyDrop, sync::atomic::Ordering};
 
-use super::{
-    meta::REF_COUNT_UNIQUE,
-};
+use super::meta::REF_COUNT_UNIQUE;
 use crate::mm::{Paddr, PagingConsts, PagingLevel};
 
 verus! {

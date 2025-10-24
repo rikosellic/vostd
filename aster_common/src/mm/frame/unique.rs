@@ -30,7 +30,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Inv for UniqueFrameOwner
         &&& self.slot_index == frame_to_index(meta_to_frame(self.meta_perm@.addr()))
         &&& self.slot_index < max_meta_slots()
         &&& (self.slot_index - FRAME_METADATA_RANGE().start) as usize % META_SLOT_SIZE() == 0
-        &&& self.meta_perm@.addr() < FRAME_METADATA_RANGE().start + MAX_NR_PAGES() * META_SLOT_SIZE()
+        &&& self.meta_perm@.addr() < FRAME_METADATA_RANGE().start + MAX_NR_PAGES()
+            * META_SLOT_SIZE()
     }
 }
 
@@ -44,16 +45,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> InvView for UniqueFrameO
     type V = UniqueFrameModel<M>;
 
     open spec fn view(&self) -> Self::V {
-        UniqueFrameModel {
-            meta: self.meta_own@@,
-        }
+        UniqueFrameModel { meta: self.meta_own@@ }
     }
 
-    proof fn view_preserves_inv(&self) { }
+    proof fn view_preserves_inv(&self) {
+    }
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
-
     pub open spec fn perm_inv(&self, perm: PointsTo<MetaSlot>) -> bool {
         &&& perm.is_init()
         &&& perm.value().storage.addr() == self.meta_perm@.addr()
@@ -61,8 +60,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
     }
 
     pub open spec fn global_inv(&self, regions: MetaRegionOwners) -> bool {
-        &&& regions.slots.contains_key(self.slot_index) ==> self.perm_inv(regions.slots[self.slot_index]@)
-        &&& regions.dropped_slots.contains_key(self.slot_index) ==> self.perm_inv(regions.dropped_slots[self.slot_index]@)
+        &&& regions.slots.contains_key(self.slot_index) ==> self.perm_inv(
+            regions.slots[self.slot_index]@,
+        )
+        &&& regions.dropped_slots.contains_key(self.slot_index) ==> self.perm_inv(
+            regions.dropped_slots[self.slot_index]@,
+        )
     }
 }
 
@@ -74,7 +77,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> OwnerOf for UniqueFrame<
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> ModelOf for UniqueFrame<M> { }
+impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> ModelOf for UniqueFrame<M> {
+
+}
 
 /*impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameModel<M> {
     pub open spec fn from_raw_spec(region: MetaRegionModel, paddr: Paddr) -> Self {
@@ -85,15 +90,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> ModelOf for UniqueFrame<
 }*/
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
-    pub fn from_raw_owner(owner: Tracked<M::Owner>,
-                            index: usize,
-                            perm: Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, M>>) -> Tracked<Self> {
-        Tracked(UniqueFrameOwner::<M> {
-            meta_own: owner,
-            meta_perm: perm,
-            slot_index: index,
-        })
+    pub fn from_raw_owner(
+        owner: Tracked<M::Owner>,
+        index: usize,
+        perm: Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, M>>,
+    ) -> Tracked<Self> {
+        Tracked(UniqueFrameOwner::<M> { meta_own: owner, meta_perm: perm, slot_index: index })
     }
 }
 
-}
+} // verus!

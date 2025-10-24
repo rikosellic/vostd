@@ -59,9 +59,11 @@ use untyped::{/*AnyUFrameMeta,*/ UFrame};
 use super::{PagingLevel, PAGE_SIZE};
 use crate::mm::{Paddr, Vaddr};
 
-use aster_common::prelude::*;
 use vstd_extra::cast_ptr::*;
 use vstd_extra::ownership::*;
+
+use aster_common::prelude::frame::*;
+use aster_common::prelude::*;
 
 verus! {
 
@@ -244,10 +246,29 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     }
 
     /// Borrows a reference from the given frame.
-    /*    pub fn borrow(&self) -> FrameRef<'_, FrameMeta> {
+    #[rustc_allow_incoherent_impl]
+    #[verus_spec(
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>
+    )]
+    pub fn borrow(&self) -> FrameRef<'_, M>
+        requires
+            old(regions).inv(),
+            self.paddr() % PAGE_SIZE() == 0,
+            self.paddr() < MAX_PADDR(),
+            !old(regions).slots.contains_key(self.index()),
+            old(regions).dropped_slots.contains_key(self.index()),
+            old(regions).dropped_slots[self.index()]@.pptr() == self.ptr,
+    {
+        assert(regions.slot_owners.contains_key(self.index()));
         // SAFETY: Both the lifetime and the type matches `self`.
-        unsafe { FrameRef::borrow_paddr(self.start_paddr()) }
-    }*/
+        #[verus_spec(with Tracked(regions.slot_owners.tracked_borrow(self.index())),
+                            Tracked(regions.dropped_slots.tracked_borrow(self.index()).borrow()))]
+        let paddr = self.start_paddr();
+
+        #[verus_spec(with Tracked(regions))]
+        FrameRef::borrow_paddr(paddr)
+    }
+
     /// Forgets the handle to the frame.
     ///
     /// This will result in the frame being leaked without calling the custom dropper.
@@ -261,12 +282,11 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     #[rustc_allow_incoherent_impl]
     pub fn into_raw(self) -> (res: Paddr)
         requires
-            FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr())
-                < FRAME_METADATA_RANGE().end,
-            old(regions).slots.contains_key(frame_to_index(meta_to_frame(self.ptr.addr()))),
-            !old(regions).dropped_slots.contains_key(
-                frame_to_index(meta_to_frame(self.ptr.addr())),
-            ),
+    //            FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr())
+    //                < FRAME_METADATA_RANGE().end,
+
+            old(regions).slots.contains_key(self.index()),
+            !old(regions).dropped_slots.contains_key(self.index()),
             old(regions).inv(),
         ensures
             res == meta_to_frame(self.ptr.addr()),
@@ -275,8 +295,9 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             forall|i: usize|
                 i != frame_to_index(self.ptr.addr()) ==> regions.slots[i] == old(regions).slots[i],
     {
-        let tracked owner = regions.slot_owners.tracked_borrow(self.ptr.addr());
-        let tracked perm = regions.slots.tracked_remove(self.ptr.addr());
+        assert(regions.slots[self.index()]@.addr() == self.paddr()) by { admit() };
+        let tracked owner = regions.slot_owners.tracked_borrow(self.index());
+        let tracked perm = regions.slots.tracked_remove(self.index());
 
         // TODO: implement ManuallyDrop
         // let this = ManuallyDrop::new(self);

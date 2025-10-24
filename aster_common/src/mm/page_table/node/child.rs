@@ -50,4 +50,17 @@ impl<C: PageTableConfig> Child<C> {
     }
 }
 
+/// A reference to the child of a page table node.
+#[rustc_has_incoherent_inherent_impls]
+pub enum ChildRef<'a, C: PageTableConfig> {
+    /// A child page table node.
+    PageTable(PageTableNodeRef<'a, C>),
+    /// Physical address of a mapped physical frame.
+    ///
+    /// It is associated with the virtual page property and the level of the
+    /// mapping node, which decides the size of the frame.
+    Frame(Paddr, PagingLevel, PageProperty),
+    None,
+}
+
 } // verus!

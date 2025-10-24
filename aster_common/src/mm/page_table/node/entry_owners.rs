@@ -8,10 +8,10 @@ use super::*;
 verus! {
 
 pub tracked struct EntryOwner<'rcu, C: PageTableConfig> {
-    pub node_own : NodeOwner<C>,
-    pub guard_perm : Tracked<PointsTo<PageTableGuard<'rcu, C>>>,
-    pub children_perm : Option<array_ptr::PointsTo<Entry<'rcu, C>, CONST_NR_ENTRIES>>,
-    pub slot_perm : Tracked<PointsTo<MetaSlot>>,
+    pub node_own: NodeOwner<C>,
+    pub guard_perm: Tracked<PointsTo<PageTableGuard<'rcu, C>>>,
+    pub children_perm: Option<array_ptr::PointsTo<Entry<'rcu, C>, CONST_NR_ENTRIES>>,
+    pub slot_perm: Tracked<PointsTo<MetaSlot>>,
 }
 
 impl<'rcu, C: PageTableConfig> Inv for EntryOwner<'rcu, C> {
@@ -20,13 +20,12 @@ impl<'rcu, C: PageTableConfig> Inv for EntryOwner<'rcu, C> {
         &&& self.guard_perm@.value().inner.inner.ptr == self.slot_perm@.pptr()
         &&& self.guard_perm@.value().inner.inner.wf(&self.node_own)
         &&& self.node_own.inv()
-
         &&& self.slot_perm@.is_init()
         &&& self.slot_perm@.value().storage == self.node_own.meta_perm@.points_to@.pptr()
         &&& self.node_own.meta_perm@.pptr().ptr.0 == self.slot_perm@.value().storage.addr()
         &&& self.node_own.meta_perm@.pptr().addr == self.slot_perm@.value().storage.addr()
-
-        &&& meta_to_frame(self.slot_perm@.addr()) < VMALLOC_BASE_VADDR() - LINEAR_MAPPING_BASE_VADDR()
+        &&& meta_to_frame(self.slot_perm@.addr()) < VMALLOC_BASE_VADDR()
+            - LINEAR_MAPPING_BASE_VADDR()
     }
 }
 
@@ -46,7 +45,8 @@ impl<'rcu, C: PageTableConfig> InvView for EntryOwner<'rcu, C> {
         unimplemented!()
     }
 
-    proof fn view_preserves_inv(&self) { }
+    proof fn view_preserves_inv(&self) {
+    }
 }
 
 impl<'rcu, C: PageTableConfig> OwnerOf for Entry<'rcu, C> {
@@ -59,4 +59,5 @@ impl<'rcu, C: PageTableConfig> OwnerOf for Entry<'rcu, C> {
         &&& self.node == owner.guard_perm@.pptr()
     }
 }
-}
+
+} // verus!

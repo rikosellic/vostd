@@ -3,6 +3,8 @@
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
+use aster_common::prelude::frame::*;
+use aster_common::prelude::page_table::*;
 use aster_common::prelude::*;
 
 use vstd_extra::ownership::*;
@@ -32,6 +34,7 @@ impl<C: PageTableConfig> Child<C> {
                 &&& slot_perm.unwrap()@.pptr() == self.get_node().unwrap().ptr
                 &&& slot_perm.unwrap()@.is_init()
                 &&& slot_perm.unwrap()@.value().wf(&slot_own.unwrap()@)
+                &&& slot_perm.unwrap()@.addr() == slot_own.unwrap()@.self_addr
             },
         ensures
             self is PageTable ==> res == self.into_pte_pt_spec(
@@ -99,20 +102,6 @@ impl<C: PageTableConfig> Child<C> {
     }
 }
 
-/// A reference to the child of a page table node.
-pub enum ChildRef<'a, C: PageTableConfig> {
-    /// A child page table node.
-    PageTable(PageTableNodeRef<'a, C>),
-    /// Physical address of a mapped physical frame.
-    ///
-    /// It is associated with the virtual page property and the level of the
-    /// mapping node, which decides the size of the frame.
-    Frame(Paddr, PagingLevel, PageProperty),
-    None,
-}
-
-} // verus!
-/* TODO: borrow_paddr
 impl<C: PageTableConfig> ChildRef<'_, C> {
     /// Converts a PTE to a child.
     ///
@@ -123,22 +112,33 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
     ///
     /// The provided level must be the same with the level of the page table
     /// node that contains this PTE.
-    pub(super) unsafe fn from_pte(pte: &C::E, level: PagingLevel) -> Self {
+    #[rustc_allow_incoherent_impl]
+    #[verus_spec(
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>
+    )]
+    pub fn from_pte(pte: &C::E, level: PagingLevel) -> Self
+        requires
+            pte.paddr() % PAGE_SIZE() == 0,
+            pte.paddr() < MAX_PADDR(),
+            !old(regions).slots.contains_key(frame_to_index(pte.paddr())),
+            old(regions).dropped_slots.contains_key(frame_to_index(pte.paddr())),
+    {
         if !pte.is_present() {
             return ChildRef::None;
         }
-
         let paddr = pte.paddr();
 
         if !pte.is_last(level) {
             // SAFETY: The caller ensures that the lifetime of the child is
             // contained by the residing node, and the physical address is
             // valid since the entry is present.
-            let node = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
-            debug_assert_eq!(node.level(), level - 1);
+            #[verus_spec(with Tracked(regions))]
+            let node = PageTableNodeRef::borrow_paddr(paddr);
+            //            debug_assert_eq!(node.level(), level - 1);
             return ChildRef::PageTable(node);
         }
-
         ChildRef::Frame(paddr, level, pte.prop())
     }
-}*/
+}
+
+} // verus!

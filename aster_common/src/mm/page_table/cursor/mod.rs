@@ -1,16 +1,21 @@
-pub mod model;
-
+//pub mod model;
 use vstd::prelude::*;
+
+use vstd::simple_pptr::*;
 
 use core::marker::PhantomData;
 use core::ops::Range;
 
-use crate::page_table::node::entry::PageTableGuard;
-use crate::prelude::*;
+use super::*;
 
-use model::ConcreteCursor;
+//use model::ConcreteCursor;
 
 verus! {
+
+/// The state of virtual pages represented by a page table.
+///
+/// This is the return type of the [`Cursor::query`] method.
+pub type PagesState<C> = (Range<Vaddr>, Option<<C as PageTableConfig>::Item>);
 
 /// The cursor for traversal over the page table.
 ///
@@ -20,14 +25,14 @@ verus! {
 /// A cursor is able to move to the next slot, to read page properties,
 /// and even to jump to a virtual address directly.
 #[rustc_has_incoherent_inherent_impls]
-pub struct Cursor<'rcu, C: PageTableConfig> {
+pub struct Cursor<'rcu, C: PageTableConfig, A: InAtomicMode> {
     /// The current path of the cursor.
     ///
     /// The level 1 page table lock guard is at index 0, and the level N page
     /// table lock guard is at index N - 1.
-    pub path: [Option<PageTableGuard<'rcu, C>>; MAX_NR_LEVELS()],
+    pub path: [Option<PPtr<PageTableGuard<'rcu, C>>>; MAX_NR_LEVELS()],
     /// The cursor should be used in a RCU read side critical section.
-    //    rcu_guard: &'rcu dyn InAtomicMode,
+    pub rcu_guard: &'rcu A,
     /// The level of the page table that the cursor currently points to.
     pub level: PagingLevel,
     /// The top-most level that the cursor is allowed to access.
@@ -41,16 +46,30 @@ pub struct Cursor<'rcu, C: PageTableConfig> {
     pub _phantom: PhantomData<&'rcu PageTable<C>>,
 }
 
-pub enum PageTableItem {
-    NotMapped { va: Vaddr, len: usize },
-    Mapped { va: Vaddr, page: DynPage, prop: PageProperty },
-    PageTableNode { page: DynPage },
-    #[allow(dead_code)]
-    MappedUntracked { va: Vaddr, pa: Paddr, len: usize, prop: PageProperty },
+/// The cursor of a page table that is capable of map, unmap or protect pages.
+///
+/// It has all the capabilities of a [`Cursor`], which can navigate over the
+/// page table corresponding to the address range. A virtual address range
+/// in a page table can only be accessed by one cursor, regardless of the
+/// mutability of the cursor.
+#[rustc_has_incoherent_inherent_impls]
+pub struct CursorMut<'rcu, C: PageTableConfig, A: InAtomicMode> {
+    pub inner: Cursor<'rcu, C, A>,
 }
 
-} // verus!
-verus! {
+impl<C: PageTableConfig, A: InAtomicMode> Iterator for Cursor<'_, C, A> {
+    type Item = PagesState<C>;
+
+    #[verifier::external_body]
+    fn next(&mut self) -> Option<Self::Item> {
+        unimplemented!()/*  let result = self.query();
+        if result.is_ok() {
+            self.move_forward();
+        }
+        result.ok()*/
+
+    }
+}
 
 pub open spec fn page_size_spec(level: PagingLevel) -> usize {
     PAGE_SIZE() << (nr_subpage_per_huge::<PagingConsts>().ilog2() * (level - 1))
@@ -77,7 +96,7 @@ pub const fn align_down(x: usize, align: usize) -> (res: usize)
     res
 }
 
-impl<'a, C: PageTableConfig> Cursor<'a, C> {
+impl<'a, C: PageTableConfig, A: InAtomicMode> Cursor<'a, C, A> {
     /*    #[rustc_allow_incoherent_impl]
     pub open spec fn relate_locked_region(self, model: ConcreteCursor) -> bool
         recommends
@@ -97,7 +116,7 @@ impl<'a, C: PageTableConfig> Cursor<'a, C> {
             model.locked_subtree@.is_leaf() || barrier_start_path@.index(barrier_lv)
                 != barrier_end_path@.index(barrier_lv)
         }
-    }*/
+    }
     #[rustc_allow_incoherent_impl]
     pub open spec fn relate(self, model: ConcreteCursor) -> bool
         recommends
@@ -223,7 +242,8 @@ impl<'a, C: PageTableConfig> Cursor<'a, C> {
 
         self.va = next_va;
 
-    }
+    }*/
+
 }
 
 } // verus!
