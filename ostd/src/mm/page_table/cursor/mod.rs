@@ -205,9 +205,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         with Tracked(entry_own): Tracked<EntryOwner<C>>
     )]
     #[verifier::external_body]
-    fn find_next_impl(&mut self, len: usize, find_unmap_subtree: bool, split_huge: bool) -> Option<
-        Vaddr,
-    > {
+    fn find_next_impl(&mut self, len: usize, find_unmap_subtree: bool, split_huge: bool) -> Option<Vaddr> {
         //        assert_eq!(len % C::BASE_PAGE_SIZE(), 0);
         let end = self.va + len;
         //        assert!(end <= self.barrier_va.end);
@@ -402,10 +400,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     /// depending on the access method.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn new(pt: &'rcu PageTable<C>, guard: &'rcu A, va: &Range<Vaddr>) -> Result<
-        Self,
-        PageTableError,
-    > {
+    pub fn new(pt: &'rcu PageTable<C>, guard: &'rcu A, va: &Range<Vaddr>) -> Result<Self, PageTableError> {
         Cursor::new(pt, guard, va).map(|inner| Self { inner })
     }
 
