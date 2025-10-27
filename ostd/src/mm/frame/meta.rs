@@ -56,12 +56,12 @@ use crate::{
 };
 
 /// The maximum number of bytes of the metadata of a frame.
-pub const FRAME_METADATA_MAX_SIZE: usize = META_SLOT_SIZE()
+pub const FRAME_METADATA_MAX_SIZE: usize = META_SLOT_SIZE
     - size_of::<AtomicU64>()
 //    - size_of::<FrameMetaVtablePtr>()
     - size_of::<AtomicU64>();
 /// The maximum alignment in bytes of the metadata of a frame.
-pub const FRAME_METADATA_MAX_ALIGN: usize = META_SLOT_SIZE();
+pub const FRAME_METADATA_MAX_ALIGN: usize = META_SLOT_SIZE;
 
 //const META_SLOT_SIZE: usize = 64;
 
