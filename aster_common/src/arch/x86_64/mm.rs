@@ -25,19 +25,13 @@ pub MAX_PADDR [MAX_PADDR_SPEC, CONST_MAX_PADDR]: usize = 0x8000_0000);
 extern_const!(
 pub MAX_NR_PAGES [MAX_NR_PAGES_SPEC, CONST_MAX_NR_PAGES]: u64 = (CONST_MAX_PADDR / CONST_PAGE_SIZE) as u64);
 
-extern_const!(
 /// The maximum virtual address of user space (non inclusive).
-pub MAX_USERSPACE_VADDR
-    [MAX_USERSPACE_VADDR_SPEC, CONST_MAX_USERSPACE_VADDR] : Vaddr =
-    0x0000_8000_0000_0000_usize - CONST_PAGE_SIZE);
+pub const MAX_USERSPACE_VADDR: Vaddr = 0x0000_8000_0000_0000_usize - CONST_PAGE_SIZE;
 
-extern_const!(
 /// The kernel address space.
 /// There are the high canonical addresses defined in most 48-bit width
 /// architectures.
-pub KERNEL_VADDR_RANGE
-    [KERNEL_VADDR_RANGE_SPEC, CONST_KERNEL_VADDR_RANGE] : Range<Vaddr> =
-    0xffff_8000_0000_0000_usize..0xffff_ffff_ffff_0000_usize);
+pub const KERNEL_VADDR_RANGE: Range<Vaddr> = 0xffff_8000_0000_0000_usize..0xffff_ffff_ffff_0000_usize;
 
 verus! {
 
