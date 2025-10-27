@@ -282,8 +282,8 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
     #[rustc_allow_incoherent_impl]
     pub fn into_raw(self) -> (res: Paddr)
         requires
-    //            FRAME_METADATA_RANGE().start <= frame_to_index(self.ptr.addr())
-    //                < FRAME_METADATA_RANGE().end,
+    //            FRAME_METADATA_RANGE.start <= frame_to_index(self.ptr.addr())
+    //                < FRAME_METADATA_RANGE.end,
 
             old(regions).slots.contains_key(self.index()),
             !old(regions).dropped_slots.contains_key(self.index()),

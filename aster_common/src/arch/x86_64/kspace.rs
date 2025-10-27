@@ -139,7 +139,7 @@ pub proof fn lemma_mod_0_add(a: int, b: int, m: int)
 pub broadcast proof fn lemma_meta_frame_vaddr_properties(meta: Vaddr)
     requires
         meta % META_SLOT_SIZE == 0,
-        FRAME_METADATA_RANGE().start <= meta < FRAME_METADATA_RANGE().start + MAX_NR_PAGES()
+        FRAME_METADATA_RANGE.start <= meta < FRAME_METADATA_RANGE.start + MAX_NR_PAGES()
             * META_SLOT_SIZE,
     ensures
         LINEAR_MAPPING_BASE_VADDR() <= #[trigger] paddr_to_vaddr(meta_to_frame(meta))

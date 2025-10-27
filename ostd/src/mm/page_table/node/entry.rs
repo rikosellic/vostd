@@ -155,8 +155,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             !old(regions).slots.contains_key(frame_to_index(old(self).pte.paddr())),
             old(regions).dropped_slots.contains_key(frame_to_index(old(self).pte.paddr())),
             new_child is PageTable,
-            FRAME_METADATA_RANGE().start <= frame_to_index(new_child.get_node().unwrap().ptr.addr())
-                < FRAME_METADATA_RANGE().end,
+            FRAME_METADATA_RANGE.start <= frame_to_index(new_child.get_node().unwrap().ptr.addr())
+                < FRAME_METADATA_RANGE.end,
     {
         /*        match &new_child {
             Child::PageTable(node) => {

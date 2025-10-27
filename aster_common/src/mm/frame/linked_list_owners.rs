@@ -105,7 +105,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedListOwner<M> {
         &&& self.perms[i]@.points_to@.addr() == self.list[i].paddr
         &&& self.perms[i]@.wf()
         &&& self.perms[i]@.addr() % META_SLOT_SIZE == 0
-        &&& FRAME_METADATA_RANGE().start <= self.perms[i]@.addr() < FRAME_METADATA_RANGE().start
+        &&& FRAME_METADATA_RANGE.start <= self.perms[i]@.addr() < FRAME_METADATA_RANGE.start
             + MAX_NR_PAGES() * META_SLOT_SIZE
         &&& self.perms[i]@.is_init()
         &&& self.perms[i]@.value().wf(&self.list[i])

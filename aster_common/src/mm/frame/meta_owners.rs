@@ -119,7 +119,7 @@ impl Inv for MetaSlotOwner {
             &&& self.vtable_ptr@.is_uninit()
             &&& self.in_list@.value() == 0
         }
-        &&& FRAME_METADATA_RANGE().start <= self.self_addr < FRAME_METADATA_RANGE().end
+        &&& FRAME_METADATA_RANGE.start <= self.self_addr < FRAME_METADATA_RANGE.end
         &&& self.self_addr % META_SLOT_SIZE == 0
     }
 }
