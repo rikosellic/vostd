@@ -17,7 +17,7 @@ pub tracked struct OwnerInTree<'rcu, C: PageTableConfig> {
 }
 
 impl<'rcu, C: PageTableConfig> Inv for OwnerInTree<'rcu, C> {
-    open spec fn inv(&self) -> bool {
+    open spec fn inv(self) -> bool {
         match self.tree_node {
             Some(owner) => owner.inv(),
             None => true,
@@ -56,7 +56,7 @@ impl<'rcu, C: PageTableConfig> OwnerAsTreeNode<'rcu, C> {
                 &&& self.inner.value.tree_node.unwrap().children_perm.unwrap().is_init(i as int)
                 &&& self.inner.children[i as int].unwrap().value.tree_node is Some
                 &&& self.inner.value.tree_node.unwrap().children_perm.unwrap().opt_value()[i as int].value().wf(
-                &self.inner.children[i as int].unwrap().value.tree_node.unwrap())
+                self.inner.children[i as int].unwrap().value.tree_node.unwrap())
             }
     }
 }
