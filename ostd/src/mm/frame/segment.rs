@@ -83,7 +83,7 @@ impl<M: AnyFrameMeta> Segment<M> {
     /// It panics if the range is empty.
     pub fn from_unused<F>(range: Range<Paddr>, mut metadata_fn: F) -> Result<Self, GetFrameError>
     where
-        F: FnMut(Paddr) -> M,
+        F: FnMut(Paddr) -> M, // TODO: verus does not support `FnMut` well, replace with `FnOnce` (see `PageTable::Node::Entry::protect`)
     {
         if range.start % PAGE_SIZE != 0 || range.end % PAGE_SIZE != 0 {
             return Err(GetFrameError::NotAligned);
@@ -100,7 +100,8 @@ impl<M: AnyFrameMeta> Segment<M> {
         };
         for paddr in range.step_by(PAGE_SIZE) {
             let frame = Frame::<M>::from_unused(paddr, metadata_fn(paddr))?;
-            let _ = ManuallyDrop::new(frame);
+            // TODO: `ManuallyDrop` causes runtime crashes; comment it out for now, but later we'll use the `vstd_extra` implementation
+            // let _ = ManuallyDrop::new(frame);
             segment.range.end = paddr + PAGE_SIZE;
         }
         Ok(segment)
@@ -149,6 +150,7 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
     /// The function panics if the offset is out of bounds, at either ends, or
     /// not base-page-aligned.
     pub fn split(self, offset: usize) -> (Self, Self) {
+        // NOTE: in general we prefer to fold runtime assertions into preconditions rather than try to model panics
         assert!(offset % PAGE_SIZE == 0);
         assert!(0 < offset && offset < self.size());
 
@@ -196,6 +198,8 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
     }
 
     /// Forgets the [`Segment`] and gets a raw range of physical addresses.
+    // NOTE: forgotten objects have their `PointsTo` perms removed from the `slots` field of MetaRegionOwners
+    // and added to the `dropped_slots` so that they can be restored later.
     pub(crate) fn into_raw(self) -> Range<Paddr> {
         let range = self.range.clone();
         let _ = ManuallyDrop::new(self);
@@ -214,6 +218,10 @@ impl<M: AnyFrameMeta + ?Sized> From<Frame<M>> for Segment<M> {
     }
 }
 
+// NOTE: impls for standard traits like `Iterator` need to live in `aster_common`. Last I checked there were also
+// limitations on verifying them, but the `verus_spec` attribute should help with this. Worst-case scenario we may need
+// to verify an equivalent "local" version of `next` outside of the trait impl, and separately use the `assume_specification`
+// attribute for the trait version.
 impl<M: AnyFrameMeta + ?Sized> Iterator for Segment<M> {
     type Item = Frame<M>;
 
@@ -232,6 +240,8 @@ impl<M: AnyFrameMeta + ?Sized> Iterator for Segment<M> {
     }
 }
 
+/*
+Don't worry about `dyn` stuff for now
 impl<M: AnyFrameMeta> From<Segment<M>> for Segment<dyn AnyFrameMeta> {
     fn from(seg: Segment<M>) -> Self {
         let seg = ManuallyDrop::new(seg);
@@ -241,6 +251,7 @@ impl<M: AnyFrameMeta> From<Segment<M>> for Segment<dyn AnyFrameMeta> {
         }
     }
 }
+
 
 impl<M: AnyFrameMeta> TryFrom<Segment<dyn AnyFrameMeta>> for Segment<M> {
     type Error = Segment<dyn AnyFrameMeta>;
@@ -304,3 +315,4 @@ impl TryFrom<Segment<dyn AnyFrameMeta>> for USegment {
         Ok(unsafe { core::mem::transmute::<Segment<dyn AnyFrameMeta>, USegment>(seg) })
     }
 }
+*/
