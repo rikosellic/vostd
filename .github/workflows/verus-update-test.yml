@@ -1,0 +1,70 @@
+name: Run Verus Update Test
+
+on:
+  repository_dispatch:
+    types: [verus-update-test]
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.branch }}
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt update -qq
+          sudo apt install -y build-essential unzip pkg-config libssl-dev llvm
+
+      - name: Run tests on main branch
+        run: |
+          echo "=== Running tests on main branch ==="
+          git fetch origin main
+          git checkout main
+          cargo xtask bootstrap
+          cargo xtask update --test
+          VOSTD_VERIFY_PARALLEL=1 make 2>&1 | tee verus_main.log
+          if grep -q "error:" verus_main.log; then
+            echo "::error title=Main Branch Verification Failed::Errors found in main branch"
+            grep "error:" verus_main.log | while read line; do
+              echo "::error::$line"
+            done
+            exit 1
+          else
+            echo "✅ Main branch verification passed!"
+
+      - name: Run tests on phaseII/verified branch
+        run: |
+          echo "=== Running tests on phaseII/verified branch ==="
+          git fetch origin phaseII/verified
+          git checkout phaseII/verified
+          cargo clean
+          cargo dv bootstrap --restart
+          cargo dv bootstrap --upgrade --test_branch
+          make 2>&1 | tee verus_phaseII.log
+          if grep -q "error:" verus_phaseII.log; then
+            echo "::error title=PhaseII Branch Verification Failed::Errors found in phaseII/verified"
+            grep "error:" verus_phaseII.log | while read line; do
+              echo "::error::$line"
+            done
+            exit 1
+          else
+            echo "✅ PhaseII branch verification passed!"
+
+      - name: Cleanup logs
+        if: always()
+        run: rm -f verus_main.log verus_phaseII.log
+
+      - name: Dispatch back to fork for promotion
+        if: success()
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.VERUS_TEST_TOKEN }}
+          repository: asterinas/verus          
+          event-type: verus-update-test-success
+          client-payload: '{"branch":"update-test"}'
