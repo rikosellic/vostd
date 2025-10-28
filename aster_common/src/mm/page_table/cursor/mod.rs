@@ -46,6 +46,11 @@ pub struct Cursor<'rcu, C: PageTableConfig, A: InAtomicMode> {
     pub _phantom: PhantomData<&'rcu PageTable<C>>,
 }
 
+#[rustc_has_incoherent_inherent_impls]
+pub tracked struct CursorModel {
+    pub path: TreePath<CONST_NR_ENTRIES>,
+}
+
 /// The cursor of a page table that is capable of map, unmap or protect pages.
 ///
 /// It has all the capabilities of a [`Cursor`], which can navigate over the

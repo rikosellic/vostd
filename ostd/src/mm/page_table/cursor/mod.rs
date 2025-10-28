@@ -301,7 +301,12 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     /// If reached the end of the current page table node, it (recursively)
     /// moves itself up to the next page of the parent page.
     #[rustc_allow_incoherent_impl]
-    fn move_forward(&mut self) {
+    #[verus_spec(
+        with Tracked(owner): Tracked<CursorOwner>
+    )]
+    fn move_forward(&mut self)
+        
+    {
         let next_va = self.cur_va_range().end;
         while self.level < self.guard_level && pte_index::<C>(next_va, self.level) == 0
             decreases self.guard_level - self.level,
