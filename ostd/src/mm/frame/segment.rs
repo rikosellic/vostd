@@ -158,7 +158,7 @@ impl<M: AnyFrameMeta> Segment<M> {
             old(regions).inv(),
             range.start % PAGE_SIZE() == 0,
             range.end % PAGE_SIZE() == 0,
-            range.start < range.end <= MAX_PADDR(),
+            range.start < range.end < MAX_PADDR(),
             forall|paddr_in: Paddr|
                 (range.start <= paddr_in < range.end && paddr_in % PAGE_SIZE() == 0) ==> {
                     &&& metadata_fn.requires((paddr_in,))

@@ -108,7 +108,7 @@ impl MetaRegionOwners {
     pub open spec fn paddr_range_in_region(self, range: Range<Paddr>) -> bool
         recommends
             self.inv(),
-            range.start < range.end <= MAX_PADDR(),
+            range.start < range.end < MAX_PADDR(),
     {
         forall|paddr: Paddr|
             (range.start <= paddr < range.end && paddr % PAGE_SIZE() == 0)
@@ -118,7 +118,7 @@ impl MetaRegionOwners {
     pub open spec fn paddr_range_in_dropped_region(self, range: Range<Paddr>) -> bool
         recommends
             self.inv(),
-            range.start < range.end <= MAX_PADDR(),
+            range.start < range.end < MAX_PADDR(),
     {
         forall|paddr: Paddr|
             (range.start <= paddr < range.end && paddr % PAGE_SIZE() == 0)
