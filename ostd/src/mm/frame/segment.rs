@@ -4,12 +4,6 @@ use vstd::prelude::*;
 
 use core::{fmt::Debug, mem::ManuallyDrop, ops::Range};
 
-// use super::{
-//     inc_frame_ref_count,
-//     meta::{AnyFrameMeta, GetFrameError},
-//     Frame,
-// };
-// use crate::mm::{AnyUFrameMeta, Paddr, PAGE_SIZE()};
 use crate::mm::frame::inc_frame_ref_count;
 use crate::mm::frame::untyped::AnyUFrameMeta;
 
@@ -19,34 +13,6 @@ use aster_common::prelude::frame::*;
 use aster_common::prelude::*;
 
 verus! {
-
-/// A contiguous range of homogeneous physical memory frames.
-///
-/// This is a handle to multiple contiguous frames. It will be more lightweight
-/// than owning an array of frame handles.
-///
-/// The ownership is achieved by the reference counting mechanism of frames.
-/// When constructing a [`Segment`], the frame handles are created then
-/// forgotten, leaving the reference count. When dropping a it, the frame
-/// handles are restored and dropped, decrementing the reference count.
-///
-/// All the metadata of the frames are homogeneous, i.e., they are of the same
-/// type.
-#[repr(transparent)]
-pub struct Segment<M: AnyFrameMeta + ?Sized> {
-    pub range: Range<Paddr>,
-    pub _marker: core::marker::PhantomData<M>,
-}
-
-impl<M: AnyFrameMeta + ?Sized> Inv for Segment<M> {
-    /// The invariant of a [`Segment`].
-    #[verifier::inline]
-    open spec fn inv(&self) -> bool {
-        &&& self.range.start % PAGE_SIZE() == 0
-        &&& self.range.end % PAGE_SIZE() == 0
-        &&& self.range.start < self.range.end <= MAX_PADDR()
-    }
-}
 
 // impl<M: AnyFrameMeta + ?Sized> Debug for Segment<M> {
 //     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -93,6 +59,7 @@ pub type USegment = Segment<dyn AnyUFrameMeta>;
 //     }
 // }
 impl<M: AnyFrameMeta> Segment<M> {
+    #[rustc_allow_incoherent_impl]
     #[verifier::inline]
     pub open spec fn start_paddr_spec(&self) -> Paddr
         recommends
@@ -101,6 +68,7 @@ impl<M: AnyFrameMeta> Segment<M> {
         self.range.start
     }
 
+    #[rustc_allow_incoherent_impl]
     #[verifier::inline]
     pub open spec fn end_paddr_spec(&self) -> Paddr
         recommends
@@ -109,6 +77,7 @@ impl<M: AnyFrameMeta> Segment<M> {
         self.range.end
     }
 
+    #[rustc_allow_incoherent_impl]
     #[verifier::inline]
     pub open spec fn size_spec(&self) -> usize
         recommends
@@ -117,20 +86,22 @@ impl<M: AnyFrameMeta> Segment<M> {
         (self.range.end - self.range.start) as usize
     }
 
-    #[verifier::inline]
-    pub open spec fn in_regions(&self, regions: &MetaRegionOwners) -> bool
+    #[rustc_allow_incoherent_impl]
+    pub open spec fn split_spec(self, offset: usize) -> (Self, Self)
         recommends
-            regions.inv(),
             self.inv(),
+            offset % PAGE_SIZE() == 0,
+            0 < offset < self.size_spec(),
     {
-        forall|paddr: Paddr|
-            self.start_paddr_spec() <= paddr < self.end_paddr_spec() && paddr % PAGE_SIZE() == 0
-                ==> {
-                #[trigger] regions.slots.contains_key(frame_to_index(paddr))
-            }
+        let at = (self.range.start + offset) as usize;
+        (
+            Self { range: self.range.start..at, _marker: core::marker::PhantomData },
+            Self { range: at..self.range.end, _marker: core::marker::PhantomData },
+        )
     }
 
     /// Gets the start physical address of the contiguous frames.
+    #[rustc_allow_incoherent_impl]
     #[inline(always)]
     #[verifier::when_used_as_spec(start_paddr_spec)]
     pub fn start_paddr(&self) -> (res: Paddr)
@@ -143,6 +114,7 @@ impl<M: AnyFrameMeta> Segment<M> {
     }
 
     /// Gets the end physical address of the contiguous frames.
+    #[rustc_allow_incoherent_impl]
     #[inline(always)]
     #[verifier::when_used_as_spec(end_paddr_spec)]
     pub fn end_paddr(&self) -> (res: Paddr)
@@ -155,6 +127,7 @@ impl<M: AnyFrameMeta> Segment<M> {
     }
 
     /// Gets the length in bytes of the contiguous frames.
+    #[rustc_allow_incoherent_impl]
     #[inline(always)]
     #[verifier::when_used_as_spec(size_spec)]
     pub fn size(&self) -> (res: usize)
@@ -175,6 +148,7 @@ impl<M: AnyFrameMeta> Segment<M> {
     /// It returns an error if:
     ///  - any of the frames cannot be created with a specific reason.
     ///
+    #[rustc_allow_incoherent_impl]
     #[verus_spec(
         with Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
@@ -184,7 +158,7 @@ impl<M: AnyFrameMeta> Segment<M> {
             old(regions).inv(),
             range.start % PAGE_SIZE() == 0,
             range.end % PAGE_SIZE() == 0,
-            range.start < range.end <= MAX_PADDR(),
+            range.start < range.end < MAX_PADDR(),
             forall|paddr_in: Paddr|
                 (range.start <= paddr_in < range.end && paddr_in % PAGE_SIZE() == 0) ==> {
                     &&& metadata_fn.requires((paddr_in,))
@@ -196,6 +170,7 @@ impl<M: AnyFrameMeta> Segment<M> {
                     &&& old(regions).slots.contains_key(frame_to_index(paddr_out))
                 },
         ensures
+            regions.inv(),
     {
         // Construct a segment early to recycle previously forgotten frames if
         // the subsequent operations fails in the middle.
@@ -251,16 +226,23 @@ impl<M: AnyFrameMeta> Segment<M> {
     ///
     /// The function panics if the offset is out of bounds, at either ends, or
     /// not base-page-aligned.
-    #[verus_spec(
+    // #[verifier::when_used_as_spec(split_spec)] // <- verus complains about mismatched param numbers
+    #[rustc_allow_incoherent_impl]
+    #[verus_spec(res =>
         with Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
-    pub fn split(self, offset: usize) -> (Self, Self)
+    pub fn split(self, offset: usize) -> (res: (Self, Self))
         requires
+            old(regions).inv(),
+            old(regions).paddr_range_in_region(self.range),
             self.inv(),
-            self.in_regions(old(regions)),
             offset % PAGE_SIZE() == 0,
             0 < offset < self.size(),
         ensures
+            regions.inv(),
+            regions.paddr_range_in_region(res.0.range),
+            regions.paddr_range_in_region(res.1.range),
+            res == self.split_spec(offset),
     {
         // NOTE: in general we prefer to fold runtime assertions into preconditions rather than try to model panics
         let at = self.range.start + offset;
@@ -269,7 +251,7 @@ impl<M: AnyFrameMeta> Segment<M> {
             Self { range: at..self.range.end, _marker: core::marker::PhantomData },
         );
 
-         // TODO: `ManuallyDrop` causes runtime crashes; comment it out for now, but later we'll use the `vstd_extra` implementation
+        // TODO: `ManuallyDrop` causes runtime crashes; comment it out for now, but later we'll use the `vstd_extra` implementation
         // let _ = ManuallyDrop::new(self);
 
         res
@@ -278,83 +260,127 @@ impl<M: AnyFrameMeta> Segment<M> {
     /// Forgets the [`Segment`] and gets a raw range of physical addresses.
     // NOTE: forgotten objects have their `PointsTo` perms removed from the `slots` field of MetaRegionOwners
     // and added to the `dropped_slots` so that they can be restored later.
+    #[rustc_allow_incoherent_impl]
     #[verus_spec(
         with Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
     pub(crate) fn into_raw(self) -> (res: Range<Paddr>)
         requires
             old(regions).inv(),
-            self.in_regions(old(regions)),
+            old(regions).paddr_range_in_region(self.range),
             self.inv(),
-        ensures
     {
         let range = self.range.clone();
-        let _ = ManuallyDrop::new(self);
+        // TODO: `ManuallyDrop` causes runtime crashes; comment it out for now, but later we'll use the `vstd_extra` implementation
+        // let _ = ManuallyDrop::new(self);
         range
+    }
+
+    /// Restores the [`Segment`] from the raw physical address range.
+    ///
+    /// # Safety
+    ///
+    /// The range must be a forgotten [`Segment`] that matches the type `M`.
+    /// It could be manually forgotten by [`core::mem::forget`],
+    /// [`ManuallyDrop`], or [`Self::into_raw`].
+    #[rustc_allow_incoherent_impl]
+    #[verus_spec(res =>
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>
+    )]
+    pub(crate) unsafe fn from_raw(range: Range<Paddr>) -> (res: Self)
+        requires
+            old(regions).inv(),
+            old(regions).paddr_range_in_dropped_region(range),
+            range.start % PAGE_SIZE() == 0,
+            range.end % PAGE_SIZE() == 0,
+            range.start < range.end < MAX_PADDR(),
+        ensures
+            regions.inv(),
+            res.inv(),
+            res.range == range,
+            regions.paddr_range_in_dropped_region(res.range),
+    {
+        Self { range, _marker: core::marker::PhantomData }
+    }
+
+    /// Gets an extra handle to the frames in the byte offset range.
+    ///
+    /// The sliced byte offset range in indexed by the offset from the start of
+    /// the contiguous frames. The resulting frames holds extra reference counts.
+    ///
+    /// # Panics
+    ///
+    /// The function panics if the byte offset range is out of bounds, or if
+    /// any of the ends of the byte offset range is not base-page aligned.
+    #[rustc_allow_incoherent_impl]
+    #[verus_spec(res =>
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>
+    )]
+    pub fn slice(&self, range: &Range<Paddr>) -> (res: Self)
+        requires
+            old(regions).inv(),
+            old(regions).paddr_range_in_region(self.range),
+            self.inv(),
+            range.start % PAGE_SIZE() == 0,
+            range.end % PAGE_SIZE() == 0,
+            self.range.start + range.start <= self.range.start + range.end <= self.range.end,
+    {
+        let start = self.range.start + range.start;
+        let end = self.range.start + range.end;
+
+        let mut i = 0;
+        let addr_len = (end - start) / PAGE_SIZE();
+        while i < addr_len
+            invariant
+                start % PAGE_SIZE() == 0,
+                end % PAGE_SIZE() == 0,
+                start + i * PAGE_SIZE() <= end,
+                i <= addr_len,
+                addr_len == (end - start) / PAGE_SIZE() as int,
+            decreases addr_len - i,
+        {
+            let paddr = start + i * PAGE_SIZE();
+            // SAFETY: We already have reference counts for the frames since
+            // for each frame there would be a forgotten handle when creating
+            // the `Segment` object.
+            // unsafe { inc_frame_ref_count(paddr); }
+            i += 1;
+        }
+
+        Self { range: start..end, _marker: core::marker::PhantomData }
+    }
+
+    #[rustc_allow_incoherent_impl]
+    #[verus_spec(res =>
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>
+    )]
+    pub fn next(&mut self) -> (res: Option<Frame<M>>)
+        requires
+            old(regions).inv(),
+            old(self).inv(),
+            old(regions).dropped_slots.contains_key(frame_to_index(old(self).range.start)),
+            !old(regions).slots.contains_key(frame_to_index(old(self).range.start)),
+    {
+        if self.range.start < self.range.end {
+            // SAFETY: each frame in the range would be a handle forgotten
+            // when creating the `Segment` object.
+            let frame = unsafe {
+                #[verus_spec(with Tracked(regions))]
+                Frame::<M>::from_raw(self.range.start)
+            };
+            self.range.start = self.range.start + PAGE_SIZE();
+            Some(frame)
+        } else {
+            None
+        }
     }
 }
 
-//     /// Restores the [`Segment`] from the raw physical address range.
-//     ///
-//     /// # Safety
-//     ///
-//     /// The range must be a forgotten [`Segment`] that matches the type `M`.
-//     /// It could be manually forgotten by [`core::mem::forget`],
-//     /// [`ManuallyDrop`], or [`Self::into_raw`].
-//     pub(crate) unsafe fn from_raw(range: Range<Paddr>) -> Self {
-//         debug_assert_eq!(range.start % PAGE_SIZE(), 0);
-//         debug_assert_eq!(range.end % PAGE_SIZE(), 0);
-//         Self { range, _marker: core::marker::PhantomData }
-//     }
-// }
-// impl<M: AnyFrameMeta + ?Sized> Segment<M> {
-//     /// Gets an extra handle to the frames in the byte offset range.
-//     ///
-//     /// The sliced byte offset range in indexed by the offset from the start of
-//     /// the contiguous frames. The resulting frames holds extra reference counts.
-//     ///
-//     /// # Panics
-//     ///
-//     /// The function panics if the byte offset range is out of bounds, or if
-//     /// any of the ends of the byte offset range is not base-page aligned.
-//     pub fn slice(&self, range: &Range<usize>) -> Self {
-//         assert!(range.start % PAGE_SIZE() == 0 && range.end % PAGE_SIZE() == 0);
-//         let start = self.range.start + range.start;
-//         let end = self.range.start + range.end;
-//         assert!(start <= end && end <= self.range.end);
-//         for paddr in (start..end).step_by(PAGE_SIZE()) {
-//             // SAFETY: We already have reference counts for the frames since
-//             // for each frame there would be a forgotten handle when creating
-//             // the `Segment` object.
-//             unsafe { inc_frame_ref_count(paddr) };
-//         }
-//         Self { range: start..end, _marker: core::marker::PhantomData }
-//     }
 // impl<M: AnyFrameMeta + ?Sized> From<Frame<M>> for Segment<M> {
 //     fn from(frame: Frame<M>) -> Self {
 //         let pa = frame.start_paddr();
 //         let _ = ManuallyDrop::new(frame);
 //         Self { range: pa..pa + PAGE_SIZE(), _marker: core::marker::PhantomData }
-//     }
-// }
-// // NOTE: impls for standard traits like `Iterator` need to live in `aster_common`. Last I checked there were also
-// // limitations on verifying them, but the `verus_spec` attribute should help with this. Worst-case scenario we may need
-// // to verify an equivalent "local" version of `next` outside of the trait impl, and separately use the `assume_specification`
-// // attribute for the trait version.
-// impl<M: AnyFrameMeta + ?Sized> Iterator for Segment<M> {
-//     type Item = Frame<M>;
-//     fn next(&mut self) -> Option<Self::Item> {
-//         if self.range.start < self.range.end {
-//             // SAFETY: each frame in the range would be a handle forgotten
-//             // when creating the `Segment` object.
-//             let frame = unsafe { Frame::<M>::from_raw(self.range.start) };
-//             self.range.start += PAGE_SIZE();
-//             // The end cannot be non-page-aligned.
-//             debug_assert!(self.range.start <= self.range.end);
-//             Some(frame)
-//         } else {
-//             None
-//         }
 //     }
 // }
 /*
