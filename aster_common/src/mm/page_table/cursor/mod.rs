@@ -2,6 +2,7 @@
 use vstd::prelude::*;
 
 use vstd::simple_pptr::*;
+use vstd_extra::prelude::TreePath;
 
 use core::marker::PhantomData;
 use core::ops::Range;

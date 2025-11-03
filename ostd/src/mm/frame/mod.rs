@@ -32,7 +32,7 @@
 //pub mod allocator;
 pub mod linked_list;
 pub mod meta;
-//pub mod segment;
+pub mod segment;
 pub mod unique;
 pub mod untyped;
 
@@ -97,6 +97,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         with Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
     #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub fn from_unused(paddr: Paddr, metadata: M) -> (res: Result<Self, GetFrameError>)
         requires
             old(regions).inv(),
@@ -113,6 +114,10 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
                 false,
                 old(regions).view(),
             ).1,
+            regions.inv(),
+            forall|paddr: Paddr| #[trigger]
+                old(regions).slots.contains_key(frame_to_index(paddr))
+                    ==> regions.slots.contains_key(frame_to_index(paddr)),
     {
         #[verus_spec(with Tracked(regions))]
         let from_unused = MetaSlot::get_from_unused(paddr, metadata, false);

@@ -302,10 +302,11 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     /// moves itself up to the next page of the parent page.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner): Tracked<CursorOwner>
+        with Tracked(owner): Tracked<&mut CursorOwner>
     )]
     fn move_forward(&mut self)
-        
+        ensures
+            self.model(owner) == old(self).model(old(owner)).move_forward_spec()
     {
         let next_va = self.cur_va_range().end;
         while self.level < self.guard_level && pte_index::<C>(next_va, self.level) == 0
