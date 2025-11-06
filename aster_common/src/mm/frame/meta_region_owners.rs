@@ -26,7 +26,7 @@ pub ghost struct MetaRegionModel {
 }
 
 impl Inv for MetaRegionOwners {
-    open spec fn inv(&self) -> bool {
+    open spec fn inv(self) -> bool {
         &&& self.slots.dom().finite()
         &&& {
             // All accessible slots are within the valid address range.
@@ -46,7 +46,7 @@ impl Inv for MetaRegionOwners {
                 self.slots.contains_key(i) ==> {
                     &&& self.slots[i]@.is_init()
                     &&& self.slots[i]@.addr() == meta_addr(i)
-                    &&& self.slots[i]@.value().wf(&self.slot_owners[i])
+                    &&& self.slots[i]@.value().wf(self.slot_owners[i])
                     &&& self.slot_owners[i].self_addr == self.slots[i]@.addr()
                     &&& !self.dropped_slots.contains_key(i)
                 }
@@ -56,7 +56,7 @@ impl Inv for MetaRegionOwners {
                 self.dropped_slots.contains_key(i) ==> {
                     &&& self.dropped_slots[i]@.is_init()
                     &&& self.dropped_slots[i]@.addr() == meta_addr(i)
-                    &&& self.dropped_slots[i]@.value().wf(&self.slot_owners[i])
+                    &&& self.dropped_slots[i]@.value().wf(self.slot_owners[i])
                     &&& self.slot_owners[i].self_addr == self.dropped_slots[i]@.addr()
                     &&& !self.slots.contains_key(i)
                 }
@@ -65,29 +65,31 @@ impl Inv for MetaRegionOwners {
 }
 
 impl Inv for MetaRegionModel {
-    open spec fn inv(&self) -> bool {
+    open spec fn inv(self) -> bool {
         &&& self.slots.dom().finite()
         &&& forall|i: usize| i < max_meta_slots() <==> #[trigger] self.slots.contains_key(i)
         &&& forall|i: usize| #[trigger] self.slots.contains_key(i) ==> self.slots[i].inv()
     }
 }
 
-impl InvView for MetaRegionOwners {
+impl View for MetaRegionOwners {
     type V = MetaRegionModel;
 
-    open spec fn view(&self) -> Self::V {
-        let slots = self.slot_owners.map_values(|s: MetaSlotOwner| s.view());
+    open spec fn view(&self) -> <Self as View>::V {
+        let slots = self.slot_owners.map_values(|s: MetaSlotOwner| s@);
         MetaRegionModel { slots }
     }
+}
 
+impl InvView for MetaRegionOwners {
     // XXX: verus `map_values` does not preserves the `finite()` attribute.
-    axiom fn view_preserves_inv(&self);
+    axiom fn view_preserves_inv(self);
 }
 
 impl OwnerOf for MetaRegion {
     type Owner = MetaRegionOwners;
 
-    open spec fn wf(&self, owner: &Self::Owner) -> bool {
+    open spec fn wf(self, owner: Self::Owner) -> bool {
         true
     }
 }

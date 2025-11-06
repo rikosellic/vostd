@@ -7,8 +7,8 @@ edition = "2021"
 crate-type = ["rlib"]
 name = "vstd_extra"
 # for cargo
-path = "src/.dummy.rs"
-# path = "src/lib.rs"
+# path = "src/.dummy.rs"
+path = "src/lib.rs"
 
 [features]
 verus = []

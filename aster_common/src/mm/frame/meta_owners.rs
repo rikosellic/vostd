@@ -73,18 +73,8 @@ impl PageUsage {
         *self as u8
     }
 
-    pub open spec fn as_state_spec(&self) -> (res: PageState) {
-        match &self {
-            PageUsage::Unused => PageState::Unused,
-            PageUsage::Frame => PageState::Untyped,
-            _ => PageState::Typed,
-        }
-    }
-
-    #[verifier::when_used_as_spec(as_state_spec)]
+    #[vstd::contrib::auto_spec]
     pub fn as_state(&self) -> (res: PageState)
-        ensures
-            res == self.as_state_spec(),
     {
         match &self {
             PageUsage::Unused => PageState::Unused,
@@ -113,7 +103,7 @@ pub tracked struct MetaSlotOwner {
 }
 
 impl Inv for MetaSlotOwner {
-    open spec fn inv(&self) -> bool {
+    open spec fn inv(self) -> bool {
         &&& self.ref_count@.value() == REF_COUNT_UNUSED ==> {
             &&& self.vtable_ptr@.is_uninit()
             &&& self.in_list@.value() == 0
@@ -145,7 +135,7 @@ pub ghost struct MetaSlotModel {
 }
 
 impl Inv for MetaSlotModel {
-    open spec fn inv(&self) -> bool {
+    open spec fn inv(self) -> bool {
         match self.ref_count {
             REF_COUNT_UNUSED => {
                 &&& self.vtable_ptr.is_uninit()
@@ -162,7 +152,7 @@ impl Inv for MetaSlotModel {
     }
 }
 
-impl InvView for MetaSlotOwner {
+impl View for MetaSlotOwner {
     type V = MetaSlotModel;
 
     open spec fn view(&self) -> Self::V {
@@ -181,8 +171,10 @@ impl InvView for MetaSlotOwner {
         };
         MetaSlotModel { status, storage, ref_count, vtable_ptr, in_list, self_addr, usage }
     }
+}
 
-    proof fn view_preserves_inv(&self) {
+impl InvView for MetaSlotOwner {
+    proof fn view_preserves_inv(self) {
         admit()
     }
 }
@@ -190,7 +182,7 @@ impl InvView for MetaSlotOwner {
 impl OwnerOf for MetaSlot {
     type Owner = MetaSlotOwner;
 
-    open spec fn wf(&self, owner: &Self::Owner) -> bool {
+    open spec fn wf(self, owner: Self::Owner) -> bool {
         &&& self.storage == owner.storage@.pptr()
         &&& self.ref_count.id() == owner.ref_count@.id()
         &&& self.vtable_ptr == owner.vtable_ptr@.pptr()
