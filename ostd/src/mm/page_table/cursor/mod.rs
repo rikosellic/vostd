@@ -305,14 +305,20 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         with Tracked(owner): Tracked<&mut CursorOwner>
     )]
     fn move_forward(&mut self)
+        requires
+            old(owner).inv(),
+            old(self).wf(old(owner))
         ensures
-            self.model(owner) == old(self).model(old(owner)).move_forward_spec()
+            self.model(owner) == old(self).model(old(owner)).move_forward_spec(),
+            owner.inv(),
+            self.wf(owner),
     {
         let next_va = self.cur_va_range().end;
         while self.level < self.guard_level && pte_index::<C>(next_va, self.level) == 0
             decreases self.guard_level - self.level,
         {
             assert(1 <= self.level < 4) by { admit() };
+            #[verus_spec(with Tracked(owner))]
             self.pop_level();
         }
         self.va = next_va;
@@ -320,12 +326,18 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
     /// Goes up a level.
     #[rustc_allow_incoherent_impl]
+    #[verus_spec(
+        with Tracked(owner): Tracked<&mut CursorOwner>
+    )]
     fn pop_level(&mut self)
         requires
             1 <= old(self).level < 4,
+            old(owner).inv(),
+            old(self).wf(old(owner)),
         ensures
-            self.level == old(self).level + 1,
-            self.guard_level == old(self).guard_level,
+            self.model(owner) == old(self).model(old(owner)).pop_level_spec(),
+            owner.inv(),
+            self.wf(owner),
     {
         let opt_taken = self.path.get(self.level as usize - 1);
 
@@ -341,10 +353,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     #[rustc_allow_incoherent_impl]
     fn push_level(&mut self, child_pt: PPtr<PageTableGuard<'rcu, C>>)
         requires
-            1 < old(self).level
-                <= 4,
-    //            old(self).path[old(self).level as int - 1] is Some,
-
+            1 < old(self).level <= 4,
         ensures
             self.level == old(self).level - 1,
     {
