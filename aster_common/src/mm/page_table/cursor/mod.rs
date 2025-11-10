@@ -58,32 +58,35 @@ pub ghost struct CursorModel {
 }
 
 impl Inv for CursorOwner {
-    open spec fn inv(&self) -> bool {
+    open spec fn inv(self) -> bool {
         0 <= self.path.len() <= 3
     }
 }
 
 impl Inv for CursorModel {
-    open spec fn inv(&self) -> bool {
+    open spec fn inv(self) -> bool {
         true
     }
 }
 
-impl InvView for CursorOwner {
+impl View for CursorOwner {
     type V = CursorModel;
 
     open spec fn view(&self) -> Self::V {
         CursorModel { path: self.path }
     }
 
-    proof fn view_preserves_inv(&self) {
-    }
 }
+
+impl InvView for CursorOwner {
+    proof fn view_preserves_inv(self) { }
+}
+
 
 impl<'rcu, C: PageTableConfig, A: InAtomicMode> OwnerOf for Cursor<'rcu, C, A> {
     type Owner = CursorOwner;
 
-    open spec fn wf(&self, owner: &Self::Owner) -> bool {
+    open spec fn wf(self, owner: Self::Owner) -> bool {
         &&& self.level == owner.path.len() + 1
         &&& 1 <= self.level <= 4
     }

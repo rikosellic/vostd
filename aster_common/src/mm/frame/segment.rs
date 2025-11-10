@@ -28,7 +28,7 @@ pub struct Segment<M: AnyFrameMeta + ?Sized> {
 impl<M: AnyFrameMeta + ?Sized> Inv for Segment<M> {
     /// The invariant of a [`Segment`].
     #[verifier::inline]
-    open spec fn inv(&self) -> bool {
+    open spec fn inv(self) -> bool {
         &&& self.range.start % PAGE_SIZE() == 0
         &&& self.range.end % PAGE_SIZE() == 0
         &&& self.range.start < self.range.end < MAX_PADDR()
