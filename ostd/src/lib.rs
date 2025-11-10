@@ -32,6 +32,9 @@ pub mod arch;
 #[cfg(target_arch = "riscv64")]
 #[path = "arch/riscv/mod.rs"]
 pub mod arch;
+#[cfg(target_arch = "loongarch64")]
+#[path = "arch/loongarch/mod.rs"]
+pub mod arch;
 pub mod boot;
 pub mod bus;
 pub mod console;
@@ -49,6 +52,9 @@ pub mod timer;
 pub mod trap;
 pub mod user;
 pub mod util;
+
+#[cfg(feature = "coverage")]
+mod coverage;
 
 use core::sync::atomic::{AtomicBool, Ordering};
 

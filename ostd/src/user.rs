@@ -2,7 +2,7 @@
 
 //! User mode.
 
-use crate::{cpu::context::UserContext, trap::TrapFrame};
+use crate::{arch::trap::TrapFrame, cpu::context::UserContext};
 
 /// Specific architectures need to implement this trait. This should only used in [`UserMode`]
 ///
@@ -106,7 +106,7 @@ impl UserMode {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 /// A reason as to why the control of the CPU is returned from
 /// the user space to the kernel.
 pub enum ReturnReason {
