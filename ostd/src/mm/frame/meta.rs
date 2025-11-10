@@ -3,8 +3,9 @@
 //! Metadata management of frames.
 //!
 //! You can picture a globally shared, static, gigantic array of metadata
-//! initialized for each frame. An entry in the array is called a [`MetaSlot`],
-//! which contains the metadata of a frame. There would be a dedicated small
+//! initialized for each frame.
+//! Each entry in this array holds the metadata for a single frame.
+//! There would be a dedicated small
 //! "heap" space in each slot for dynamic metadata. You can store anything as
 //! the metadata of a frame as long as it's [`Sync`].
 //!
@@ -106,6 +107,7 @@ pub(in crate::mm) struct MetaSlot {
     ///
     /// [`Frame::from_unused`]: super::Frame::from_unused
     /// [`UniqueFrame`]: super::unique::UniqueFrame
+    /// [`drop_last_in_place`]: Self::drop_last_in_place
     //
     // Other than this field the fields should be `MaybeUninit`.
     // See initialization in `alloc_meta_frames`.
@@ -465,6 +467,11 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
         max_paddr
     );
 
+    // In RISC-V, the boot page table has mapped the 512GB memory,
+    // so we don't need to add temporary linear mapping.
+    // In LoongArch, the DWM0 has mapped the whole memory,
+    // so we don't need to add temporary linear mapping.
+    #[cfg(target_arch = "x86_64")]
     add_temp_linear_mapping(max_paddr);
 
     let tot_nr_frames = max_paddr / page_size::<PagingConsts>(1);
@@ -602,6 +609,7 @@ fn mark_unusable_ranges() {
 /// We only assume boot page table to contain 4G linear mapping. Thus if the
 /// physical memory is huge we end up depleted of linear virtual memory for
 /// initializing metadata.
+#[cfg(target_arch = "x86_64")]
 fn add_temp_linear_mapping(max_paddr: Paddr) {
     const PADDR4G: Paddr = 0x1_0000_0000;
 
