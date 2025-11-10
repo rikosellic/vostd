@@ -84,8 +84,18 @@ where
 
 // SAFETY: Only the pointers are not `Send` and `Sync`. But our interfaces
 // enforces that only with `&mut` references can we access with the pointers.
-unsafe impl<M> Send for LinkedList<M> where Link<M>: AnyFrameMeta {}
-unsafe impl<M> Sync for LinkedList<M> where Link<M>: AnyFrameMeta {}
+// unsafe impl<M> Send for LinkedList<M> where Link<M>: AnyFrameMeta {}
+// unsafe impl<M> Sync for LinkedList<M> where Link<M>: AnyFrameMeta {}
+
+#[repr(C, align(8))]
+pub struct MetaSlotInner {}
+
+#[repr(C, align(8))]
+pub struct StoredLink {
+    next: Option<Paddr>,
+    prev: Option<Paddr>,
+    slot: MetaSlotInner,
+}
 
 impl<M> Default for LinkedList<M>
 where
