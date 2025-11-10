@@ -62,18 +62,16 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     /// Gets a reference to the child.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner): Tracked<EntryOwner<C>>,
+        with Tracked(owner): Tracked<&EntryOwner<C>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
     pub fn to_ref(&self) -> ChildRef<'rcu, C>
         requires
-            self.wf(owner),
+            self.wf(*owner),
             owner.inv(),
             old(regions).inv(),
             self.pte.paddr() == meta_to_frame(owner.slot_perm@.addr()),
-            owner.slot_perm@.value().wf(
-                old(regions).slot_owners[frame_to_index(self.pte.paddr())],
-            ),
+            owner.slot_perm@.value().wf(old(regions).slot_owners[frame_to_index(self.pte.paddr())]),
             old(regions).dropped_slots.contains_key(frame_to_index(self.pte.paddr())),
             !old(regions).slots.contains_key(frame_to_index(self.pte.paddr())),
     {
@@ -305,7 +303,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     /// The caller must ensure that the index is within the bounds of the node.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<EntryOwner<C>>,
+        with Tracked(owner) : Tracked<&EntryOwner<C>>,
             Tracked(slot_own) : Tracked<&MetaSlotOwner>
     )]
     #[verifier::external_body]

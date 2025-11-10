@@ -204,6 +204,9 @@ impl<M: AnyFrameMeta> Segment<M> {
             let paddr = range.start + i * PAGE_SIZE();
             let (paddr, meta) = metadata_fn(paddr);
 
+            assert(regions.slot_owners[paddr / PAGE_SIZE()].usage is Unused) by { admit() };
+            assert(regions.slot_owners[paddr / PAGE_SIZE()].in_list@.points_to(0)) by { admit() };
+
             #[verus_spec(with Tracked(regions))]
             let frame = Frame::<M>::from_unused(paddr, meta)?;
 

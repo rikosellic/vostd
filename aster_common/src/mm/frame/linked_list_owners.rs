@@ -235,8 +235,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> View for CursorOwner<M> {
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotInner>> InvView for CursorOwner<M> {
-    proof fn view_preserves_inv(self) {
-    }
+    proof fn view_preserves_inv(self) { }
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for CursorMut<M> {
@@ -253,9 +252,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for CursorMut<M> {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> ModelOf for CursorMut<M> {
-
-}
+impl<M: AnyFrameMeta + Repr<MetaSlotInner>> ModelOf for CursorMut<M> { }
 
 impl CursorModel {
     pub open spec fn current(self) -> Option<LinkModel> {

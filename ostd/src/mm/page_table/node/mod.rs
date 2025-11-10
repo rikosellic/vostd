@@ -195,7 +195,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     /// [`nr_subpage_per_huge<C>`].
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<EntryOwner<C>>,
+        with Tracked(owner) : Tracked<&EntryOwner<C>>,
             Tracked(slot_own) : Tracked<&MetaSlotOwner>
     )]
     pub fn entry<'slot>(guard: PPtr<Self>, idx: usize) -> Entry<'rcu, C>
