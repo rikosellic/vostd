@@ -20,7 +20,7 @@ If you have not installed Rust yet, follow the [official instructions](https://w
 
 #### Clone Submodule
 
-`vostd` relies on our [custom build tool]([asterinas/rust-deductive-verifier: Helper framework for `vostd`](https://github.com/asterinas/rust-deductive-verifier)), please run:
+`vostd` relies on our [custom build tool](https://github.com/asterinas/rust-deductive-verifier), please run:
 
 ```
 git submodule update --init --recursive
