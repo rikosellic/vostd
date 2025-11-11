@@ -75,6 +75,8 @@ impl<C: PageTableConfig> PageTableFrag<C> {
         match self {
             PageTableFrag::Mapped { va, item } => {
                 let (pa, level, prop) = C::item_into_raw(item.clone());
+                // SAFETY: All the arguments match those returned from the previous call
+                // to `item_into_raw`, and we are taking ownership of the cloned item.
                 drop(unsafe { C::item_from_raw(pa, level, prop) });
                 *va..*va + page_size(level)
             },
@@ -134,8 +136,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             let cur_va = self.va;
             let level = self.level;
 
-            let cur_child = self.cur_entry().to_ref();
-            let item = match cur_child {
+            let cur_entry = self.cur_entry();
+            let item = match cur_entry.to_ref() {
                 ChildRef::PageTable(pt) => {
                     // SAFETY: The `pt` must be locked and no other guards exist.
                     let guard = pt.make_guard_unchecked(rcu_guard);
@@ -164,7 +166,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             };
 
             assert(cur_va + page_size(level) < usize::MAX) by { admit() };
-            return Ok((cur_va..cur_va + page_size(level), item));
+            return Ok((self.cur_va_range(), item));
         }
     }
 
@@ -276,21 +278,13 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             return Err(PageTableError::InvalidVaddr(va));
         }
         loop {
-            let cur_node_start = self.va & !(page_size(self.level + 1) - 1);
-            let cur_node_end = cur_node_start + page_size(self.level + 1);
+            let node_size = page_size::<C>(self.level + 1);
+            let node_start = self.va.align_down(node_size);
             // If the address is within the current node, we can jump directly.
-            if cur_node_start <= va && va < cur_node_end {
+            if node_start <= va && va < node_start + node_size {
                 self.va = va;
                 return Ok(());
             }
-            // There is a corner case that the cursor is depleted, sitting at the start of the
-            // next node but the next node is not locked because the parent is not locked.
-
-            if self.va >= self.barrier_va.end && self.level == self.guard_level {
-                self.va = va;
-                return Ok(());
-            }
-            //            debug_assert!(self.level < self.guard_level);
 
             self.pop_level();
         }
@@ -343,9 +337,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     {
         let opt_taken = self.path.get(self.level as usize - 1);
 
-        /*        let Some(taken) = self.path[self.level as usize - 1].take() else {
-            panic!("Popping a level without a lock");
-        };
+        /* let taken = self.path[self.level as usize - 1]
+            .take()
+            .expect("Popping a level without a lock");
         let _ = ManuallyDrop::new(taken);
 */
         self.level = self.level + 1;
@@ -393,11 +387,11 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     /// Gets the virtual address range that the current entry covers.
     #[rustc_allow_incoherent_impl]
     fn cur_va_range(&self) -> Range<Vaddr> {
-        let page_size = page_size(self.level);
-        assert(page_size > 0) by { admit() };
-        let start = align_down(self.va, page_size);
-        assert(start + page_size < usize::MAX) by { admit() };
-        start..start + page_size
+        let entry_size = page_size(self.level);
+        assert(entry_size > 0) by { admit() };
+        let entry_start = align_down(self.va, entry_size);
+        assert(entry_start + entry_size < usize::MAX) by { admit() };
+        entry_start..entry_start + entry_size
     }
 }
 

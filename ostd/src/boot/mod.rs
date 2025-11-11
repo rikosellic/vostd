@@ -30,8 +30,8 @@ pub struct BootInfo {
 }
 
 /// Gets the boot information.
-///
-/// This function is usable after initialization with [`init_after_heap`].
+//
+// This function is usable after initialization with `init_after_heap`.
 pub fn boot_info() -> &'static BootInfo {
     INFO.get().unwrap()
 }

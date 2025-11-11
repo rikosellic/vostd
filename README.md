@@ -1,6 +1,6 @@
 # Verified
 
-## Description
+English | [中文版](README_CN.md) | [日本語](README_JP.md)
 
 *Verified* holds all the code verification for the *verifiable* base. Specifications for the verification targets live in `specs`.
 

@@ -2,8 +2,9 @@
 //! Metadata management of frames.
 //!
 //! You can picture a globally shared, static, gigantic array of metadata
-//! initialized for each frame. An entry in the array is called a [`MetaSlot`],
-//! which contains the metadata of a frame. There would be a dedicated small
+//! initialized for each frame.
+//! Each entry in this array holds the metadata for a single frame.
+//! There would be a dedicated small
 //! "heap" space in each slot for dynamic metadata. You can store anything as
 //! the metadata of a frame as long as it's [`Sync`].
 //!
@@ -29,7 +30,7 @@ use core::{
     fmt::Debug,
     mem::{size_of, ManuallyDrop, MaybeUninit},
     result::Result,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicU64, AtomicU8, Ordering},
 };
 
 //use align_ext::AlignExt;
@@ -79,7 +80,7 @@ pub(in crate::mm) struct MetaSlot {
     ///
     /// Don't interpret this field as an array of bytes. It is a
     /// placeholder for the metadata of a frame.
-    storage: UnsafeCell<[u8; FRAME_METADATA_MAX_SIZE]>,
+    storage: UnsafeCell<MetaSlotStorage>,
     /// The reference count of the page.
     ///
     /// Specifically, the reference count has the following meaning:
@@ -94,6 +95,7 @@ pub(in crate::mm) struct MetaSlot {
     ///
     /// [`Frame::from_unused`]: super::Frame::from_unused
     /// [`UniqueFrame`]: super::unique::UniqueFrame
+    /// [`drop_last_in_place`]: Self::drop_last_in_place
     //
     // Other than this field the fields should be `MaybeUninit`.
     // See initialization in `alloc_meta_frames`.
@@ -146,10 +148,7 @@ pub use impl_frame_meta_for;
 verus! {
 
 /// Gets the reference to a metadata slot.
-pub fn get_slot(paddr: Paddr, Tracked(owner): Tracked<&MetaSlotOwner>) -> (res: Result<
-    PPtr<MetaSlot>,
-    GetFrameError,
->)
+pub fn get_slot(paddr: Paddr, Tracked(owner): Tracked<&MetaSlotOwner>) -> (res: Result<PPtr<MetaSlot>, GetFrameError>)
     requires
         owner.self_addr == frame_to_meta(paddr),
         owner.inv(),
@@ -168,6 +167,24 @@ pub fn get_slot(paddr: Paddr, Tracked(owner): Tracked<&MetaSlotOwner>) -> (res: 
     // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
     // mutably borrowed, so taking an immutable reference to it is safe.
     Ok(ptr)
+}
+
+impl MetaSlotStorage {
+    /// Gets a [`StoredLink`] from storage if it is a link.
+    pub fn get_link(self) -> Option<StoredLink> {
+        match self {
+            MetaSlotStorage::FrameLink(link) => Some(link),
+            _ => None,
+        }
+    }
+
+    /// Gets a [`StoredPageTablePageMeta`] from storage if it is a page table node.
+    pub fn get_node(self) -> Option<StoredPageTablePageMeta> {
+        match self {
+            MetaSlotStorage::PTNode(node) => Some(node),
+            _ => None,
+        }
+    }
 }
 
 impl MetaSlot {
@@ -341,6 +358,41 @@ impl MetaSlot {
         }
     }
 
+    /// This functions implements the loop for getting a frame from an in-use frame
+    /// for the [`Self::get_from_in_use`] function.
+    pub(super) fn get_from_in_use_loop(slot: &MetaSlot) -> Result<*const Self, GetFrameError> {
+        match slot.ref_count.load(Ordering::Relaxed) {
+            REF_COUNT_UNUSED => return Err(GetFrameError::Unused),
+            REF_COUNT_UNIQUE => return Err(GetFrameError::Unique),
+            0 => return Err(GetFrameError::Busy),
+            last_ref_cnt => {
+                if last_ref_cnt >= REF_COUNT_MAX {
+                    // See `Self::inc_ref_count` for the explanation.
+                    abort();
+                }
+                // Using `Acquire` here to pair with `get_from_unused` or
+                // `<Frame<M> as From<UniqueFrame<M>>>::from` (who must be
+                // performed after writing the metadata).
+                //
+                // It ensures that the written metadata will be visible to us.
+                if slot
+                    .ref_count
+                    .compare_exchange_weak(
+                        last_ref_cnt,
+                        last_ref_cnt + 1,
+                        Ordering::Acquire,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
+                    return Ok(slot as *const MetaSlot);
+                } else {
+                    return Err(GetFrameError::Retry);
+                }
+            }
+        }
+    }
+
     /// Gets another owning pointer to the metadata slot from the given page.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
@@ -355,10 +407,8 @@ impl MetaSlot {
             match Self::get_from_in_use_loop(slot) {
                 Err(GetFrameError::Retry) => {
                     core::hint::spin_loop();
-                },
-                res => {
-                    return res;
-                },
+                }
+                res => return res,
             }
         }
     }
@@ -461,6 +511,16 @@ impl MetaSlot {
         let addr = self.storage_addr_of();
 
         self.cast_storage(addr, Tracked(owner))
+    }
+
+    /// Gets the virtual address of the [`MetaSlot`].
+    pub(super) fn addr_of(&self) -> Vaddr {
+        self as *const Self as Vaddr
+    }
+
+    /// Gets the virtual address of the [`MetaSlotStorage`].
+    pub(super) fn storage_addr_of(&self) -> Vaddr {
+        unimplemented!()
     }
 
     /// Writes the metadata to the slot without reading or dropping the previous value.
@@ -599,6 +659,11 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
         max_paddr
     );
 
+    // In RISC-V, the boot page table has mapped the 512GB memory,
+    // so we don't need to add temporary linear mapping.
+    // In LoongArch, the DWM0 has mapped the whole memory,
+    // so we don't need to add temporary linear mapping.
+    #[cfg(target_arch = "x86_64")]
     add_temp_linear_mapping(max_paddr);
 
     let tot_nr_frames = max_paddr / page_size::<PagingConsts>(1);
@@ -673,7 +738,7 @@ fn alloc_meta_frames(tot_nr_frames: usize) -> (usize, Paddr) {
         // it's valid for writing.
         unsafe {
             slot.write(MetaSlot {
-                storage: UnsafeCell::new([0; FRAME_METADATA_MAX_SIZE]),
+                storage: UnsafeCell::new(MetaSlotStorage::Empty([0; FRAME_METADATA_MAX_SIZE - 1])),
                 ref_count: AtomicU64::new(REF_COUNT_UNUSED),
                 vtable_ptr: UnsafeCell::new(MaybeUninit::uninit()),
                 in_list: AtomicU64::new(0),
@@ -736,6 +801,7 @@ fn mark_unusable_ranges() {
 /// We only assume boot page table to contain 4G linear mapping. Thus if the
 /// physical memory is huge we end up depleted of linear virtual memory for
 /// initializing metadata.
+#[cfg(target_arch = "x86_64")]
 fn add_temp_linear_mapping(max_paddr: Paddr) {
     const PADDR4G: Paddr = 0x1_0000_0000;
 
