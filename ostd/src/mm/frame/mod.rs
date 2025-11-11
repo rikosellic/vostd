@@ -472,6 +472,7 @@ impl<M: AnyFrameMeta> TryFrom<Frame<dyn AnyFrameMeta>> for Frame<M> {
 /// The caller should ensure the following conditions:
 ///  1. The physical address must represent a valid frame;
 ///  2. The caller must have already held a reference to the frame.
+#[verifier::external_body]
 pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) {
     debug_assert!(paddr % PAGE_SIZE() == 0);
 

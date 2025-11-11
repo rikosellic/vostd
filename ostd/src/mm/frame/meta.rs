@@ -115,11 +115,11 @@ pub(in crate::mm) struct MetaSlot {
 
 verus! {
 
-pub(super) const REF_COUNT_UNUSED: u64 = u64::MAX;
+pub const REF_COUNT_UNUSED: u64 = u64::MAX;
 
-pub(super) const REF_COUNT_UNIQUE: u64 = u64::MAX - 1;
+pub const REF_COUNT_UNIQUE: u64 = u64::MAX - 1;
 
-pub(super) const REF_COUNT_MAX: u64 = i64::MAX as u64;
+pub const REF_COUNT_MAX: u64 = i64::MAX as u64;
 
 type FrameMetaVtablePtr = core::ptr::DynMetadata<dyn AnyFrameMeta>;
 
@@ -167,24 +167,6 @@ pub fn get_slot(paddr: Paddr, Tracked(owner): Tracked<&MetaSlotOwner>) -> (res: 
     // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
     // mutably borrowed, so taking an immutable reference to it is safe.
     Ok(ptr)
-}
-
-impl MetaSlotStorage {
-    /// Gets a [`StoredLink`] from storage if it is a link.
-    pub fn get_link(self) -> Option<StoredLink> {
-        match self {
-            MetaSlotStorage::FrameLink(link) => Some(link),
-            _ => None,
-        }
-    }
-
-    /// Gets a [`StoredPageTablePageMeta`] from storage if it is a page table node.
-    pub fn get_node(self) -> Option<StoredPageTablePageMeta> {
-        match self {
-            MetaSlotStorage::PTNode(node) => Some(node),
-            _ => None,
-        }
-    }
 }
 
 impl MetaSlot {
@@ -328,9 +310,7 @@ impl MetaSlot {
             frame_to_index(meta_to_frame(slot.addr())),
         );
 
-        match slot.borrow(Tracked(meta_perm.borrow())).ref_count.load(
-            Tracked(slot_own.ref_count.borrow_mut()),
-        ) {
+        match slot.borrow(Tracked(meta_perm.borrow())).ref_count.load(Tracked(slot_own.ref_count.borrow_mut())) {
             REF_COUNT_UNUSED => return Err(GetFrameError::Unused),
             REF_COUNT_UNIQUE => return Err(GetFrameError::Unique),
             0 => return Err(GetFrameError::Busy),
@@ -355,41 +335,6 @@ impl MetaSlot {
                     return Err(GetFrameError::Retry);
                 }
             },
-        }
-    }
-
-    /// This functions implements the loop for getting a frame from an in-use frame
-    /// for the [`Self::get_from_in_use`] function.
-    pub(super) fn get_from_in_use_loop(slot: &MetaSlot) -> Result<*const Self, GetFrameError> {
-        match slot.ref_count.load(Ordering::Relaxed) {
-            REF_COUNT_UNUSED => return Err(GetFrameError::Unused),
-            REF_COUNT_UNIQUE => return Err(GetFrameError::Unique),
-            0 => return Err(GetFrameError::Busy),
-            last_ref_cnt => {
-                if last_ref_cnt >= REF_COUNT_MAX {
-                    // See `Self::inc_ref_count` for the explanation.
-                    abort();
-                }
-                // Using `Acquire` here to pair with `get_from_unused` or
-                // `<Frame<M> as From<UniqueFrame<M>>>::from` (who must be
-                // performed after writing the metadata).
-                //
-                // It ensures that the written metadata will be visible to us.
-                if slot
-                    .ref_count
-                    .compare_exchange_weak(
-                        last_ref_cnt,
-                        last_ref_cnt + 1,
-                        Ordering::Acquire,
-                        Ordering::Relaxed,
-                    )
-                    .is_ok()
-                {
-                    return Ok(slot as *const MetaSlot);
-                } else {
-                    return Err(GetFrameError::Retry);
-                }
-            }
         }
     }
 
@@ -422,7 +367,7 @@ impl MetaSlot {
     #[verus_spec(
         with Tracked(rc_perm): Tracked<&mut PermissionU64>
     )]
-    pub(super) fn inc_ref_count(&self)
+    pub fn inc_ref_count(&self)
         requires
             old(rc_perm).is_for(self.ref_count),
             old(rc_perm).value() != 0,
@@ -496,10 +441,7 @@ impl MetaSlot {
     #[verus_spec(
         with Tracked(owner): Tracked<&MetaSlotOwner>
     )]
-    pub fn as_meta_ptr<M: AnyFrameMeta + Repr<MetaSlotStorage>>(&self) -> (res: ReprPtr<
-        MetaSlotStorage,
-        M,
-    >)
+    pub fn as_meta_ptr<M: AnyFrameMeta + Repr<MetaSlotStorage>>(&self) -> (res: ReprPtr<MetaSlotStorage, M>)
         requires
             owner.inv(),
             self.wf(*owner),
@@ -511,16 +453,6 @@ impl MetaSlot {
         let addr = self.storage_addr_of();
 
         self.cast_storage(addr, Tracked(owner))
-    }
-
-    /// Gets the virtual address of the [`MetaSlot`].
-    pub(super) fn addr_of(&self) -> Vaddr {
-        self as *const Self as Vaddr
-    }
-
-    /// Gets the virtual address of the [`MetaSlotStorage`].
-    pub(super) fn storage_addr_of(&self) -> Vaddr {
-        unimplemented!()
     }
 
     /// Writes the metadata to the slot without reading or dropping the previous value.

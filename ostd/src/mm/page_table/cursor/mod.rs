@@ -278,8 +278,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             return Err(PageTableError::InvalidVaddr(va));
         }
         loop {
-            let node_size = page_size::<C>(self.level + 1);
-            let node_start = self.va.align_down(node_size);
+            let node_size = page_size(self.level + 1);
+            let node_start = align_down(self.va, node_size);
             // If the address is within the current node, we can jump directly.
             if node_start <= va && va < node_start + node_size {
                 self.va = va;

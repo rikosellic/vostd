@@ -212,7 +212,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     #[verusfmt::skip]
     pub fn alloc_if_none<A: InAtomicMode>(&mut self, guard: &'rcu A)
         -> Option<PPtr<PageTableGuard<'rcu, C>>> {
-        if !(self.is_none() && self.node.level() > 1) {
+        unimplemented!()
+
+/*        if !(self.is_none() && self.node.level() > 1) {
             return None;
         }
 
@@ -237,7 +239,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
 
         *self.node.nr_children_mut() += 1;
 
-        Some(pt_lock_guard)
+        Some(pt_lock_guard) */
     }
 
     /// Splits the entry to smaller pages if it maps to a huge page.
@@ -256,7 +258,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     #[verusfmt::skip]
     pub fn split_if_mapped_huge<A: InAtomicMode>(&mut self, guard: &'rcu A)
         -> Option<PPtr<PageTableGuard<'rcu, C>>> {
-        let guard = self.node.borrow(Tracked(owner.guard_perm.borrow()));
+        unimplemented!()
+/*        let guard = self.node.borrow(Tracked(owner.guard_perm.borrow()));
 
         let level = guard.level();
 
@@ -292,7 +295,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         //  3. The ownership of the child is passed to the page table node.
         unsafe { self.node.write_pte(self.idx, self.pte) };
 
-        Some(pt_lock_guard)
+        Some(pt_lock_guard) */
     }
 
     /// Create a new entry at the node with guard.
