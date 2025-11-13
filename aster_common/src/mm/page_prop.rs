@@ -15,49 +15,43 @@ pub struct PageProperty {
 
 global layout PageProperty is size == 3, align == 1;
 
-}
-
+} // verus!
 verus! {
 
-pub broadcast proof fn lemma_page_property_equal_correctness(a: PageProperty,
-    b: PageProperty)
-    requires #[trigger] a.flags == #[trigger] b.flags,
+pub broadcast proof fn lemma_page_property_equal_correctness(a: PageProperty, b: PageProperty)
+    requires
+        #[trigger] a.flags == #[trigger] b.flags,
         a.cache == b.cache,
         a.priv_flags == b.priv_flags,
     ensures
-        a == b
-{ }
-
-pub broadcast proof fn lemma_page_property_equal_soundness(a: PageProperty, b: PageProperty)
-    requires a == b
-    ensures #[trigger] a.flags == #[trigger] b.flags,
-        a.cache == b.cache,
-        a.priv_flags == b.priv_flags,
-{ }
-
+        a == b,
+{
 }
 
+pub broadcast proof fn lemma_page_property_equal_soundness(a: PageProperty, b: PageProperty)
+    requires
+        a == b,
+    ensures
+        #[trigger] a.flags == #[trigger] b.flags,
+        a.cache == b.cache,
+        a.priv_flags == b.priv_flags,
+{
+}
+
+} // verus!
 verus! {
 
 impl PageProperty {
-
     pub open spec fn new_spec(flags: PageFlags, cache: CachePolicy) -> Self {
-        Self {
-            flags,
-            cache,
-            priv_flags: PrivilegedPageFlags::USER(),
-        }
+        Self { flags, cache, priv_flags: PrivilegedPageFlags::USER() }
     }
 
     #[verifier::when_used_as_spec(new_spec)]
     pub fn new(flags: PageFlags, cache: CachePolicy) -> (res: Self)
-        ensures res == Self::new_spec(flags, cache)
+        ensures
+            res == Self::new_spec(flags, cache),
     {
-        Self {
-            flags,
-            cache,
-            priv_flags: PrivilegedPageFlags::USER(),
-        }
+        Self { flags, cache, priv_flags: PrivilegedPageFlags::USER() }
     }
 
     pub open spec fn new_absent_spec() -> Self {
@@ -70,7 +64,8 @@ impl PageProperty {
 
     #[verifier::when_used_as_spec(new_absent_spec)]
     pub fn new_absent() -> (res: Self)
-        ensures res == Self::new_absent_spec()
+        ensures
+            res == Self::new_absent_spec(),
     {
         Self {
             flags: PageFlags::empty(),
@@ -78,11 +73,9 @@ impl PageProperty {
             priv_flags: PrivilegedPageFlags::empty(),
         }
     }
-
 }
 
-}
-
+} // verus!
 verus! {
 
 // TODO: Make it more abstract when supporting other architectures.
@@ -155,7 +148,8 @@ impl CachePolicy {
     #[inline(always)]
     #[verifier::when_used_as_spec(N_spec)]
     pub const fn N() -> (res: usize)
-        ensures res == Self::N_spec()
+        ensures
+            res == Self::N_spec(),
     {
         (CachePolicy::Writeback.value() + 1) as usize
     }
@@ -174,7 +168,8 @@ impl CachePolicy {
     #[inline(always)]
     #[verifier::when_used_as_spec(value_spec)]
     pub const fn value(&self) -> (res: u8)
-        ensures res == self.value()
+        ensures
+            res == self.value(),
     {
         match self {
             CachePolicy::Uncacheable => 0,
@@ -186,8 +181,7 @@ impl CachePolicy {
     }
 }
 
-}
-
+} // verus!
 verus! {
 
 #[verifier::ext_equal]
@@ -198,20 +192,25 @@ pub struct PageFlags {
 }
 
 pub broadcast proof fn lemma_page_flags_equal_correctness(a: PageFlags, b: PageFlags)
-    requires #[trigger] a.bits == #[trigger] b.bits
-    ensures a == b
-{ }
+    requires
+        #[trigger] a.bits == #[trigger] b.bits,
+    ensures
+        a == b,
+{
+}
 
 pub broadcast proof fn lemma_page_flags_equal_soundness(a: PageFlags, b: PageFlags)
-    requires a == b
-    ensures #[trigger] a.bits == #[trigger] b.bits
-{ }
+    requires
+        a == b,
+    ensures
+        #[trigger] a.bits == #[trigger] b.bits,
+{
+}
 
 impl PageFlags {
     pub open spec fn present(self) -> bool {
         self.bits & 0b00000001 != 0
     }
-
 
     #[verifier::inline]
     pub open spec fn empty_spec() -> Self {
@@ -221,7 +220,8 @@ impl PageFlags {
     #[inline(always)]
     #[verifier::when_used_as_spec(empty_spec)]
     pub const fn empty() -> (res: Self)
-        ensures res == Self::empty_spec()
+        ensures
+            res == Self::empty_spec(),
     {
         Self { bits: 0 }
     }
@@ -234,7 +234,8 @@ impl PageFlags {
     #[inline(always)]
     #[verifier::when_used_as_spec(value_spec)]
     pub const fn value(&self) -> (res: u8)
-        ensures res == self.value_spec()
+        ensures
+            res == self.value_spec(),
     {
         self.bits
     }
@@ -264,7 +265,8 @@ impl PageFlags {
     #[inline(always)]
     #[verifier::when_used_as_spec(R_spec)]
     pub const fn R() -> (res: Self)
-        ensures res == Self::R_spec()
+        ensures
+            res == Self::R_spec(),
     {
         Self { bits: 0b00000001 }
     }
@@ -279,7 +281,8 @@ impl PageFlags {
     #[inline(always)]
     #[verifier::when_used_as_spec(W_spec)]
     pub const fn W() -> (res: Self)
-        ensures res == Self::W_spec()
+        ensures
+            res == Self::W_spec(),
     {
         Self { bits: 0b00000010 }
     }
@@ -294,7 +297,8 @@ impl PageFlags {
     #[inline(always)]
     #[verifier::when_used_as_spec(X_spec)]
     pub const fn X() -> (res: Self)
-        ensures res == Self::X_spec()
+        ensures
+            res == Self::X_spec(),
     {
         Self { bits: 0b00000100 }
     }
@@ -309,7 +313,8 @@ impl PageFlags {
     #[inline(always)]
     #[verifier::when_used_as_spec(X_spec)]
     pub const fn RW() -> (res: Self)
-        ensures res == Self::RW_spec()
+        ensures
+            res == Self::RW_spec(),
     {
         Self { bits: Self::R().value() | Self::W().value() }
     }
@@ -324,7 +329,8 @@ impl PageFlags {
     #[inline(always)]
     #[verifier::when_used_as_spec(RX_spec)]
     pub const fn RX() -> (res: Self)
-        ensures res == Self::RX_spec()
+        ensures
+            res == Self::RX_spec(),
     {
         Self { bits: Self::R().value() | Self::X().value() }
     }
@@ -339,7 +345,8 @@ impl PageFlags {
     #[inline(always)]
     #[verifier::when_used_as_spec(RWX_spec)]
     pub const fn RWX() -> (res: Self)
-        ensures res == Self::RWX_spec()
+        ensures
+            res == Self::RWX_spec(),
     {
         Self { bits: Self::R().value() | Self::W().value() | Self::X().value() }
     }
@@ -354,7 +361,8 @@ impl PageFlags {
     #[inline(always)]
     #[verifier::when_used_as_spec(ACCESSED_spec)]
     pub const fn ACCESSED() -> (res: Self)
-        ensures res == Self::ACCESSED_spec()
+        ensures
+            res == Self::ACCESSED_spec(),
     {
         Self { bits: 0b00001000 }
     }
@@ -369,14 +377,14 @@ impl PageFlags {
     #[inline(always)]
     #[verifier::when_used_as_spec(DIRTY_spec)]
     pub const fn DIRTY() -> (res: Self)
-        ensures res == Self::DIRTY_spec()
+        ensures
+            res == Self::DIRTY_spec(),
     {
         Self { bits: 0b00010000 }
     }
 }
 
-}
-
+} // verus!
 verus! {
 
 #[verifier::ext_equal]
@@ -386,15 +394,27 @@ pub struct PrivilegedPageFlags {
     pub bits: u8,
 }
 
-pub broadcast proof fn lemma_privileged_page_flags_equal_correctness(a: PrivilegedPageFlags, b: PrivilegedPageFlags)
-    requires #[trigger] a.bits == #[trigger] b.bits
-    ensures a == b
-{ }
+pub broadcast proof fn lemma_privileged_page_flags_equal_correctness(
+    a: PrivilegedPageFlags,
+    b: PrivilegedPageFlags,
+)
+    requires
+        #[trigger] a.bits == #[trigger] b.bits,
+    ensures
+        a == b,
+{
+}
 
-pub broadcast proof fn lemma_privileged_page_flags_equal_soundness(a: PrivilegedPageFlags, b: PrivilegedPageFlags)
-    requires a == b
-    ensures #[trigger] a.bits == #[trigger] b.bits
-{ }
+pub broadcast proof fn lemma_privileged_page_flags_equal_soundness(
+    a: PrivilegedPageFlags,
+    b: PrivilegedPageFlags,
+)
+    requires
+        a == b,
+    ensures
+        #[trigger] a.bits == #[trigger] b.bits,
+{
+}
 
 impl PrivilegedPageFlags {
     #[verifier::inline]
@@ -405,7 +425,8 @@ impl PrivilegedPageFlags {
     #[inline(always)]
     #[verifier::when_used_as_spec(empty_spec)]
     pub const fn empty() -> (res: Self)
-        ensures res == Self::empty_spec()
+        ensures
+            res == Self::empty_spec(),
     {
         Self { bits: 0 }
     }
@@ -418,7 +439,8 @@ impl PrivilegedPageFlags {
     #[inline(always)]
     #[verifier::when_used_as_spec(value_spec)]
     pub const fn value(&self) -> (res: u8)
-        ensures res == self.value_spec()
+        ensures
+            res == self.value_spec(),
     {
         self.bits
     }
@@ -431,7 +453,8 @@ impl PrivilegedPageFlags {
     #[inline(always)]
     #[verifier::when_used_as_spec(from_bits_spec)]
     pub fn from_bits(value: u8) -> (res: Self)
-        ensures res == Self::from_bits_spec(value)
+        ensures
+            res == Self::from_bits_spec(value),
     {
         Self { bits: value }
     }
@@ -446,7 +469,8 @@ impl PrivilegedPageFlags {
     #[inline(always)]
     #[verifier::when_used_as_spec(USER_spec)]
     pub const fn USER() -> (res: Self)
-        ensures res == Self::USER_spec()
+        ensures
+            res == Self::USER_spec(),
     {
         Self { bits: 0b00000001 }
     }
@@ -461,7 +485,8 @@ impl PrivilegedPageFlags {
     #[inline(always)]
     #[verifier::when_used_as_spec(GLOBAL_spec)]
     pub const fn GLOBAL() -> (res: Self)
-        ensures res == Self::GLOBAL_spec()
+        ensures
+            res == Self::GLOBAL_spec(),
     {
         Self { bits: 0b00000010 }
     }
@@ -476,11 +501,11 @@ impl PrivilegedPageFlags {
     #[inline(always)]
     #[verifier::when_used_as_spec(SHARED_spec)]
     pub const fn SHARED() -> (res: Self)
-        ensures res == Self::SHARED_spec()
+        ensures
+            res == Self::SHARED_spec(),
     {
         Self { bits: 0b10000000 }
     }
-
 }
 
-}
+} // verus!
