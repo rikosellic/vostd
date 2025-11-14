@@ -168,10 +168,7 @@ impl<M: AnyFrameMeta> Frame<M> {
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn from_raw_requires(
-        regions: MetaRegionOwners,
-        paddr: Paddr,
-    ) -> bool {
+    pub open spec fn from_raw_requires(regions: MetaRegionOwners, paddr: Paddr) -> bool {
         &&& paddr % PAGE_SIZE() == 0
         &&& paddr < MAX_PADDR()
         &&& !regions.slots.contains_key(frame_to_index(paddr))
@@ -179,31 +176,20 @@ impl<M: AnyFrameMeta> Frame<M> {
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn from_raw_ensures(
-        regions: MetaRegionOwners,
-        paddr: Paddr,
-        r: Self,
-    ) -> bool {
+    pub open spec fn from_raw_ensures(regions: MetaRegionOwners, paddr: Paddr, r: Self) -> bool {
         &&& regions.inv()
         &&& r.paddr() == paddr
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn into_raw_requires(
-        self,
-        regions: MetaRegionOwners,
-    ) -> bool {
+    pub open spec fn into_raw_requires(self, regions: MetaRegionOwners) -> bool {
         &&& regions.slots.contains_key(self.index())
         &&& !regions.dropped_slots.contains_key(self.index())
         &&& regions.inv()
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn into_raw_ensures(
-        self,
-        regions: MetaRegionOwners,
-        r: Paddr,
-    ) -> bool {
+    pub open spec fn into_raw_ensures(self, regions: MetaRegionOwners, r: Paddr) -> bool {
         &&& r == self.paddr()
         &&& regions.inv()
     }
@@ -330,8 +316,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             Self::into_raw_ensures(self, *regions, r),
     )]
     #[rustc_allow_incoherent_impl]
-    pub fn into_raw(self) -> Paddr
-    {
+    pub fn into_raw(self) -> Paddr {
         assert(regions.slots[self.index()]@.addr() == self.paddr()) by { admit() };
         let tracked owner = regions.slot_owners.tracked_borrow(self.index());
         let tracked perm = regions.slots.tracked_remove(self.index());

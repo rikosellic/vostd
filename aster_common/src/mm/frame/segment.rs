@@ -29,7 +29,7 @@ pub struct Segment<M: AnyFrameMeta + ?Sized> {
 
 /// A [`SegmentOnwer<M>`] holds the permission tokens for all frames in the
 /// [`Segment<M>`] for verification purposes.
-pub tracked struct SegmentOwner<M: AnyFrameMeta + ?Sized> {
+pub ghost struct SegmentOwner<M: AnyFrameMeta + ?Sized> {
     pub perms: Seq<FramePerm<M>>,
 }
 
@@ -42,6 +42,21 @@ impl<M: AnyFrameMeta + ?Sized> Inv for Segment<M> {
     }
 }
 
+impl<M: AnyFrameMeta + ?Sized> Inv for SegmentOwner<M> {
+    /// The invariant of a [`Segment`].
+    open spec fn inv(&self) -> bool {
+        &&& forall |i: int|
+            #![trigger self.perms[i]]
+            0 <= i < self.perms.len() as int ==> {
+                &&& self.perms[i].addr() % PAGE_SIZE() == 0
+                &&& self.perms[i].addr() < MAX_PADDR()
+                &&& self.perms[i].wf()
+                &&& self.perms[i].is_init()
+                &&& self.perms[i].addr() == meta_addr(frame_to_index_spec(self.perms[i].addr()))
+            }
+    }
+}
+
 impl<M: AnyFrameMeta + ?Sized> Segment<M> {
     pub open spec fn inv_with(&self, owner: &SegmentOwner<M>) -> bool {
         &&& self.inv()
@@ -50,6 +65,16 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
             #![trigger owner.perms[i]]
             0 <= i < owner.perms.len() as int ==> owner.perms[i].addr() == self.range.start + (
             i as u64) * PAGE_SIZE()
+    }
+}
+
+impl<M: AnyFrameMeta + ?Sized> SegmentOwner<M> {
+    pub open spec fn is_disjoint_with_meta_region(&self, region: &MetaRegionOwners) -> bool {
+        forall|i: int|
+            #![trigger self.perms[i]]
+            0 <= i < self.perms.len() as int ==> {
+                &&& !region.dropped_slots.contains_key(frame_to_index_spec(self.perms[i].addr()))
+            }
     }
 }
 

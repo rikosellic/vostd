@@ -188,10 +188,8 @@ impl<M: AnyFrameMeta> Segment<M> {
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn split_requires(self, regions: MetaRegionOwners, offset: usize) -> bool {
-        &&& regions.inv()
-        &&& regions.paddr_range_in_region(self.range)
-        &&& self.inv()
+    pub open spec fn split_requires(self, owner: SegmentOwner<M>, offset: usize) -> bool {
+        &&& self.inv_with(&owner)
         &&& offset % PAGE_SIZE() == 0
         &&& 0 < offset < self.size()
     }
@@ -199,26 +197,40 @@ impl<M: AnyFrameMeta> Segment<M> {
     #[rustc_allow_incoherent_impl]
     pub open spec fn split_ensures(
         self,
-        regions: MetaRegionOwners,
         offset: usize,
-        r: (Self, Self),
+        lhs: Self,
+        rhs: Self,
+        ori_owner: SegmentOwner<M>,
+        lhs_owner: SegmentOwner<M>,
+        rhs_owner: SegmentOwner<M>,
     ) -> bool {
-        &&& regions.inv()
-        &&& regions.paddr_range_in_region(r.0.range)
-        &&& regions.paddr_range_in_region(r.1.range)
-        &&& r == self.split_spec(offset)
+        &&& lhs.inv_with(&lhs_owner)
+        &&& rhs.inv_with(&rhs_owner)
+        &&& (lhs, rhs) == self.split_spec(offset)
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn into_raw_requires(self, regions: MetaRegionOwners) -> bool {
+    pub open spec fn into_raw_requires(
+        self,
+        regions: MetaRegionOwners,
+        owner: SegmentOwner<M>,
+    ) -> bool {
+        &&& self.inv_with(&owner)
         &&& regions.inv()
-        &&& self.inv()
+        &&& owner.inv()
+        &&& owner.is_disjoint_with_meta_region(&regions)
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn into_raw_ensures(self, regions: MetaRegionOwners, r: Range<Paddr>) -> bool {
+    pub open spec fn into_raw_ensures(
+        self,
+        regions: MetaRegionOwners,
+        owner: SegmentOwner<M>,
+        r: Range<Paddr>,
+    ) -> bool {
         &&& r == self.range
         &&& regions.inv()
+        &&& regions.paddr_range_in_dropped_region(self.range)
     }
 
     #[rustc_allow_incoherent_impl]
@@ -375,14 +387,14 @@ impl<M: AnyFrameMeta> Segment<M> {
     #[rustc_allow_incoherent_impl]
     #[verus_spec(r =>
         with
-            Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            Tracked(owner): Tracked<SegmentOwner<M>>,
+                -> frame_perms: (Ghost<SegmentOwner<M>>, Ghost<SegmentOwner<M>>),
         requires
-            Self::split_requires(self, *old(regions), offset),
+            Self::split_requires(self, owner, offset),
         ensures
-            Self::split_ensures(self, *regions, offset, r),
+            Self::split_ensures(self, offset, r.0, r.1, owner, frame_perms.0@, frame_perms.1@),
     )]
     pub fn split(self, offset: usize) -> (Self, Self) {
-        // NOTE: in general we prefer to fold runtime assertions into preconditions rather than try to model panics
         let at = self.range.start + offset;
         let idx = at / PAGE_SIZE();
         let res = (
@@ -393,6 +405,17 @@ impl<M: AnyFrameMeta> Segment<M> {
         // TODO: `ManuallyDrop` causes runtime crashes; comment it out for now, but later we'll use the `vstd_extra` implementation
         // let _ = ManuallyDrop::new(self);
 
+        let ghost frame_perms1 = SegmentOwner { perms: owner.perms.subrange(0, idx as int) };
+        let ghost frame_perms2 = SegmentOwner {
+            perms: owner.perms.subrange(idx as int, owner.perms.len() as int),
+        };
+
+        proof {
+            assume(res.0.inv_with(&frame_perms1));
+            assume(res.1.inv_with(&frame_perms2));
+        }
+
+        proof_with!(|= (Ghost(frame_perms1), Ghost(frame_perms2)));
         res
     }
 
@@ -403,13 +426,28 @@ impl<M: AnyFrameMeta> Segment<M> {
     #[verus_spec(r =>
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            // Tracked(owner): Tracked<SegmentOwner<M>>, // transfers backs to the regions.
+            Tracked(owner): Tracked<SegmentOwner<M>>,
         requires
-            Self::into_raw_requires(self, *old(regions)),
+            Self::into_raw_requires(self, *old(regions), owner),
         ensures
-            Self::into_raw_ensures(self, *regions, r),
+            Self::into_raw_ensures(self, *regions, owner, r),
     )]
     pub(crate) fn into_raw(self) -> Range<Paddr> {
+        proof {
+            // Adjust the permission by transferring all
+            // PointsTo perms from `owner` into `regions.dropped_slots`.
+            let new_dropped_slots = Map::new(
+                |i: usize|
+                    { owner.perms.map_values(|v: FramePerm<M>| frame_to_index(v.addr())).contains(i)
+                    },
+                |k: usize| { owner.perms[k as int].points_to },
+            );
+
+            regions.dropped_slots.tracked_union_prefer_right(new_dropped_slots);
+
+            assume(regions.paddr_range_in_dropped_region(self.range));
+        }
+
         let range = self.range;
         // TODO: `ManuallyDrop` causes runtime crashes; comment it out for now, but later we'll use the `vstd_extra` implementation
         // let _ = ManuallyDrop::new(self);
@@ -496,17 +534,20 @@ impl<M: AnyFrameMeta> Segment<M> {
     )]
     pub fn next(&mut self) -> Option<Frame<M>> {
         if self.range.start < self.range.end {
+            proof_decl! {
+                let tracked mut frame_perm: FramePerm<M>;
+            }
+
             // SAFETY: each frame in the range would be a handle forgotten
             // when creating the `Segment` object.
-            unsafe {
-                // FIXME: Upstream `verus_spec` interacts awkwardly with unsafe code.
+            let frame = unsafe {
                 #[verus_spec(with Tracked(regions) => Tracked(frame_perm))]
-                let frame = Frame::<M>::from_raw(self.range.start);
+                Frame::<M>::from_raw(self.range.start)
+            };
 
-                self.range.start = self.range.start + PAGE_SIZE();
-                proof_with!(|= Some(Tracked(frame_perm)));
-                Some(frame)
-            }
+            self.range.start = self.range.start + PAGE_SIZE();
+            proof_with!(|= Some(Tracked(frame_perm)));
+            Some(frame)
         } else {
             proof_with!(|= None);
             None
