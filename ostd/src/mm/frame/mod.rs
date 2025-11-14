@@ -176,9 +176,25 @@ impl<M: AnyFrameMeta> Frame<M> {
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn from_raw_ensures(regions: MetaRegionOwners, paddr: Paddr, r: Self) -> bool {
-        &&& regions.inv()
+    pub open spec fn from_raw_ensures(
+        old_regions: MetaRegionOwners,
+        new_regions: MetaRegionOwners,
+        paddr: Paddr,
+        r: Self,
+    ) -> bool {
+        &&& new_regions.inv()
         &&& r.paddr() == paddr
+        &&& forall|addr: usize|
+            #![trigger frame_to_index(addr)]
+            old_regions.dropped_slots.contains_key(frame_to_index(addr)) ==> {
+                if addr != paddr {
+                    &&& new_regions.dropped_slots.contains_key(frame_to_index(addr))
+                    &&& new_regions.dropped_slots[frame_to_index(addr)]
+                        == old_regions.dropped_slots[frame_to_index(addr)]
+                } else {
+                    !new_regions.dropped_slots.contains_key(frame_to_index(addr))
+                }
+            }
     }
 
     #[rustc_allow_incoherent_impl]
@@ -354,7 +370,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         requires
             Self::from_raw_requires(*old(regions), paddr),
         ensures
-            Self::from_raw_ensures(*regions, paddr, r),
+            Self::from_raw_ensures(*old(regions), *regions, paddr, r),
     )]
     pub fn from_raw(paddr: Paddr) -> Self {
         let vaddr = frame_to_meta(paddr);

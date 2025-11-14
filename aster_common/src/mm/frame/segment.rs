@@ -45,14 +45,13 @@ impl<M: AnyFrameMeta + ?Sized> Inv for Segment<M> {
 impl<M: AnyFrameMeta + ?Sized> Inv for SegmentOwner<M> {
     /// The invariant of a [`Segment`].
     open spec fn inv(&self) -> bool {
-        &&& forall |i: int|
+        &&& forall|i: int|
             #![trigger self.perms[i]]
             0 <= i < self.perms.len() as int ==> {
                 &&& self.perms[i].addr() % PAGE_SIZE() == 0
                 &&& self.perms[i].addr() < MAX_PADDR()
                 &&& self.perms[i].wf()
                 &&& self.perms[i].is_init()
-                &&& self.perms[i].addr() == meta_addr(frame_to_index_spec(self.perms[i].addr()))
             }
     }
 }
@@ -63,8 +62,9 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
         &&& owner.perms.len() * PAGE_SIZE() == self.range.end - self.range.start
         &&& forall|i: int|
             #![trigger owner.perms[i]]
-            0 <= i < owner.perms.len() as int ==> owner.perms[i].addr() == self.range.start + (
-            i as u64) * PAGE_SIZE()
+            0 <= i < owner.perms.len() as int ==> owner.perms[i].addr() == meta_addr(
+                frame_to_index((self.range.start + i * PAGE_SIZE()) as usize),
+            )
     }
 }
 

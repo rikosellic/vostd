@@ -8,6 +8,7 @@ pub mod manually_drop;
 pub mod seq_extra;
 #[macro_use]
 pub mod ptr_extra;
+pub mod map_extra;
 pub mod ownership;
 
 pub mod prelude;
