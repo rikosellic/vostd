@@ -226,6 +226,7 @@ impl<M: AnyFrameMeta> Segment<M> {
         &&& lhs.inv_with(&lhs_owner)
         &&& rhs.inv_with(&rhs_owner)
         &&& (lhs, rhs) == self.split_spec(offset)
+        &&& ori_owner.perms =~= (lhs_owner.perms + rhs_owner.perms)
     }
 
     #[rustc_allow_incoherent_impl]
@@ -369,7 +370,8 @@ impl<M: AnyFrameMeta> Segment<M> {
 
         let mut i = 0;
         let addr_len = (range.end - range.start) / PAGE_SIZE();
-        while i < addr_len
+
+        #[verus_spec(
             invariant
                 i <= addr_len,
                 i as int == addrs.len(),
@@ -398,13 +400,15 @@ impl<M: AnyFrameMeta> Segment<M> {
                         &&& addrs[j] % PAGE_SIZE() == 0
                         &&& addrs[j] == range.start + (j as u64) * PAGE_SIZE()
                     },
-                forall|paddr: Paddr|
-                    #[trigger] old(regions).slots.contains_key(frame_to_index(paddr)) ==> regions.slots.contains_key(frame_to_index(paddr)),
+                forall|paddr: Paddr| #[trigger]
+                    old(regions).slots.contains_key(frame_to_index(paddr))
+                        ==> regions.slots.contains_key(frame_to_index(paddr)),
                 regions.inv(),
                 segment.range.start == range.start,
                 segment.range.end == range.start + i * PAGE_SIZE(),
             decreases addr_len - i,
-        {
+        )]
+        while i < addr_len {
             let paddr = range.start + i * PAGE_SIZE();
             let (paddr, meta) = metadata_fn(paddr);
 
@@ -432,16 +436,6 @@ impl<M: AnyFrameMeta> Segment<M> {
         proof {
             broadcast use vstd_extra::map_extra::lemma_map_remove_keys_finite;
             broadcast use vstd_extra::seq_extra::lemma_seq_to_set_map_contains;
-            broadcast use vstd::seq::Seq::lemma_index_contains;
-
-            assert(forall |i: int|
-                #![trigger addrs[i]]
-                0 <= i < addrs.len() as int ==> {
-                    &&& regions.slots.contains_key(frame_to_index_spec(addrs[i]))
-                    &&& !regions.dropped_slots.contains_key(frame_to_index_spec(addrs[i]))
-                    &&& addrs[i] % PAGE_SIZE() == 0
-                    &&& addrs[i] == range.start + (i as u64) * PAGE_SIZE()
-                });
 
             let owner_seq = addrs.map_values(
                 |addr: usize|
@@ -459,25 +453,25 @@ impl<M: AnyFrameMeta> Segment<M> {
             let index = addrs.map_values(|addr: Paddr| frame_to_index(addr)).to_set();
             regions.slots.tracked_remove_keys(index);
 
-            assert forall |addr: usize|
+            assert forall|addr: usize|
                 #![trigger frame_to_index_spec(addr)]
                 range.start <= addr < range.end && addr % PAGE_SIZE() == 0 implies {
-                    &&& !regions.slots.contains_key(frame_to_index_spec(addr))
-                    &&& !regions.dropped_slots.contains_key(frame_to_index_spec(addr))
-                } by {
-                    // proof by contradiction
-                    assert(addrs.contains(addr)) by {
-                        if !addrs.contains(addr) {
-                            let j = (addr - range.start) / PAGE_SIZE() as int;
-                            assert(0 <= j < addrs.len() as usize) by {
-                                assert(addr >= range.start);
-                                assert(addr < range.end);
-                                assert(addr % PAGE_SIZE() == 0);
-                            };
-                            assert(addrs[j as int] == addr);
-                        }
+                &&& !regions.slots.contains_key(frame_to_index_spec(addr))
+                &&& !regions.dropped_slots.contains_key(frame_to_index_spec(addr))
+            } by {
+                // proof by contradiction
+                assert(addrs.contains(addr)) by {
+                    if !addrs.contains(addr) {
+                        let j = (addr - range.start) / PAGE_SIZE() as int;
+                        assert(0 <= j < addrs.len() as usize) by {
+                            assert(addr >= range.start);
+                            assert(addr < range.end);
+                            assert(addr % PAGE_SIZE() == 0);
+                        };
+                        assert(addrs[j as int] == addr);
                     }
                 }
+            }
         }
 
         proof_with!(|= Ghost(owner));
@@ -505,7 +499,7 @@ impl<M: AnyFrameMeta> Segment<M> {
     )]
     pub fn split(self, offset: usize) -> (Self, Self) {
         let at = self.range.start + offset;
-        let idx = at / PAGE_SIZE();
+        let idx = offset / PAGE_SIZE();
         let res = (
             Self { range: self.range.start..at, _marker: core::marker::PhantomData },
             Self { range: at..self.range.end, _marker: core::marker::PhantomData },
@@ -520,8 +514,7 @@ impl<M: AnyFrameMeta> Segment<M> {
         };
 
         proof {
-            assume(res.0.inv_with(&frame_perms1));
-            assume(res.1.inv_with(&frame_perms2));
+            owner.perms.lemma_split_at(idx as int);
         }
 
         proof_with!(|= (Ghost(frame_perms1), Ghost(frame_perms2)));

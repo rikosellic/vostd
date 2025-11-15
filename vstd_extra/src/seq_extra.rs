@@ -4,7 +4,10 @@ use vstd::seq_lib::*;
 
 verus! {
 
-broadcast use group_seq_axioms, group_seq_lib_default;
+broadcast use {
+    group_seq_axioms,
+    group_seq_lib_default,
+};
 
 #[verifier::external_body]
 pub proof fn seq_tracked_empty<T>() -> (tracked res: Seq<T>)
@@ -80,7 +83,6 @@ pub broadcast proof fn lemma_seq_to_set_map_contains<T, U>(s: Seq<T>, f: spec_fn
     ensures
         #![trigger s.map_values(f), s[i]]
         (s.map_values(f)).to_set().contains(f(s[i])),
-        
 {
     assert(s.contains(s[i]));
     assert(f(s[i]) == s.map_values(f)[i]);
