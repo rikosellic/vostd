@@ -111,8 +111,9 @@ impl MetaRegionOwners {
             range.start < range.end < MAX_PADDR(),
     {
         forall|paddr: Paddr|
+            #![trigger frame_to_index_spec(paddr)]
             (range.start <= paddr < range.end && paddr % PAGE_SIZE() == 0)
-                ==> #[trigger] self.slots.contains_key(frame_to_index_spec(paddr))
+                ==> self.slots.contains_key(frame_to_index_spec(paddr))
     }
 
     pub open spec fn paddr_range_in_dropped_region(self, range: Range<Paddr>) -> bool
@@ -121,9 +122,22 @@ impl MetaRegionOwners {
             range.start < range.end < MAX_PADDR(),
     {
         forall|paddr: Paddr|
+            #![trigger frame_to_index_spec(paddr)]
             (range.start <= paddr < range.end && paddr % PAGE_SIZE() == 0)
-                ==> !#[trigger] self.slots.contains_key(frame_to_index_spec(paddr))
-                && #[trigger] self.dropped_slots.contains_key(frame_to_index_spec(paddr))
+                ==> !self.slots.contains_key(frame_to_index_spec(paddr))
+                && self.dropped_slots.contains_key(frame_to_index_spec(paddr))
+    }
+
+    pub open spec fn paddr_range_not_in_region(self, range: Range<Paddr>) -> bool
+        recommends
+            self.inv(),
+            range.start < range.end < MAX_PADDR(),
+    {
+        forall|paddr: Paddr|
+            #![trigger frame_to_index_spec(paddr)]
+            (range.start <= paddr < range.end && paddr % PAGE_SIZE() == 0)
+                ==> !self.slots.contains_key(frame_to_index_spec(paddr))
+                && !self.dropped_slots.contains_key(frame_to_index_spec(paddr))
     }
 
     pub proof fn inv_implies_correct_addr(self, paddr: usize)

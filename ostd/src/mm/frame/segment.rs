@@ -196,12 +196,7 @@ impl<M: AnyFrameMeta> Segment<M> {
                             frame_to_index_spec((range.start + i * PAGE_SIZE()) as usize),
                         )
                     }
-                &&& forall|paddr: Paddr|
-                    #![trigger frame_to_index_spec(paddr)]
-                    range.start <= paddr < range.end && paddr % PAGE_SIZE() == 0 ==> {
-                        &&& !new_regions.slots.contains_key(frame_to_index_spec(paddr))
-                        &&& !new_regions.dropped_slots.contains_key(frame_to_index_spec(paddr))
-                    }
+                &&& new_regions.paddr_range_not_in_region(range)
             }
         }
     }
@@ -264,21 +259,21 @@ impl<M: AnyFrameMeta> Segment<M> {
 
     #[rustc_allow_incoherent_impl]
     pub open spec fn from_raw_ensures(
-        regions: MetaRegionOwners,
+        self,
+        old_regions: MetaRegionOwners,
+        new_regions: MetaRegionOwners,
+        owner: SegmentOwner<M>,
         range: Range<Paddr>,
-        res: Self,
     ) -> bool {
-        &&& regions.inv()
-        &&& res.inv()
-        &&& res.range == range
-        &&& regions.paddr_range_in_dropped_region(res.range)
+        &&& self.inv_with(&owner)
+        &&& self.range == range
+        &&& new_regions.inv()
+        &&& new_regions.paddr_range_not_in_region(range)
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn slice_requires(self, regions: MetaRegionOwners, range: Range<Paddr>) -> bool {
-        &&& regions.inv()
-        &&& regions.paddr_range_in_region(self.range)
-        &&& self.inv()
+    pub open spec fn slice_requires(self, owner: SegmentOwner<M>, range: Range<Paddr>) -> bool {
+        &&& self.inv_with(&owner)
         &&& range.start % PAGE_SIZE() == 0
         &&& range.end % PAGE_SIZE() == 0
         &&& self.range.start + range.start <= self.range.start + range.end <= self.range.end
@@ -287,13 +282,18 @@ impl<M: AnyFrameMeta> Segment<M> {
     #[rustc_allow_incoherent_impl]
     pub open spec fn slice_ensures(
         self,
-        regions: MetaRegionOwners,
+        owner: SegmentOwner<M>,
         range: Range<Paddr>,
         res: Self,
     ) -> bool {
-        &&& regions.inv()
-        &&& regions.paddr_range_in_region(res.range)
-        &&& res.inv()
+        &&& res.inv_with(
+            &SegmentOwner {
+                perms: owner.perms.subrange(
+                    (range.start / PAGE_SIZE()) as int,
+                    (range.end / PAGE_SIZE()) as int,
+                ),
+            },
+        )
     }
 
     #[rustc_allow_incoherent_impl]
@@ -522,8 +522,8 @@ impl<M: AnyFrameMeta> Segment<M> {
     }
 
     /// Forgets the [`Segment`] and gets a raw range of physical addresses.
-    // NOTE: forgotten objects have their `PointsTo` perms removed from the `slots` field of MetaRegionOwners
-    // and added to the `dropped_slots` so that they can be restored later.
+    // NOTE: forgotten frames will be released from `owner`'s permission and
+    //       later added back to `regions.dropped_slots`, and `owner` is moved.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(r =>
         with
@@ -536,18 +536,29 @@ impl<M: AnyFrameMeta> Segment<M> {
     )]
     pub(crate) fn into_raw(self) -> Range<Paddr> {
         proof {
+            broadcast use vstd_extra::seq_extra::lemma_seq_to_set_map_contains;
+            broadcast use aster_common::prelude::frame::lemma_paddr_to_meta_biinjective;
             // Adjust the permission by transferring all
             // PointsTo perms from `owner` into `regions.dropped_slots`.
+
+            let new_keys = owner.perms.map_values(|v: FramePerm<M>| meta_to_frame_spec(v.addr()));
             let new_dropped_slots = Map::new(
-                |i: usize|
-                    { owner.perms.map_values(|v: FramePerm<M>| frame_to_index(v.addr())).contains(i)
-                    },
+                |i: usize| new_keys.contains(i),
                 |k: usize| { owner.perms[k as int].points_to },
             );
 
             regions.dropped_slots.tracked_union_prefer_right(new_dropped_slots);
 
-            assume(regions.paddr_range_in_dropped_region(self.range));
+            assert forall|paddr: Paddr|
+                self.range.start <= paddr < self.range.end && paddr % PAGE_SIZE() == 0 implies {
+                &&& regions.dropped_slots.contains_key(#[trigger] frame_to_index_spec(paddr))
+            } by {
+                assert(new_keys.to_set().contains(frame_to_index_spec(paddr))) by {
+                    let j = (paddr - self.range.start) / PAGE_SIZE() as int;
+                    assert(0 <= j < owner.perms.len() as int);
+                    assert(owner.perms[j].addr() == meta_addr(frame_to_index_spec(paddr)));
+                }
+            }
         }
 
         let range = self.range;
@@ -571,13 +582,53 @@ impl<M: AnyFrameMeta> Segment<M> {
         requires
             Self::from_raw_requires(*old(regions), range),
         ensures
-            Self::from_raw_ensures(*regions, range, r),
+            Self::from_raw_ensures(r, *old(regions), *regions, frame_perms@, range),
     )]
     pub(crate) unsafe fn from_raw(range: Range<Paddr>) -> Self {
+        proof_decl! {
+            let ghost mut frame_perms: SegmentOwner<M>;
+        }
         // We create new permissions from stealing the `PointsTo` perms
         // from `regions.dropped_slots` so we must ensure that all frames
         // cannot be restored again.
-        let ghost frame_perms = SegmentOwner { perms: Seq::empty() };
+        proof {
+            broadcast use vstd::arithmetic::div_mod::group_div_basics;
+
+            let len = (range.end - range.start) / PAGE_SIZE() as int;
+            let owner_seq = Seq::new(
+                len as nat,
+                |i: int|
+                    {
+                        let paddr = (range.start + (i as u64) * PAGE_SIZE() as int) as Paddr;
+                        FramePerm {
+                            addr: meta_addr(frame_to_index(paddr)),
+                            points_to: regions.dropped_slots[frame_to_index(paddr)],
+                            _T: core::marker::PhantomData,
+                        }
+                    },
+            );
+            frame_perms = SegmentOwner { perms: owner_seq };
+
+            // Then remove the frames from `regions.dropped_slots`.
+            let keys = Set::new(
+                |paddr: Paddr| { range.start <= paddr < range.end && paddr % PAGE_SIZE() == 0 },
+            );
+            let keys_to_remove = keys.map(|paddr: Paddr| frame_to_index(paddr));
+
+            regions.dropped_slots.tracked_remove_keys(keys_to_remove);
+
+            assert forall|paddr: Paddr|
+                #![trigger frame_to_index(paddr)]
+                range.start <= paddr < range.end && paddr % PAGE_SIZE() == 0 implies {
+                &&& !regions.dropped_slots.contains_key(#[trigger] frame_to_index(paddr))
+            } by {
+                assert(keys.contains(paddr));
+
+                if regions.dropped_slots.contains_key(frame_to_index(paddr)) {
+                    assert(!keys_to_remove.contains(frame_to_index(paddr)));
+                }
+            }
+        }
 
         proof_with!(|= Ghost(frame_perms));
         Self { range, _marker: core::marker::PhantomData }
@@ -592,18 +643,16 @@ impl<M: AnyFrameMeta> Segment<M> {
     ///
     /// The function panics if the byte offset range is out of bounds, or if
     /// any of the ends of the byte offset range is not base-page aligned.
-    ///
-    /// TODO: What about the permissions here?
     #[rustc_allow_incoherent_impl]
-    #[verus_spec(res =>
+    #[verus_spec(r =>
         with
-            Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            Tracked(owner): Tracked<&SegmentOwner<M>>,
         requires
-            Self::slice_requires(*self, *old(regions), *range),
+            Self::slice_requires(*self, *owner, *range),
         ensures
-            Self::slice_ensures(*self, *regions, *range, res),
+            Self::slice_ensures(*self, *owner, *range, r),
     )]
-    pub fn slice(&self, range: &Range<Paddr>) -> (res: Self) {
+    pub fn slice(&self, range: &Range<Paddr>) -> Self {
         let start = self.range.start + range.start;
         let end = self.range.start + range.end;
 

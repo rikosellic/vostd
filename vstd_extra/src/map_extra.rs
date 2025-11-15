@@ -1,13 +1,10 @@
-use vstd::prelude::*;
 use vstd::map::*;
+use vstd::prelude::*;
 use vstd::set::*;
 
 verus! {
 
-broadcast use {
-    group_map_axioms,
-    group_set_axioms,
-};
+broadcast use {group_map_axioms, group_set_axioms};
 
 pub broadcast proof fn lemma_map_remove_keys_finite<K, V>(m: Map<K, V>, keys: Set<K>)
     requires
