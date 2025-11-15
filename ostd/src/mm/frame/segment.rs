@@ -431,6 +431,7 @@ impl<M: AnyFrameMeta> Segment<M> {
 
         proof {
             broadcast use vstd_extra::map_extra::lemma_map_remove_keys_finite;
+            broadcast use vstd_extra::seq_extra::lemma_seq_to_set_map_contains;
             broadcast use vstd::seq::Seq::lemma_index_contains;
 
             assert(forall |i: int|
@@ -455,7 +456,7 @@ impl<M: AnyFrameMeta> Segment<M> {
             );
             owner = Some(SegmentOwner { perms: owner_seq });
 
-            let index = addrs.map(|i: int, addr: usize| frame_to_index(addr)).to_set();
+            let index = addrs.map_values(|addr: Paddr| frame_to_index(addr)).to_set();
             regions.slots.tracked_remove_keys(index);
 
             assert forall |addr: usize|
@@ -474,14 +475,6 @@ impl<M: AnyFrameMeta> Segment<M> {
                                 assert(addr % PAGE_SIZE() == 0);
                             };
                             assert(addrs[j as int] == addr);
-                        }
-                    }
-
-                    assert(!regions.slots.contains_key(frame_to_index_spec(addr))) by {
-                        assert forall |i: int|
-                            0 <= i < addrs.len() as int implies index.contains(frame_to_index_spec(addrs[i]))
-                        by {
-                            admit();
                         }
                     }
                 }

@@ -74,11 +74,24 @@ pub broadcast proof fn lemma_seq_push_head_take_head<T>(s: Seq<T>, hd: T)
 {
 }
 
+pub broadcast proof fn lemma_seq_to_set_map_contains<T, U>(s: Seq<T>, f: spec_fn(T) -> U, i: int)
+    requires
+        0 <= i < s.len(),
+    ensures
+        #![trigger s.map_values(f), s[i]]
+        (s.map_values(f)).to_set().contains(f(s[i])),
+        
+{
+    assert(s.contains(s[i]));
+    assert(f(s[i]) == s.map_values(f)[i]);
+}
+
 pub broadcast group group_seq_extra_lemmas {
     lemma_seq_add_head_back,
     lemma_seq_push_head,
     lemma_seq_drop_pushed_head,
     lemma_seq_push_head_take_head,
+    lemma_seq_to_set_map_contains,
 }
 
 } // verus!
