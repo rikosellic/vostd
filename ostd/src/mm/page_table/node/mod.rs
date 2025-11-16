@@ -76,7 +76,9 @@ impl<C: PageTableConfig> PageTableNode<C> {
         #[verus_spec(with Tracked(slot_own), Tracked(slot_perm), Tracked(perm))]
         let meta = self.meta();
         meta.level
-    }/* TODO: stub out allocator
+    }
+    
+    /* TODO: stub out allocator
     /// Allocates a new empty page table node.
     pub(super) fn alloc(level: PagingLevel) -> Self {
         let meta = PageTablePageMeta::new(level);
@@ -202,7 +204,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     pub fn entry<'slot>(guard: PPtr<Self>, idx: usize) -> Entry<'rcu, C>
         requires
             owner.inv(),
-//            owner.relate_slot_owner(slot_own),
+            owner.node.unwrap().relate_slot_owner(slot_own),
             guard_perm.pptr() == guard,
     {
         //        assert!(idx < nr_subpage_per_huge::<C>());
@@ -219,13 +221,13 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     )]
     pub fn nr_children(&self) -> u16
         requires
-            owner.as_child.is_node(),
-            self.inner.inner.ptr == owner.as_child.node.unwrap().slot_perm@.pptr(),
+            owner.is_node(),
+            self.inner.inner.ptr == owner.node.unwrap().slot_perm@.pptr(),
             owner.inv(),
-//            owner.relate_slot_owner(slot_own),
+            owner.node.unwrap().relate_slot_owner(slot_own),
             slot_own.inv(),
     {
-        let tracked node_owner = owner.as_child.node.tracked_borrow();
+        let tracked node_owner = owner.node.tracked_borrow();
 
         // SAFETY: The lock is held so we have an exclusive access.
         #[verus_spec(with Tracked(slot_own),
@@ -244,12 +246,12 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     )]
     pub fn stray_mut(&mut self) -> PCell<bool>
         requires
-            owner.as_child.is_node(),
-            old(self).inner.inner.ptr == owner.as_child.node.unwrap().slot_perm@.pptr(),
+            owner.is_node(),
+            old(self).inner.inner.ptr == owner.node.unwrap().slot_perm@.pptr(),
+            owner.node.unwrap().relate_slot_owner(slot_own),
             owner.inv(),
-//            owner.relate_slot_owner(slot_own),
     {
-        let tracked node_owner = owner.as_child.node.tracked_borrow();
+        let tracked node_owner = owner.node.tracked_borrow();
 
         // SAFETY: The lock is held so we have an exclusive access.
         #[verus_spec(with Tracked(slot_own),
@@ -317,14 +319,12 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     ///     with the page table node.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<&mut NodeOwner<C>>,
-            Tracked(slot_own) : Tracked<&MetaSlotOwner>,
-            Tracked(slot_perm) : Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
+        with Tracked(owner): Tracked<&mut NodeOwner<C>>,
+            Tracked(slot_own): Tracked<&MetaSlotOwner>,
+            Tracked(slot_perm): Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
-    #[verusfmt::skip]
     pub fn write_pte(&mut self, idx: usize, pte: C::E)
         requires
-            old(self).inner.inner.ptr == slot_perm.pptr(),
             old(owner).inv(),
             slot_own.inv(),
             slot_perm.is_init(),
@@ -335,7 +335,6 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
         let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(
-            #[verusfmt::skip]
             paddr_to_vaddr(
                 #[verus_spec(with Tracked(&slot_own), Tracked(slot_perm))]
                 self.start_paddr()

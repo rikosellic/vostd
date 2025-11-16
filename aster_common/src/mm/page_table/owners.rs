@@ -41,9 +41,13 @@ impl<'rcu, C: PageTableConfig> Inv for OwnerInTree<'rcu, C> {
 impl<'rcu, C: PageTableConfig> TreeNodeValue for EntryOwner<'rcu, C> {
     open spec fn default() -> Self {
         Self {
-            as_child: ChildOwner { node:None, frame:None, locked:None },
+            node:None,
+            frame:None,
+            locked:None,
+            absent: true,
             index: 0,
             base_addr: 0,
+            guard_addr: 0,
             path: Ghost(Seq::empty())
         }
     }
@@ -68,7 +72,7 @@ impl<'rcu, C: PageTableConfig> Deref for OwnerAsTreeNode<'rcu, C> {
 
 impl<'rcu, C: PageTableConfig> OwnerAsTreeNode<'rcu, C> {
     pub open spec fn is_leaf(self) -> bool {
-        &&& self.inner.value.as_child.is_frame()
+        &&& self.inner.value.is_frame()
 //        &&& self.value.get_entry().unwrap().node_owner.meta_own.nr_children@
         &&& self.inner.children.len() == 0
     }
@@ -78,10 +82,10 @@ impl<'rcu, C: PageTableConfig> OwnerAsTreeNode<'rcu, C> {
     pub open spec fn valid_ptrs(self) -> bool {
         forall|i: usize| #![auto]
             0 <= i < NR_ENTRIES() ==> self.inner.children[i as int] is Some ==> {
-                &&& self.inner.value.as_child.node is Some
-                &&& self.inner.value.as_child.node.unwrap().children_perm.is_init(i as int)
+                &&& self.inner.value.node is Some
+                &&& self.inner.value.node.unwrap().children_perm.is_init(i as int)
 //                &&& self.inner.children[i as int].unwrap().value.tree_node is Some
-                &&& self.inner.value.as_child.node.unwrap().children_perm.opt_value()[i as int].value().wf(
+                &&& self.inner.value.node.unwrap().children_perm.opt_value()[i as int].value().wf(
                     self.inner.children[i as int].unwrap().value)
             }
     }

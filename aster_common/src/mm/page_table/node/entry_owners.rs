@@ -10,7 +10,7 @@ verus! {
 pub tracked struct NodeEntryOwner<'rcu, C: PageTableConfig> {
     pub as_node: NodeOwner<C>,
     pub guard_perm: Tracked<PointsTo<PageTableGuard<'rcu, C>>>,
-    // TODO: this corresponds to the `node` pointers of the children, NOT of this node's entry!
+
     pub children_perm: array_ptr::PointsTo<Entry<'rcu, C>, CONST_NR_ENTRIES>,
     pub slot_perm: Tracked<PointsTo<MetaSlot>>,
 }
@@ -43,26 +43,24 @@ impl<'rcu, C: PageTableConfig> NodeEntryOwner<'rcu, C> {
     }
 }
 
-// Verus support for enums is... iffy. So we simulate it with a struct.
-pub tracked struct ChildOwner<'rcu, C: PageTableConfig> {
+pub tracked struct FrameEntryOwner {
+    pub mapped_pa: usize,
+    pub prop: PageProperty
+}
+
+pub tracked struct EntryOwner<'rcu, C: PageTableConfig> {
     pub node: Option<NodeEntryOwner<'rcu, C>>,
-    pub frame: Option<(usize, PageProperty)>,
-    pub locked: Option<Ghost<EntryView<C>>>
+    pub frame: Option<FrameEntryOwner>,
+    pub locked: Option<Ghost<EntryView<C>>>,
+    pub absent: bool,
+
+    pub base_addr: usize,
+    pub guard_addr: usize,
+    pub index: usize,
+    pub path: Ghost<Seq<IntermediatePageTableEntryView<C>>>,
 }
 
-impl<'rcu, C: PageTableConfig> Inv for ChildOwner<'rcu, C> {
-    open spec fn inv(self) -> bool {
-        &&& self.node is Some ==> {
-            &&& self.frame is None
-            &&& self.locked is None
-            &&& self.node.unwrap().inv()
-        }
-        &&& self.frame is Some ==> self.node is None && self.locked is None
-        &&& self.locked is Some ==> self.frame is None && self.node is None
-    }
-}
-
-impl<'rcu, C: PageTableConfig> ChildOwner<'rcu, C> {
+impl<'rcu, C: PageTableConfig> EntryOwner<'rcu, C> {
     pub open spec fn is_node(self) -> bool {
         self.node is Some
     }
@@ -76,20 +74,37 @@ impl<'rcu, C: PageTableConfig> ChildOwner<'rcu, C> {
     }
 
     pub open spec fn is_absent(self) -> bool {
-        self.node is None && self.frame is None && self.locked is None
+        self.absent
     }
-}
 
-pub tracked struct EntryOwner<'rcu, C: PageTableConfig> {
-    pub as_child: ChildOwner<'rcu, C>,
-    pub base_addr: usize,
-    pub index: usize,
-    pub path: Ghost<Seq<IntermediatePageTableEntryView<C>>>,
+    // An `Entry` carries a pointer to the guard for its parent node,
+    // which from the perspective of a single `EntryOwner` must be provided
+    // separately. Its inner pointer corresponds to the base address of the entry.
+    pub open spec fn relate_parent_guard_perm(self, guard_perm: PointsTo<PageTableGuard<'rcu, C>>) -> bool {
+        &&& guard_perm.addr() == self.guard_addr
+        &&& guard_perm.is_init()
+        &&& guard_perm.value().inner.inner.ptr.addr() == self.base_addr
+    }
 }
 
 impl<'rcu, C: PageTableConfig> Inv for EntryOwner<'rcu, C> {
     open spec fn inv(self) -> bool {
-        &&& self.as_child.inv()
+        &&& self.node is Some ==> {
+            &&& self.frame is None
+            &&& self.locked is None
+            &&& self.node.unwrap().inv()
+            &&& !self.absent
+        }
+        &&& self.frame is Some ==> {
+            &&& self.node is None 
+            &&& self.locked is None
+            &&& !self.absent
+        }
+        &&& self.locked is Some ==> {
+            &&& self.frame is None
+            &&& self.node is None
+            &&& !self.absent
+        }
     }
 }
 
@@ -98,18 +113,18 @@ impl <'rcu, C: PageTableConfig> View for EntryOwner<'rcu, C> {
 
     #[verifier::external_body]
     open spec fn view(&self) -> <Self as View>::V {
-        if let Some((paddr, prop)) = self.as_child.frame {
+        if let Some(frame) = self.frame {
             EntryView::Leaf(LeafPageTableEntryView{
                 map_va: 0, // TODO: compute from the path the virtual address the entry maps
-                frame_pa: self.base_addr as int, // TODO: track or compute the phys address of the node the entry is part of
-                in_frame_index: self.index as int, // TODO: track or compute the entry's index within its node
-                map_to_pa: paddr as int,
+                frame_pa: self.base_addr as int,
+                in_frame_index: self.index as int,
+                map_to_pa: frame.mapped_pa as int,
                 level: (self.path@.len() + 1) as u8,
-                prop: prop,
+                prop: frame.prop,
                 phantom: PhantomData
             })
         }
-        else if let Some(node) = self.as_child.node {
+        else if let Some(node) = self.node {
             EntryView::Intermediate(IntermediatePageTableEntryView{
                 map_va: 0, // TODO: as above
                 frame_pa: self.base_addr as int,
@@ -118,7 +133,7 @@ impl <'rcu, C: PageTableConfig> View for EntryOwner<'rcu, C> {
                 level: (self.path@.len() + 1) as u8,
                 phantom: PhantomData
            })
-        } else if let Some(view) = self.as_child.locked {
+        } else if let Some(view) = self.locked {
             view@
         } else {
             EntryView::Absent
@@ -134,6 +149,7 @@ impl<'rcu, C: PageTableConfig> OwnerOf for Entry<'rcu, C> {
     type Owner = EntryOwner<'rcu, C>;
 
     open spec fn wf(self, owner: Self::Owner) -> bool {
+        &&& self.node.addr() == owner.guard_addr
         &&& self.idx < NR_ENTRIES()
         &&& self.pte.paddr() % PAGE_SIZE() == 0
         &&& self.pte.paddr() < MAX_PADDR()
