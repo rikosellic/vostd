@@ -36,6 +36,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
         with Tracked(owner) : Tracked<EntryOwner<C>>,
+            Tracked(guard_perm) : Tracked<&PointsTo<PageTableGuard<'rcu, C>>>,
             Tracked(slot_own) : Tracked<&MetaSlotOwner>,
             Tracked(inner_perm) : Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, PageTablePageMeta<C>>>
     )]
@@ -44,16 +45,18 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         requires
             owner.inv(),
             self.wf(owner),
-            owner.relate_slot_owner(slot_own),
+            self.node == guard_perm.pptr(),
+//            owner.relate_slot_owner(slot_own),
     {
-        let guard = self.node.borrow(Tracked(owner.guard_perm.borrow()));
+        let guard = self.node.borrow(Tracked(guard_perm));
+        let tracked node_owner = owner.as_child.node.tracked_borrow();
 
         #[verusfmt::skip]
         self.pte.is_present() &&
             !self.pte.is_last(
                 #[verus_spec(with Tracked(slot_own),
-                    Tracked(owner.slot_perm.borrow()),
-                    Tracked(owner.node_own.meta_perm.borrow()))
+                    Tracked(node_owner.slot_perm.borrow()),
+                    Tracked(node_owner.as_node.meta_perm.borrow()))
                 ]
                 guard.level()
             )
@@ -63,6 +66,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
         with Tracked(owner): Tracked<&EntryOwner<C>>,
+            Tracked(guard_perm): Tracked<&PointsTo<PageTableGuard<'rcu, C>>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
     pub fn to_ref(&self) -> ChildRef<'rcu, C>
@@ -70,19 +74,21 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             self.wf(*owner),
             owner.inv(),
             old(regions).inv(),
-            self.pte.paddr() == meta_to_frame(owner.slot_perm@.addr()),
-            owner.slot_perm@.value().wf(old(regions).slot_owners[frame_to_index(self.pte.paddr())]),
+            self.pte.paddr() == meta_to_frame(owner.as_child.node.unwrap().slot_perm@.addr()),
+            owner.as_child.node.unwrap().slot_perm@.value().wf(old(regions).slot_owners[frame_to_index(self.pte.paddr())]),
             old(regions).dropped_slots.contains_key(frame_to_index(self.pte.paddr())),
             !old(regions).slots.contains_key(frame_to_index(self.pte.paddr())),
     {
-        let guard = self.node.borrow(Tracked(owner.guard_perm.borrow()));
+        let guard = self.node.borrow(Tracked(guard_perm));
 
         assert(regions.slot_owners.contains_key(frame_to_index(self.pte.paddr())));
 
+        let tracked node_owner = owner.as_child.node.tracked_borrow();
+
         #[verus_spec(with Tracked(regions.slot_owners.tracked_borrow(
-            frame_to_index(meta_to_frame(owner.slot_perm@.addr())))),
-            Tracked(owner.slot_perm.borrow()),
-            Tracked(owner.node_own.meta_perm.borrow()))]
+            frame_to_index(meta_to_frame(node_owner.slot_perm@.addr())))),
+            Tracked(node_owner.slot_perm.borrow()),
+            Tracked(node_owner.as_node.meta_perm.borrow()))]
         let level = guard.level();
         // SAFETY:
         //  - The PTE outlives the reference (since we have `&self`).
@@ -97,13 +103,14 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
         with Tracked(owner) : Tracked<&mut EntryOwner<'rcu, C>>,
+            Tracked(guard_perm): Tracked<&mut PointsTo<PageTableGuard<'rcu, C>>>,
             Tracked(slot_own) : Tracked<&MetaSlotOwner>
     )]
     pub fn protect(&mut self, op: impl FnOnce(PageProperty) -> PageProperty)
         requires
             old(owner).inv(),
             old(self).wf(*old(owner)),
-            old(owner).relate_slot_owner(slot_own),
+//            old(owner).relate_slot_owner(slot_own),
             op.requires((old(self).pte.prop(),)),
     {
         if !self.pte.is_present() {
@@ -118,17 +125,21 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
 
         self.pte.set_prop(new_prop);
 
-        let mut guard = self.node.take(Tracked(owner.guard_perm.borrow_mut()));
+        let mut guard = self.node.take(Tracked(guard_perm));
+
+        let tracked mut node_owner = owner.as_child.node.tracked_take();
 
         // SAFETY:
         //  1. The index is within the bounds.
         //  2. We replace the PTE with a new one, which differs only in
         //     `PageProperty`, so the level still matches the current
         //     page table node.
-        #[verus_spec(with Tracked(&mut owner.node_own), Tracked(slot_own), Tracked(owner.slot_perm.borrow()))]
+        #[verus_spec(with Tracked(&mut node_owner.as_node),
+            Tracked(slot_own),
+            Tracked(node_owner.slot_perm.borrow()))]
         guard.write_pte(self.idx, self.pte);
 
-        self.node.put(Tracked(owner.guard_perm.borrow_mut()), guard)
+        proof { owner.as_child.node = Some(node_owner); }
     }
 
     /// Replaces the entry with a new child.
@@ -143,6 +154,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     #[verus_spec(
         with Tracked(regions) : Tracked<&mut MetaRegionOwners>,
             Tracked(owner) : Tracked<&mut EntryOwner<'rcu, C>>,
+            Tracked(guard_perm): Tracked<&mut PointsTo<PageTableGuard<'rcu, C>>>,
             Tracked(slot_own) : Tracked<&MetaSlotOwner>,
             Tracked(nr_children_perm) : Tracked<&mut vstd::cell::PointsTo<u16>>
     )]
@@ -165,12 +177,16 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             }
             Child::None => {}
         }*/
-        let mut guard = self.node.take(Tracked(owner.guard_perm.borrow_mut()));
+        let mut guard = self.node.take(Tracked(guard_perm));
+
+        let tracked node_owner = owner.as_child.node.tracked_borrow();
 
         // SAFETY:
         //  - The PTE is not referenced by other `ChildRef`s (since we have `&mut self`).
         //  - The level matches the current node.
-        #[verus_spec(with Tracked(slot_own), Tracked(owner.slot_perm.borrow()), Tracked(owner.node_own.meta_perm.borrow()))]
+        #[verus_spec(with Tracked(slot_own),
+            Tracked(node_owner.slot_perm.borrow()),
+            Tracked(node_owner.as_node.meta_perm.borrow()))]
         let level = guard.level();
 
         #[verus_spec(with Tracked(regions))]
@@ -185,7 +201,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             let _tmp = nr_children.take(Tracked(nr_children_perm));
             nr_children.put(Tracked(nr_children_perm), _tmp - 1);
         }
-        #[verus_spec(with Some(Tracked(slot_own)), Some(Tracked(owner.slot_perm.borrow())))]
+        
+        #[verus_spec(with Some(Tracked(slot_own)), Some(Tracked(node_owner.slot_perm.borrow())))]
         let new_pte = new_child.into_pte();
 
         // SAFETY:
@@ -193,7 +210,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         //  2. The new PTE is a valid child whose level matches the current page table node.
         guard.write_pte(self.idx, new_pte);
 
-        self.node.put(Tracked(owner.guard_perm.borrow_mut()), guard);
+        self.node.put(Tracked(guard_perm), guard);
 
         self.pte = new_pte;
 
@@ -303,18 +320,23 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     /// The caller must ensure that the index is within the bounds of the node.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<&EntryOwner<C>>,
-            Tracked(slot_own) : Tracked<&MetaSlotOwner>
+        with Tracked(owner): Tracked<&EntryOwner<C>>,
+            Tracked(guard_perm): Tracked<&PointsTo<PageTableGuard<'rcu, C>>>,
+            Tracked(slot_own): Tracked<&MetaSlotOwner>
     )]
     #[verifier::external_body]
     pub fn new_at(guard: PPtr<PageTableGuard<'rcu, C>>, idx: usize) -> Self
         requires
             owner.inv(),
-            owner.guard_perm@.pptr() == guard,
+            guard_perm.pptr() == guard,
     {
+        let node_owner = owner.as_child.node.tracked_borrow();
+
         // SAFETY: The index is within the bound.
-        #[verus_spec(with Tracked(owner.node_own), Tracked(slot_own), Tracked(owner.slot_perm.borrow()))]
-        let pte = guard.borrow(Tracked(owner.guard_perm.borrow())).read_pte(idx);
+        #[verus_spec(with Tracked(node_owner.as_node),
+                        Tracked(slot_own),
+                        Tracked(node_owner.slot_perm.borrow()))]
+        let pte = guard.borrow(Tracked(guard_perm)).read_pte(idx);
         Self { pte, idx, node: guard }
     }
 }

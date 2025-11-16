@@ -57,7 +57,7 @@ pub tracked struct CursorOwner<'rcu, C: PageTableConfig> {
     pub guard_level: PagingLevel,
 
     pub prefix_nodes: Ghost<Seq<IntermediatePageTableEntryView<C>>>,
-    pub locked_subtree: Tree<OwnerInTree<'rcu, C>, CONST_NR_ENTRIES, CONST_NR_LEVELS>,
+    pub locked_subtree: OwnerAsTreeNode<'rcu, C>,
 }
 
 impl<'rcu, C: PageTableConfig> Inv for CursorOwner<'rcu, C> {

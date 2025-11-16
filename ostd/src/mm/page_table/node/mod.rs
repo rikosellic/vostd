@@ -195,18 +195,19 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     /// [`nr_subpage_per_huge<C>`].
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<&EntryOwner<C>>,
-            Tracked(slot_own) : Tracked<&MetaSlotOwner>
+        with Tracked(owner): Tracked<&EntryOwner<C>>,
+            Tracked(guard_perm): Tracked<&vstd::simple_pptr::PointsTo<PageTableGuard<'rcu, C>>>,
+            Tracked(slot_own): Tracked<&MetaSlotOwner>
     )]
     pub fn entry<'slot>(guard: PPtr<Self>, idx: usize) -> Entry<'rcu, C>
         requires
             owner.inv(),
-            owner.relate_slot_owner(slot_own),
-            owner.guard_perm@.pptr() == guard,
+//            owner.relate_slot_owner(slot_own),
+            guard_perm.pptr() == guard,
     {
         //        assert!(idx < nr_subpage_per_huge::<C>());
         // SAFETY: The index is within the bound.
-        #[verus_spec(with Tracked(owner), Tracked(slot_own))]
+        #[verus_spec(with Tracked(owner), Tracked(guard_perm), Tracked(slot_own))]
         Entry::new_at(guard, idx)
     }
 
@@ -218,16 +219,21 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     )]
     pub fn nr_children(&self) -> u16
         requires
-            self.inner.inner.ptr == owner.slot_perm@.pptr(),
+            owner.as_child.is_node(),
+            self.inner.inner.ptr == owner.as_child.node.unwrap().slot_perm@.pptr(),
             owner.inv(),
-            owner.relate_slot_owner(slot_own),
+//            owner.relate_slot_owner(slot_own),
             slot_own.inv(),
     {
+        let tracked node_owner = owner.as_child.node.tracked_borrow();
+
         // SAFETY: The lock is held so we have an exclusive access.
-        #[verus_spec(with Tracked(slot_own), Tracked(owner.slot_perm.borrow()), Tracked(owner.node_own.meta_perm.borrow()))]
+        #[verus_spec(with Tracked(slot_own),
+            Tracked(node_owner.slot_perm.borrow()),
+            Tracked(node_owner.as_node.meta_perm.borrow()))]
         let meta = self.meta();
 
-        *meta.nr_children.borrow(Tracked(owner.node_own.meta_own.nr_children.borrow()))
+        *meta.nr_children.borrow(Tracked(node_owner.as_node.meta_own.nr_children.borrow()))
     }
 
     /// Returns if the page table node is detached from its parent.
@@ -238,13 +244,19 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     )]
     pub fn stray_mut(&mut self) -> PCell<bool>
         requires
-            old(self).inner.inner.ptr == owner.slot_perm@.pptr(),
+            owner.as_child.is_node(),
+            old(self).inner.inner.ptr == owner.as_child.node.unwrap().slot_perm@.pptr(),
             owner.inv(),
-            owner.relate_slot_owner(slot_own),
+//            owner.relate_slot_owner(slot_own),
     {
+        let tracked node_owner = owner.as_child.node.tracked_borrow();
+
         // SAFETY: The lock is held so we have an exclusive access.
-        #[verus_spec(with Tracked(slot_own), Tracked(owner.slot_perm.borrow()), Tracked(owner.node_own.meta_perm.borrow()))]
+        #[verus_spec(with Tracked(slot_own),
+            Tracked(node_owner.slot_perm.borrow()),
+            Tracked(node_owner.as_node.meta_perm.borrow()))]
         let meta = self.meta();
+
         meta.get_stray()
     }
 
