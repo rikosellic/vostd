@@ -12,20 +12,15 @@ pub tracked struct NodeEntryOwner<'rcu, C: PageTableConfig> {
     pub guard_perm: Tracked<PointsTo<PageTableGuard<'rcu, C>>>,
 
     pub children_perm: array_ptr::PointsTo<Entry<'rcu, C>, CONST_NR_ENTRIES>,
-    pub slot_perm: Tracked<PointsTo<MetaSlot>>,
 }
 
 impl<'rcu, C: PageTableConfig> Inv for NodeEntryOwner<'rcu, C> {
     open spec fn inv(self) -> bool {
         &&& self.guard_perm@.is_init()
-        &&& self.guard_perm@.value().inner.inner.ptr == self.slot_perm@.pptr()
+        &&& self.guard_perm@.value().inner.inner.ptr.addr() == self.as_node.meta_perm@.addr()
         &&& self.guard_perm@.value().inner.inner.wf(self.as_node)
         &&& self.as_node.inv()
-        &&& self.slot_perm@.is_init()
-        &&& self.slot_perm@.value().storage == self.as_node.meta_perm@.points_to@.pptr()
-        &&& self.as_node.meta_perm@.pptr().ptr.0 == self.slot_perm@.value().storage.addr()
-        &&& self.as_node.meta_perm@.pptr().addr == self.slot_perm@.value().storage.addr()
-        &&& meta_to_frame(self.slot_perm@.addr()) < VMALLOC_BASE_VADDR() - LINEAR_MAPPING_BASE_VADDR()
+        &&& meta_to_frame(self.as_node.meta_perm@.addr()) < VMALLOC_BASE_VADDR() - LINEAR_MAPPING_BASE_VADDR()
         &&& forall |i:int|
             0 <= i < NR_ENTRIES() ==>
             self.children_perm.is_init(i as int) ==>
@@ -35,13 +30,13 @@ impl<'rcu, C: PageTableConfig> Inv for NodeEntryOwner<'rcu, C> {
     }
 }
 
-impl<'rcu, C: PageTableConfig> NodeEntryOwner<'rcu, C> {
+/*impl<'rcu, C: PageTableConfig> NodeEntryOwner<'rcu, C> {
     pub open spec fn relate_slot_owner(self, slot_own: &MetaSlotOwner) -> bool {
         &&& slot_own.inv()
-        &&& self.slot_perm@.value().wf(*slot_own)
-        &&& self.slot_perm@.addr() == slot_own.self_addr
+        &&& self.as_node.meta_perm@.ptr.value().wf(*slot_own)
+        &&& self.as_node.meta_perm@.addr() == slot_own.self_addr
     }
-}
+}*/
 
 pub tracked struct FrameEntryOwner {
     pub mapped_pa: usize,
@@ -129,7 +124,7 @@ impl <'rcu, C: PageTableConfig> View for EntryOwner<'rcu, C> {
                 map_va: 0, // TODO: as above
                 frame_pa: self.base_addr as int,
                 in_frame_index: self.index as int,
-                map_to_pa: meta_to_frame(node.slot_perm@.addr()) as int,
+                map_to_pa: meta_to_frame(node.as_node.meta_perm@.addr()) as int,
                 level: (self.path@.len() + 1) as u8,
                 phantom: PhantomData
            })

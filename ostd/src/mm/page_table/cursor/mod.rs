@@ -150,7 +150,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
             let tracked node_owner = owner.locked_subtree.inner.value.node.tracked_borrow();
 
-            let ghost index = meta_to_frame(frame_to_index(node_owner.slot_perm@.addr()));
+            let ghost index = meta_to_frame(frame_to_index(node_owner.as_node.meta_perm@.addr()));
 
             assert(regions.slot_owners.contains_key(index)) by { admit() };
             assert(self.path[self.level as int - 1] is Some) by { admit() };
@@ -435,7 +435,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             old(self).path[old(self).level as int - 1] is Some,
 //            owner.locked_subtree.root.value.tree_node.tracked_is_some(),
             owner.locked_subtree.inner.value.inv(),
-            owner.locked_subtree.inner.value.node.unwrap().relate_slot_owner(slot_own),
+//            owner.locked_subtree.inner.value.node.unwrap().relate_slot_owner(slot_own),
 //            owner.locked_subtree.value.guard_perm@.addr() ==
 //                old(self).path[old(self).level as usize - 1].unwrap().addr(),
     {

@@ -34,7 +34,7 @@ verus! {
 // enforces that only with `&mut` references can we access with the pointers.
 //unsafe impl<M> Send for LinkedList<M> where Link<M>: AnyFrameMeta {}
 //unsafe impl<M> Sync for LinkedList<M> where Link<M>: AnyFrameMeta {}
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot>> LinkedList<M> {
     /// Gets the number of frames in the linked list.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
@@ -270,8 +270,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M> {
         let contains = in_list == #[verus_spec(with Tracked(owner))]
         Self::lazy_get_id(ptr);
 
-        #[verus_spec(with Tracked(&slot_own))]
-        let meta_ptr: ReprPtr<MetaSlotStorage, Link<M>> = slot.as_meta_ptr();
+        #[verus_spec(with Tracked(slot_perm.borrow()))]
+        let meta_ptr = slot.as_meta_ptr::<Link<M>>();
 
         let res = if contains {
             Some(CursorMut { list: ptr, current: Some(meta_ptr) })
@@ -377,7 +377,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedList<M> {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorMut<M> {
     /// Moves the cursor to the next frame towards the back.
     ///
     /// If the cursor is pointing to the "ghost" non-element then this will
@@ -555,8 +555,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M> {
 
         let next_ptr = frame.meta().next;
 
-        #[verus_spec(with Tracked(regions.slot_owners.tracked_borrow(frame_to_index(paddr))),
-                            Tracked(regions.slots.tracked_borrow(frame_to_index(paddr)).borrow()))]
+        #[verus_spec(with Tracked(regions.slots.tracked_borrow(frame_to_index(paddr)).borrow()))]
         let frame_meta = frame.meta_mut();
 
         let opt_prev = frame_meta.borrow(Tracked(frame_own.meta_perm.borrow())).prev;
@@ -574,8 +573,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M> {
 
         let prev_ptr = frame.meta().prev;
 
-        #[verus_spec(with Tracked(regions.slot_owners.tracked_borrow(frame_to_index(paddr))),
-                            Tracked(regions.slots.tracked_borrow(frame_to_index(paddr)).borrow()))]
+        #[verus_spec(with Tracked(regions.slots.tracked_borrow(frame_to_index(paddr)).borrow()))]
         let frame_meta = frame.meta_mut();
         let opt_next = frame_meta.borrow(Tracked(frame_own.meta_perm.borrow())).next;
 
@@ -591,8 +589,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M> {
             self.current = None;
         }
 
-        #[verus_spec(with Tracked(regions.slot_owners.tracked_borrow(frame_to_index(paddr))),
-                            Tracked(regions.slots.tracked_borrow(frame_to_index(paddr)).borrow()))]
+        #[verus_spec(with Tracked(regions.slots.tracked_borrow(frame_to_index(paddr)).borrow()))]
         let frame_meta = frame.meta_mut();
 
         update_field!(frame_meta => next <- None; frame_own.meta_perm);
@@ -649,7 +646,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorMut<M> {
         assert(regions.slot_owners.contains_key(frame_own.slot_index));
         let tracked slot_own = regions.slot_owners.tracked_borrow(frame_own.slot_index);
 
-        #[verus_spec(with Tracked(slot_own), Tracked(regions.slots.tracked_borrow(frame_own.slot_index).borrow()))]
+        #[verus_spec(with Tracked(regions.slots.tracked_borrow(frame_own.slot_index).borrow()))]
         let frame_ptr = frame.meta_mut();
         assert(frame_ptr.addr() == frame.ptr.addr());
 
@@ -776,7 +773,7 @@ impl DerefMut for Link {
 }
 */
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Link<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot>> Link<M> {
     #[rustc_allow_incoherent_impl]
     /// Creates a new linked list metadata.
     pub const fn new(meta: M) -> Self {

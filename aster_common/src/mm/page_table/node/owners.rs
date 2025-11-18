@@ -54,13 +54,13 @@ impl<C: PageTableConfig> OwnerOf for PageTablePageMeta<C> {
 
 pub tracked struct NodeOwner<C: PageTableConfig> {
     pub meta_own: PageMetaOwner,
-    pub meta_perm: Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, PageTablePageMeta<C>>>,
+    pub meta_perm: Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlot, PageTablePageMeta<C>>>,
 }
 
 impl<C: PageTableConfig> Inv for NodeOwner<C> {
     open spec fn inv(self) -> bool {
         &&& self.meta_perm@.points_to@.is_init()
-        &&& <PageTablePageMeta<C> as Repr<MetaSlotStorage>>::wf(self.meta_perm@.points_to@.value())
+        &&& <PageTablePageMeta<C> as Repr<MetaSlot>>::wf(self.meta_perm@.points_to@.value())
         &&& self.meta_own.inv()
         &&& self.meta_perm@.value().wf(self.meta_own)
         &&& self.meta_perm@.is_init()

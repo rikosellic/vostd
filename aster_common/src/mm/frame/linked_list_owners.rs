@@ -39,11 +39,11 @@ impl View for LinkOwner {
 }
 
 impl InvView for LinkOwner {
-    proof fn view_preserves_inv(self) {
-    }
+    proof fn view_preserves_inv(self) { }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for Link<M> {
+// TODO: Technically M needs to be smaller than Link<M>, at minimum enough to fit the two pointers
+impl<M: AnyFrameMeta + Repr<MetaSlot>> OwnerOf for Link<M> {
     type Owner = LinkOwner;
 
     open spec fn wf(self, owner: Self::Owner) -> bool {
@@ -55,7 +55,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for Link<M> {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> ModelOf for Link<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot>> ModelOf for Link<M> {
 
 }
 
@@ -88,19 +88,19 @@ impl Inv for LinkedListModel {
 }
 
 #[rustc_has_incoherent_inherent_impls]
-pub tracked struct LinkedListOwner<M: AnyFrameMeta + Repr<MetaSlotInner>> {
+pub tracked struct LinkedListOwner<M: AnyFrameMeta + Repr<MetaSlot>> {
     pub list: Seq<LinkOwner>,
-    pub perms: Map<int, Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, Link<M>>>>,
+    pub perms: Map<int, Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlot, Link<M>>>>,
     pub list_id: u64,
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Inv for LinkedListOwner<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot>> Inv for LinkedListOwner<M> {
     open spec fn inv(self) -> bool {
         forall|i: int| 0 <= i < self.list.len() ==> self.inv_at(i)
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedListOwner<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot>> LinkedListOwner<M> {
     pub open spec fn inv_at(self, i: int) -> bool {
         &&& self.perms.contains_key(i)
         &&& self.perms[i]@.addr() == self.list[i].paddr
@@ -143,7 +143,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedListOwner<M> {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> View for LinkedListOwner<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot>> View for LinkedListOwner<M> {
     type V = LinkedListModel;
 
     open spec fn view(&self) -> Self::V {
@@ -151,12 +151,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> View for LinkedListOwner<M> {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> InvView for LinkedListOwner<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot>> InvView for LinkedListOwner<M> {
     proof fn view_preserves_inv(self) {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedListOwner<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot>> LinkedListOwner<M> {
     /*    pub open spec fn update_prev(links: Seq<LinkOwner<M>>, i: int, prev: Option<PPtr<Link<M>>>) -> Seq<LinkOwner<M>> {
         let link = links[i];
         let new_link = LinkOwner::<M> { prev: prev, ..link };
@@ -175,7 +175,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> LinkedListOwner<M> {
 
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for LinkedList<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot>> OwnerOf for LinkedList<M> {
     type Owner = LinkedListOwner<M>;
 
     open spec fn wf(self, owner: Self::Owner) -> bool {
@@ -190,9 +190,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for LinkedList<M> {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> ModelOf for LinkedList<M> {
-
-}
+impl<M: AnyFrameMeta + Repr<MetaSlot>> ModelOf for LinkedList<M> { }
 
 #[rustc_has_incoherent_inherent_impls]
 pub ghost struct CursorModel {
@@ -208,20 +206,20 @@ impl Inv for CursorModel {
 }
 
 #[rustc_has_incoherent_inherent_impls]
-pub tracked struct CursorOwner<M: AnyFrameMeta + Repr<MetaSlotInner>> {
+pub tracked struct CursorOwner<M: AnyFrameMeta + Repr<MetaSlot>> {
     pub list_own: LinkedListOwner<M>,
     pub list_perm: Tracked<PointsTo<LinkedList<M>>>,
     pub index: int,
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> Inv for CursorOwner<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot>> Inv for CursorOwner<M> {
     open spec fn inv(self) -> bool {
         &&& 0 <= self.index <= self.length()
         &&& self.list_own.inv()
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> View for CursorOwner<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot>> View for CursorOwner<M> {
     type V = CursorModel;
 
     open spec fn view(&self) -> Self::V {
@@ -234,11 +232,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> View for CursorOwner<M> {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> InvView for CursorOwner<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot>> InvView for CursorOwner<M> {
     proof fn view_preserves_inv(self) { }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for CursorMut<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot>> OwnerOf for CursorMut<M> {
     type Owner = CursorOwner<M>;
 
     open spec fn wf(self, owner: Self::Owner) -> bool {
@@ -252,7 +250,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> OwnerOf for CursorMut<M> {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> ModelOf for CursorMut<M> { }
+impl<M: AnyFrameMeta + Repr<MetaSlot>> ModelOf for CursorMut<M> { }
 
 impl CursorModel {
     pub open spec fn current(self) -> Option<LinkModel> {
@@ -264,7 +262,7 @@ impl CursorModel {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorOwner<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorOwner<M> {
     pub open spec fn length(self) -> int {
         self.list_own.list.len() as int
     }
@@ -281,7 +279,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorOwner<M> {
     pub fn list_insert(
         Tracked(cursor): Tracked<&mut Self>,
         Tracked(link): Tracked<&mut LinkOwner>,
-        Tracked(perm): Tracked<&vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, Link<M>>>,
+        Tracked(perm): Tracked<&vstd_extra::cast_ptr::PointsTo<MetaSlot, Link<M>>>,
     )
         ensures
             cursor.list_own.list == old(cursor).list_own.list.insert(old(cursor).index, *old(link)),
@@ -384,7 +382,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorOwner<M> {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> UniqueFrameOwner<Link<M>> {
+impl<M: AnyFrameMeta + Repr<MetaSlot>> UniqueFrameOwner<Link<M>> {
     pub open spec fn frame_link_inv(&self) -> bool {
         &&& self.meta_perm@.value().prev is None
         &&& self.meta_perm@.value().next is None

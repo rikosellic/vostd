@@ -139,6 +139,7 @@ pub tracked struct PointsTo<R, T: Repr<R>> {
 }
 
 impl<R, T: Repr<R>> PointsTo<R, T> {
+    #[verifier::returns(exec)]
     pub fn new(addr: usize, points_to: Tracked<simple_pptr::PointsTo<R>>) -> Tracked<Self> {
         Tracked(Self { addr: addr, points_to: points_to, _T: PhantomData })
     }

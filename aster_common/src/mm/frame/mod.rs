@@ -66,7 +66,7 @@ impl<M: AnyFrameMeta> Frame<M> {
         Tracked(p_slot): Tracked<&'a simple_pptr::PointsTo<MetaSlot>>,
         owner:
             MetaSlotOwner,
-        //        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>,
+        //        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlot>>,
     ) -> (res: &'a PageTablePageMeta<C>)
         requires
             self.inv(),

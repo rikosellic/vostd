@@ -38,7 +38,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         with Tracked(owner) : Tracked<EntryOwner<C>>,
             Tracked(guard_perm) : Tracked<&PointsTo<PageTableGuard<'rcu, C>>>,
             Tracked(slot_own) : Tracked<&MetaSlotOwner>,
-            Tracked(inner_perm) : Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlotStorage, PageTablePageMeta<C>>>
+            Tracked(inner_perm) : Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlot, PageTablePageMeta<C>>>
     )]
     #[verusfmt::skip]
     pub fn is_node(&self) -> bool
@@ -46,7 +46,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             owner.inv(),
             self.wf(owner),
             self.node == guard_perm.pptr(),
-            owner.node.unwrap().relate_slot_owner(slot_own),
+//            owner.node.unwrap().relate_slot_owner(slot_own),
     {
         let guard = self.node.borrow(Tracked(guard_perm));
         let tracked node_owner = owner.node.tracked_borrow();
@@ -54,10 +54,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         #[verusfmt::skip]
         self.pte.is_present() &&
             !self.pte.is_last(
-                #[verus_spec(with Tracked(slot_own),
-                    Tracked(node_owner.slot_perm.borrow()),
-                    Tracked(node_owner.as_node.meta_perm.borrow()))
-                ]
+                #[verus_spec(with Tracked(node_owner.as_node.meta_perm.borrow()))]
                 guard.level()
             )
     }
@@ -74,9 +71,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             self.wf(*owner),
             owner.inv(),
             old(regions).inv(),
-            self.pte.paddr() == meta_to_frame(owner.node.unwrap().slot_perm@.addr()),
+            self.pte.paddr() == meta_to_frame(owner.node.unwrap().as_node.meta_perm@.addr()),
             owner.is_node(),
-            owner.node.unwrap().relate_slot_owner(&old(regions).slot_owners[frame_to_index(self.pte.paddr())]),
             owner.relate_parent_guard_perm(*guard_perm),
             old(regions).dropped_slots.contains_key(frame_to_index(self.pte.paddr())),
             !old(regions).slots.contains_key(frame_to_index(self.pte.paddr())),
@@ -87,10 +83,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
 
         let tracked node_owner = owner.node.tracked_borrow();
 
-        #[verus_spec(with Tracked(regions.slot_owners.tracked_borrow(
-            frame_to_index(meta_to_frame(node_owner.slot_perm@.addr())))),
-            Tracked(node_owner.slot_perm.borrow()),
-            Tracked(node_owner.as_node.meta_perm.borrow()))]
+        #[verus_spec(with Tracked(node_owner.as_node.meta_perm.borrow()))]
         let level = guard.level();
         // SAFETY:
         //  - The PTE outlives the reference (since we have `&self`).
@@ -113,7 +106,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             old(owner).inv(),
             old(self).wf(*old(owner)),
             old(owner).is_node(),
-            old(owner).node.unwrap().relate_slot_owner(slot_own),
+//            old(owner).node.unwrap().relate_slot_owner(slot_own),
             old(owner).relate_parent_guard_perm(*old(guard_perm)),
             op.requires((old(self).pte.prop(),)),
     {
@@ -138,9 +131,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         //  2. We replace the PTE with a new one, which differs only in
         //     `PageProperty`, so the level still matches the current
         //     page table node.
-        #[verus_spec(with Tracked(&mut node_owner.as_node),
-            Tracked(slot_own),
-            Tracked(node_owner.slot_perm.borrow()))]
+        #[verus_spec(with Tracked(&mut node_owner.as_node))]
         guard.write_pte(self.idx, self.pte);
 
         proof { owner.node = Some(node_owner); }
@@ -188,9 +179,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         // SAFETY:
         //  - The PTE is not referenced by other `ChildRef`s (since we have `&mut self`).
         //  - The level matches the current node.
-        #[verus_spec(with Tracked(slot_own),
-            Tracked(node_owner.slot_perm.borrow()),
-            Tracked(node_owner.as_node.meta_perm.borrow()))]
+        #[verus_spec(with Tracked(node_owner.as_node.meta_perm.borrow()))]
         let level = guard.level();
 
         #[verus_spec(with Tracked(regions))]
@@ -206,7 +195,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             nr_children.put(Tracked(nr_children_perm), _tmp - 1);
         }
         
-        #[verus_spec(with Some(Tracked(slot_own)), Some(Tracked(node_owner.slot_perm.borrow())))]
+        #[verus_spec(with Some(Tracked(slot_own)), Some(Tracked(node_owner.as_node.meta_perm.borrow())))]
         let new_pte = new_child.into_pte();
 
         // SAFETY:
@@ -337,9 +326,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         let node_owner = owner.node.tracked_borrow();
 
         // SAFETY: The index is within the bound.
-        #[verus_spec(with Tracked(node_owner.as_node),
-                        Tracked(slot_own),
-                        Tracked(node_owner.slot_perm.borrow()))]
+        #[verus_spec(with Tracked(node_owner.as_node))]
         let pte = guard.borrow(Tracked(guard_perm)).read_pte(idx);
         Self { pte, idx, node: guard }
     }
