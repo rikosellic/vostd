@@ -1,5 +1,6 @@
 use vstd::prelude::*;
 use vstd::seq::*;
+use vstd::seq_lib::*;
 
 verus! {
 
@@ -39,29 +40,29 @@ pub proof fn seq_tracked_add<T>(s1: Seq<T>, s2: Seq<T>) -> (tracked res: Seq<T>)
     unimplemented!();
 }
 
-pub proof fn lemma_seq_add_head_back<T>(s: Seq<T>)
+pub broadcast proof fn lemma_seq_add_head_back<T>(s: Seq<T>)
     requires
         s.len() > 0,
     ensures
-        s =~= seq![s[0]].add(s.drop_first()),
+        s =~= #[trigger] seq![s[0]].add(s.drop_first()),
 {
 }
 
-pub proof fn lemma_seq_push_head<T>(s: Seq<T>, hd: T)
+pub broadcast proof fn lemma_seq_push_head<T>(s: Seq<T>, hd: T)
     ensures
-        seq![hd].add(s) =~= s.reverse().push(hd).reverse(),
+        #[trigger] seq![hd].add(s) =~= s.reverse().push(hd).reverse(),
 {
 }
 
-pub proof fn lemma_seq_drop_pushed_head<T>(s: Seq<T>, hd: T)
+pub broadcast proof fn lemma_seq_drop_pushed_head<T>(s: Seq<T>, hd: T)
     ensures
-        seq![hd].add(s).drop_first() =~= s,
+        #[trigger] seq![hd].add(s).drop_first() =~= s,
 {
 }
 
-pub proof fn lemma_seq_push_head_take_head<T>(s: Seq<T>, hd: T)
+pub broadcast proof fn lemma_seq_push_head_take_head<T>(s: Seq<T>, hd: T)
     ensures
-        seq![hd].add(s)[0] == hd,
+        #[trigger] seq![hd].add(s)[0] == hd,
 {
 }
 

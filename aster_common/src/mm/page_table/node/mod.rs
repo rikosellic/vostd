@@ -146,11 +146,17 @@ impl<C: PageTableConfig> Repr<MetaSlot> for PageTablePageMeta<C> {
 
     }
 
-    proof fn from_to_repr(self) { admit() }
+    proof fn from_to_repr(self) {
+        admit()
+    }
 
-    proof fn to_from_repr(r: MetaSlot) { admit() }
+    proof fn to_from_repr(r: MetaSlot) {
+        admit()
+    }
 
-    proof fn to_repr_wf(self) { admit() }
+    proof fn to_repr_wf(self) {
+        admit()
+    }
 }
 
 impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {

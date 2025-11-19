@@ -142,10 +142,7 @@ pub enum CachePolicy {
 impl CachePolicy {
     #[inline(always)]
     #[vstd::contrib::auto_spec]
-    pub const fn N() -> (res: usize)
-        ensures
-            res == Self::N_spec(),
-    {
+    pub const fn N() -> (res: usize) {
         (CachePolicy::Writeback.value() + 1) as usize
     }
 
@@ -196,26 +193,15 @@ impl PageFlags {
         self.bits & 0b00000001 != 0
     }
 
-    #[verifier::inline]
-    pub open spec fn empty_spec() -> Self {
+    #[inline(always)]
+    #[vstd::contrib::auto_spec]
+    pub const fn empty() -> (res: Self) {
         Self { bits: 0 }
     }
 
     #[inline(always)]
     #[vstd::contrib::auto_spec]
-    pub const fn empty() -> (res: Self)
-        ensures
-            res == Self::empty_spec(),
-    {
-        Self { bits: 0 }
-    }
-
-    #[inline(always)]
-    #[vstd::contrib::auto_spec]
-    pub const fn value(&self) -> (res: u8)
-        ensures
-            res == self.value_spec(),
-    {
+    pub const fn value(&self) -> (res: u8) {
         self.bits
     }
 
@@ -231,80 +217,56 @@ impl PageFlags {
     #[allow(non_snake_case)]
     #[inline(always)]
     #[vstd::contrib::auto_spec]
-    pub const fn R() -> (res: Self)
-        ensures
-            res == Self::R_spec(),
-    {
+    pub const fn R() -> (res: Self) {
         Self { bits: 0b00000001 }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
     #[vstd::contrib::auto_spec]
-    pub const fn W() -> (res: Self)
-        ensures
-            res == Self::W_spec(),
-    {
+    pub const fn W() -> (res: Self) {
         Self { bits: 0b00000010 }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
     #[vstd::contrib::auto_spec]
-    pub const fn X() -> (res: Self)
-        ensures
-            res == Self::X_spec(),
-    {
+    pub const fn X() -> (res: Self) {
         Self { bits: 0b00000100 }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
     #[vstd::contrib::auto_spec]
-    pub const fn RW() -> (res: Self)
-        ensures
-            res == Self::RW_spec(),
-    {
+    pub const fn RW() -> (res: Self) {
         Self { bits: Self::R().value() | Self::W().value() }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
     #[vstd::contrib::auto_spec]
-    pub const fn RX() -> (res: Self)
-        ensures
-            res == Self::RX_spec(),
-    {
+    pub const fn RX() -> (res: Self) {
         Self { bits: Self::R().value() | Self::X().value() }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
     #[vstd::contrib::auto_spec]
-    pub const fn RWX() -> (res: Self)
-        ensures
-            res == Self::RWX_spec(),
-    {
+    pub const fn RWX() -> (res: Self) {
         Self { bits: Self::R().value() | Self::W().value() | Self::X().value() }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
     #[vstd::contrib::auto_spec]
-    pub const fn ACCESSED() -> (res: Self)
-        ensures
-            res == Self::ACCESSED_spec(),
-    {
+    pub const fn ACCESSED() -> (res: Self) {
         Self { bits: 0b00001000 }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
     #[vstd::contrib::auto_spec]
-    pub const fn DIRTY() -> (res: Self)
-        ensures
-            res == Self::DIRTY_spec(),
-    {
+    pub const fn DIRTY() -> (res: Self) {
         Self { bits: 0b00010000 }
     }
 }
@@ -344,58 +306,40 @@ pub broadcast proof fn lemma_privileged_page_flags_equal_soundness(
 impl PrivilegedPageFlags {
     #[inline(always)]
     #[vstd::contrib::auto_spec]
-    pub const fn empty() -> (res: Self)
-        ensures
-            res == Self::empty_spec(),
-    {
+    pub const fn empty() -> (res: Self) {
         Self { bits: 0 }
     }
 
     #[inline(always)]
     #[vstd::contrib::auto_spec]
-    pub const fn value(&self) -> (res: u8)
-        ensures
-            res == self.value_spec(),
-    {
+    pub const fn value(&self) -> (res: u8) {
         self.bits
     }
 
     #[inline(always)]
     #[vstd::contrib::auto_spec]
-    pub fn from_bits(value: u8) -> (res: Self)
-        ensures
-            res == Self::from_bits_spec(value),
-    {
+    pub fn from_bits(value: u8) -> (res: Self) {
         Self { bits: value }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
     #[vstd::contrib::auto_spec]
-    pub const fn USER() -> (res: Self)
-        ensures
-            res == Self::USER_spec(),
-    {
+    pub const fn USER() -> (res: Self) {
         Self { bits: 0b00000001 }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
     #[vstd::contrib::auto_spec]
-    pub const fn GLOBAL() -> (res: Self)
-        ensures
-            res == Self::GLOBAL_spec(),
-    {
+    pub const fn GLOBAL() -> (res: Self) {
         Self { bits: 0b00000010 }
     }
 
     #[allow(non_snake_case)]
     #[inline(always)]
     #[vstd::contrib::auto_spec]
-    pub const fn SHARED() -> (res: Self)
-        ensures
-            res == Self::SHARED_spec(),
-    {
+    pub const fn SHARED() -> (res: Self) {
         Self { bits: 0b10000000 }
     }
 }

@@ -35,7 +35,7 @@ pub ghost struct SegmentOwner<M: AnyFrameMeta + ?Sized> {
 
 impl<M: AnyFrameMeta + ?Sized> Inv for Segment<M> {
     /// The invariant of a [`Segment`].
-    open spec fn inv(&self) -> bool {
+    open spec fn inv(self) -> bool {
         &&& self.range.start % PAGE_SIZE() == 0
         &&& self.range.end % PAGE_SIZE() == 0
         &&& self.range.start <= self.range.end < MAX_PADDR()
@@ -44,7 +44,7 @@ impl<M: AnyFrameMeta + ?Sized> Inv for Segment<M> {
 
 impl<M: AnyFrameMeta + ?Sized> Inv for SegmentOwner<M> {
     /// The invariant of a [`Segment`].
-    open spec fn inv(&self) -> bool {
+    open spec fn inv(self) -> bool {
         &&& forall|i: int|
             #![trigger self.perms[i]]
             0 <= i < self.perms.len() as int ==> {

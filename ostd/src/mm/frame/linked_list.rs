@@ -709,8 +709,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorMut<M> {
 
         #[verusfmt::skip]
         slot.in_list.store(
-            Tracked(slot_own.in_list.borrow_mut()), 
-            #[verus_spec(with Tracked(&mut owner.list_own))] 
+            Tracked(slot_own.in_list.borrow_mut()),
+            #[verus_spec(with Tracked(&mut owner.list_own))]
             LinkedList::<M>::lazy_get_id(self.list)
         );
 

@@ -6,8 +6,8 @@ use aster_common::prelude::frame::*;
 use aster_common::prelude::page_table::*;
 use aster_common::prelude::*;
 
-use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::*;
+use vstd_extra::ownership::*;
 
 use ostd_specs::*;
 
@@ -119,7 +119,7 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
             pte.paddr() < MAX_PADDR(),
             !old(regions).slots.contains_key(frame_to_index(pte.paddr())),
             old(regions).dropped_slots.contains_key(frame_to_index(pte.paddr())),
-            old(regions).inv()
+            old(regions).inv(),
     {
         if !pte.is_present() {
             return ChildRef::None;

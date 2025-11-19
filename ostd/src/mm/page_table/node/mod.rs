@@ -69,9 +69,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
         #[verus_spec(with Tracked(perm))]
         let meta = self.meta();
         meta.level
-    }
-    
-    /* TODO: stub out allocator
+    }/* TODO: stub out allocator
     /// Allocates a new empty page table node.
     pub(super) fn alloc(level: PagingLevel) -> Self {
         let meta = PageTablePageMeta::new(level);
@@ -197,7 +195,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     pub fn entry<'slot>(guard: PPtr<Self>, idx: usize) -> Entry<'rcu, C>
         requires
             owner.inv(),
-//            owner.node.unwrap().relate_slot_owner(slot_own),
+            //            owner.node.unwrap().relate_slot_owner(slot_own),
             guard_perm.pptr() == guard,
     {
         //        assert!(idx < nr_subpage_per_huge::<C>());
@@ -217,7 +215,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             owner.is_node(),
             self.inner.inner.ptr.addr() == owner.node.unwrap().as_node.meta_perm@.addr(),
             owner.inv(),
-//            owner.node.unwrap().relate_slot_owner(slot_own),
+            //            owner.node.unwrap().relate_slot_owner(slot_own),
             slot_own.inv(),
     {
         let tracked node_owner = owner.node.tracked_borrow();
@@ -305,15 +303,16 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     pub fn write_pte(&mut self, idx: usize, pte: C::E)
         requires
             old(owner).inv(),
-            meta_to_frame(old(owner).meta_perm@.addr) < VMALLOC_BASE_VADDR() - LINEAR_MAPPING_BASE_VADDR(),
+            meta_to_frame(old(owner).meta_perm@.addr) < VMALLOC_BASE_VADDR()
+                - LINEAR_MAPPING_BASE_VADDR(),
             idx < NR_ENTRIES(),
     {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
         let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(
             paddr_to_vaddr(
                 #[verus_spec(with Tracked(owner.meta_perm.borrow().points_to.borrow()))]
-                self.start_paddr()
-            )
+                self.start_paddr(),
+            ),
         );
 
         // SAFETY:

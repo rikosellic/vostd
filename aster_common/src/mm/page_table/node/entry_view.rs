@@ -18,8 +18,7 @@ pub ghost struct LeafPageTableEntryView<C: PageTableConfig> {
 
 impl<C: PageTableConfig> Inv for LeafPageTableEntryView<C> {
     open spec fn inv(self) -> bool {
-        true
-        /*
+        true/*
         &&& pa_is_valid_pt_address(self.frame_pa)
         &&& index_is_in_range(self.in_frame_index)
         &&& pa_is_valid_kernel_address(
@@ -32,6 +31,7 @@ impl<C: PageTableConfig> Inv for LeafPageTableEntryView<C> {
         // The corresponding virtual address must be aligned to the page size.
         &&& self.map_va % (page_size_spec::<C>(self.level) as int) == 0
         */
+
     }
 }
 
@@ -46,8 +46,7 @@ pub ghost struct IntermediatePageTableEntryView<C: PageTableConfig> {
 
 impl<C: PageTableConfig> Inv for IntermediatePageTableEntryView<C> {
     open spec fn inv(self) -> bool {
-        true
-        /*
+        true/*
         &&& pa_is_valid_pt_address(self.frame_pa)
         &&& index_is_in_range(self.in_frame_index)
         &&& pa_is_valid_pt_address(self.map_to_pa)
@@ -64,7 +63,7 @@ impl<C: PageTableConfig> Inv for IntermediatePageTableEntryView<C> {
 pub ghost enum EntryView<C: PageTableConfig> {
     Leaf(LeafPageTableEntryView<C>),
     Intermediate(IntermediatePageTableEntryView<C>),
-    Absent
+    Absent,
 }
 
 impl<C: PageTableConfig> Inv for EntryView<C> {
@@ -72,7 +71,7 @@ impl<C: PageTableConfig> Inv for EntryView<C> {
         match self {
             Self::Leaf(entry) => entry.inv(),
             Self::Intermediate(entry) => entry.inv(),
-            Self::Absent => true
+            Self::Absent => true,
         }
     }
 }

@@ -33,7 +33,9 @@ use vstd::simple_pptr::*;
 
 use vstd_extra::ownership::*;
 
-use aster_common::prelude::frame::{Frame, MetaSlotOwner, MetaRegionOwners, frame_to_index, meta_to_frame};
+use aster_common::prelude::frame::{
+    frame_to_index, meta_to_frame, Frame, MetaRegionOwners, MetaSlotOwner,
+};
 use aster_common::prelude::page_table::*;
 use aster_common::prelude::*;
 
@@ -155,9 +157,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             assert(regions.slot_owners.contains_key(index)) by { admit() };
             assert(self.path[self.level as int - 1] is Some) by { admit() };
             assert(owner.locked_subtree.inner.value.inv()) by { admit() };
-//            assert(owner.locked_subtree.root.value.tree_node.unwrap().relate_slot_owner(&regions.slot_owners[index])) by { admit() };
-//            assert(owner.locked_subtree.value.tree_node.unwrap().guard_perm@.addr() ==
-//                self.path[self.level as usize - 1].unwrap().addr()) by { admit() };
+            //            assert(owner.locked_subtree.root.value.tree_node.unwrap().relate_slot_owner(&regions.slot_owners[index])) by { admit() };
+            //            assert(owner.locked_subtree.value.tree_node.unwrap().guard_perm@.addr() ==
+            //                self.path[self.level as usize - 1].unwrap().addr()) by { admit() };
 
             #[verus_spec(with Tracked(owner),
                 Tracked(guard_perm),
@@ -167,10 +169,12 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             let tracked entry_own = &owner.locked_subtree.inner.value;
 
             assert(entry.wf(*entry_own)) by { admit() };
-//            assert(entry.pte.paddr() == meta_to_frame(entry_own.slot_perm@.addr())) by { admit() };
-//            assert(entry_own.slot_perm@.value().wf(regions.slot_owners[frame_to_index(entry.pte.paddr())])) by { admit() };
-            assert(regions.dropped_slots.contains_key(frame_to_index(entry.pte.paddr()))) by { admit() };
-            
+            //            assert(entry.pte.paddr() == meta_to_frame(entry_own.slot_perm@.addr())) by { admit() };
+            //            assert(entry_own.slot_perm@.value().wf(regions.slot_owners[frame_to_index(entry.pte.paddr())])) by { admit() };
+            assert(regions.dropped_slots.contains_key(frame_to_index(entry.pte.paddr()))) by {
+                admit()
+            };
+
             #[verus_spec(with Tracked(entry_own), Tracked(guard_perm), Tracked(regions))]
             let cur_child = entry.to_ref();
 
@@ -183,7 +187,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     assert(self.wf(*owner)) by { admit() };
                     assert(regions.inv()) by { admit() };
                     assert(self.level == level - 1) by { admit() };
-                    continue;
+                    continue ;
                 },
                 ChildRef::None => None,
                 ChildRef::Frame(pa, ch_level, prop) => {
@@ -355,7 +359,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     fn move_forward(&mut self)
         requires
             old(owner).inv(),
-            old(self).wf(*old(owner))
+            old(self).wf(*old(owner)),
         ensures
             self.model(*owner) == old(self).model(*old(owner)).move_forward_spec(),
             owner.inv(),
@@ -376,7 +380,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         }
         self.va = next_va;
 
-        assert(self.model(*owner) == old(self).model(*old(owner)).move_forward_spec()) by { admit() };
+        assert(self.model(*owner) == old(self).model(*old(owner)).move_forward_spec()) by { admit()
+        };
     }
 
     /// Goes up a level.
@@ -435,11 +440,12 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         requires
             1 <= old(self).level <= 4,
             old(self).path[old(self).level as int - 1] is Some,
-//            owner.locked_subtree.root.value.tree_node.tracked_is_some(),
+            //            owner.locked_subtree.root.value.tree_node.tracked_is_some(),
             owner.locked_subtree.inner.value.inv(),
-//            owner.locked_subtree.inner.value.node.unwrap().relate_slot_owner(slot_own),
-//            owner.locked_subtree.value.guard_perm@.addr() ==
-//                old(self).path[old(self).level as usize - 1].unwrap().addr(),
+    //            owner.locked_subtree.inner.value.node.unwrap().relate_slot_owner(slot_own),
+    //            owner.locked_subtree.value.guard_perm@.addr() ==
+    //                old(self).path[old(self).level as usize - 1].unwrap().addr(),
+
     {
         let node = self.path[self.level as usize - 1].unwrap();
         let tracked entry_own = &owner.locked_subtree.inner.value;
@@ -684,7 +690,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         let mut entry = self.inner.cur_entry();
         let tracked mut entry_own = owner.locked_subtree.value;
         assert(entry_own.inv()) by { admit() };
-//        assert(entry_own.relate_slot_owner(slot_own)) by { admit() };
+        //        assert(entry_own.relate_slot_owner(slot_own)) by { admit() };
         assert(entry.wf(entry_own)) by { admit() };
         assert(op.requires((entry.pte.prop(),))) by { admit() };
 

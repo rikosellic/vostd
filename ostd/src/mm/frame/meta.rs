@@ -146,8 +146,10 @@ pub use impl_frame_meta_for;
 verus! {
 
 /// Gets the reference to a metadata slot.
-pub fn get_slot(paddr: Paddr, Tracked(owner): Tracked<&MetaSlotOwner>)
-    -> (res: Result<PPtr<MetaSlot>, GetFrameError>)
+pub fn get_slot(paddr: Paddr, Tracked(owner): Tracked<&MetaSlotOwner>) -> (res: Result<
+    PPtr<MetaSlot>,
+    GetFrameError,
+>)
     requires
         owner.self_addr == frame_to_meta(paddr),
         owner.inv(),
@@ -169,7 +171,6 @@ pub fn get_slot(paddr: Paddr, Tracked(owner): Tracked<&MetaSlotOwner>)
 }
 
 impl MetaSlot {
-
     /// Initializes the metadata slot of a frame assuming it is unused.
     ///
     /// If successful, the function returns a pointer to the metadata slot.
@@ -368,7 +369,8 @@ impl MetaSlot {
             perm.value() == self,
             FRAME_METADATA_RANGE().start <= perm.addr() < FRAME_METADATA_RANGE().end,
             perm.addr() % META_SLOT_SIZE() == 0,
-        returns meta_to_frame(perm.addr())
+        returns
+            meta_to_frame(perm.addr()),
     {
         let addr = self.addr_of(Tracked(perm));
         meta_to_frame(addr)

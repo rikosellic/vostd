@@ -19,7 +19,7 @@ pub ghost struct FrameView<C: PageTableConfig> {
 
 impl<C: PageTableConfig> Inv for FrameView<C> {
     open spec fn inv(self) -> bool {
-        true /*
+        true/*
         &&& pa_is_valid_pt_address(self.pa)
         &&& level_is_in_range::<C>(self.level as int)
         // The corresponding virtual address must be aligned to the upper-level page size.
@@ -58,6 +58,7 @@ impl<C: PageTableConfig> Inv for FrameView<C> {
                     }
             }
         */
+
     }
 }
 
@@ -82,4 +83,4 @@ impl Mapping {
 
 pub type PageTableFlatView = Map<usize, Option<Mapping>>;
 
-}
+} // verus!

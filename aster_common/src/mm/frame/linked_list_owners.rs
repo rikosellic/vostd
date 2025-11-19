@@ -39,7 +39,8 @@ impl View for LinkOwner {
 }
 
 impl InvView for LinkOwner {
-    proof fn view_preserves_inv(self) { }
+    proof fn view_preserves_inv(self) {
+    }
 }
 
 // TODO: Technically M needs to be smaller than Link<M>, at minimum enough to fit the two pointers
@@ -190,7 +191,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> OwnerOf for LinkedList<M> {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlot>> ModelOf for LinkedList<M> { }
+impl<M: AnyFrameMeta + Repr<MetaSlot>> ModelOf for LinkedList<M> {
+
+}
 
 #[rustc_has_incoherent_inherent_impls]
 pub ghost struct CursorModel {
@@ -233,7 +236,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> View for CursorOwner<M> {
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlot>> InvView for CursorOwner<M> {
-    proof fn view_preserves_inv(self) { }
+    proof fn view_preserves_inv(self) {
+    }
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlot>> OwnerOf for CursorMut<M> {
@@ -250,7 +254,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> OwnerOf for CursorMut<M> {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlot>> ModelOf for CursorMut<M> { }
+impl<M: AnyFrameMeta + Repr<MetaSlot>> ModelOf for CursorMut<M> {
+
+}
 
 impl CursorModel {
     pub open spec fn current(self) -> Option<LinkModel> {

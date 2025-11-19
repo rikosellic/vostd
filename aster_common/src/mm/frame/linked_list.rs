@@ -135,7 +135,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> Repr<MetaSlot> for Link<M> {
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlot>> AnyFrameMeta for Link<M> {
-    fn on_drop(&mut self) { }
+    fn on_drop(&mut self) {
+    }
 
     fn is_untyped(&self) -> bool {
         false

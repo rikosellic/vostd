@@ -52,10 +52,8 @@ pub struct Cursor<'rcu, C: PageTableConfig, A: InAtomicMode> {
 pub tracked struct CursorOwner<'rcu, C: PageTableConfig> {
     pub path_prefix: TreePath<CONST_NR_ENTRIES>,
     pub locked_path: TreePath<CONST_NR_ENTRIES>,
-
     pub level: PagingLevel,
     pub guard_level: PagingLevel,
-
     pub prefix_nodes: Ghost<Seq<IntermediatePageTableEntryView<C>>>,
     pub locked_subtree: OwnerAsTreeNode<'rcu, C>,
 }
@@ -102,11 +100,14 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         (Self::vaddr_shift::<L>(idx) * offset) as usize
     }
 
-    pub open spec fn rec_vaddr(path: TreePath<CONST_NR_ENTRIES>, idx: int) -> usize
-/*        recommends
+    pub open spec fn rec_vaddr(
+        path: TreePath<CONST_NR_ENTRIES>,
+        idx: int,
+    ) -> usize/*        recommends
             0 < NR_LEVELS(),
             path.len() <= NR_LEVELS(),
             0 <= idx <= path.len(),*/
+
         decreases path.len() - idx,
         when 0 <= idx <= path.len()
     {
@@ -114,27 +115,29 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             0
         } else {
             let offset: usize = path.index(idx);
-            (Self::vaddr_make::<CONST_NR_LEVELS>(idx, offset) + Self::rec_vaddr(path, idx + 1)) as usize
+            (Self::vaddr_make::<CONST_NR_LEVELS>(idx, offset) + Self::rec_vaddr(
+                path,
+                idx + 1,
+            )) as usize
         }
     }
 
     pub open spec fn vaddr(self) -> Vaddr
-//        recommends
-//            self.inv(),
-    {
+    //        recommends
+    //            self.inv(),
+     {
         Self::rec_vaddr(self.full_path(), 0)
-    }
-
-/*    pub open spec fn paddr(self) -> Paddr
+    }/*    pub open spec fn paddr(self) -> Paddr
     {
-        let 
+        let
     }*/
+
 }
 
 #[rustc_has_incoherent_inherent_impls]
 pub tracked struct CursorView<C: PageTableConfig> {
     pub tracked fore: Seq<FrameView<C>>,
-    pub tracked rear: Seq<FrameView<C>>
+    pub tracked rear: Seq<FrameView<C>>,
 }
 
 impl<C: PageTableConfig> Inv for CursorView<C> {
@@ -146,7 +149,9 @@ impl<C: PageTableConfig> Inv for CursorView<C> {
 impl<'rcu, C: PageTableConfig> View for CursorOwner<'rcu, C> {
     type V = CursorView<C>;
 
-    closed spec fn view(&self) -> Self::V; /*{
+    closed spec fn view(
+        &self,
+    ) -> Self::V;/*{
         let extended = self.locked_path.extend()
         let paddr = self.locked_subtree.seek(self.locked_path);
         FrameView {
@@ -158,10 +163,12 @@ impl<'rcu, C: PageTableConfig> View for CursorOwner<'rcu, C> {
             phantom: PhantomData,
         }
     }*/
+
 }
 
 impl<'rcu, C: PageTableConfig> InvView for CursorOwner<'rcu, C> {
-    proof fn view_preserves_inv(self) { }
+    proof fn view_preserves_inv(self) {
+    }
 }
 
 impl<'rcu, C: PageTableConfig, A: InAtomicMode> OwnerOf for Cursor<'rcu, C, A> {
@@ -173,8 +180,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> OwnerOf for Cursor<'rcu, C, A> {
     }
 }
 
-impl<'rcu, C: PageTableConfig, A: InAtomicMode> ModelOf for Cursor<'rcu, C, A> { }
+impl<'rcu, C: PageTableConfig, A: InAtomicMode> ModelOf for Cursor<'rcu, C, A> {
 
+}
 
 /// The cursor of a page table that is capable of map, unmap or protect pages.
 ///

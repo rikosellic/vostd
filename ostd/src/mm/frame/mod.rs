@@ -136,7 +136,8 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         requires
             self.ptr.addr() == perm.addr(),
             perm.is_init(),
-        returns perm.value(),
+        returns
+            perm.value(),
     {
         // SAFETY: The type is tracked by the type system.
         #[verus_spec(with Tracked(perm.points_to.borrow()))]
@@ -223,7 +224,8 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             perm.is_init(),
             FRAME_METADATA_RANGE().start <= perm.addr() < FRAME_METADATA_RANGE().end,
             perm.addr() % META_SLOT_SIZE() == 0,
-        returns meta_to_frame(self.ptr.addr()),
+        returns
+            meta_to_frame(self.ptr.addr()),
     {
         #[verus_spec(with Tracked(perm))]
         let slot = self.slot();
@@ -288,33 +290,17 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
 
     /// Borrows a reference from the given frame.
     #[rustc_allow_incoherent_impl]
-<<<<<<< HEAD
-    #[verus_spec(r =>
-        with
-            Tracked(regions): Tracked<&mut MetaRegionOwners>,
-                -> frame_perm: Tracked<FramePerm<M>>,
-=======
     #[verus_spec(
         with Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(perm): Tracked<&PointsTo<MetaSlot, M>>
+            Tracked(perm): Tracked<&FramePerm<M>>,
     )]
     pub fn borrow(&self) -> FrameRef<'_, M>
->>>>>>> origin/page_table_cursors
         requires
             old(regions).inv(),
             self.paddr() % PAGE_SIZE() == 0,
             self.paddr() < MAX_PADDR(),
             !old(regions).slots.contains_key(self.index()),
-<<<<<<< HEAD
-            old(regions).dropped_slots.contains_key(self.index()),
-            old(regions).dropped_slots[self.index()]@.pptr() == self.ptr,
-        ensures
-            true,
-    )]
-    pub fn borrow(&self) -> FrameRef<'_, M> {
-=======
     {
->>>>>>> origin/page_table_cursors
         assert(regions.slot_owners.contains_key(self.index()));
         // SAFETY: Both the lifetime and the type matches `self`.
         #[verus_spec(with Tracked(perm.points_to.borrow()))]

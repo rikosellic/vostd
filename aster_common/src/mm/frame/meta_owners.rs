@@ -74,8 +74,7 @@ impl PageUsage {
     }
 
     #[vstd::contrib::auto_spec]
-    pub fn as_state(&self) -> (res: PageState)
-    {
+    pub fn as_state(&self) -> (res: PageState) {
         match &self {
             PageUsage::Unused => PageState::Unused,
             PageUsage::Frame => PageState::Untyped,
@@ -190,6 +189,8 @@ impl OwnerOf for MetaSlot {
     }
 }
 
-impl ModelOf for MetaSlot { }
+impl ModelOf for MetaSlot {
+
+}
 
 } // verus!

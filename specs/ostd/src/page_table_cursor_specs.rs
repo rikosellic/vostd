@@ -3,12 +3,12 @@ use vstd::prelude::*;
 use vstd_extra::ownership::*;
 use vstd_extra::prelude::TreePath;
 
-use aster_common::prelude::*;
 use aster_common::prelude::page_table::*;
+use aster_common::prelude::*;
 
-verus!{
+verus! {
+
 impl<C: PageTableConfig> CursorView<C> {
-
     #[rustc_allow_incoherent_impl]
     pub open spec fn push_level_spec(self) -> Self {
         self
@@ -23,11 +23,9 @@ impl<C: PageTableConfig> CursorView<C> {
     pub open spec fn move_forward_spec(self) -> Self {
         Self {
             fore: self.fore.insert(self.fore.len() as int, self.rear[0]),
-            rear: self.rear.remove(0)
+            rear: self.rear.remove(0),
         }
-    }
-
-/*    #[rustc_allow_incoherent_impl]
+    }/*    #[rustc_allow_incoherent_impl]
     pub open spec fn push_level_spec(self) -> Self {
         Self {
             path: self.path.push_tail(0 as usize),
@@ -71,5 +69,7 @@ impl<C: PageTableConfig> CursorView<C> {
             ..self
         }
     }*/
+
 }
-}
+
+} // verus!
