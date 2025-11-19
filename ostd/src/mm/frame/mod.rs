@@ -107,7 +107,16 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
             old(regions).slots.contains_key(frame_to_index(paddr)),
+            old(regions).slot_owners[frame_to_index(paddr)].usage is Unused,
+            old(regions).slot_owners[frame_to_index(paddr)].in_list@.points_to(0),
+            old(regions).slot_owners[frame_to_index(paddr)].self_addr == frame_to_meta(paddr),
         ensures
+            res.is_ok() ==> regions.view() == MetaSlot::get_from_unused_spec::<M>(
+                paddr,
+                metadata,
+                false,
+                old(regions).view(),
+            ).1,
             regions.inv(),
             forall|paddr: Paddr| #[trigger]
                 old(regions).slots.contains_key(frame_to_index(paddr))
@@ -120,31 +129,21 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
 
     /// Gets the metadata of this page.
     #[verus_spec(
-        with Tracked(slot_own) : Tracked<&MetaSlotOwner>,
-            Tracked(slot_perm) : Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>,
-            Tracked(perm) : Tracked<&'a PointsTo<MetaSlotStorage, M>>
+        with Tracked(perm) : Tracked<&'a PointsTo<MetaSlot, M>>
     )]
     #[rustc_allow_incoherent_impl]
     pub fn meta(&self) -> &'a M
         requires
-            self.ptr == slot_perm.pptr(),
-            slot_perm.is_init(),
-            slot_perm.value().wf(&slot_own),
-            slot_own.inv(),
-            perm.pptr().ptr.0 == slot_own.storage@.addr(),
-            perm.pptr().addr == slot_own.storage@.addr(),
+            self.ptr.addr() == perm.addr(),
             perm.is_init(),
-            perm.wf(),
-        returns
-            &perm.value(),
+        returns perm.value(),
     {
         // SAFETY: The type is tracked by the type system.
-        #[verus_spec(with Tracked(slot_perm))]
+        #[verus_spec(with Tracked(perm.points_to.borrow()))]
         let slot = self.slot();
 
-        #[verus_spec(with Tracked(slot_own))]
+        #[verus_spec(with Tracked(perm.points_to.borrow()))]
         let ptr = slot.as_meta_ptr();
-        assert(ptr.ptr.0 == slot_own.storage@.addr());
 
         ptr.borrow(Tracked(perm))
     }
@@ -215,24 +214,21 @@ impl<M: AnyFrameMeta> Frame<M> {
 impl<'a, M: AnyFrameMeta> Frame<M> {
     /// Gets the physical address of the start of the frame.
     #[verus_spec(
-        with Tracked(slot_own) : Tracked<&MetaSlotOwner>,
-            Tracked(slot_perm) : Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
+        with Tracked(perm): Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
     #[rustc_allow_incoherent_impl]
     pub fn start_paddr(&self) -> Paddr
         requires
-            slot_perm.pptr() == self.ptr,
-            slot_perm.is_init(),
-            slot_perm.value().wf(&slot_own),
-            slot_perm.addr() == slot_own.self_addr,
-            slot_own.inv(),
-        returns
-            self.paddr(),
+            perm.addr() == self.ptr.addr(),
+            perm.is_init(),
+            FRAME_METADATA_RANGE().start <= perm.addr() < FRAME_METADATA_RANGE().end,
+            perm.addr() % META_SLOT_SIZE() == 0,
+        returns meta_to_frame(self.ptr.addr()),
     {
-        #[verus_spec(with Tracked(slot_perm))]
+        #[verus_spec(with Tracked(perm))]
         let slot = self.slot();
 
-        #[verus_spec(with Tracked(slot_own))]
+        #[verus_spec(with Tracked(perm))]
         slot.frame_paddr()
     }
 
@@ -282,6 +278,8 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             slot_perm.pptr() == self.ptr,
             slot_perm.is_init(),
             old(slot_own).ref_count@.is_for(slot_perm.value().ref_count),
+        returns
+            old(slot_own)@.ref_count,
     {
         #[verus_spec(with Tracked(slot_perm))]
         let slot = self.slot();
@@ -290,25 +288,36 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
 
     /// Borrows a reference from the given frame.
     #[rustc_allow_incoherent_impl]
+<<<<<<< HEAD
     #[verus_spec(r =>
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
                 -> frame_perm: Tracked<FramePerm<M>>,
+=======
+    #[verus_spec(
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            Tracked(perm): Tracked<&PointsTo<MetaSlot, M>>
+    )]
+    pub fn borrow(&self) -> FrameRef<'_, M>
+>>>>>>> origin/page_table_cursors
         requires
             old(regions).inv(),
             self.paddr() % PAGE_SIZE() == 0,
             self.paddr() < MAX_PADDR(),
             !old(regions).slots.contains_key(self.index()),
+<<<<<<< HEAD
             old(regions).dropped_slots.contains_key(self.index()),
             old(regions).dropped_slots[self.index()]@.pptr() == self.ptr,
         ensures
             true,
     )]
     pub fn borrow(&self) -> FrameRef<'_, M> {
+=======
+    {
+>>>>>>> origin/page_table_cursors
         assert(regions.slot_owners.contains_key(self.index()));
         // SAFETY: Both the lifetime and the type matches `self`.
-        #[verus_spec(with Tracked(regions.slot_owners.tracked_borrow(self.index())),
-                            Tracked(regions.dropped_slots.tracked_borrow(self.index()).borrow()))]
+        #[verus_spec(with Tracked(perm.points_to.borrow()))]
         let paddr = self.start_paddr();
 
         #[verus_spec(with Tracked(regions))]
@@ -336,17 +345,14 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         assert(regions.slots[self.index()]@.addr() == self.paddr()) by { admit() };
         let tracked owner = regions.slot_owners.tracked_borrow(self.index());
         let tracked perm = regions.slots.tracked_remove(self.index());
+        let meta_perm = PointsTo::<MetaSlot, M>::new(self.ptr.addr(), perm);
 
         // TODO: implement ManuallyDrop
         // let this = ManuallyDrop::new(self);
-        #[verus_spec(with Tracked(owner), Tracked(perm.borrow()))]
+        #[verus_spec(with Tracked(perm.borrow()))]
         let paddr = self.start_paddr();
 
-        proof {
-            regions.dropped_slots.tracked_insert(frame_to_index(paddr), perm);
-        }
-
-        paddr
+        (paddr, meta_perm)
     }
 
     /// Restores a forgotten [`Frame`] from a physical address.

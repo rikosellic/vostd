@@ -140,13 +140,8 @@ pub enum CachePolicy {
 
 #[allow(non_snake_case)]
 impl CachePolicy {
-    #[verifier::inline]
-    pub open spec fn N_spec() -> usize {
-        (CachePolicy::Writeback.value() + 1) as usize
-    }
-
     #[inline(always)]
-    #[verifier::when_used_as_spec(N_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn N() -> (res: usize)
         ensures
             res == Self::N_spec(),
@@ -154,25 +149,14 @@ impl CachePolicy {
         (CachePolicy::Writeback.value() + 1) as usize
     }
 
-    #[verifier::inline]
-    pub open spec fn value_spec(&self) -> u8 {
-        match self {
-            CachePolicy::Uncacheable => 0,
-            CachePolicy::WriteCombining => 1,
-            CachePolicy::WriteProtected => 2,
-            CachePolicy::Writethrough => 3,
-            CachePolicy::Writeback => 4,
-        }
-    }
-
     #[inline(always)]
-    #[verifier::when_used_as_spec(value_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn value(&self) -> (res: u8)
         ensures
             res == self.value(),
     {
         match self {
-            CachePolicy::Uncacheable => 0,
+            CachePolicy::Uncacheable => 0u8,
             CachePolicy::WriteCombining => 1,
             CachePolicy::WriteProtected => 2,
             CachePolicy::Writethrough => 3,
@@ -218,7 +202,7 @@ impl PageFlags {
     }
 
     #[inline(always)]
-    #[verifier::when_used_as_spec(empty_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn empty() -> (res: Self)
         ensures
             res == Self::empty_spec(),
@@ -226,13 +210,8 @@ impl PageFlags {
         Self { bits: 0 }
     }
 
-    #[verifier::inline]
-    pub open spec fn value_spec(&self) -> u8 {
-        self.bits
-    }
-
     #[inline(always)]
-    #[verifier::when_used_as_spec(value_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn value(&self) -> (res: u8)
         ensures
             res == self.value_spec(),
@@ -240,30 +219,18 @@ impl PageFlags {
         self.bits
     }
 
-    #[verifier::inline]
-    pub open spec fn from_bits_spec(value: u8) -> Self {
-        Self { bits: value }
-    }
-
     #[inline(always)]
-    #[verifier::when_used_as_spec(from_bits_spec)]
+    #[vstd::contrib::auto_spec]
     pub fn from_bits(value: u8) -> (res: Self)
         ensures
-            res == Self::from_bits_spec(value),
             res.bits == value,
     {
         Self { bits: value }
     }
 
     #[allow(non_snake_case)]
-    #[verifier::inline]
-    pub open spec fn R_spec() -> Self {
-        Self { bits: 0b00000001 }
-    }
-
-    #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::when_used_as_spec(R_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn R() -> (res: Self)
         ensures
             res == Self::R_spec(),
@@ -272,14 +239,8 @@ impl PageFlags {
     }
 
     #[allow(non_snake_case)]
-    #[verifier::inline]
-    pub open spec fn W_spec() -> Self {
-        Self { bits: 0b00000010 }
-    }
-
-    #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::when_used_as_spec(W_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn W() -> (res: Self)
         ensures
             res == Self::W_spec(),
@@ -288,14 +249,8 @@ impl PageFlags {
     }
 
     #[allow(non_snake_case)]
-    #[verifier::inline]
-    pub open spec fn X_spec() -> Self {
-        Self { bits: 0b00000100 }
-    }
-
-    #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::when_used_as_spec(X_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn X() -> (res: Self)
         ensures
             res == Self::X_spec(),
@@ -304,14 +259,8 @@ impl PageFlags {
     }
 
     #[allow(non_snake_case)]
-    #[verifier::inline]
-    pub open spec fn RW_spec() -> Self {
-        Self { bits: Self::R().value() | Self::W().value() }
-    }
-
-    #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::when_used_as_spec(X_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn RW() -> (res: Self)
         ensures
             res == Self::RW_spec(),
@@ -320,14 +269,8 @@ impl PageFlags {
     }
 
     #[allow(non_snake_case)]
-    #[verifier::inline]
-    pub open spec fn RX_spec() -> Self {
-        Self { bits: Self::R().value() | Self::X().value() }
-    }
-
-    #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::when_used_as_spec(RX_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn RX() -> (res: Self)
         ensures
             res == Self::RX_spec(),
@@ -336,14 +279,8 @@ impl PageFlags {
     }
 
     #[allow(non_snake_case)]
-    #[verifier::inline]
-    pub open spec fn RWX_spec() -> Self {
-        Self { bits: Self::R().value() | Self::W().value() | Self::X().value() }
-    }
-
-    #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::when_used_as_spec(RWX_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn RWX() -> (res: Self)
         ensures
             res == Self::RWX_spec(),
@@ -352,14 +289,8 @@ impl PageFlags {
     }
 
     #[allow(non_snake_case)]
-    #[verifier::inline]
-    pub open spec fn ACCESSED_spec() -> Self {
-        Self { bits: 0b00001000 }
-    }
-
-    #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::when_used_as_spec(ACCESSED_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn ACCESSED() -> (res: Self)
         ensures
             res == Self::ACCESSED_spec(),
@@ -368,14 +299,8 @@ impl PageFlags {
     }
 
     #[allow(non_snake_case)]
-    #[verifier::inline]
-    pub open spec fn DIRTY_spec() -> Self {
-        Self { bits: 0b00010000 }
-    }
-
-    #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::when_used_as_spec(DIRTY_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn DIRTY() -> (res: Self)
         ensures
             res == Self::DIRTY_spec(),
@@ -417,13 +342,8 @@ pub broadcast proof fn lemma_privileged_page_flags_equal_soundness(
 }
 
 impl PrivilegedPageFlags {
-    #[verifier::inline]
-    pub open spec fn empty_spec() -> Self {
-        Self { bits: 0 }
-    }
-
     #[inline(always)]
-    #[verifier::when_used_as_spec(empty_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn empty() -> (res: Self)
         ensures
             res == Self::empty_spec(),
@@ -431,13 +351,8 @@ impl PrivilegedPageFlags {
         Self { bits: 0 }
     }
 
-    #[verifier::inline]
-    pub open spec fn value_spec(&self) -> u8 {
-        self.bits
-    }
-
     #[inline(always)]
-    #[verifier::when_used_as_spec(value_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn value(&self) -> (res: u8)
         ensures
             res == self.value_spec(),
@@ -445,13 +360,8 @@ impl PrivilegedPageFlags {
         self.bits
     }
 
-    #[verifier::inline]
-    pub open spec fn from_bits_spec(value: u8) -> Self {
-        Self { bits: value }
-    }
-
     #[inline(always)]
-    #[verifier::when_used_as_spec(from_bits_spec)]
+    #[vstd::contrib::auto_spec]
     pub fn from_bits(value: u8) -> (res: Self)
         ensures
             res == Self::from_bits_spec(value),
@@ -460,14 +370,8 @@ impl PrivilegedPageFlags {
     }
 
     #[allow(non_snake_case)]
-    #[verifier::inline]
-    pub open spec fn USER_spec() -> Self {
-        Self { bits: 0b00000001 }
-    }
-
-    #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::when_used_as_spec(USER_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn USER() -> (res: Self)
         ensures
             res == Self::USER_spec(),
@@ -476,14 +380,8 @@ impl PrivilegedPageFlags {
     }
 
     #[allow(non_snake_case)]
-    #[verifier::inline]
-    pub open spec fn GLOBAL_spec() -> Self {
-        Self { bits: 0b00000010 }
-    }
-
-    #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::when_used_as_spec(GLOBAL_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn GLOBAL() -> (res: Self)
         ensures
             res == Self::GLOBAL_spec(),
@@ -492,14 +390,8 @@ impl PrivilegedPageFlags {
     }
 
     #[allow(non_snake_case)]
-    #[verifier::inline]
-    pub open spec fn SHARED_spec() -> Self {
-        Self { bits: 0b10000000 }
-    }
-
-    #[allow(non_snake_case)]
     #[inline(always)]
-    #[verifier::when_used_as_spec(SHARED_spec)]
+    #[vstd::contrib::auto_spec]
     pub const fn SHARED() -> (res: Self)
         ensures
             res == Self::SHARED_spec(),

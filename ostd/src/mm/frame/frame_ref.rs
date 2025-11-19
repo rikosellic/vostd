@@ -4,6 +4,7 @@ use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref, ptr::NonNull};
 use vstd::prelude::*;
 
 use vstd_extra::manually_drop::*;
+use vstd_extra::ownership::*;
 
 use aster_common::prelude::frame::*;
 use aster_common::prelude::*;

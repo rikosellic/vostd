@@ -146,10 +146,8 @@ pub use impl_frame_meta_for;
 verus! {
 
 /// Gets the reference to a metadata slot.
-pub fn get_slot(paddr: Paddr, Tracked(owner): Tracked<&MetaSlotOwner>) -> (res: Result<
-    PPtr<MetaSlot>,
-    GetFrameError,
->)
+pub fn get_slot(paddr: Paddr, Tracked(owner): Tracked<&MetaSlotOwner>)
+    -> (res: Result<PPtr<MetaSlot>, GetFrameError>)
     requires
         owner.self_addr == frame_to_meta(paddr),
         owner.inv(),
@@ -171,35 +169,6 @@ pub fn get_slot(paddr: Paddr, Tracked(owner): Tracked<&MetaSlotOwner>) -> (res: 
 }
 
 impl MetaSlot {
-    /// This is the equivalent of &self as *const as Vaddr, but we need to axiomatize it.
-    #[rustc_allow_incoherent_impl]
-    #[verus_spec(
-        with Tracked(owner): Tracked<&MetaSlotOwner>
-    )]
-    #[verifier::external_body]
-    pub fn addr_of(&self) -> (i: usize)
-        requires
-            self.wf(owner),
-        ensures
-            i == owner.self_addr,
-    {
-        unimplemented!()
-    }
-
-    /// Because of the MetaSlot / MetaSlotStorage divide, this needs to be separate. TODO: consider fixing that.
-    #[rustc_allow_incoherent_impl]
-    #[verus_spec(
-        with Tracked(owner): Tracked<&MetaSlotOwner>
-    )]
-    #[verifier::external_body]
-    pub fn storage_addr_of(&self) -> (i: usize)
-        requires
-            self.wf(owner),
-        ensures
-            i == owner.storage@.addr(),
-    {
-        unimplemented!()
-    }
 
     /// Initializes the metadata slot of a frame assuming it is unused.
     ///
@@ -221,14 +190,20 @@ impl MetaSlot {
             paddr < MAX_PADDR(),
             paddr % PAGE_SIZE() == 0,
             old(regions).inv(),
-            old(regions).slots.contains_key(
-                frame_to_index(paddr),
-            ),
-    //@.mem_contents().value() == ,
-    //            old(regions).slot_owners.dom().contains(frame_to_index(paddr)),
-    //            old(regions).slot_owners[frame_to_index(paddr)].storage@.id() == self.storage.id()
-
+            old(regions).slots.contains_key(frame_to_index(paddr)),
+            old(regions).slot_owners[frame_to_index(paddr)].usage is Unused,
+            old(regions).slot_owners[frame_to_index(paddr)].in_list@.points_to(0),
+            old(regions).slot_owners[frame_to_index(paddr)].self_addr == frame_to_meta(paddr),
+        ensures
+            res.is_ok() ==> MetaSlot::get_from_unused_spec::<M>(
+                paddr,
+                metadata,
+                as_unique_ptr,
+                old(regions).view(),
+            ) == (res.unwrap(), regions.view()),
     {
+        let ghost old_regions = *regions;
+
         proof {
             regions.inv_implies_correct_addr(paddr);
         }
@@ -237,8 +212,6 @@ impl MetaSlot {
         let tracked mut slot_perm = regions.slots.tracked_remove(frame_to_index(paddr));
 
         let slot = get_slot(paddr, Tracked(&slot_own))?;
-
-        //        assert(regions.slots[frame_to_index(paddr)]@.mem_contents().value() == slot);
 
         // `Acquire` pairs with the `Release` in `drop_last_in_place` and ensures the metadata
         // initialization won't be reordered before this memory compare-and-exchange.
@@ -279,9 +252,12 @@ impl MetaSlot {
         }
 
         proof {
+            slot_own.usage = PageUsage::Frame;
             regions.slots.tracked_insert(frame_to_index(paddr), slot_perm);
             regions.slot_owners.tracked_insert(frame_to_index(paddr), slot_own);
         }
+
+        assert(regions@.slots == old_regions@.slots.insert(frame_to_index(paddr), slot_own@));
 
         Ok(slot)
     }
@@ -385,17 +361,16 @@ impl MetaSlot {
     /// Gets the corresponding frame's physical address.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<&MetaSlotOwner>
+        with Tracked(perm): Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
     pub fn frame_paddr(&self) -> (pa: Paddr)
         requires
-            owner.inv(),
-            self.wf(owner),
-        returns
-            meta_to_frame(owner@.self_addr),
+            perm.value() == self,
+            FRAME_METADATA_RANGE().start <= perm.addr() < FRAME_METADATA_RANGE().end,
+            perm.addr() % META_SLOT_SIZE() == 0,
+        returns meta_to_frame(perm.addr())
     {
-        #[verus_spec(with Tracked(owner))]
-        let addr = self.addr_of();
+        let addr = self.addr_of(Tracked(perm));
         meta_to_frame(addr)
     }
 
@@ -437,23 +412,18 @@ impl MetaSlot {
     ///    having exclusive access to the metadata slot.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner): Tracked<&MetaSlotOwner>
+        with Tracked(perm): Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
-    pub fn as_meta_ptr<M: AnyFrameMeta + Repr<MetaSlotStorage>>(&self) -> (res: ReprPtr<
-        MetaSlotStorage,
-        M,
-    >)
+    pub fn as_meta_ptr<M: AnyFrameMeta + Repr<MetaSlot>>(&self) -> (res: ReprPtr<MetaSlot, M>)
         requires
-            owner.inv(),
-            self.wf(owner),
+            self == perm.value(),
         ensures
-            res.ptr.addr() == owner.storage@.addr(),
-            res.addr == owner.storage@.addr(),
+            res.ptr.addr() == perm.addr(),
+            res.addr == perm.addr(),
     {
-        #[verus_spec(with Tracked(owner))]
-        let addr = self.storage_addr_of();
+        let addr = self.addr_of(Tracked(perm));
 
-        self.cast_storage(addr, Tracked(owner))
+        self.cast_slot(addr, Tracked(perm))
     }
 
     /// Writes the metadata to the slot without reading or dropping the previous value.
@@ -466,13 +436,17 @@ impl MetaSlot {
     #[verus_spec(
         with Tracked(slot_own): Tracked<&mut MetaSlotOwner>
     )]
-    pub(super) fn write_meta<M: AnyFrameMeta>(&self, metadata: M)
+    pub fn write_meta<M: AnyFrameMeta + Repr<MetaSlot>>(&self, metadata: M)
         requires
     //            old(regions).slots.contains_key()
 
             old(slot_own).storage@.pptr() == self.storage,
         ensures
             slot_own.ref_count == old(slot_own).ref_count,
+            slot_own.vtable_ptr@.is_init(),
+            slot_own.vtable_ptr@.value() == metadata.vtable_ptr(),
+            slot_own.in_list == old(slot_own).in_list,
+            slot_own.self_addr == old(slot_own).self_addr,
     {
         //        const { assert!(size_of::<M>() <= FRAME_METADATA_MAX_SIZE) };
         //        const { assert!(align_of::<M>() <= FRAME_METADATA_MAX_ALIGN) };

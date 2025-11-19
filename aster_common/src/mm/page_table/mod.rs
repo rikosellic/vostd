@@ -1,10 +1,12 @@
 mod cursor;
 mod node;
 mod owners;
+mod view;
 
 pub use cursor::*;
 pub use node::*;
 pub use owners::*;
+pub use view::*;
 
 use vstd::prelude::*;
 
@@ -15,10 +17,6 @@ use core::ops::Range;
 use super::*;
 
 verus! {
-
-impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
-
-}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PageTableError {
@@ -201,8 +199,7 @@ impl<C: PageTableConfig> PagingConstsTrait for C {
 ///
 /// Note that a default PTE should be a PTE that points to nothing.
 pub trait PageTableEntryTrait:
-    Clone + Copy + Debug +   /*Pod + PodOnce + SameSizeAs<usize> +*/
-Sized + Send + Sync + 'static {
+    Clone + Copy + Debug + /*Pod + PodOnce + SameSizeAs<usize> +*/ Sized + Send + Sync + 'static {
     spec fn default_spec() -> Self;
 
     /// For implement `Default` trait.

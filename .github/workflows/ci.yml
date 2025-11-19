@@ -1,0 +1,85 @@
+name: Format and Verify VOSTD (PhaseII)
+
+on:
+  push:
+    branches:
+      - phaseII/verified
+  pull_request:
+    branches:
+      - phaseII/verified
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to run the workflow on"
+        required: true
+        default: "phaseII/verified"
+
+jobs:
+  format-and-verify:
+    runs-on: ubuntu-24.04
+    env:
+      CARGO_TERM_COLOR: always
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt update -qq
+          sudo apt install -y build-essential unzip pkg-config libssl-dev llvm
+
+      - name: Run dv bootstrap
+        run: cargo dv bootstrap
+
+      - name: Run verification
+        run: |
+          make 2>&1 | tee verus.log
+          if grep -q "error:" verus.log; then
+            echo "::error title=Verification Failed::Verification errors found in the code"
+            echo "Verification errors:"
+            grep "error:" verus.log | while read line; do
+              echo "::error::$line"
+            done
+            echo "VERIFY_FAILED=1" >> "$GITHUB_ENV"
+            exit 1
+          else
+            echo "✅ Verification passed!"
+          fi
+
+      - name: Cleanup verus.log
+        if: always()
+        run: rm -f verus.log
+
+      - name: Run format
+        if: always()
+        run: make fmt
+
+      - name: Check for formatting changes
+        if: always()
+        run: |
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "Code is not properly formatted. Run 'make fmt'."
+            git diff
+            echo "FMT_FAILED=1" >> "$GITHUB_ENV"
+            # exit 1
+          fi
+
+      - name: Publish summary
+        if: always()
+        run: |
+          {
+            echo "# CI Summary"
+            if [[ "${FMT_FAILED:-0}" == "1" ]]; then
+              echo "- Formatting: ❌ failed"
+            else
+              echo "- Formatting: ✅ passed"
+            fi
+            if [[ "${VERIFY_FAILED:-0}" == "1" ]]; then
+              echo "- Verification: ❌ failed"
+            else
+              echo "- Verification: ✅ passed"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

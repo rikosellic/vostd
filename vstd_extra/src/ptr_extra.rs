@@ -1,7 +1,9 @@
 use vstd::prelude::*;
 
-use verus_builtin_macros::*;
 use vstd::simple_pptr::*;
+
+use verus_builtin_macros::*;
+
 
 verus! {
 

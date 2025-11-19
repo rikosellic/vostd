@@ -1,14 +1,15 @@
 [package]
-name = "sample"
+name = "ostd_specs"
 version = "0.1.0"
+description = "Specifications for the Sample code"
 edition = "2024"
 
 [lib]
 crate-type = ["rlib"]
-name = "sample"
+name = "ostd_specs"
 # for cargo
-path = "src/.dummy.rs"
-# path = "src/lib.rs"
+# path = "src/.dummy.rs"
+path = "src/lib.rs"
 
 [features]
 verus = []
@@ -25,3 +26,5 @@ check_lifetime = true
 vstd = { workspace = true, optional = true }
 verus_builtin = { workspace = true, optional = true }
 verus_builtin_macros = { workspace = true, optional = true }
+vstd_extra = { path = "../../vstd_extra" }
+aster_common = { path = "../../aster_common" }

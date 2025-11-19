@@ -139,6 +139,7 @@ pub tracked struct PointsTo<R, T: Repr<R>> {
 }
 
 impl<R, T: Repr<R>> PointsTo<R, T> {
+    #[verifier::returns(exec)]
     pub fn new(addr: usize, points_to: Tracked<simple_pptr::PointsTo<R>>) -> Tracked<Self> {
         Tracked(Self { addr: addr, points_to: points_to, _T: PhantomData })
     }
@@ -166,23 +167,29 @@ impl<R, T: Repr<R>> PointsTo<R, T> {
         }
     }
 
-    pub open spec fn is_init(&self) -> bool {
+    pub open spec fn is_init(self) -> bool {
         self.mem_contents().is_init()
     }
 
-    pub open spec fn is_uninit(&self) -> bool {
+    pub open spec fn is_uninit(self) -> bool {
         self.mem_contents().is_uninit()
     }
 
-    pub open spec fn value(&self) -> T
+    pub open spec fn value(self) -> T
         recommends
             self.is_init(),
     {
         self.mem_contents().value()
     }
 
-    pub open spec fn pptr(&self) -> ReprPtr<R, T> {
+    pub open spec fn pptr(self) -> ReprPtr<R, T> {
         ReprPtr { addr: self.addr, ptr: self.points_to@.pptr(), _T: PhantomData }
+    }
+
+    pub broadcast proof fn pptr_implies_addr(&self)
+        ensures
+            self.addr() == #[trigger] self.pptr().addr(),
+    {
     }
 }
 

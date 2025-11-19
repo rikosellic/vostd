@@ -95,8 +95,8 @@ impl Data {
             self.wf(old(own)),
             self.a_to_b_precond(i, old(own).perm@),
     {
-        update_field!(self.cell => a -= i, own.perm.borrow_mut());
-        update_field!(self.cell => b += i, own.perm.borrow_mut());
+        update_field!(self.cell => a -= i; own.perm.borrow_mut());
+        update_field!(self.cell => b += i; own.perm.borrow_mut());
     }
 }
 

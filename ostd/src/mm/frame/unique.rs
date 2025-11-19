@@ -17,7 +17,7 @@ use crate::mm::{Paddr, PagingConsts, PagingLevel};
 
 verus! {
 
-impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot> + OwnerOf> UniqueFrame<M> {
     /// Gets a [`UniqueFrame`] with a specific usage from a raw, unused page.
     ///
     /// The caller should provide the initial metadata of the page.
@@ -64,13 +64,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
     /// Gets the mutable metadata of this page.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<&MetaSlotOwner>,
-            Tracked(perm) : Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
+        with Tracked(perm) : Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
     #[verifier::external_body]
-    pub fn meta_mut(&mut self) -> (res: ReprPtr<MetaSlotStorage, M>)
+    pub fn meta_mut(&mut self) -> (res: ReprPtr<MetaSlot, M>)
         requires
-            owner.inv(),
     //            perm.is_init(),
     //            perm.pptr() == old(self).ptr,
     //            perm.value().wf(owner)
@@ -88,12 +86,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         #[verus_spec(with Tracked(perm))]
         let slot = self.slot();
 
-        #[verus_spec(with Tracked(owner))]
+        #[verus_spec(with Tracked(perm))]
         slot.as_meta_ptr()
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot> + OwnerOf> UniqueFrame<M> {
     /// Gets the physical address of the start of the frame.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
@@ -181,7 +179,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
     #[rustc_allow_incoherent_impl]
     #[verus_spec(res =>
         with Tracked(regions) : Tracked<&mut MetaRegionOwners>,
-            Tracked(meta_perm) : Tracked<PointsTo<MetaSlotStorage, M>>,
+            Tracked(meta_perm) : Tracked<PointsTo<MetaSlot, M>>,
             Tracked(meta_own) : Tracked<M::Owner>
     )]
     #[verifier::external_body]
@@ -192,7 +190,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
             old(regions).dropped_slots.contains_key(frame_to_index(paddr)),
         ensures
             res.0.ptr.addr() == frame_to_meta(paddr),
-            res.0.wf(&res.1@),
+            res.0.wf(res.1@),
             res.1@.meta_own@ == meta_own,
             res.1@.meta_perm@ == meta_perm,
             regions.slots[frame_to_index(paddr)] == old(regions).dropped_slots[frame_to_index(

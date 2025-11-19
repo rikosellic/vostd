@@ -112,7 +112,7 @@ impl<M: AnyFrameMeta> cast_ptr::Repr<MetaSlot> for Frame<M> {
 }
 
 impl<M: AnyFrameMeta> Inv for Frame<M> {
-    open spec fn inv(&self) -> bool {
+    open spec fn inv(self) -> bool {
         &&& self.ptr.addr() % META_SLOT_SIZE() == 0
         &&& FRAME_METADATA_RANGE().start <= self.ptr.addr() < FRAME_METADATA_RANGE().start
             + MAX_NR_PAGES() * META_SLOT_SIZE()
@@ -135,13 +135,13 @@ impl<M: AnyFrameMeta> Frame<M> {
         Tracked(p_slot): Tracked<&'a simple_pptr::PointsTo<MetaSlot>>,
         owner:
             MetaSlotOwner,
-        //        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlotInner>>,
-    ) -> (res: &PageTablePageMeta<C>)
+        //        Tracked(p_inner): Tracked<&'a cell::PointsTo<MetaSlot>>,
+    ) -> (res: &'a PageTablePageMeta<C>)
         requires
             self.inv(),
             p_slot.pptr() == self.ptr,
             p_slot.is_init(),
-            p_slot.value().wf(&owner),
+            p_slot.value().wf(owner),
             is_variant(owner.view().storage.value(), "PTNode"),
         ensures
     //            PTNode(*res) == owner.view().storage.value(),

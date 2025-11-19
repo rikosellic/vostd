@@ -422,6 +422,11 @@ impl<M: AnyFrameMeta> Segment<M> {
                     };
                 },
             };
+            assert(regions.slot_owners[paddr / PAGE_SIZE()].usage is Unused) by { admit() };
+            assert(regions.slot_owners[paddr / PAGE_SIZE()].in_list@.points_to(0)) by { admit() };
+
+            #[verus_spec(with Tracked(regions))]
+            let frame = Frame::<M>::from_unused(paddr, meta)?;
 
             // TODO: `ManuallyDrop` causes runtime crashes; comment it out for now, but later we'll use the `vstd_extra` implementation
             // let _ = ManuallyDrop::new(frame);
