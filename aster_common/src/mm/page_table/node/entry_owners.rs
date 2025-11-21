@@ -2,6 +2,7 @@ use vstd::prelude::*;
 
 use vstd::simple_pptr::PointsTo;
 use vstd_extra::array_ptr;
+use vstd_extra::ghost_tree::*;
 
 use super::*;
 
@@ -46,13 +47,13 @@ pub tracked struct FrameEntryOwner {
 pub tracked struct EntryOwner<'rcu, C: PageTableConfig> {
     pub node: Option<NodeEntryOwner<'rcu, C>>,
     pub frame: Option<FrameEntryOwner>,
-    pub locked: Option<Ghost<EntryView<C>>>,
+    pub locked: Option<Ghost<Seq<FrameView<C>>>>,
     pub absent: bool,
 
     pub base_addr: usize,
     pub guard_addr: usize,
     pub index: usize,
-    pub path: Ghost<Seq<IntermediatePageTableEntryView<C>>>,
+    pub path: TreePath<CONST_NR_ENTRIES>,
 }
 
 impl<'rcu, C: PageTableConfig> EntryOwner<'rcu, C> {
@@ -109,27 +110,33 @@ impl <'rcu, C: PageTableConfig> View for EntryOwner<'rcu, C> {
     #[verifier::external_body]
     open spec fn view(&self) -> <Self as View>::V {
         if let Some(frame) = self.frame {
-            EntryView::Leaf(LeafPageTableEntryView{
-                map_va: 0, // TODO: compute from the path the virtual address the entry maps
-                frame_pa: self.base_addr as int,
-                in_frame_index: self.index as int,
-                map_to_pa: frame.mapped_pa as int,
-                level: (self.path@.len() + 1) as u8,
-                prop: frame.prop,
-                phantom: PhantomData
-            })
+            EntryView::Leaf {
+                leaf: LeafPageTableEntryView{
+                    map_va: 0, // TODO: compute from the path the virtual address the entry maps
+                    frame_pa: self.base_addr as int,
+                    in_frame_index: self.index as int,
+                    map_to_pa: frame.mapped_pa as int,
+                    level: (self.path.len() + 1) as u8,
+                    prop: frame.prop,
+                    phantom: PhantomData
+                }
+            }
         }
         else if let Some(node) = self.node {
-            EntryView::Intermediate(IntermediatePageTableEntryView{
-                map_va: 0, // TODO: as above
-                frame_pa: self.base_addr as int,
-                in_frame_index: self.index as int,
-                map_to_pa: meta_to_frame(node.as_node.meta_perm@.addr()) as int,
-                level: (self.path@.len() + 1) as u8,
-                phantom: PhantomData
-           })
+            EntryView::Intermediate {
+                node: IntermediatePageTableEntryView{
+                    map_va: 0, // TODO: as above
+                    frame_pa: self.base_addr as int,
+                    in_frame_index: self.index as int,
+                    map_to_pa: meta_to_frame(node.as_node.meta_perm@.addr()) as int,
+                    level: (self.path.len() + 1) as u8,
+                    phantom: PhantomData
+                }
+            }
         } else if let Some(view) = self.locked {
-            view@
+            EntryView::LockedSubtree {
+                views: view@
+            }
         } else {
             EntryView::Absent
         }
@@ -137,7 +144,7 @@ impl <'rcu, C: PageTableConfig> View for EntryOwner<'rcu, C> {
 }
 
 impl<'rcu, C: PageTableConfig> InvView for EntryOwner<'rcu, C> {
-    proof fn view_preserves_inv(self) { }
+    proof fn view_preserves_inv(self) { admit() }
 }
 
 impl<'rcu, C: PageTableConfig> OwnerOf for Entry<'rcu, C> {

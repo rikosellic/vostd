@@ -48,7 +48,7 @@ impl<'rcu, C: PageTableConfig> TreeNodeValue for EntryOwner<'rcu, C> {
             index: 0,
             base_addr: 0,
             guard_addr: 0,
-            path: Ghost(Seq::empty())
+            path: TreePath(Seq::empty())
         }
     }
 
@@ -58,8 +58,10 @@ impl<'rcu, C: PageTableConfig> TreeNodeValue for EntryOwner<'rcu, C> {
     { }
 }
 
+pub type OwnerNode<'rcu, C> = Node<EntryOwner<'rcu, C>, CONST_NR_ENTRIES, CONST_NR_LEVELS>;
+
 pub tracked struct OwnerAsTreeNode<'rcu, C: PageTableConfig> {
-    pub inner: Node<EntryOwner<'rcu, C>, CONST_NR_ENTRIES, CONST_NR_LEVELS>,
+    pub inner: OwnerNode<'rcu, C>,
 }
 
 impl<'rcu, C: PageTableConfig> Deref for OwnerAsTreeNode<'rcu, C> {
@@ -76,9 +78,7 @@ impl<'rcu, C: PageTableConfig> OwnerAsTreeNode<'rcu, C> {
 //        &&& self.value.get_entry().unwrap().node_owner.meta_own.nr_children@
         &&& self.inner.children.len() == 0
     }
-}
 
-impl<'rcu, C: PageTableConfig> OwnerAsTreeNode<'rcu, C> {
     pub open spec fn valid_ptrs(self) -> bool {
         forall|i: usize| #![auto]
             0 <= i < NR_ENTRIES() ==> self.inner.children[i as int] is Some ==> {
@@ -89,11 +89,42 @@ impl<'rcu, C: PageTableConfig> OwnerAsTreeNode<'rcu, C> {
                     self.inner.children[i as int].unwrap().value)
             }
     }
+    
+    pub open spec fn view_rec(node: OwnerNode<'rcu, C>, chain: Map<int, IntermediatePageTableEntryView<C>>, level: int) -> Seq<FrameView<C>>
+        decreases NR_LEVELS() - level,
+    {
+        if NR_LEVELS() - level <= 0 {
+            Seq::empty()
+        } else if node.value.is_frame() {
+            Seq::empty().push(node.value@->leaf.to_frame_view(chain))
+        } else if node.value.is_node() {
+            let chain = chain.insert(level, node.value@ -> node);
+            node.children.flat_map(|child: Option<OwnerNode<'rcu, C>>| Self::view_rec(child.unwrap(), chain, level + 1))
+        } else if node.value.is_locked() {
+            node.value.locked.unwrap()@
+        } else {
+            Seq::empty()
+        }
+    }
 }
 
 #[verusfmt::skip]
 pub tracked struct PageTableOwner<'rcu, C: PageTableConfig> {
     pub tree: OwnerAsTreeNode<'rcu, C>,
+}
+
+pub tracked struct PageTableView<C: PageTableConfig> {
+    pub leaves: Seq<FrameView<C>>
+}
+
+impl<'rcu, C: PageTableConfig> View for PageTableOwner<'rcu, C> {
+    type V = PageTableView<C>;
+
+    open spec fn view(&self) -> Self::V {
+        PageTableView { 
+            leaves: OwnerAsTreeNode::view_rec(self.tree.inner, Map::empty(), 0)
+        }
+    }
 }
 
 } // verus!
