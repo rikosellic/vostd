@@ -1,5 +1,6 @@
 use vstd::prelude::*;
 
+use vstd::arithmetic::power2::pow2;
 use vstd_extra::array_ptr;
 use vstd_extra::cast_ptr::Repr;
 use vstd_extra::ghost_tree::*;
@@ -11,6 +12,55 @@ use super::*;
 use std::ops::Deref;
 
 verus! {
+
+#[verifier::inline]
+pub open spec fn vaddr_shift_bits<const L: usize>(idx: int) -> nat
+    recommends
+        0 < L,
+        idx < L,
+{
+    (12 + 9 * (L - 1 - idx)) as nat
+}
+
+#[verifier::inline]
+pub open spec fn vaddr_shift<const L: usize>(idx: int) -> usize
+    recommends
+        0 < L,
+        idx < L,
+{
+    pow2(vaddr_shift_bits::<L>(idx)) as usize
+}
+
+#[verifier::inline]
+pub open spec fn vaddr_make<const L: usize>(idx: int, offset: usize) -> usize
+    recommends
+        0 < L,
+        idx < L,
+        0 <= offset < 512,
+{
+    (vaddr_shift::<L>(idx) * offset) as usize
+}
+
+pub open spec fn rec_vaddr(path: TreePath<CONST_NR_ENTRIES>, idx: int) -> usize
+/*        recommends
+        0 < NR_LEVELS(),
+        path.len() <= NR_LEVELS(),
+        0 <= idx <= path.len(),*/
+    decreases path.len() - idx,
+    when 0 <= idx <= path.len()
+{
+    if idx == path.len() {
+        0
+    } else {
+        let offset: usize = path.index(idx);
+        (vaddr_make::<CONST_NR_LEVELS>(idx, offset) + rec_vaddr(path, idx + 1)) as usize
+    }
+}
+
+pub open spec fn vaddr(path: TreePath<CONST_NR_ENTRIES>) -> usize
+{
+    rec_vaddr(path, 0)
+}
 
 /*
 impl<'rcu, C: PageTableConfig> EntryState<'rcu, C> {
