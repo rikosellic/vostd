@@ -1,7 +1,6 @@
 //pub mod model;
 use vstd::prelude::*;
 
-use vstd::arithmetic::power2::pow2;
 use vstd::simple_pptr::*;
 use vstd_extra::ghost_tree::*;
 use vstd_extra::ownership::*;
@@ -74,61 +73,12 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.path_prefix.append(self.locked_path)
     }
 
-    #[verifier::inline]
-    pub open spec fn vaddr_shift_bits<const L: usize>(idx: int) -> nat
-        recommends
-            0 < L,
-            idx < L,
-    {
-        (12 + 9 * (L - 1 - idx)) as nat
-    }
-
-    #[verifier::inline]
-    pub open spec fn vaddr_shift<const L: usize>(idx: int) -> usize
-        recommends
-            0 < L,
-            idx < L,
-    {
-        pow2(Self::vaddr_shift_bits::<L>(idx)) as usize
-    }
-
-    #[verifier::inline]
-    pub open spec fn vaddr_make<const L: usize>(idx: int, offset: usize) -> usize
-        recommends
-            0 < L,
-            idx < L,
-            0 <= offset < 512,
-    {
-        (Self::vaddr_shift::<L>(idx) * offset) as usize
-    }
-
-    pub open spec fn rec_vaddr(path: TreePath<CONST_NR_ENTRIES>, idx: int) -> usize
-/*        recommends
-            0 < NR_LEVELS(),
-            path.len() <= NR_LEVELS(),
-            0 <= idx <= path.len(),*/
-        decreases path.len() - idx,
-        when 0 <= idx <= path.len()
-    {
-        if idx == path.len() {
-            0
-        } else {
-            let offset: usize = path.index(idx);
-            (Self::vaddr_make::<CONST_NR_LEVELS>(idx, offset) + Self::rec_vaddr(path, idx + 1)) as usize
-        }
-    }
-
     pub open spec fn vaddr(self) -> Vaddr
-//        recommends
-//            self.inv(),
+    //        recommends
+    //            self.inv(),
     {
-        Self::rec_vaddr(self.full_path(), 0)
+        vaddr(self.full_path())
     }
-
-/*    pub open spec fn paddr(self) -> Paddr
-    {
-        let 
-    }*/
 }
 
 #[rustc_has_incoherent_inherent_impls]
