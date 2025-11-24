@@ -158,7 +158,7 @@ impl<'rcu, C: PageTableConfig> OwnerAsTreeNode<'rcu, C> {
     }
 }
 
-#[verusfmt::skip]
+#[rustc_has_incoherent_inherent_impls]
 pub tracked struct PageTableOwner<'rcu, C: PageTableConfig> {
     pub tree: OwnerAsTreeNode<'rcu, C>,
 }

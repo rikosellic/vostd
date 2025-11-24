@@ -83,8 +83,10 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
 
 #[rustc_has_incoherent_inherent_impls]
 pub tracked struct CursorView<C: PageTableConfig> {
-    pub tracked fore: Seq<FrameView<C>>,
-    pub tracked rear: Seq<FrameView<C>>
+    pub cur_va: usize,
+    pub scope: usize,
+    pub fore: Seq<FrameView<C>>,
+    pub rear: Seq<FrameView<C>>
 }
 
 impl<C: PageTableConfig> Inv for CursorView<C> {

@@ -60,34 +60,32 @@ impl<C: PageTableConfig> Inv for IntermediatePageTableEntryView<C> {
 }
 
 pub ghost struct FrameView<C: PageTableConfig> {
-    pub map_va: int,
-    pub pa: int,
     /// A map from the ancestor frame level to the PTE that the ancestor maps to its child.
     pub ancestor_chain: Map<int, IntermediatePageTableEntryView<C>>,
-    pub level: PagingLevel,
-    pub phantom: PhantomData<C>,
+    /// The view of the page table leaf entry
+    pub leaf: LeafPageTableEntryView<C>,
 }
 
 impl<C: PageTableConfig> Inv for FrameView<C> {
     open spec fn inv(self) -> bool {
-        &&& pa_is_valid_pt_address(self.pa)
-        &&& level_is_in_range(self.level as int)
+        &&& pa_is_valid_pt_address(self.leaf.map_to_pa)
+        &&& level_is_in_range(self.leaf.level as int)
         // The corresponding virtual address must be aligned to the upper-level page size.
-        &&& self.map_va % (page_size_spec((self.level + 1) as PagingLevel) as int) == 0
+        &&& self.leaf.map_va % (page_size_spec((self.leaf.level + 1) as PagingLevel) as int) == 0
         // Ancestor properties.
         &&& forall|ancestor_level: int| #[trigger]
             self.ancestor_chain.contains_key(ancestor_level) ==> {
                 &&& level_is_in_range(ancestor_level)
-                &&& self.level < ancestor_level
+                &&& self.leaf.level < ancestor_level
                 &&& self.ancestor_chain[ancestor_level].inv()
                 &&& self.ancestor_chain[ancestor_level].level
                     == ancestor_level
                 // No loops.
                 &&& #[trigger] self.ancestor_chain[ancestor_level].frame_pa
-                    != self.pa
+                    != self.leaf.map_to_pa
                 // The map-to-addresses actually forms a chain.
-                &&& if ancestor_level == self.level + 1 {
-                    self.ancestor_chain[ancestor_level].map_to_pa == self.pa
+                &&& if ancestor_level == self.leaf.level + 1 {
+                    self.ancestor_chain[ancestor_level].map_to_pa == self.leaf.map_to_pa
                 } else {
                     &&& self.ancestor_chain.contains_key(ancestor_level - 1)
                         ==> #[trigger] self.ancestor_chain[ancestor_level].map_to_pa
@@ -113,11 +111,8 @@ impl<C: PageTableConfig> Inv for FrameView<C> {
 impl<C: PageTableConfig> LeafPageTableEntryView<C> {
     pub open spec fn to_frame_view(self, ancestors: Map<int, IntermediatePageTableEntryView<C>>) -> FrameView<C> {
         FrameView {
-            map_va: self.map_va,
-            pa: self.map_to_pa,
             ancestor_chain: ancestors,
-            level: self.level,
-            phantom: PhantomData
+            leaf: self,
         }
     }
 }

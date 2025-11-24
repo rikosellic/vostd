@@ -90,13 +90,15 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     /// range. Out-of-bound accesses will result in panics or errors as return values,
     /// depending on the access method.
     #[rustc_allow_incoherent_impl]
-    #[verus_spec(
+    #[verus_spec(res =>
         with Tracked(pt_own): Tracked<&mut PageTableOwner<C>>,
             Tracked(guard_perm): Tracked<&PointsTo<PageTableGuard<'rcu, C>>>
+        -> owner: Tracked<CursorOwner<'rcu, C>>,
+        ensures
+            res is Ok ==> old(pt_own).new_spec() == (pt_own, owner)
     )]
-    #[verusfmt::skip]
-    pub fn new(pt: &'rcu PageTable<C>, guard: &'rcu A, va: &Range<Vaddr>)
-        -> Result<Self, PageTableError> {
+    pub fn new(pt: &'rcu PageTable<C>, guard: &'rcu A, va: &Range<Vaddr>) -> (res: Result<Self, PageTableError>)
+    {
         if !is_valid_range::<C>(va) || va.start >= va.end {
             return Err(PageTableError::InvalidVaddrRange(va.start, va.end));
         }
@@ -447,7 +449,12 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
     /// Gets the virtual address range that the current entry covers.
     #[rustc_allow_incoherent_impl]
-    fn cur_va_range(&self) -> Range<Vaddr> {
+    #[verus_spec(
+        with Tracked(owner): Tracked<&CursorOwner<C>>
+    )]
+    fn cur_va_range(&self) -> Range<Vaddr>
+        returns self.model(*owner).cur_va_range_spec()
+    {
         let page_size = page_size(self.level);
         assert(page_size > 0) by { admit() };
         let start = align_down(self.va, page_size);
