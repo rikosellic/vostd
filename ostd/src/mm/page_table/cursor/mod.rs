@@ -90,14 +90,14 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     /// range. Out-of-bound accesses will result in panics or errors as return values,
     /// depending on the access method.
     #[rustc_allow_incoherent_impl]
-    #[verus_spec(res =>
+    #[verus_spec(
         with Tracked(pt_own): Tracked<&mut PageTableOwner<C>>,
             Tracked(guard_perm): Tracked<&PointsTo<PageTableGuard<'rcu, C>>>
-        -> owner: Tracked<CursorOwner<'rcu, C>>,
-        ensures
-            res is Ok ==> old(pt_own).new_spec() == (pt_own, owner)
     )]
-    pub fn new(pt: &'rcu PageTable<C>, guard: &'rcu A, va: &Range<Vaddr>) -> (res: Result<Self, PageTableError>)
+    pub fn new(pt: &'rcu PageTable<C>, guard: &'rcu A, va: &Range<Vaddr>)
+        -> (res: (Result<(Self, Tracked<CursorOwner<'rcu, C>>), PageTableError>))
+        ensures
+            old(pt_own).new_spec() == (*pt_own, res.unwrap().1@)
     {
         if !is_valid_range::<C>(va) || va.start >= va.end {
             return Err(PageTableError::InvalidVaddrRange(va.start, va.end));
@@ -479,8 +479,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     /// depending on the access method.
     #[rustc_allow_incoherent_impl]
     #[verifier::external_body]
-    pub fn new(pt: &'rcu PageTable<C>, guard: &'rcu A, va: &Range<Vaddr>) -> Result<Self, PageTableError> {
-        Cursor::new(pt, guard, va).map(|inner| Self { inner })
+    pub fn new(pt: &'rcu PageTable<C>, guard: &'rcu A, va: &Range<Vaddr>) -> Result<(Self, Tracked<CursorOwner<'rcu, C>>), PageTableError> {
+        Cursor::new(pt, guard, va).map(|inner| (Self { inner: inner.0 }, inner.1))
     }
 
     /// Moves the cursor forward to the next mapped virtual address.

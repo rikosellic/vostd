@@ -38,7 +38,8 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
     pt: &'rcu PageTable<C>,
     guard: &'rcu A,
     va: &Range<Vaddr>,
-) -> Cursor<'rcu, C, A> {
+) -> (Cursor<'rcu, C, A>, Tracked<CursorOwner<'rcu, C>>) {
+    unimplemented!()
     // The re-try loop of finding the sub-tree root.
     //
     // If we locked a stray node, we need to re-try. Otherwise, although
@@ -51,7 +52,7 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
             break subtree_root;
         }
     };
-    */
+    *//*
     #[verus_spec(with Tracked(pt_own), Tracked(guard_perm))]
     let subtree_root = try_traverse_and_lock_subtree_root(pt, guard, va);
 
@@ -78,7 +79,7 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
         va: va.start,
         barrier_va: va.clone(),
         _phantom: PhantomData,
-    }
+    }*/
 }
 
 #[verifier::external_body]
