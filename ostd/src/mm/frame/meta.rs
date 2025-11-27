@@ -170,35 +170,6 @@ pub fn get_slot(paddr: Paddr, Tracked(owner): Tracked<&MetaSlotOwner>) -> (res: 
 }
 
 impl MetaSlot {
-    /// This is the equivalent of &self as *const as Vaddr, but we need to axiomatize it.
-    #[rustc_allow_incoherent_impl]
-    #[verus_spec(
-        with Tracked(owner): Tracked<&MetaSlotOwner>
-    )]
-    #[verifier::external_body]
-    pub fn addr_of(&self) -> (i: usize)
-        requires
-            self.wf(*owner),
-        ensures
-            i == owner.self_addr,
-    {
-        unimplemented!()
-    }
-
-    /// Because of the MetaSlot / MetaSlotStorage divide, this needs to be separate. TODO: consider fixing that.
-    #[rustc_allow_incoherent_impl]
-    #[verus_spec(
-        with Tracked(owner): Tracked<&MetaSlotOwner>
-    )]
-    #[verifier::external_body]
-    pub fn storage_addr_of(&self) -> (i: usize)
-        requires
-            self.wf(*owner),
-        ensures
-            i == owner.storage@.addr(),
-    {
-        unimplemented!()
-    }
 
     /// Initializes the metadata slot of a frame assuming it is unused.
     ///
@@ -387,17 +358,16 @@ impl MetaSlot {
     /// Gets the corresponding frame's physical address.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<&MetaSlotOwner>
+        with Tracked(perm): Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
     pub fn frame_paddr(&self) -> (pa: Paddr)
         requires
-            owner.inv(),
-            self.wf(*owner),
-        returns
-            self.frame_paddr_spec(owner@),
+            perm.value() == self,
+            FRAME_METADATA_RANGE().start <= perm.addr() < FRAME_METADATA_RANGE().end,
+            perm.addr() % META_SLOT_SIZE() == 0,
+        returns meta_to_frame(perm.addr())
     {
-        #[verus_spec(with Tracked(owner))]
-        let addr = self.addr_of();
+        let addr = self.addr_of(Tracked(perm));
         meta_to_frame(addr)
     }
 
@@ -439,20 +409,18 @@ impl MetaSlot {
     ///    having exclusive access to the metadata slot.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner): Tracked<&MetaSlotOwner>
+        with Tracked(perm): Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>
     )]
-    pub fn as_meta_ptr<M: AnyFrameMeta + Repr<MetaSlotStorage>>(&self) -> (res: ReprPtr<MetaSlotStorage, M>)
+    pub fn as_meta_ptr<M: AnyFrameMeta + Repr<MetaSlot>>(&self) -> (res: ReprPtr<MetaSlot, M>)
         requires
-            owner.inv(),
-            self.wf(*owner),
+            self == perm.value(),
         ensures
-            res.ptr.addr() == owner.storage@.addr(),
-            res.addr == owner.storage@.addr(),
+            res.ptr.addr() == perm.addr(),
+            res.addr == perm.addr(),
     {
-        #[verus_spec(with Tracked(owner))]
-        let addr = self.storage_addr_of();
+        let addr = self.addr_of(Tracked(perm));
 
-        self.cast_storage(addr, Tracked(owner))
+        self.cast_slot(addr, Tracked(perm))
     }
 
     /// Writes the metadata to the slot without reading or dropping the previous value.
@@ -465,15 +433,13 @@ impl MetaSlot {
     #[verus_spec(
         with Tracked(slot_own): Tracked<&mut MetaSlotOwner>
     )]
-    pub fn write_meta<M: AnyFrameMeta + Repr<MetaSlotStorage>>(&self, metadata: M)
+    pub fn write_meta<M: AnyFrameMeta + Repr<MetaSlot>>(&self, metadata: M)
         requires
     //            old(regions).slots.contains_key()
 
             old(slot_own).storage@.pptr() == self.storage,
         ensures
             slot_own.ref_count == old(slot_own).ref_count,
-            slot_own.storage@.is_init(),
-            slot_own.storage@.value() == metadata.to_repr(),
             slot_own.vtable_ptr@.is_init(),
             slot_own.vtable_ptr@.value() == metadata.vtable_ptr(),
             slot_own.in_list == old(slot_own).in_list,

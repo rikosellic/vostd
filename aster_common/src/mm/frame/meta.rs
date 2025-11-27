@@ -133,27 +133,52 @@ pub const fn meta_slot_size() -> (res: usize)
 }
 
 impl MetaSlot {
-    pub fn cast_storage<T: Repr<MetaSlotStorage>>(
-        &self,
-        addr: usize,
-        Tracked(owner): Tracked<&MetaSlotOwner>,
-    ) -> (res: ReprPtr<MetaSlotStorage, T>)
-        requires
-            self.wf(*owner),
-            owner.inv(),
-            addr == owner.storage@.addr(),
-        ensures
-            res.ptr == owner.storage@.pptr(),
-            res.addr == addr,
+    // These are the axioms for casting meta slots into other things
+
+    /// This is the equivalent of &self as *const as Vaddr, but we need to axiomatize it.
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
+    pub fn addr_of(&self, Tracked(perm): Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>) -> Paddr
+        requires self == perm.value()
+        returns perm.addr()
     {
-        ReprPtr::<MetaSlotStorage, T> { addr: addr, ptr: self.storage, _T: PhantomData }
+        unimplemented!()
+    }
+
+    pub fn cast_slot<T: Repr<MetaSlot>>(&self, addr: usize,
+        Tracked(perm): Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>)
+        -> (res: ReprPtr<MetaSlot, T>)
+        requires
+            perm.value() == self,
+            addr == perm.addr()
+        ensures
+            res.ptr.addr() == addr,
+            res.addr == addr
+    {
+        ReprPtr::<MetaSlot, T> {
+            addr: addr,
+            ptr: PPtr::from_addr(addr),
+            _T: PhantomData
+        }
+    }
+
+    pub fn cast_perm<T: Repr<MetaSlot>>(addr: usize,
+        Tracked(perm): Tracked<vstd::simple_pptr::PointsTo<MetaSlot>>)
+        -> Tracked<PointsTo<MetaSlot, T>>
+    {
+        Tracked(
+            PointsTo {
+                addr: addr,
+                points_to: Tracked(perm),
+                _T: PhantomData
+            }
+        )
     }
 }
 
 /// Space-holder of the AnyFrameMeta virtual table.
-pub trait AnyFrameMeta: Repr<MetaSlotStorage> {
-    exec fn on_drop(&mut self) {
-    }
+pub trait AnyFrameMeta: Repr<MetaSlot> {
+    exec fn on_drop(&mut self) { }
 
     exec fn is_untyped(&self) -> bool {
         false

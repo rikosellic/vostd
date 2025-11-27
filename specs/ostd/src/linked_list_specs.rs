@@ -77,7 +77,7 @@ impl CursorModel {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotInner>> CursorOwner<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorOwner<M> {
     #[rustc_allow_incoherent_impl]
     pub open spec fn remove_owner_spec(self, post: Self) -> bool
         recommends
