@@ -99,7 +99,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         &&& paddr < MAX_PADDR()
         &&& regions.slots.contains_key(frame_to_index(paddr))
         &&& regions.slot_owners[frame_to_index(paddr)].usage is Unused
-        &&& regions.slot_owners[frame_to_index(paddr)].in_list@.points_to(0)
+        &&& regions.slot_owners[frame_to_index(paddr)].in_list.points_to(0)
         &&& regions.slot_owners[frame_to_index(paddr)].self_addr == frame_to_meta(paddr)
         &&& regions.inv()
     }
@@ -313,13 +313,13 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         requires
             slot_perm.pptr() == self.ptr,
             slot_perm.is_init(),
-            old(slot_own).ref_count@.is_for(slot_perm.value().ref_count),
+            old(slot_own).ref_count.is_for(slot_perm.value().ref_count),
         returns
             old(slot_own)@.ref_count,
     {
         #[verus_spec(with Tracked(slot_perm))]
         let slot = self.slot();
-        slot.ref_count.load(Tracked(slot_own.ref_count.borrow()))
+        slot.ref_count.load(Tracked(&slot_own.ref_count))
     }
 
     /// Borrows a reference from the given frame.

@@ -117,22 +117,22 @@ uninterp spec fn drop_tree_spec<C: PageTableConfig>(_page: Frame<PageTablePageMe
 >;
 
 #[verifier::external_body]
-extern  fn drop_tree<C: PageTableConfig>(_page: &mut Frame<PageTablePageMeta<C>>)
+extern fn drop_tree<C: PageTableConfig>(_page: &mut Frame<PageTablePageMeta<C>>)
     ensures
         _page == drop_tree_spec::<C>(*old(_page)),
 ;
 
 impl<C: PageTableConfig> Repr<MetaSlot> for PageTablePageMeta<C> {
-    closed spec fn wf(r: MetaSlot) -> bool;
+    uninterp spec fn wf(r: MetaSlot) -> bool;
 
-    closed spec fn to_repr_spec(self) -> MetaSlot;
+    uninterp spec fn to_repr_spec(self) -> MetaSlot;
 
     #[verifier::external_body]
     fn to_repr(self) -> MetaSlot {
         unimplemented!()
     }
 
-    closed spec fn from_repr_spec(r: MetaSlot) -> Self;
+    uninterp spec fn from_repr_spec(r: MetaSlot) -> Self;
 
     #[verifier::external_body]
     fn from_repr(r: MetaSlot) -> Self {

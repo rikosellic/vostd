@@ -172,7 +172,7 @@ impl<M: AnyFrameMeta> Segment<M> {
                 &&& regions.slots.contains_key(frame_to_index(paddr_out))
                 &&& !regions.dropped_slots.contains_key(frame_to_index(paddr_out))
                 &&& regions.slot_owners[frame_to_index(paddr_out)].usage is Unused
-                &&& regions.slot_owners[frame_to_index(paddr_out)].in_list@.points_to(0)
+                &&& regions.slot_owners[frame_to_index(paddr_out)].in_list.points_to(0)
             }
     }
 
@@ -392,7 +392,7 @@ impl<M: AnyFrameMeta> Segment<M> {
                         &&& regions.slots.contains_key(frame_to_index(paddr_out))
                         &&& !regions.dropped_slots.contains_key(frame_to_index(paddr_out))
                         &&& regions.slot_owners[frame_to_index(paddr_out)].usage is Unused
-                        &&& regions.slot_owners[frame_to_index(paddr_out)].in_list@.points_to(0)
+                        &&& regions.slot_owners[frame_to_index(paddr_out)].in_list.points_to(0)
                     },
                 forall|j: int|
                     0 <= j < addrs.len() as int ==> {
@@ -428,7 +428,7 @@ impl<M: AnyFrameMeta> Segment<M> {
                 assert(forall|paddr_in: Paddr, paddr_out: Paddr, m: M|
                     metadata_fn.ensures((paddr_in,), (paddr_out, m)) ==> {
                         &&& regions.slot_owners[frame_to_index(paddr_out)].usage is Unused
-                        &&& regions.slot_owners[frame_to_index(paddr_out)].in_list@.points_to(0)
+                        &&& regions.slot_owners[frame_to_index(paddr_out)].in_list.points_to(0)
                     }) by {
                     admit();
                 }

@@ -9,8 +9,8 @@ use super::*;
 verus! {
 
 pub tracked struct Mapping {
-    pub tracked pa: usize,
-    pub tracked is_locked: bool,
+    pub pa: usize,
+    pub is_locked: bool,
     pub page_size:
         usize,/*  TODO: below are some "payload" fields that do not directly impact verification of the page table,
             but which will be important for the long-term goal of merging verification targets into a single,

@@ -178,9 +178,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlot> + OwnerOf> UniqueFrame<M> {
     /// a forgotten frame that was previously casted by [`Self::into_raw`].
     #[rustc_allow_incoherent_impl]
     #[verus_spec(res =>
-        with Tracked(regions) : Tracked<&mut MetaRegionOwners>,
-            Tracked(meta_perm) : Tracked<PointsTo<MetaSlot, M>>,
-            Tracked(meta_own) : Tracked<M::Owner>
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            Tracked(meta_perm): Tracked<PointsTo<MetaSlot, M>>,
+            Tracked(meta_own): Tracked<M::Owner>
     )]
     #[verifier::external_body]
     pub fn from_raw(paddr: Paddr) -> (res: (Self, Tracked<UniqueFrameOwner<M>>))

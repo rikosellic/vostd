@@ -106,7 +106,7 @@ impl MetaRegionOwners {
             self.inv(),
             i < max_meta_slots() as usize,
     {
-        self.slot_owners[i].ref_count@.value()
+        self.slot_owners[i].ref_count.value()
     }
 
     pub open spec fn paddr_range_in_region(self, range: Range<Paddr>) -> bool

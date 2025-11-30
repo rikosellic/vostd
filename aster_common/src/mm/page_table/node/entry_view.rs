@@ -6,13 +6,13 @@ use super::*;
 
 verus! {
 
-pub closed spec fn pa_is_valid_pt_address(pa: int) -> bool;
+pub uninterp spec fn pa_is_valid_pt_address(pa: int) -> bool;
 
-pub closed spec fn index_is_in_range(index: int) -> bool;
+pub uninterp spec fn index_is_in_range(index: int) -> bool;
 
-pub closed spec fn pa_is_valid_kernel_address(pa: int) -> bool;
+pub uninterp spec fn pa_is_valid_kernel_address(pa: int) -> bool;
 
-pub closed spec fn level_is_in_range(level: int) -> bool;
+pub uninterp spec fn level_is_in_range(level: int) -> bool;
 
 pub ghost struct LeafPageTableEntryView<C: PageTableConfig> {
     pub map_va: int,
@@ -144,7 +144,7 @@ impl<C: PageTableConfig> Inv for EntryView<C> {
         match self {
             Self::Leaf { leaf: _ } => self->leaf.inv(),
             Self::Intermediate { node: _ } => self->node.inv(),
-            Self::LockedSubtree { views: _ } => forall|i: int| self->views[i].inv(),
+            Self::LockedSubtree { views: _ } => forall|i: int| #[trigger] self->views[i].inv(),
             Self::Absent => true,
         }
     }

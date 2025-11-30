@@ -91,7 +91,7 @@ impl Inv for LinkedListModel {
 #[rustc_has_incoherent_inherent_impls]
 pub tracked struct LinkedListOwner<M: AnyFrameMeta + Repr<MetaSlot>> {
     pub list: Seq<LinkOwner>,
-    pub perms: Map<int, Tracked<vstd_extra::cast_ptr::PointsTo<MetaSlot, Link<M>>>>,
+    pub perms: Map<int, vstd_extra::cast_ptr::PointsTo<MetaSlot, Link<M>>>,
     pub list_id: u64,
 }
 
@@ -104,20 +104,20 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> Inv for LinkedListOwner<M> {
 impl<M: AnyFrameMeta + Repr<MetaSlot>> LinkedListOwner<M> {
     pub open spec fn inv_at(self, i: int) -> bool {
         &&& self.perms.contains_key(i)
-        &&& self.perms[i]@.addr() == self.list[i].paddr
-        &&& self.perms[i]@.points_to.addr() == self.list[i].paddr
-        &&& self.perms[i]@.wf()
-        &&& self.perms[i]@.addr() % META_SLOT_SIZE() == 0
-        &&& FRAME_METADATA_RANGE().start <= self.perms[i]@.addr() < FRAME_METADATA_RANGE().start
+        &&& self.perms[i].addr() == self.list[i].paddr
+        &&& self.perms[i].points_to.addr() == self.list[i].paddr
+        &&& self.perms[i].wf()
+        &&& self.perms[i].addr() % META_SLOT_SIZE() == 0
+        &&& FRAME_METADATA_RANGE().start <= self.perms[i].addr() < FRAME_METADATA_RANGE().start
             + MAX_NR_PAGES() * META_SLOT_SIZE()
-        &&& self.perms[i]@.is_init()
-        &&& self.perms[i]@.value().wf(self.list[i])
-        &&& i == 0 <==> self.perms[i]@.mem_contents().value().prev is None
-        &&& i == self.list.len() - 1 <==> self.perms[i]@.value().next is None
-        &&& 0 < i ==> self.perms[i]@.value().prev is Some && self.perms[i]@.value().prev.unwrap()
-            == self.perms[i - 1]@.pptr()
-        &&& i < self.list.len() - 1 ==> self.perms[i]@.value().next is Some
-            && self.perms[i]@.value().next.unwrap() == self.perms[i + 1]@.pptr()
+        &&& self.perms[i].is_init()
+        &&& self.perms[i].value().wf(self.list[i])
+        &&& i == 0 <==> self.perms[i].mem_contents().value().prev is None
+        &&& i == self.list.len() - 1 <==> self.perms[i].value().next is None
+        &&& 0 < i ==> self.perms[i].value().prev is Some && self.perms[i].value().prev.unwrap()
+            == self.perms[i - 1].pptr()
+        &&& i < self.list.len() - 1 ==> self.perms[i].value().next is Some
+            && self.perms[i].value().next.unwrap() == self.perms[i + 1].pptr()
         &&& self.list[i].inv()
         &&& self.list[i].in_list == self.list_id
     }
@@ -183,9 +183,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> OwnerOf for LinkedList<M> {
         &&& self.front is None <==> owner.list.len() == 0
         &&& self.back is None <==> owner.list.len() == 0
         &&& owner.list.len() > 0 ==> self.front is Some && self.front.unwrap().addr()
-            == owner.list[0].paddr && owner.perms[0]@.pptr() == self.front.unwrap()
+            == owner.list[0].paddr && owner.perms[0].pptr() == self.front.unwrap()
             && self.back is Some && self.back.unwrap().addr() == owner.list[owner.list.len()
-            - 1].paddr && owner.perms[owner.list.len() - 1]@.pptr() == self.back.unwrap()
+            - 1].paddr && owner.perms[owner.list.len() - 1].pptr() == self.back.unwrap()
         &&& self.size == owner.list.len()
         &&& self.list_id == owner.list_id
     }
@@ -246,7 +246,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> OwnerOf for CursorMut<M> {
     open spec fn wf(self, owner: Self::Owner) -> bool {
         &&& 0 <= owner.index < owner.length() ==> self.current.is_some()
             && self.current.unwrap().addr() == owner.list_own.list[owner.index].paddr
-            && owner.list_own.perms[owner.index]@.pptr() == self.current.unwrap()
+            && owner.list_own.perms[owner.index].pptr() == self.current.unwrap()
         &&& owner.index == owner.list_own.list.len() ==> self.current.is_none()
         &&& owner.list_perm.pptr() == self.list
         &&& owner.list_perm.is_init()
@@ -298,7 +298,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorOwner<M> {
             forall|idx: int|
                 old(cursor).index < idx <= old(cursor).length() ==> cursor.list_own.perms[idx]
                     == old(cursor).list_own.perms[idx - 1],
-            cursor.list_own.perms[old(cursor).index]@ == perm,
+            cursor.list_own.perms[old(cursor).index] == perm,
             cursor.index == old(cursor).index + 1,
             cursor.list_perm == old(cursor).list_perm,
             link == old(link),

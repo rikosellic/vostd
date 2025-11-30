@@ -10,21 +10,21 @@ verus! {
 
 pub tracked struct NodeEntryOwner<'rcu, C: PageTableConfig> {
     pub as_node: NodeOwner<C>,
-    pub guard_perm: Tracked<PointsTo<PageTableGuard<'rcu, C>>>,
+    pub guard_perm: PointsTo<PageTableGuard<'rcu, C>>,
     pub children_perm: array_ptr::PointsTo<Entry<'rcu, C>, CONST_NR_ENTRIES>,
 }
 
 impl<'rcu, C: PageTableConfig> Inv for NodeEntryOwner<'rcu, C> {
     open spec fn inv(self) -> bool {
-        &&& self.guard_perm@.is_init()
-        &&& self.guard_perm@.value().inner.inner.ptr.addr() == self.as_node.meta_perm@.addr()
-        &&& self.guard_perm@.value().inner.inner.wf(self.as_node)
+        &&& self.guard_perm.is_init()
+        &&& self.guard_perm.value().inner.inner.ptr.addr() == self.as_node.meta_perm.addr()
+        &&& self.guard_perm.value().inner.inner.wf(self.as_node)
         &&& self.as_node.inv()
-        &&& meta_to_frame(self.as_node.meta_perm@.addr()) < VMALLOC_BASE_VADDR()
+        &&& meta_to_frame(self.as_node.meta_perm.addr()) < VMALLOC_BASE_VADDR()
             - LINEAR_MAPPING_BASE_VADDR()
         &&& forall|i: int|
             0 <= i < NR_ENTRIES() ==> self.children_perm.is_init(i as int) ==> {
-                &&& self.children_perm.opt_value()[i as int].value().node == self.guard_perm@.pptr()
+                &&& #[trigger] self.children_perm.opt_value()[i as int].value().node == self.guard_perm.pptr()
             }
     }
 }
@@ -127,7 +127,7 @@ impl<'rcu, C: PageTableConfig> View for EntryOwner<'rcu, C> {
                     map_va: vaddr(self.path) as int,
                     frame_pa: self.base_addr as int,
                     in_frame_index: self.index as int,
-                    map_to_pa: meta_to_frame(node.as_node.meta_perm@.addr()) as int,
+                    map_to_pa: meta_to_frame(node.as_node.meta_perm.addr()) as int,
                     level: (self.path.len() + 1) as u8,
                     phantom: PhantomData,
                 },

@@ -34,9 +34,9 @@ macro_rules! update_field {
         verus_exec_expr!(
         {
             let tracked mut __own = $set.tracked_remove($idx);
-            let mut __tmp = $ptr.take(Tracked(__own.borrow_mut()));
+            let mut __tmp = $ptr.take(Tracked(&mut __own));
             __tmp.$field = $val;
-            $ptr.put(Tracked(__own.borrow_mut()), __tmp);
+            $ptr.put(Tracked(&mut __own), __tmp);
             proof { $set.tracked_insert($idx, __own); }
         })
     };

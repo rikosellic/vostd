@@ -94,9 +94,10 @@ impl<C: PageTableConfig> Inv for CursorView<C> {
 impl<'rcu, C: PageTableConfig> View for CursorOwner<'rcu, C> {
     type V = CursorView<C>;
 
-    closed spec fn view(
+    uninterp spec fn view(
         &self,
     ) -> Self::V;/*{
+    arbitrary
         let extended = self.locked_path.extend()
         let paddr = self.locked_subtree.seek(self.locked_path);
         FrameView {
