@@ -165,7 +165,7 @@ impl MetaSlot {
         addr: usize,
         Tracked(perm): Tracked<vstd::simple_pptr::PointsTo<MetaSlot>>,
     ) -> Tracked<PointsTo<MetaSlot, T>> {
-        Tracked(PointsTo { addr: addr, points_to: Tracked(perm), _T: PhantomData })
+        Tracked(PointsTo { addr: addr, points_to: perm, _T: PhantomData })
     }
 }
 

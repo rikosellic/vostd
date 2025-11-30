@@ -105,7 +105,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> LinkedListOwner<M> {
     pub open spec fn inv_at(self, i: int) -> bool {
         &&& self.perms.contains_key(i)
         &&& self.perms[i]@.addr() == self.list[i].paddr
-        &&& self.perms[i]@.points_to@.addr() == self.list[i].paddr
+        &&& self.perms[i]@.points_to.addr() == self.list[i].paddr
         &&& self.perms[i]@.wf()
         &&& self.perms[i]@.addr() % META_SLOT_SIZE() == 0
         &&& FRAME_METADATA_RANGE().start <= self.perms[i]@.addr() < FRAME_METADATA_RANGE().start

@@ -34,6 +34,8 @@ verus! {
 /// to the [`super::meta::MetaSlot`].
 pub type FramePerm<M> = cast_ptr::PointsTo<MetaSlot, Frame<M>>;
 
+pub type MetaPerm<M> = cast_ptr::PointsTo<MetaSlot, M>;
+
 /// A smart pointer to a frame.
 ///
 /// A frame is a contiguous range of bytes in physical memory. The [`Frame`]

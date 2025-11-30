@@ -24,6 +24,8 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use ostd_specs::*;
+
 use crate::mm::{Paddr, Vaddr};
 
 use super::{meta::get_slot, MetaSlot};
@@ -93,13 +95,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> LinkedList<M> {
             old(regions).inv(),
             old(regions).slots.contains_key(old(frame_own).slot_index),
             old(regions).slot_owners[old(frame_own).slot_index].in_list@.is_for(
-                old(regions).slots[old(frame_own).slot_index]@.value().in_list,
+                old(regions).slots[old(frame_own).slot_index].value().in_list,
             ),
     {
         #[verus_spec(with Tracked(owner), Tracked(perm))]
         let (cursor, cursor_own) = Self::cursor_front_mut(ptr);
         let mut cursor = cursor;
-        let tracked mut cursor_own = cursor_own;
+        let mut cursor_own = cursor_own;
 
         #[verus_spec(with Tracked(regions), Tracked(cursor_own.borrow_mut()), Tracked(frame_own))]
         cursor.insert_before(frame);
@@ -128,7 +130,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> LinkedList<M> {
         #[verus_spec(with Tracked(owner), Tracked(perm))]
         let (cursor, cursor_own) = Self::cursor_front_mut(ptr);
         let mut cursor = cursor;
-        let tracked mut cursor_own = cursor_own;
+        let mut cursor_own = cursor_own;
 
         #[verus_spec(with Tracked(regions), Tracked(cursor_own.borrow_mut()))]
         cursor.take_current()
@@ -157,7 +159,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> LinkedList<M> {
             old(regions).inv(),
             old(regions).slots.contains_key(old(frame_own).slot_index),
             old(regions).slot_owners[old(frame_own).slot_index].in_list@.is_for(
-                old(regions).slots[old(frame_own).slot_index]@.value().in_list,
+                old(regions).slots[old(frame_own).slot_index].value().in_list,
             ),
     {
         #[verus_spec(with Tracked(owner), Tracked(perm))]
@@ -212,10 +214,10 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> LinkedList<M> {
             slot_own.self_addr == frame_to_meta(frame),
             old(regions).inv(),
             old(regions).slots.contains_key(frame_to_index(frame)),
-            old(regions).slots[frame_to_index(frame)]@.is_init(),
+            old(regions).slots[frame_to_index(frame)].is_init(),
             old(regions).slot_owners.contains_key(frame_to_index(frame)),
             old(regions).slot_owners[frame_to_index(frame)].in_list@.is_for(
-                old(regions).slots[frame_to_index(frame)]@.mem_contents().value().in_list,
+                old(regions).slots[frame_to_index(frame)].mem_contents().value().in_list,
             ),
     {
         let Ok(slot_ptr) = get_slot(frame, Tracked(slot_own)) else {
@@ -225,9 +227,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> LinkedList<M> {
         let tracked mut slot_perm = regions.slots.tracked_remove(frame_to_index(frame));
         let tracked mut slot_own = regions.slot_owners.tracked_remove(frame_to_index(frame));
 
-        let slot = slot_ptr.take(Tracked(slot_perm.borrow_mut()));
+        let slot = slot_ptr.take(Tracked(&mut slot_perm));
         let in_list = slot.in_list.load(Tracked(slot_own.in_list.borrow_mut()));
-        slot_ptr.put(Tracked(slot_perm.borrow_mut()), slot);
+        slot_ptr.put(Tracked(&mut slot_perm), slot);
 
         proof {
             regions.slot_owners.tracked_insert(frame_to_index(frame), slot_own);
@@ -252,10 +254,10 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> LinkedList<M> {
             frame < MAX_PADDR(),
             frame % PAGE_SIZE() == 0,
             old(regions).slots.contains_key(frame_to_index(frame)),
-            old(regions).slots[frame_to_index(frame)]@.is_init(),
+            old(regions).slots[frame_to_index(frame)].is_init(),
             old(regions).slot_owners.contains_key(frame_to_index(frame)),
             old(regions).slot_owners[frame_to_index(frame)].in_list@.is_for(
-                old(regions).slots[frame_to_index(frame)]@.mem_contents().value().in_list,
+                old(regions).slots[frame_to_index(frame)].mem_contents().value().in_list,
             ),
     {
         let tracked mut slot_perm = regions.slots.tracked_remove(frame_to_index(frame));
@@ -265,12 +267,18 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> LinkedList<M> {
             return None;
         };
 
-        let slot = slot_ptr.take(Tracked(slot_perm.borrow_mut()));
+        let slot = slot_ptr.take(Tracked(&mut slot_perm));
         let in_list = slot.in_list.load(Tracked(slot_own.in_list.borrow_mut()));
         let contains = in_list == #[verus_spec(with Tracked(owner))]
         Self::lazy_get_id(ptr);
 
-        #[verus_spec(with Tracked(slot_perm.borrow()))]
+        proof {
+            assert(slot_perm.value() == slot) by {
+                admit();
+            }
+        }
+
+        #[verus_spec(with Tracked(&slot_perm))]
         let meta_ptr = slot.as_meta_ptr::<Link<M>>();
 
         let res = if contains {
@@ -279,7 +287,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> LinkedList<M> {
             None
         };
 
-        slot_ptr.put(Tracked(slot_perm.borrow_mut()), slot);
+        slot_ptr.put(Tracked(&mut slot_perm), slot);
         proof {
             regions.slots.tracked_insert(frame_to_index(frame), slot_perm);
             regions.slot_owners.tracked_insert(frame_to_index(frame), slot_own);
@@ -555,7 +563,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorMut<M> {
 
         let next_ptr = frame.meta().next;
 
-        #[verus_spec(with Tracked(regions.slots.tracked_borrow(frame_to_index(paddr)).borrow()))]
+        #[verus_spec(with Tracked(&regions.slots.tracked_borrow(frame_to_index(paddr))))]
         let frame_meta = frame.meta_mut();
 
         let opt_prev = frame_meta.borrow(Tracked(frame_own.meta_perm.borrow())).prev;
@@ -573,7 +581,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorMut<M> {
 
         let prev_ptr = frame.meta().prev;
 
-        #[verus_spec(with Tracked(regions.slots.tracked_borrow(frame_to_index(paddr)).borrow()))]
+        #[verus_spec(with Tracked(&regions.slots.tracked_borrow(frame_to_index(paddr))))]
         let frame_meta = frame.meta_mut();
         let opt_next = frame_meta.borrow(Tracked(frame_own.meta_perm.borrow())).next;
 
@@ -589,7 +597,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorMut<M> {
             self.current = None;
         }
 
-        #[verus_spec(with Tracked(regions.slots.tracked_borrow(frame_to_index(paddr)).borrow()))]
+        #[verus_spec(with Tracked(&regions.slots.tracked_borrow(frame_to_index(paddr))))]
         let frame_meta = frame.meta_mut();
 
         update_field!(frame_meta => next <- None; frame_own.meta_perm);
@@ -629,7 +637,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorMut<M> {
             old(regions).inv(),
             old(regions).slots.contains_key(old(frame_own).slot_index),
             old(regions).slot_owners[old(frame_own).slot_index].in_list@.is_for(
-                old(regions).slots[old(frame_own).slot_index]@.value().in_list,
+                old(regions).slots[old(frame_own).slot_index].value().in_list,
             ),
             old(frame_own).meta_perm@.addr() == frame.ptr.addr(),
             old(frame_own).frame_link_inv(),
@@ -646,7 +654,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorMut<M> {
         assert(regions.slot_owners.contains_key(frame_own.slot_index));
         let tracked slot_own = regions.slot_owners.tracked_borrow(frame_own.slot_index);
 
-        #[verus_spec(with Tracked(regions.slots.tracked_borrow(frame_own.slot_index).borrow()))]
+        #[verus_spec(with Tracked(&regions.slots.tracked_borrow(frame_own.slot_index)))]
         let frame_ptr = frame.meta_mut();
         assert(frame_ptr.addr() == frame.ptr.addr());
 
@@ -699,7 +707,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorMut<M> {
             }
         }
 
-        #[verus_spec(with Tracked(regions.slots.tracked_borrow(frame_own.slot_index).borrow()))]
+        #[verus_spec(with Tracked(&regions.slots.tracked_borrow(frame_own.slot_index)))]
         let slot = frame.slot();
 
         assert(regions.slot_owners.contains_key(frame_to_index(meta_to_frame(frame.ptr.addr()))));

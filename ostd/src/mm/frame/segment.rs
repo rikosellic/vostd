@@ -171,6 +171,8 @@ impl<M: AnyFrameMeta> Segment<M> {
                 &&& paddr_in == paddr_out
                 &&& regions.slots.contains_key(frame_to_index(paddr_out))
                 &&& !regions.dropped_slots.contains_key(frame_to_index(paddr_out))
+                &&& regions.slot_owners[frame_to_index(paddr_out)].usage is Unused
+                &&& regions.slot_owners[frame_to_index(paddr_out)].in_list@.points_to(0)
             }
     }
 
@@ -183,8 +185,8 @@ impl<M: AnyFrameMeta> Segment<M> {
         metadata_fn: impl Fn(Paddr) -> (Paddr, M),
         r: Result<Self, GetFrameError>,
     ) -> bool {
-        &&& new_regions.inv()
         &&& r matches Ok(r) ==> {
+            &&& new_regions.inv()
             &&& r.range.start == range.start
             &&& r.range.end == range.end
             &&& owner matches Some(owner) && {
@@ -319,16 +321,13 @@ impl<M: AnyFrameMeta> Segment<M> {
             Some(f) => {
                 &&& new_self.range.start == old_self.range.start + PAGE_SIZE()
                 &&& f.paddr() == old_self.range.start
-                &&& forall|addr: usize|
-                    #![trigger frame_to_index(addr)]
-                    old_regions.dropped_slots.contains_key(frame_to_index(addr)) ==> {
-                        if addr != f.paddr() {
-                            &&& new_regions.dropped_slots.contains_key(frame_to_index(addr))
-                            &&& new_regions.dropped_slots[frame_to_index(addr)]
-                                == old_regions.dropped_slots[frame_to_index(addr)]
-                        } else {
-                            !new_regions.dropped_slots.contains_key(frame_to_index(addr))
-                        }
+                &&& forall|i: usize|
+                    #![trigger new_regions.dropped_slots[i], old_regions.dropped_slots[i]]
+                    {
+                        &&& i != frame_to_index(f.paddr()) ==> old_regions.dropped_slots[i]
+                            == new_regions.dropped_slots[i]
+                        &&& i == frame_to_index(f.paddr())
+                            ==> !new_regions.dropped_slots.contains_key(i)
                     }
             },
         }
@@ -392,6 +391,8 @@ impl<M: AnyFrameMeta> Segment<M> {
                         &&& paddr_in == paddr_out
                         &&& regions.slots.contains_key(frame_to_index(paddr_out))
                         &&& !regions.dropped_slots.contains_key(frame_to_index(paddr_out))
+                        &&& regions.slot_owners[frame_to_index(paddr_out)].usage is Unused
+                        &&& regions.slot_owners[frame_to_index(paddr_out)].in_list@.points_to(0)
                     },
                 forall|j: int|
                     0 <= j < addrs.len() as int ==> {
@@ -422,11 +423,16 @@ impl<M: AnyFrameMeta> Segment<M> {
                     };
                 },
             };
-            assert(regions.slot_owners[paddr / PAGE_SIZE()].usage is Unused) by { admit() };
-            assert(regions.slot_owners[paddr / PAGE_SIZE()].in_list@.points_to(0)) by { admit() };
 
-            #[verus_spec(with Tracked(regions))]
-            let frame = Frame::<M>::from_unused(paddr, meta)?;
+            proof {
+                assert(forall|paddr_in: Paddr, paddr_out: Paddr, m: M|
+                    metadata_fn.ensures((paddr_in,), (paddr_out, m)) ==> {
+                        &&& regions.slot_owners[frame_to_index(paddr_out)].usage is Unused
+                        &&& regions.slot_owners[frame_to_index(paddr_out)].in_list@.points_to(0)
+                    }) by {
+                    admit();
+                }
+            }
 
             // TODO: `ManuallyDrop` causes runtime crashes; comment it out for now, but later we'll use the `vstd_extra` implementation
             // let _ = ManuallyDrop::new(frame);
@@ -441,6 +447,8 @@ impl<M: AnyFrameMeta> Segment<M> {
         proof {
             broadcast use vstd_extra::map_extra::lemma_map_remove_keys_finite;
             broadcast use vstd_extra::seq_extra::lemma_seq_to_set_map_contains;
+            broadcast use vstd::map::group_map_axioms;
+            broadcast use vstd::map_lib::group_map_extra;
 
             let owner_seq = addrs.map_values(
                 |addr: usize|
@@ -694,7 +702,6 @@ impl<M: AnyFrameMeta> Segment<M> {
     #[verus_spec(res =>
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-                -> frame_perm: Option<Tracked<FramePerm<M>>>,
         requires
             Self::next_requires(*old(self), *old(regions)),
         ensures
@@ -702,22 +709,16 @@ impl<M: AnyFrameMeta> Segment<M> {
     )]
     pub fn next(&mut self) -> Option<Frame<M>> {
         if self.range.start < self.range.end {
-            proof_decl! {
-                let tracked mut frame_perm: FramePerm<M>;
-            }
-
             // SAFETY: each frame in the range would be a handle forgotten
             // when creating the `Segment` object.
             let frame = unsafe {
-                #[verus_spec(with Tracked(regions) => Tracked(frame_perm))]
+                #[verus_spec(with Tracked(regions))]
                 Frame::<M>::from_raw(self.range.start)
             };
 
             self.range.start = self.range.start + PAGE_SIZE();
-            proof_with!(|= Some(Tracked(frame_perm)));
             Some(frame)
         } else {
-            proof_with!(|= None);
             None
         }
     }

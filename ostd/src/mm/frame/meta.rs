@@ -196,15 +196,13 @@ impl MetaSlot {
             old(regions).slot_owners[frame_to_index(paddr)].in_list@.points_to(0),
             old(regions).slot_owners[frame_to_index(paddr)].self_addr == frame_to_meta(paddr),
         ensures
-            res.is_ok() ==> MetaSlot::get_from_unused_spec::<M>(
+            res matches Ok(res) ==> MetaSlot::get_from_unused_spec::<M>(
                 paddr,
                 metadata,
                 as_unique_ptr,
                 old(regions).view(),
-            ) == (res.unwrap(), regions.view()),
+            ) == (res, regions.view()),
     {
-        let ghost old_regions = *regions;
-
         proof {
             regions.inv_implies_correct_addr(paddr);
         }
@@ -216,7 +214,7 @@ impl MetaSlot {
 
         // `Acquire` pairs with the `Release` in `drop_last_in_place` and ensures the metadata
         // initialization won't be reordered before this memory compare-and-exchange.
-        slot.borrow(Tracked(slot_perm.borrow())).ref_count.compare_exchange(
+        slot.borrow(Tracked(&slot_perm)).ref_count.compare_exchange(
             Tracked(slot_own.ref_count.borrow_mut()),
             REF_COUNT_UNUSED,
             0,
@@ -231,22 +229,22 @@ impl MetaSlot {
 
         // SAFETY: The slot now has a reference count of `0`, other threads will
         // not access the metadata slot so it is safe to have a mutable reference.
-        let contents = slot.take(Tracked(slot_perm.borrow_mut()));
+        let contents = slot.take(Tracked(&mut slot_perm));
         #[verus_spec(with Tracked(&mut slot_own))]
         contents.write_meta(metadata);
-        slot.put(Tracked(slot_perm.borrow_mut()), contents);
+        slot.put(Tracked(&mut slot_perm), contents);
 
         if as_unique_ptr {
             // No one can create a `Frame` instance directly from the page
             // address, so `Relaxed` is fine here.
-            slot.borrow(Tracked(slot_perm.borrow())).ref_count.store(
+            slot.borrow(Tracked(&slot_perm)).ref_count.store(
                 Tracked(slot_own.ref_count.borrow_mut()),
                 REF_COUNT_UNIQUE,
             );
         } else {
             // `Release` is used to ensure that the metadata initialization
             // won't be reordered after this memory store.
-            slot.borrow(Tracked(slot_perm.borrow())).ref_count.store(
+            slot.borrow(Tracked(&slot_perm)).ref_count.store(
                 Tracked(slot_own.ref_count.borrow_mut()),
                 1,
             );
@@ -256,9 +254,17 @@ impl MetaSlot {
             slot_own.usage = PageUsage::Frame;
             regions.slots.tracked_insert(frame_to_index(paddr), slot_perm);
             regions.slot_owners.tracked_insert(frame_to_index(paddr), slot_own);
-        }
 
-        assert(regions@.slots == old_regions@.slots.insert(frame_to_index(paddr), slot_own@));
+            assert(regions@.slots == old(regions)@.slots.insert(frame_to_index(paddr), slot_own@));
+
+            // Since storage is uninit currently we
+            // delay the proof here.
+            assume(slot_own@ == MetaSlot::from_unused_slot_spec::<M>(
+                paddr,
+                metadata,
+                as_unique_ptr,
+            ));
+        }
 
         Ok(slot)
     }
@@ -271,7 +277,7 @@ impl MetaSlot {
         requires
             old(regions).slots.contains_key(frame_to_index(meta_to_frame(slot.addr()))),
             old(regions).slot_owners.contains_key(frame_to_index(meta_to_frame(slot.addr()))),
-            old(regions).slots[frame_to_index(meta_to_frame(slot.addr()))]@.pptr() == slot,
+            old(regions).slots[frame_to_index(meta_to_frame(slot.addr()))].pptr() == slot,
             old(regions).inv(),
     {
         let tracked mut meta_perm = regions.slots.tracked_remove(
@@ -281,7 +287,7 @@ impl MetaSlot {
             frame_to_index(meta_to_frame(slot.addr())),
         );
 
-        match slot.borrow(Tracked(meta_perm.borrow())).ref_count.load(
+        match slot.borrow(Tracked(&meta_perm)).ref_count.load(
             Tracked(slot_own.ref_count.borrow_mut()),
         ) {
             REF_COUNT_UNUSED => return Err(GetFrameError::Unused),
@@ -298,7 +304,7 @@ impl MetaSlot {
                 //
                 // It ensures that the written metadata will be visible to us.
 
-                if slot.borrow(Tracked(meta_perm.borrow())).ref_count.compare_exchange_weak(
+                if slot.borrow(Tracked(&meta_perm)).ref_count.compare_exchange_weak(
                     Tracked(slot_own.ref_count.borrow_mut()),
                     last_ref_cnt,
                     last_ref_cnt + 1,

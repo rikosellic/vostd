@@ -58,15 +58,15 @@ impl<M: AnyFrameMeta + Repr<MetaSlot> + OwnerOf> UniqueFrameOwner<M> {
     pub open spec fn perm_inv(self, perm: PointsTo<MetaSlot>) -> bool {
         &&& perm.is_init()
         &&& perm.value().storage.addr() == self.meta_perm@.addr()
-        &&& perm.value().storage.addr() == self.meta_perm@.points_to@.addr()
+        &&& perm.value().storage.addr() == self.meta_perm@.points_to.addr()
     }
 
     pub open spec fn global_inv(self, regions: MetaRegionOwners) -> bool {
         &&& regions.slots.contains_key(self.slot_index) ==> self.perm_inv(
-            regions.slots[self.slot_index]@,
+            regions.slots[self.slot_index],
         )
         &&& regions.dropped_slots.contains_key(self.slot_index) ==> self.perm_inv(
-            regions.dropped_slots[self.slot_index]@,
+            regions.dropped_slots[self.slot_index],
         )
     }
 }

@@ -28,20 +28,17 @@ impl<M: AnyFrameMeta> FrameRef<'_, M> {
     #[verus_spec(r =>
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-                -> frame_perm: Tracked<FramePerm<M>>,
         requires
             raw % PAGE_SIZE() == 0,
             raw < MAX_PADDR(),
             !old(regions).slots.contains_key(frame_to_index(raw)),
             old(regions).dropped_slots.contains_key(frame_to_index(raw)),
-        ensures
-            true,
+            old(regions).inv(),
     )]
     pub fn borrow_paddr(raw: Paddr) -> Self {
-        #[verus_spec(with Tracked(regions) => Tracked(frame_perm))]
+        #[verus_spec(with Tracked(regions))]
         let frame = Frame::from_raw(raw);
 
-        proof_with!(|= Tracked(frame_perm));
         Self {
             // SAFETY: The caller ensures the safety.
             inner: frame,

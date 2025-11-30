@@ -16,8 +16,10 @@ verus! {
 pub struct MetaRegion;
 
 pub tracked struct MetaRegionOwners {
-    pub slots: Map<usize, Tracked<simple_pptr::PointsTo<MetaSlot>>>,
-    pub dropped_slots: Map<usize, Tracked<simple_pptr::PointsTo<MetaSlot>>>,
+    // since struct is itself tracked there is no need to wrap
+    // the fields in Tracked<_>.
+    pub slots: Map<usize, simple_pptr::PointsTo<MetaSlot>>,
+    pub dropped_slots: Map<usize, simple_pptr::PointsTo<MetaSlot>>,
     pub slot_owners: Map<usize, MetaSlotOwner>,
 }
 
@@ -44,20 +46,20 @@ impl Inv for MetaRegionOwners {
         &&& {
             forall|i: usize| #[trigger]
                 self.slots.contains_key(i) ==> {
-                    &&& self.slots[i]@.is_init()
-                    &&& self.slots[i]@.addr() == meta_addr(i)
-                    &&& self.slots[i]@.value().wf(self.slot_owners[i])
-                    &&& self.slot_owners[i].self_addr == self.slots[i]@.addr()
+                    &&& self.slots[i].is_init()
+                    &&& self.slots[i].addr() == meta_addr(i)
+                    &&& self.slots[i].value().wf(self.slot_owners[i])
+                    &&& self.slot_owners[i].self_addr == self.slots[i].addr()
                     &&& !self.dropped_slots.contains_key(i)
                 }
         }
         &&& {
             forall|i: usize| #[trigger]
                 self.dropped_slots.contains_key(i) ==> {
-                    &&& self.dropped_slots[i]@.is_init()
-                    &&& self.dropped_slots[i]@.addr() == meta_addr(i)
-                    &&& self.dropped_slots[i]@.value().wf(self.slot_owners[i])
-                    &&& self.slot_owners[i].self_addr == self.dropped_slots[i]@.addr()
+                    &&& self.dropped_slots[i].is_init()
+                    &&& self.dropped_slots[i].addr() == meta_addr(i)
+                    &&& self.dropped_slots[i].value().wf(self.slot_owners[i])
+                    &&& self.slot_owners[i].self_addr == self.dropped_slots[i].addr()
                     &&& !self.slots.contains_key(i)
                 }
         }
