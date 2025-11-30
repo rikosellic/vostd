@@ -74,7 +74,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     pub open spec fn vaddr(self) -> Vaddr
     //        recommends
     //            self.inv(),
-    {
+     {
         vaddr(self.full_path())
     }
 }

@@ -43,25 +43,25 @@ macro_rules! update_field {
     ($ptr:expr => $field:tt <- $val:expr; $perm:expr) => {
         verus_exec_expr!(
         {
-            let mut __tmp = $ptr.take(Tracked($perm.borrow_mut()));
+            let mut __tmp = $ptr.take(Tracked(&mut $perm));
             __tmp.$field = $val;
-            $ptr.put(Tracked($perm.borrow_mut()), __tmp);
+            $ptr.put(Tracked(&mut $perm), __tmp);
         })
     };
     ($ptr:expr => $field:tt += $val:expr; $perm:expr) => {
         verus_exec_expr!(
         {
-            let mut __tmp = $ptr.take(Tracked($perm.borrow_mut()));
+            let mut __tmp = $ptr.take(Tracked(&mut $perm));
             __tmp.$field = __tmp.$field + $val;
-            $ptr.put(Tracked($perm.borrow_mut()), __tmp);
+            $ptr.put(Tracked(&mut $perm), __tmp);
         })
     };
     ($ptr:expr => $field:tt -= $val:expr; $perm:expr) => {
         verus_exec_expr!(
         {
-            let mut __tmp = $ptr.take(Tracked($perm.borrow_mut()));
+            let mut __tmp = $ptr.take(Tracked(&mut $perm));
             __tmp.$field = __tmp.$field - $val;
-            $ptr.put(Tracked($perm.borrow_mut()), __tmp);
+            $ptr.put(Tracked(&mut $perm), __tmp);
         })
     }
 }

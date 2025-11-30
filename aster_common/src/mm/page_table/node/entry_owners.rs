@@ -111,32 +111,29 @@ impl<'rcu, C: PageTableConfig> View for EntryOwner<'rcu, C> {
     open spec fn view(&self) -> <Self as View>::V {
         if let Some(frame) = self.frame {
             EntryView::Leaf {
-                leaf: LeafPageTableEntryView{
+                leaf: LeafPageTableEntryView {
                     map_va: vaddr(self.path) as int,
                     frame_pa: self.base_addr as int,
                     in_frame_index: self.index as int,
                     map_to_pa: frame.mapped_pa as int,
                     level: (self.path.len() + 1) as u8,
                     prop: frame.prop,
-                    phantom: PhantomData
-                }
+                    phantom: PhantomData,
+                },
             }
-        }
-        else if let Some(node) = self.node {
+        } else if let Some(node) = self.node {
             EntryView::Intermediate {
-                node: IntermediatePageTableEntryView{
+                node: IntermediatePageTableEntryView {
                     map_va: vaddr(self.path) as int,
                     frame_pa: self.base_addr as int,
                     in_frame_index: self.index as int,
                     map_to_pa: meta_to_frame(node.as_node.meta_perm@.addr()) as int,
                     level: (self.path.len() + 1) as u8,
-                    phantom: PhantomData
-                }
+                    phantom: PhantomData,
+                },
             }
         } else if let Some(view) = self.locked {
-            EntryView::LockedSubtree {
-                views: view@
-            }
+            EntryView::LockedSubtree { views: view@ }
         } else {
             EntryView::Absent
         }
@@ -144,7 +141,9 @@ impl<'rcu, C: PageTableConfig> View for EntryOwner<'rcu, C> {
 }
 
 impl<'rcu, C: PageTableConfig> InvView for EntryOwner<'rcu, C> {
-    proof fn view_preserves_inv(self) { admit() }
+    proof fn view_preserves_inv(self) {
+        admit()
+    }
 }
 
 impl<'rcu, C: PageTableConfig> OwnerOf for Entry<'rcu, C> {

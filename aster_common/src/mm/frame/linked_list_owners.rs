@@ -211,7 +211,7 @@ impl Inv for CursorModel {
 #[rustc_has_incoherent_inherent_impls]
 pub tracked struct CursorOwner<M: AnyFrameMeta + Repr<MetaSlot>> {
     pub list_own: LinkedListOwner<M>,
-    pub list_perm: Tracked<PointsTo<LinkedList<M>>>,
+    pub list_perm: PointsTo<LinkedList<M>>,
     pub index: int,
 }
 
@@ -248,9 +248,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> OwnerOf for CursorMut<M> {
             && self.current.unwrap().addr() == owner.list_own.list[owner.index].paddr
             && owner.list_own.perms[owner.index]@.pptr() == self.current.unwrap()
         &&& owner.index == owner.list_own.list.len() ==> self.current.is_none()
-        &&& owner.list_perm@.pptr() == self.list
-        &&& owner.list_perm@.is_init()
-        &&& owner.list_perm@.mem_contents().value().wf(owner.list_own)
+        &&& owner.list_perm.pptr() == self.list
+        &&& owner.list_perm.is_init()
+        &&& owner.list_perm.mem_contents().value().wf(owner.list_own)
     }
 }
 
@@ -308,7 +308,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorOwner<M> {
 
     pub open spec fn front_owner_spec(
         list_own: LinkedListOwner<M>,
-        list_perm: Tracked<PointsTo<LinkedList<M>>>,
+        list_perm: PointsTo<LinkedList<M>>,
     ) -> Self {
         CursorOwner::<M> { list_own: list_own, list_perm: list_perm, index: 0 }
     }
@@ -317,7 +317,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorOwner<M> {
     #[verifier::external_body]
     pub proof fn front_owner(
         list_own: LinkedListOwner<M>,
-        list_perm: Tracked<PointsTo<LinkedList<M>>>,
+        list_perm: PointsTo<LinkedList<M>>,
     ) -> (res: Self)
         ensures
             res == Self::front_owner_spec(list_own, list_perm),
@@ -327,7 +327,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorOwner<M> {
 
     pub open spec fn back_owner_spec(
         list_own: LinkedListOwner<M>,
-        list_perm: Tracked<PointsTo<LinkedList<M>>>,
+        list_perm: PointsTo<LinkedList<M>>,
     ) -> Self {
         CursorOwner::<M> {
             list_own: list_own,
@@ -344,7 +344,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorOwner<M> {
     #[verifier::external_body]
     pub proof fn back_owner(
         list_own: LinkedListOwner<M>,
-        list_perm: Tracked<PointsTo<LinkedList<M>>>,
+        list_perm: PointsTo<LinkedList<M>>,
     ) -> (res: Self)
         ensures
             res == Self::back_owner_spec(list_own, list_perm),
@@ -362,7 +362,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorOwner<M> {
 
     pub open spec fn ghost_owner_spec(
         list_own: LinkedListOwner<M>,
-        list_perm: Tracked<PointsTo<LinkedList<M>>>,
+        list_perm: PointsTo<LinkedList<M>>,
     ) -> Self {
         CursorOwner::<M> {
             list_own: list_own,
@@ -375,7 +375,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorOwner<M> {
     #[verifier::external_body]
     pub proof fn ghost_owner(
         list_own: LinkedListOwner<M>,
-        list_perm: Tracked<PointsTo<LinkedList<M>>>,
+        list_perm: PointsTo<LinkedList<M>>,
     ) -> (res: Self)
         ensures
             res == Self::ghost_owner_spec(list_own, list_perm),
@@ -390,9 +390,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorOwner<M> {
 
 impl<M: AnyFrameMeta + Repr<MetaSlot>> UniqueFrameOwner<Link<M>> {
     pub open spec fn frame_link_inv(&self) -> bool {
-        &&& self.meta_perm@.value().prev is None
-        &&& self.meta_perm@.value().next is None
-        &&& self.meta_own@.paddr == self.meta_perm@.addr()
+        &&& self.meta_perm.value().prev is None
+        &&& self.meta_perm.value().next is None
+        &&& self.meta_own.paddr == self.meta_perm.addr()
     }
 }
 
