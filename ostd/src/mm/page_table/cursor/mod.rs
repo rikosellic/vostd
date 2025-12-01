@@ -53,24 +53,9 @@ use super::{
 
 verus! {
 
-/// A fragment of a page table that can be taken out of the page table.
-#[must_use]
-pub enum PageTableFrag<C: PageTableConfig> {
-    /// A mapped page table item.
-    Mapped { va: Vaddr, item: C::Item },
-    /// A sub-tree of a page table that is taken out of the page table.
-    ///
-    /// The caller is responsible for dropping it after TLB coherence.
-    StrayPageTable {
-        pt: Frame<PageTablePageMeta<C>>,  // TODO: this was a dyn AnyFrameMeta, but we can't support that...
-        va: Vaddr,
-        len: usize,
-        num_frames: usize,
-    },
-}
-
 impl<C: PageTableConfig> PageTableFrag<C> {
     #[cfg(ktest)]
+    #[rustc_allow_incoherent_impl]
     pub fn va_range(&self) -> Range<Vaddr> {
         match self {
             PageTableFrag::Mapped { va, item } => {

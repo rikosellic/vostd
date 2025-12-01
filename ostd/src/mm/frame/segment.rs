@@ -5,7 +5,6 @@ use vstd::prelude::*;
 use core::{fmt::Debug, mem::ManuallyDrop, ops::Range};
 
 use crate::mm::frame::inc_frame_ref_count;
-use crate::mm::frame::untyped::AnyUFrameMeta;
 
 use vstd_extra::ownership::*;
 

@@ -58,6 +58,16 @@ pub enum MetaSlotStorage {
     PTNode(StoredPageTablePageMeta),
 }
 
+/*
+// TODO: figure out how this can actually be done (the issue is that Verus cells aren't clonable)
+impl Clone for MetaSlotStorage {
+    #[verifier::external_body]
+    fn clone(&self) -> Self {
+        unimplemented!()
+    }
+}
+*/
+
 impl MetaSlotStorage {
     pub open spec fn get_link_spec(self) -> Option<StoredLink> {
         match self {
@@ -94,6 +104,13 @@ impl MetaSlotStorage {
             _ => None,
         }
     }
+}
+
+/// `MetaSlotStorage` is an inductive tagged union of all of the frame meta types that
+/// we work with in this development. So, it should itself implement `AnyFrameMeta`, and
+/// it can then be used to stand in for `dyn AnyFrameMeta`.
+impl AnyFrameMeta for MetaSlotStorage {
+    spec fn vtable_ptr(&self) -> usize;
 }
 
 #[rustc_has_incoherent_inherent_impls]
@@ -185,6 +202,29 @@ pub trait AnyFrameMeta: Repr<MetaSlot> {
     }
 
     spec fn vtable_ptr(&self) -> usize;
+}
+
+impl Repr<MetaSlot> for MetaSlotStorage {
+    closed spec fn wf(slot: mm::frame::meta::MetaSlot) -> bool;
+
+    closed spec fn to_repr_spec(self) -> mm::frame::meta::MetaSlot;
+    
+    #[verifier::external_body]
+    fn to_repr(self) -> mm::frame::meta::MetaSlot { todo!() }
+    
+    closed spec fn from_repr_spec(slot: mm::frame::meta::MetaSlot) -> Self;
+    
+    #[verifier::external_body]
+    fn from_repr(slot: mm::frame::meta::MetaSlot) -> Self { todo!() }
+    
+    #[verifier::external_body]
+    fn from_borrowed<'a>(slot: &'a mm::frame::meta::MetaSlot) -> &'a Self { todo!() }
+    
+    proof fn from_to_repr(self) { admit() }
+    
+    proof fn to_from_repr(slot: mm::frame::meta::MetaSlot) { admit() }
+    
+    proof fn to_repr_wf(self) { admit() }
 }
 
 } // verus!

@@ -54,7 +54,6 @@ use core::{
 //pub use allocator::GlobalFrameAllocator;
 use meta::REF_COUNT_UNUSED;
 //pub use segment::Segment;
-use untyped::{/*AnyUFrameMeta,*/ UFrame};
 
 use super::{PagingLevel, PAGE_SIZE};
 use crate::mm::{Paddr, Vaddr};

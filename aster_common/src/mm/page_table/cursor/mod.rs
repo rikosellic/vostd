@@ -178,6 +178,23 @@ pub const fn align_down(x: usize, align: usize) -> (res: usize)
     res
 }
 
+/// A fragment of a page table that can be taken out of the page table.
+#[must_use]
+#[rustc_has_incoherent_inherent_impls]
+pub enum PageTableFrag<C: PageTableConfig> {
+    /// A mapped page table item.
+    Mapped { va: Vaddr, item: C::Item },
+    /// A sub-tree of a page table that is taken out of the page table.
+    ///
+    /// The caller is responsible for dropping it after TLB coherence.
+    StrayPageTable {
+        pt: Frame<PageTablePageMeta<C>>,  // TODO: this was a dyn AnyFrameMeta, but we can't support that...
+        va: Vaddr,
+        len: usize,
+        num_frames: usize,
+    },
+}
+
 impl<'a, C: PageTableConfig, A: InAtomicMode> Cursor<'a, C, A> {
     /*    #[rustc_allow_incoherent_impl]
     pub open spec fn relate_locked_region(self, model: ConcreteCursor) -> bool
