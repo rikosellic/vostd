@@ -281,6 +281,20 @@ impl PageFlags {
     {
         Self { bits: 0b00010000 }
     }
+
+    #[allow(non_snake_case)]
+    #[inline(always)]
+    #[vstd::contrib::auto_spec]
+    pub const fn AVAIL1() -> Self {
+        Self { bits: 0b01000000 }
+    }
+
+    #[allow(non_snake_case)]
+    #[inline(always)]
+    #[vstd::contrib::auto_spec]
+    pub const fn AVAIL2() -> Self {
+        Self { bits: 0b10000000 }
+    }
 }
 
 }
