@@ -6,10 +6,27 @@ use super::*;
 
 verus! {
 
-pub closed spec fn pa_is_valid_pt_address(pa: int) -> bool;
-pub closed spec fn index_is_in_range(index: int) -> bool;
-pub closed spec fn pa_is_valid_kernel_address(pa: int) -> bool;
-pub closed spec fn level_is_in_range(level: int) -> bool;
+
+pub open spec fn level_is_in_range(level: int) -> bool {
+    1 <= level <= NR_LEVELS() as int
+}
+
+pub open spec fn index_is_in_range(index: int) -> bool {
+    0 <= index < NR_ENTRIES()
+}
+
+pub open spec fn pa_is_valid_pt_address(pa: int) -> bool {
+    &&& pa_is_valid_kernel_address(pa as int)
+    &&& pa % PAGE_SIZE() as int == 0
+}
+
+pub open spec fn PHYSICAL_BASE_ADDRESS_SPEC() -> usize {
+    0
+}
+
+pub open spec fn pa_is_valid_kernel_address(pa: int) -> bool {
+    PHYSICAL_BASE_ADDRESS_SPEC() <= pa < PHYSICAL_BASE_ADDRESS_SPEC() + PAGE_SIZE() * MAX_NR_PAGES() as int
+}
 
 pub ghost struct LeafPageTableEntryView<C: PageTableConfig> {
     pub map_va: int,
