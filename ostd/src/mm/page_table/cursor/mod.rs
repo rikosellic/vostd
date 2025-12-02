@@ -415,12 +415,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         requires
             1 <= old(self).level <= 4,
             old(self).path[old(self).level as int - 1] is Some,
-            old(pt_own).tree.root.value.tree_node.is_Some(),
-            old(pt_own).tree.root.value.tree_node.unwrap().inv(),
-            old(pt_own).tree.root.value.tree_node.unwrap().relate_slot_owner(slot_own),
-            old(pt_own).tree.root.value.tree_node.unwrap().guard_perm@.addr() == old(self).path[old(
-                self,
-            ).level as usize - 1].unwrap().addr(),
+            owner.locked_subtree.inner.value.node.unwrap().inv(),
+            owner.locked_subtree.inner.value.node.unwrap().guard_perm@.addr() ==
+                old(self).path[old(self).level as usize - 1].unwrap().addr(),
     {
         let node = self.path[self.level as usize - 1].unwrap();
         let tracked entry_own = &owner.locked_subtree.inner.value;
@@ -660,7 +657,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     ) -> Option<Range<Vaddr>>
         requires
             slot_own.inv(),
-            old(pt_own).tree.root.value.tree_node.is_Some(),
+            old(owner).locked_subtree.inner.value.node.is_Some(),
     {
         self.inner.find_next_impl(len, false, true)?;
 
