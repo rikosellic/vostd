@@ -62,8 +62,7 @@ impl<const N: usize> TreePath<N> {
     {
     }
 
-    pub open spec fn append(self, path: Self) -> Self
-    {
+    pub open spec fn append(self, path: Self) -> Self {
         Self(self.0.add(path.0))
     }
 

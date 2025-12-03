@@ -106,7 +106,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             old(owner).inv(),
             old(self).wf(*old(owner)),
             old(owner).is_node(),
-//            old(owner).node.unwrap().relate_slot_owner(slot_own),
+            //            old(owner).node.unwrap().relate_slot_owner(slot_own),
             old(owner).relate_parent_guard_perm(*old(guard_perm)),
             op.requires((old(self).pte.prop(),)),
     {
@@ -134,7 +134,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         #[verus_spec(with Tracked(&mut node_owner.as_node))]
         guard.write_pte(self.idx, self.pte);
 
-        proof { owner.node = Some(node_owner); }
+        proof {
+            owner.node = Some(node_owner);
+        }
     }
 
     /// Replaces the entry with a new child.
@@ -194,7 +196,6 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             let _tmp = nr_children.take(Tracked(nr_children_perm));
             nr_children.put(Tracked(nr_children_perm), _tmp - 1);
         }
-        
         #[verus_spec(with Some(Tracked(slot_own)), Some(Tracked(node_owner.as_node.meta_perm.borrow())))]
         let new_pte = new_child.into_pte();
 

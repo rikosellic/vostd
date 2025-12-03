@@ -3,8 +3,10 @@ use vstd::prelude::*;
 use vstd_extra::ownership::*;
 use vstd_extra::prelude::TreePath;
 
-use aster_common::prelude::*;
 use aster_common::prelude::page_table::*;
+use aster_common::prelude::*;
+
+verus! {
 
 use core::ops::Range;
 
@@ -161,5 +163,7 @@ impl<C: PageTableConfig> CursorView<C> {
             ..self
         }
     }*/
+
 }
-}
+
+} // verus!

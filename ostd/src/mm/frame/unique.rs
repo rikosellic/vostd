@@ -178,9 +178,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlot> + OwnerOf> UniqueFrame<M> {
     /// a forgotten frame that was previously casted by [`Self::into_raw`].
     #[rustc_allow_incoherent_impl]
     #[verus_spec(res =>
-        with Tracked(regions) : Tracked<&mut MetaRegionOwners>,
-            Tracked(meta_perm) : Tracked<PointsTo<MetaSlot, M>>,
-            Tracked(meta_own) : Tracked<M::Owner>
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            Tracked(meta_perm): Tracked<PointsTo<MetaSlot, M>>,
+            Tracked(meta_own): Tracked<M::Owner>
     )]
     #[verifier::external_body]
     pub fn from_raw(paddr: Paddr) -> (res: (Self, Tracked<UniqueFrameOwner<M>>))
@@ -191,8 +191,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlot> + OwnerOf> UniqueFrame<M> {
         ensures
             res.0.ptr.addr() == frame_to_meta(paddr),
             res.0.wf(res.1@),
-            res.1@.meta_own@ == meta_own,
-            res.1@.meta_perm@ == meta_perm,
+            res.1@.meta_own == meta_own,
+            res.1@.meta_perm == meta_perm,
             regions.slots[frame_to_index(paddr)] == old(regions).dropped_slots[frame_to_index(
                 paddr,
             )],
@@ -208,11 +208,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlot> + OwnerOf> UniqueFrame<M> {
 
         (
             Self { ptr, _marker: PhantomData },
-            UniqueFrameOwner::<M>::from_raw_owner(
-                Tracked(meta_own),
-                frame_to_index(paddr),
-                Tracked(meta_perm),
-            ),
+            Tracked(UniqueFrameOwner::<M>::from_raw_owner(
+                meta_own,
+                Ghost(frame_to_index(paddr)),
+                meta_perm,
+            )),
         )
     }
 

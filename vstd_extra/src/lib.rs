@@ -10,9 +10,11 @@ pub mod function_properties;
 pub mod ghost_tree;
 pub mod manually_drop;
 pub mod ownership;
-pub mod prelude;
+
 #[macro_use]
 pub mod ptr_extra;
 pub mod map_extra;
+
+pub mod prelude;
 pub mod seq_extra;
 pub mod set_extra;

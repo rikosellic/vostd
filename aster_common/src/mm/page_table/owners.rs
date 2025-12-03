@@ -79,21 +79,21 @@ pub tracked struct OwnerInTree<'rcu, C: PageTableConfig> {
 
 impl<'rcu, C: PageTableConfig> Inv for OwnerInTree<'rcu, C> {
     open spec fn inv(self) -> bool {
-        true
-/*        match self.tree_node {
+        true/*        match self.tree_node {
             Self::Present(owner) => owner.inv(),
             Self::Absent => true,
             Self::Locked => true,
         }*/
+
     }
 }
 
 impl<'rcu, C: PageTableConfig> TreeNodeValue for EntryOwner<'rcu, C> {
     open spec fn default() -> Self {
         Self {
-            node:None,
-            frame:None,
-            locked:None,
+            node: None,
+            frame: None,
+            locked: None,
             absent: true,
             index: 0,
             base_addr: 0,
@@ -105,7 +105,8 @@ impl<'rcu, C: PageTableConfig> TreeNodeValue for EntryOwner<'rcu, C> {
     proof fn default_preserves_inv()
         ensures
             #[trigger] Self::default().inv(),
-    { }
+    {
+    }
 }
 
 pub type OwnerNode<'rcu, C> = Node<EntryOwner<'rcu, C>, CONST_NR_ENTRIES, CONST_NR_LEVELS>;
@@ -125,18 +126,22 @@ impl<'rcu, C: PageTableConfig> Deref for OwnerAsTreeNode<'rcu, C> {
 impl<'rcu, C: PageTableConfig> OwnerAsTreeNode<'rcu, C> {
     pub open spec fn is_leaf(self) -> bool {
         &&& self.inner.value.is_frame()
-//        &&& self.value.get_entry().unwrap().node_owner.meta_own.nr_children@
+        //        &&& self.value.get_entry().unwrap().node_owner.meta_own.nr_children@
         &&& self.inner.children.len() == 0
     }
 
     pub open spec fn valid_ptrs(self) -> bool {
-        forall|i: usize| #![auto]
+        forall|i: usize|
+            #![auto]
             0 <= i < NR_ENTRIES() ==> self.inner.children[i as int] is Some ==> {
                 &&& self.inner.value.node is Some
-                &&& self.inner.value.node.unwrap().children_perm.is_init(i as int)
-//                &&& self.inner.children[i as int].unwrap().value.tree_node is Some
+                &&& self.inner.value.node.unwrap().children_perm.is_init(
+                    i as int,
+                )
+                //                &&& self.inner.children[i as int].unwrap().value.tree_node is Some
                 &&& self.inner.value.node.unwrap().children_perm.opt_value()[i as int].value().wf(
-                    self.inner.children[i as int].unwrap().value)
+                    self.inner.children[i as int].unwrap().value,
+                )
             }
     }
     

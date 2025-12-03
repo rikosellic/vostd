@@ -12,7 +12,7 @@ pub mod frame;
 //pub mod io;
 //pub(crate) mod kspace;
 pub(crate) mod page_prop;
-pub(crate) mod page_table;
+// pub(crate) mod page_table;
 //pub mod tlb;
 pub mod vm_space;
 

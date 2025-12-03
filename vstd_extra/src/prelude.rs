@@ -2,10 +2,8 @@ pub use super::arithmetic::*;
 
 pub use super::array_ptr::*;
 
-#[macro_use]
 pub use super::bit_mapping::*;
 
-#[macro_use]
 pub use super::extern_const::*;
 
 pub use super::extra_num::*;

@@ -100,16 +100,16 @@ pub struct StoredLink {
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlot>> Repr<MetaSlot> for Link<M> {
-    closed spec fn wf(r: MetaSlot) -> bool;
+    uninterp spec fn wf(r: MetaSlot) -> bool;
 
-    closed spec fn to_repr_spec(self) -> MetaSlot;
+    uninterp spec fn to_repr_spec(self) -> MetaSlot;
 
     #[verifier::external_body]
     fn to_repr(self) -> MetaSlot {
         unimplemented!()
     }
 
-    closed spec fn from_repr_spec(r: MetaSlot) -> Self;
+    uninterp spec fn from_repr_spec(r: MetaSlot) -> Self;
 
     #[verifier::external_body]
     fn from_repr(r: MetaSlot) -> Self {
@@ -135,7 +135,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> Repr<MetaSlot> for Link<M> {
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlot>> AnyFrameMeta for Link<M> {
-    fn on_drop(&mut self) { }
+    fn on_drop(&mut self) {
+    }
 
     fn is_untyped(&self) -> bool {
         false

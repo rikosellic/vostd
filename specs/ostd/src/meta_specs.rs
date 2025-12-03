@@ -5,8 +5,8 @@ use vstd::simple_pptr::{self, PPtr};
 use vstd_extra::cast_ptr::*;
 use vstd_extra::ownership::*;
 
-use aster_common::prelude::*;
 use aster_common::prelude::frame::*;
+use aster_common::prelude::*;
 
 use std::marker::PhantomData;
 
@@ -26,7 +26,7 @@ impl MetaSlot {
         };
         MetaSlotModel {
             status,
-            storage: cell::MemContents::Uninit, //TODO: fix this cell::MemContents::Init(metadata.to_repr()),
+            storage: cell::MemContents::Uninit,  //TODO: fix this cell::MemContents::Init(metadata.to_repr()),
             ref_count: rc,
             vtable_ptr: simple_pptr::MemContents::Init(metadata.vtable_ptr()),
             in_list: 0,
@@ -185,7 +185,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlot> + OwnerOf> UniqueFrame<M> {
             pre.slots[paddr / 4096].ref_count == REF_COUNT_UNUSED,
         ensures
             UniqueFrame::from_unused_spec(paddr, metadata, pre).1.inv(),
-    { }
+    {
+    }
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlot> + OwnerOf> Frame<M> {
