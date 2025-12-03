@@ -128,7 +128,7 @@ impl<'rcu, C: PageTableConfig> View for EntryOwner<'rcu, C> {
                     map_va: vaddr(self.path) as int,
                     frame_pa: self.base_addr as int,
                     in_frame_index: self.index as int,
-                    map_to_pa: meta_to_frame(node.as_node.meta_perm@.addr()) as int,
+                    map_to_pa: meta_to_frame(node.as_node.meta_perm.addr()) as int,
                     level: (self.path.len() + 1) as u8,
                     phantom: PhantomData
                 }

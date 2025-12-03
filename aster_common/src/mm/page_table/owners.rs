@@ -135,9 +135,7 @@ impl<'rcu, C: PageTableConfig> OwnerAsTreeNode<'rcu, C> {
             #![auto]
             0 <= i < NR_ENTRIES() ==> self.inner.children[i as int] is Some ==> {
                 &&& self.inner.value.node is Some
-                &&& self.inner.value.node.unwrap().children_perm.is_init(
-                    i as int,
-                )
+                &&& self.inner.value.node.unwrap().children_perm.is_init(i as int)
                 //                &&& self.inner.children[i as int].unwrap().value.tree_node is Some
                 &&& self.inner.value.node.unwrap().children_perm.opt_value()[i as int].value().wf(
                     self.inner.children[i as int].unwrap().value,

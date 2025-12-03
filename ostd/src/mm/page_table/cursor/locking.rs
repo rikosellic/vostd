@@ -114,7 +114,7 @@ pub fn unlock_range<C: PageTableConfig, A: InAtomicMode>(cursor: &mut Cursor<'_,
 /// this case to lock the proper node.
 #[verus_spec(
     with Tracked(pt_own): Tracked<&mut PageTableOwner<C>>,
-        Tracked(guard_perm): Tracked<& vstd::simple_pptr::PointsTo<PageTableGuard<'rcu, C>>>
+        Tracked(guard_perm): Tracked<&mut vstd::simple_pptr::PointsTo<PageTableGuard<'rcu, C>>>
 )]
 #[verifier::external_body]
 fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>(
@@ -162,17 +162,16 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
             node_ref.lock(guard)
         };
 
-        let guard_val = pt_guard.borrow(Tracked(guard_perm));
-        let node_owner = pt_own.tree.value.node.tracked_take();
-        let stray_mut = guard_val.stray_mut().borrow(
-            Tracked(node_owner.as_node.meta_own.stray.borrow()),
-        );
+        let mut guard_val = pt_guard.take(Tracked(guard_perm));
+        let tracked node_owner = pt_own.tree.value.node.tracked_take();
+        let stray_mut = guard_val.stray_mut(); //.borrow(Tracked(&node_owner.as_node.meta_own.stray));
 
         proof {
+            pt_guard.put(Tracked(guard_perm), guard_val);
             pt_own.tree.value.node = Some(node_owner);
         }
 
-        if *stray_mut {
+        if *(stray_mut.borrow(Tracked(&node_owner.as_node.meta_own.stray))) {
             return None;
         }
         let mut cur_entry = PageTableGuard::<'rcu, C>::entry(pt_guard, start_idx);
@@ -204,17 +203,16 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
         node_ref.lock(guard)
     };
 
-    let guard_val = pt_guard.borrow(Tracked(guard_perm));
-    let node_owner = pt_own.tree.value.node.tracked_take();
-    let stray_mut = guard_val.stray_mut().borrow(
-        Tracked(node_owner.as_node.meta_own.stray.borrow()),
-    );
+    let mut guard_val = pt_guard.take(Tracked(guard_perm));
+    let tracked node_owner = pt_own.tree.value.node.tracked_take();
+    let stray_mut = guard_val.stray_mut();
 
     proof {
+        pt_guard.put(Tracked(guard_perm), guard_val);
         pt_own.tree.value.node = Some(node_owner);
     }
 
-    if *stray_mut {
+    if *(stray_mut.borrow(Tracked(&node_owner.as_node.meta_own.stray))) {
         return None;
     }
     Some(pt_guard)
@@ -330,10 +328,10 @@ pub fn dfs_mark_stray_and_unlock<'a, C: PageTableConfig, A: InAtomicMode>(
 ) -> usize {
     let mut sub_tree_val = sub_tree.take(Tracked(guard_perm));
     let stray_mut = sub_tree_val.stray_mut();
-    let node_owner = entry_own.node.tracked_take();
-    let stray = stray_mut.take(Tracked(node_owner.as_node.meta_own.stray.borrow_mut()));
+    let tracked node_owner = entry_own.node.tracked_take();
+    let stray = stray_mut.take(Tracked(&mut node_owner.as_node.meta_own.stray));
 
-    stray_mut.put(Tracked(node_owner.as_node.meta_own.stray.borrow_mut()), true);
+    stray_mut.put(Tracked(&mut node_owner.as_node.meta_own.stray), true);
 
     proof {
         entry_own.node = Some(node_owner);

@@ -340,11 +340,16 @@ impl<C: PageTableConfig> PageTable<C> {
     /// previous cursor is dropped. The modification to the mapping by the cursor may also
     /// block or be overridden by the mapping of another cursor.
     #[rustc_allow_incoherent_impl]
+    #[verus_spec(
+        with Tracked(owner): Tracked<&mut PageTableOwner<C>>,
+            Tracked(guard_perm): Tracked<&vstd::simple_pptr::PointsTo<PageTableGuard<'rcu, C>>>
+    )]
     pub fn cursor<'rcu, G: InAtomicMode>(
         &'rcu self,
         guard: &'rcu G,
         va: &Range<Vaddr>,
     ) -> Result<(Cursor<'rcu, C, G>, Tracked<CursorOwner<'rcu, C>>), PageTableError> {
+        #[verus_spec(with Tracked(owner), Tracked(guard_perm))]
         Cursor::new(self, guard, va)
     }
 

@@ -32,8 +32,9 @@ impl<C: PageTableConfig> Child<C> {
                 &&& slot_own.unwrap()@.inv()
                 &&& slot_perm is Some
                 &&& slot_perm.unwrap()@.addr() == self.get_node().unwrap().ptr.addr()
+                &&& slot_perm.unwrap()@.points_to.addr() == self.get_node().unwrap().ptr.addr()
                 &&& slot_perm.unwrap()@.is_init()
-                &&& slot_perm.unwrap()@.points_to@.value().wf(*slot_own.unwrap()@)
+                &&& slot_perm.unwrap()@.points_to.value().wf(*slot_own.unwrap()@)
                 &&& slot_perm.unwrap()@.addr() == slot_own.unwrap()@.self_addr
             },
         ensures
@@ -43,7 +44,7 @@ impl<C: PageTableConfig> Child<C> {
     {
         match self {
             Child::PageTable(node) => {
-                #[verus_spec(with Tracked(slot_perm.tracked_unwrap().borrow().points_to.borrow()))]
+                #[verus_spec(with Tracked(&slot_perm.tracked_unwrap().borrow().points_to))]
                 let paddr = node.start_paddr();
                 let _ = ManuallyDrop::new(node);
                 C::E::new_pt(paddr)

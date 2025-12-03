@@ -428,17 +428,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorMut<M> {
         self.current = match self.current {
             // SAFETY: The cursor is pointing to a valid element.
             Some(current) => *borrow_field!(& current => next, owner.list_own.perms.tracked_borrow(owner.index)),
-            None => borrow_field!(self.list => front, owner.list_perm),
+            None => borrow_field!(self.list => front, &owner.list_perm),
         };
 
         proof {
             LinkedListOwner::<M>::view_preserves_len(owner.list_own.list);
-            assert(self.model(owner.move_next_owner_spec()).fore == old_self.model(
-                owner,
-            ).move_next_spec().fore);
-            assert(self.model(owner.move_next_owner_spec()).rear == old_self.model(
-                owner,
-            ).move_next_spec().rear);
+            assert(self.model(owner.move_next_owner_spec()).fore == old_self.model(owner).move_next_spec().fore);
+            assert(self.model(owner.move_next_owner_spec()).rear == old_self.model(owner).move_next_spec().rear);
         }
     }
 
@@ -476,7 +472,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorMut<M> {
         self.current = match self.current {
             // SAFETY: The cursor is pointing to a valid element.
             Some(current) => *borrow_field!(& current => prev, owner.list_own.perms.tracked_borrow(owner.index)),
-            None => borrow_field!(self.list => back, owner.list_perm),
+            None => borrow_field!(self.list => back, &owner.list_perm),
         };
 
         proof {
@@ -570,7 +566,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorMut<M> {
         #[verus_spec(with Tracked(&regions.slots.tracked_borrow(frame_to_index(paddr))))]
         let frame_meta = frame.meta_mut();
 
-        let opt_prev = borrow_field!(frame_meta => prev, frame_own.meta_perm);
+        let opt_prev = borrow_field!(frame_meta => prev, &frame_own.meta_perm);
 
         if let Some(prev) = opt_prev {
             // SAFETY: We own the previous node by `&mut self` and the node is
@@ -670,7 +666,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorMut<M> {
             // SAFETY: We own the current node by `&mut self` and the node is
             // initialized.
             let tracked mut cur_perm = owner.list_own.perms.tracked_remove(owner.index);
-            let opt_prev = borrow_field!(current => prev, cur_perm);
+            let opt_prev = borrow_field!(current => prev, &cur_perm);
             proof {
                 owner.list_own.perms.tracked_insert(owner.index, cur_perm);
             }
@@ -694,7 +690,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorMut<M> {
         } else {
             assert(0 < owner.length() ==> owner.list_own.inv_at(owner.index - 1));
 
-            if let Some(back) = borrow_field!(self.list => back, owner.list_perm) {
+            if let Some(back) = borrow_field!(self.list => back, &owner.list_perm) {
                 assert(owner.index == owner.length());
 
                 // SAFETY: We have ownership of the links via `&mut self`.

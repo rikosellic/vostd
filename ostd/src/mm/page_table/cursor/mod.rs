@@ -83,6 +83,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         with Tracked(pt_own): Tracked<&mut PageTableOwner<C>>,
             Tracked(guard_perm): Tracked<&PointsTo<PageTableGuard<'rcu, C>>>
     )]
+    #[verifier::external_body]
     pub fn new(pt: &'rcu PageTable<C>, guard: &'rcu A, va: &Range<Vaddr>)
         -> (res: (Result<(Self, Tracked<CursorOwner<'rcu, C>>), PageTableError>))
         ensures
@@ -118,6 +119,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             Tracked(guard_perm): Tracked<&PointsTo<PageTableGuard<'rcu, C>>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
+    #[verifier::external_body]
     pub fn query(&mut self) -> Result<PagesState<C>, PageTableError>
         requires
             owner.inv(),
@@ -141,7 +143,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
             let tracked node_owner = owner.locked_subtree.inner.value.node.tracked_borrow();
 
-            let ghost index = meta_to_frame(frame_to_index(node_owner.as_node.meta_perm@.addr()));
+            let ghost index = meta_to_frame(frame_to_index(node_owner.as_node.meta_perm.addr()));
 
             assert(regions.slot_owners.contains_key(index)) by { admit() };
             assert(self.path[self.level as int - 1] is Some) by { admit() };
@@ -418,12 +420,13 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             Tracked(guard_perm): Tracked<&PointsTo<PageTableGuard<'rcu, C>>>,
             Tracked(slot_own): Tracked<&MetaSlotOwner>
     )]
+    #[verifier::external_body]
     fn cur_entry(&mut self) -> Entry<'rcu, C>
         requires
             1 <= old(self).level <= 4,
             old(self).path[old(self).level as int - 1] is Some,
             owner.locked_subtree.inner.value.node.unwrap().inv(),
-            owner.locked_subtree.inner.value.node.unwrap().guard_perm@.addr() ==
+            owner.locked_subtree.inner.value.node.unwrap().guard_perm.addr() ==
                 old(self).path[old(self).level as usize - 1].unwrap().addr(),
     {
         let node = self.path[self.level as usize - 1].unwrap();
@@ -437,6 +440,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     #[verus_spec(
         with Tracked(owner): Tracked<&CursorOwner<C>>
     )]
+    #[verifier::external_body]
     fn cur_va_range(&self) -> Range<Vaddr>
         returns self.model(*owner).cur_va_range_spec()
     {
@@ -505,7 +509,12 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             Tracked(guard_perm): Tracked<&PointsTo<PageTableGuard<'rcu, C>>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
-    pub fn query(&mut self) -> Result<PagesState<C>, PageTableError> {
+    pub fn query(&mut self) -> Result<PagesState<C>, PageTableError>
+        requires
+            owner.inv(),
+            old(self).inner.wf(*owner),
+            old(regions).inv(),
+    {
         #[verus_spec(with Tracked(owner), Tracked(guard_perm), Tracked(regions))]
         self.inner.query()
     }

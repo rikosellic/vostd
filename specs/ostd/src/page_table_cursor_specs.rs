@@ -6,11 +6,9 @@ use vstd_extra::prelude::TreePath;
 use aster_common::prelude::page_table::*;
 use aster_common::prelude::*;
 
-verus! {
-
 use core::ops::Range;
 
-verus!{
+verus! {
 
 impl<'rcu, C: PageTableConfig> PageTableOwner<'rcu, C> {
     #[rustc_allow_incoherent_impl]

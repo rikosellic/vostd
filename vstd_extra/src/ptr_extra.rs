@@ -11,7 +11,7 @@ macro_rules! borrow_field {
     ($ptr:expr) => { $ptr };
     ($ptr:expr => $field:tt, $perm:expr) => {
         verus_exec_expr!(
-            $ptr.borrow(Tracked($perm.borrow())).$field
+            $ptr.borrow(Tracked($perm)).$field
     )};
 }
 

@@ -11,7 +11,7 @@ use vstd::prelude::*;
 use core::{ops::Range, sync::atomic::Ordering};
 
 use aster_common::prelude::page_table::*;
-use aster_common::prelude::frame::{UFrame};
+use aster_common::prelude::frame::{UFrame, MetaRegionOwners, MetaSlotOwner};
 use aster_common::prelude::*;
 
 use crate::{
@@ -55,6 +55,7 @@ impl VmSpace {
     /// The creation of the cursor may block if another cursor having an
     /// overlapping range is alive.
     #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     pub fn cursor<'a, G: InAtomicMode>(
         &'a self,
         guard: &'a G,
@@ -177,7 +178,7 @@ impl Default for VmSpace {
 /// It exclusively owns a sub-tree of the page table, preventing others from
 /// reading or modifying the same sub-tree. Two read-only cursors can not be
 /// created from the same virtual address range either.
-pub struct Cursor<'a, A: InAtomicMode>(aster_common::prelude::page_table::Cursor<'a, UserPtConfig, A>);
+pub struct Cursor<'a, A: InAtomicMode>(pub aster_common::prelude::page_table::Cursor<'a, UserPtConfig, A>);
 
 /*
 impl<A: InAtomicMode> Iterator for Cursor<'_, A> {
@@ -189,13 +190,23 @@ impl<A: InAtomicMode> Iterator for Cursor<'_, A> {
 }
 */
 
-impl<A: InAtomicMode> Cursor<'_, A> {
+impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
     /// Queries the mapping at the current virtual address.
     ///
     /// If the cursor is pointing to a valid virtual address that is locked,
     /// it will return the virtual address range and the mapped item.
-    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)> {
-        Ok(self.0.query()?)
+    #[verus_spec(
+        with Tracked(owner): Tracked<&CursorOwner<'rcu, UserPtConfig>>,
+            Tracked(guard_perm): Tracked<&vstd::simple_pptr::PointsTo<PageTableGuard<'rcu, UserPtConfig>>>,
+            Tracked(regions): Tracked<&mut MetaRegionOwners>
+    )]
+    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)>
+        requires
+            owner.inv(),
+            old(self).0.wf(*owner),
+            old(regions).inv()
+    {
+        Ok(#[verus_spec(with Tracked(owner), Tracked(guard_perm), Tracked(regions))] self.0.query()?)
     }
 
     /// Moves the cursor forward to the next mapped virtual address.
@@ -231,7 +242,7 @@ impl<A: InAtomicMode> Cursor<'_, A> {
 /// It exclusively owns a sub-tree of the page table, preventing others from
 /// reading or modifying the same sub-tree.
 pub struct CursorMut<'a, A: InAtomicMode> {
-    pt_cursor: aster_common::prelude::page_table::CursorMut<'a, UserPtConfig, A>,
+    pub pt_cursor: aster_common::prelude::page_table::CursorMut<'a, UserPtConfig, A>,
     // We have a read lock so the CPU set in the flusher is always a superset
     // of actual activated CPUs.
 //    flusher: TlbFlusher<'a, DisabledPreemptGuard>,
@@ -244,8 +255,19 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
     ///
     /// If the cursor is pointing to a valid virtual address that is locked,
     /// it will return the virtual address range and the mapped item.
-    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)> {
-        Ok(self.pt_cursor.query()?)
+    #[verus_spec(
+        with Tracked(owner): Tracked<&CursorOwner<'a, UserPtConfig>>,
+            Tracked(guard_perm): Tracked<&vstd::simple_pptr::PointsTo<PageTableGuard<'a, UserPtConfig>>>,
+            Tracked(regions): Tracked<&mut MetaRegionOwners>
+    )]
+    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)>
+        requires
+            owner.inv(),
+            old(self).pt_cursor.inner.wf(*owner),
+            old(regions).inv()
+
+    {
+        Ok(#[verus_spec(with Tracked(owner), Tracked(guard_perm), Tracked(regions))] self.pt_cursor.query()?)
     }
 
     /// Moves the cursor forward to the next mapped virtual address.
@@ -320,6 +342,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
     /// Panics if:
     ///  - the length is longer than the remaining range of the cursor;
     ///  - the length is not page-aligned.
+    #[verifier::external_body]
     pub fn unmap(&mut self, len: usize) -> usize {
         let end_va = self.virt_addr() + len;
         let mut num_unmapped: usize = 0;
@@ -375,13 +398,19 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
     /// # Panics
     ///
     /// Panics if the length is longer than the remaining range of the cursor.
+    #[verus_spec(
+        with Tracked(owner): Tracked<&mut CursorOwner<'a, UserPtConfig>>,
+            Tracked(guard_perm): Tracked<&mut vstd::simple_pptr::PointsTo<PageTableGuard<'a, UserPtConfig>>>,
+            Tracked(slot_owner): Tracked<&MetaSlotOwner>
+    )]
+    #[verifier::external_body]
     pub fn protect_next(
         &mut self,
         len: usize,
         op: impl FnOnce(PageProperty) -> PageProperty,
     ) -> Option<Range<Vaddr>> {
         // SAFETY: It is safe to protect memory in the userspace.
-        unsafe { self.pt_cursor.protect_next(len, op) }
+        unsafe { #[verus_spec(with Tracked(owner), Tracked(guard_perm), Tracked(slot_owner))] self.pt_cursor.protect_next(len, op) }
     }
 }
 

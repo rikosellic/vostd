@@ -286,7 +286,7 @@ impl MetaSlot {
             frame_to_index(meta_to_frame(slot.addr())),
         );
 
-        match slot.borrow(Tracked(meta_perm.borrow())).ref_count.load(Tracked(slot_own.ref_count.borrow_mut())) {
+        match slot.borrow(Tracked(&meta_perm)).ref_count.load(Tracked(&mut slot_own.ref_count)) {
             REF_COUNT_UNUSED => return Err(GetFrameError::Unused),
             REF_COUNT_UNIQUE => return Err(GetFrameError::Unique),
             0 => return Err(GetFrameError::Busy),
