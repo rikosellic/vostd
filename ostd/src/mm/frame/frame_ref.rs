@@ -12,6 +12,8 @@ use aster_common::prelude::*;
 use super::Frame;
 use crate::{mm::Paddr /*, sync::non_null::NonNullPtr*/};
 
+use vstd::simple_pptr::PPtr;
+
 verus! {
 
 #[verus_verify]
@@ -41,49 +43,112 @@ impl<M: AnyFrameMeta> FrameRef<'_, M> {
 
         Self {
             // SAFETY: The caller ensures the safety.
-            inner: frame,
+            inner: ManuallyDrop::new(frame),
             _marker: PhantomData,
         }
     }
 }
 
+// TODO: I moved this here to avoid having to pull the rest of `sync` into the verification.
+// Once it is pulled in, we should delete this one.
+/// A trait that abstracts non-null pointers.
+///
+/// All common smart pointer types such as `Box<T>`,  `Arc<T>`, and `Weak<T>`
+/// implement this trait as they can be converted to and from the raw pointer
+/// type of `*const T`.
+///
+/// # Safety
+///
+/// This trait must be implemented correctly (according to the doc comments for
+/// each method). Types like [`Rcu`] rely on this assumption to safely use the
+/// raw pointers.
+///
+/// [`Rcu`]: super::Rcu
+pub unsafe trait NonNullPtr: 'static + Sized {
+    /// The target type that this pointer refers to.
+    // TODO: Support `Target: ?Sized`.
+    type Target;
+
+    /// A type that behaves just like a shared reference to the `NonNullPtr`.
+    type Ref<'a>;
+
+    /// The power of two of the pointer alignment.
+    fn ALIGN_BITS() -> u32;
+
+    /// Converts to a raw pointer.
+    ///
+    /// Each call to `into_raw` must be paired with a call to `from_raw`
+    /// in order to avoid memory leakage.
+    ///
+    /// The lower [`Self::ALIGN_BITS`] of the raw pointer is guaranteed to
+    /// be zero. In other words, the pointer is guaranteed to be aligned to
+    /// `1 << Self::ALIGN_BITS`.
+    fn into_raw(self) -> PPtr<Self::Target>;
+
+    /// Converts back from a raw pointer.
+    ///
+    /// # Safety
+    ///
+    /// 1. The raw pointer must have been previously returned by a call to
+    ///    `into_raw`.
+    /// 2. The raw pointer must not be used after calling `from_raw`.
+    ///
+    /// Note that the second point is a hard requirement: Even if the
+    /// resulting value has not (yet) been dropped, the pointer cannot be
+    /// used because it may break Rust aliasing rules (e.g., `Box<T>`
+    /// requires the pointer to be unique and thus _never_ aliased).
+    unsafe fn from_raw(ptr: PPtr<Self::Target>) -> Self;
+
+    /// Obtains a shared reference to the original pointer.
+    ///
+    /// # Safety
+    ///
+    /// The original pointer must outlive the lifetime parameter `'a`, and during `'a`
+    /// no mutable references to the pointer will exist.
+    unsafe fn raw_as_ref<'a>(raw: PPtr<Self::Target>) -> Self::Ref<'a>;
+
+    /// Converts a shared reference to a raw pointer.
+    fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> PPtr<Self::Target>;
+}
+
+pub assume_specification [usize::trailing_zeros] (_0: usize) -> u32;
+
 // SAFETY: `Frame` is essentially a `*const MetaSlot` that could be used as a non-null
 // `*const` pointer.
-/*unsafe impl<M: AnyFrameMeta + ?Sized> NonNullPtr for Frame<M> {
+unsafe impl<M: AnyFrameMeta + ?Sized + 'static> NonNullPtr for Frame<M> {
     type Target = PhantomData<Self>;
 
-    type Ref<'a>
-        = FrameRef<'a, M>
-    where
-        Self: 'a;
+    type Ref<'a> = FrameRef<'a, M>;
 
-    const ALIGN_BITS: u32 = core::mem::align_of::<MetaSlot>().trailing_zeros();
-
-    fn into_raw(self) -> NonNull<Self::Target> {
-        let ptr = NonNull::new(self.ptr.cast_mut()).unwrap();
-        let _ = ManuallyDrop::new(self);
-        ptr.cast()
+    fn ALIGN_BITS() -> u32 {
+        core::mem::align_of::<MetaSlot>().trailing_zeros()
     }
 
-    unsafe fn from_raw(raw: NonNull<Self::Target>) -> Self {
+    fn into_raw(self) -> PPtr<Self::Target> {
+        let ptr = self.ptr;
+        let _ = ManuallyDrop::new(self);
+        PPtr::<Self::Target>::from_addr(ptr.addr())
+    }
+
+    unsafe fn from_raw(raw: PPtr<Self::Target>) -> Self {
         Self {
-            ptr: raw.as_ptr().cast_const().cast(),
+            ptr: PPtr::<MetaSlot>::from_addr(raw.addr()),
             _marker: PhantomData,
         }
     }
 
-    unsafe fn raw_as_ref<'a>(raw: NonNull<Self::Target>) -> Self::Ref<'a> {
+    unsafe fn raw_as_ref<'a>(raw: PPtr<Self::Target>) -> Self::Ref<'a> {
         Self::Ref {
             inner: ManuallyDrop::new(Frame {
-                ptr: raw.as_ptr().cast_const().cast(),
+                ptr: PPtr::<MetaSlot>::from_addr(raw.addr()),
                 _marker: PhantomData,
             }),
             _marker: PhantomData,
         }
     }
 
-    fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> core::ptr::NonNull<Self::Target> {
-        NonNull::new(ptr_ref.inner.ptr.cast_mut()).unwrap().cast()
+    fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> PPtr<Self::Target> {
+        PPtr::from_addr(ptr_ref.inner.ptr.addr())
     }
-}*/
+}
 } // verus!
