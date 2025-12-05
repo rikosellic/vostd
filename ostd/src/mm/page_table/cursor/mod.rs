@@ -673,7 +673,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     ) -> Option<Range<Vaddr>>
         requires
             slot_own.inv(),
-            old(owner).locked_subtree.inner.value.node.is_Some(),
+            old(owner).locked_subtree.inner.value.node is Some,
     {
         self.inner.find_next_impl(len, false, true)?;
 
