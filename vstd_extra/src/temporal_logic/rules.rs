@@ -2984,7 +2984,7 @@ pub proof fn lift_state_exists_leads_to_destruct<T, A>(
     or_leads_to_combine(spec, p1, p2, q);
 
     let target = lift_state_exists(a_to_p);
-    assert forall|ex| p1.or(p2).satisfied_by(ex) <==> target.satisfied_by(ex) by {
+    assert forall|ex| #[trigger] p1.or(p2).satisfied_by(ex) <==> target.satisfied_by(ex) by {
         let s = ex.head();
         if target.satisfied_by(ex) {
             let a = choose|a| #[trigger] a_to_p(a)(s);
