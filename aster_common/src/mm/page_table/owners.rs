@@ -79,12 +79,7 @@ pub tracked struct OwnerInTree<'rcu, C: PageTableConfig> {
 
 impl<'rcu, C: PageTableConfig> Inv for OwnerInTree<'rcu, C> {
     open spec fn inv(self) -> bool {
-        true/*        match self.tree_node {
-            Self::Present(owner) => owner.inv(),
-            Self::Absent => true,
-            Self::Locked => true,
-        }*/
-
+        self.tree_node.inv()
     }
 }
 
@@ -143,16 +138,16 @@ impl<'rcu, C: PageTableConfig> OwnerAsTreeNode<'rcu, C> {
             }
     }
     
-    pub open spec fn view_rec(node: OwnerNode<'rcu, C>, chain: Map<int, IntermediatePageTableEntryView<C>>, level: int) -> Seq<FrameView<C>>
-        decreases NR_LEVELS() - level,
+    pub open spec fn view_rec(node: OwnerNode<'rcu, C>, /*chain: Map<int, IntermediatePageTableEntryView<C>>,*/ level: int) -> Seq<FrameView<C>>
+        decreases level,
     {
-        if NR_LEVELS() - level <= 0 {
+        if level <= 1 {
             Seq::empty()
         } else if node.value.is_frame() {
-            Seq::empty().push(node.value@->leaf.to_frame_view(chain))
+            Seq::empty().push(node.value@->leaf.to_frame_view(/*chain*/))
         } else if node.value.is_node() {
-            let chain = chain.insert(level, node.value@ -> node);
-            node.children.flat_map(|child: Option<OwnerNode<'rcu, C>>| Self::view_rec(child.unwrap(), chain, level + 1))
+//            let chain = chain.insert(level, node.value@ -> node);
+            node.children.flat_map(|child: Option<OwnerNode<'rcu, C>>| Self::view_rec(child.unwrap(), level - 1))
         } else if node.value.is_locked() {
             node.value.locked.unwrap()@
         } else {
@@ -175,7 +170,7 @@ impl<'rcu, C: PageTableConfig> View for PageTableOwner<'rcu, C> {
 
     open spec fn view(&self) -> Self::V {
         PageTableView { 
-            leaves: OwnerAsTreeNode::view_rec(self.tree.inner, Map::empty(), 0)
+            leaves: OwnerAsTreeNode::view_rec(self.tree.inner, 4)
         }
     }
 }

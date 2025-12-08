@@ -196,14 +196,14 @@ impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
     /// If the cursor is pointing to a valid virtual address that is locked,
     /// it will return the virtual address range and the mapped item.
     #[verus_spec(
-        with Tracked(owner): Tracked<&CursorOwner<'rcu, UserPtConfig>>,
+        with Tracked(owner): Tracked<&mut CursorOwner<'rcu, UserPtConfig>>,
             Tracked(guard_perm): Tracked<&vstd::simple_pptr::PointsTo<PageTableGuard<'rcu, UserPtConfig>>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
     pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)>
         requires
-            owner.inv(),
-            old(self).0.wf(*owner),
+            old(owner).inv(),
+            old(self).0.wf(*old(owner)),
             old(regions).inv()
     {
         Ok(#[verus_spec(with Tracked(owner), Tracked(guard_perm), Tracked(regions))] self.0.query()?)
@@ -256,14 +256,14 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
     /// If the cursor is pointing to a valid virtual address that is locked,
     /// it will return the virtual address range and the mapped item.
     #[verus_spec(
-        with Tracked(owner): Tracked<&CursorOwner<'a, UserPtConfig>>,
+        with Tracked(owner): Tracked<&mut CursorOwner<'a, UserPtConfig>>,
             Tracked(guard_perm): Tracked<&vstd::simple_pptr::PointsTo<PageTableGuard<'a, UserPtConfig>>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
     pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)>
         requires
-            owner.inv(),
-            old(self).pt_cursor.inner.wf(*owner),
+            old(owner).inv(),
+            old(self).pt_cursor.inner.wf(*old(owner)),
             old(regions).inv()
 
     {
@@ -401,7 +401,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
     #[verus_spec(
         with Tracked(owner): Tracked<&mut CursorOwner<'a, UserPtConfig>>,
             Tracked(guard_perm): Tracked<&mut vstd::simple_pptr::PointsTo<PageTableGuard<'a, UserPtConfig>>>,
-            Tracked(slot_owner): Tracked<&MetaSlotOwner>
+            Tracked(regions): Tracked<&MetaRegionOwners>
     )]
     #[verifier::external_body]
     pub fn protect_next(
@@ -410,7 +410,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
         op: impl FnOnce(PageProperty) -> PageProperty,
     ) -> Option<Range<Vaddr>> {
         // SAFETY: It is safe to protect memory in the userspace.
-        unsafe { #[verus_spec(with Tracked(owner), Tracked(guard_perm), Tracked(slot_owner))] self.pt_cursor.protect_next(len, op) }
+        unsafe { #[verus_spec(with Tracked(owner), Tracked(guard_perm), Tracked(regions))] self.pt_cursor.protect_next(len, op) }
     }
 }
 

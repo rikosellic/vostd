@@ -36,6 +36,8 @@ impl<M: AnyFrameMeta> FrameRef<'_, M> {
             !old(regions).slots.contains_key(frame_to_index(raw)),
             old(regions).dropped_slots.contains_key(frame_to_index(raw)),
             old(regions).inv(),
+        ensures
+            regions.inv()
     )]
     pub fn borrow_paddr(raw: Paddr) -> Self {
         #[verus_spec(with Tracked(regions))]

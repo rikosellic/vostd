@@ -74,6 +74,12 @@ impl<C: PageTableConfig> CursorView<C> {
     }
 
     #[rustc_allow_incoherent_impl]
+    pub open spec fn present(self) -> bool {
+        let entry = self.rear[0];
+        self.cur_va == entry.leaf.map_va
+    }
+
+    #[rustc_allow_incoherent_impl]
     pub open spec fn query_item_spec(self) -> Option<C::Item> {
         let entry = self.rear[0];
         if self.cur_va == entry.leaf.map_va {
@@ -116,15 +122,7 @@ impl<C: PageTableConfig> CursorView<C> {
     #[rustc_allow_incoherent_impl]
     pub closed spec fn map_spec(self, item: C::Item) -> Self;
 
-
-/*    #[rustc_allow_incoherent_impl]
-    pub open spec fn push_level_spec(self) -> Self {
-        Self {
-            path: self.path.push_tail(0 as usize),
-            ..self
-        }
-    }
-
+    /*
     #[rustc_allow_incoherent_impl]
     pub open spec fn pop_level_spec(self) -> Self {
         let (tail, popped) = self.path.pop_tail();
@@ -162,6 +160,30 @@ impl<C: PageTableConfig> CursorView<C> {
         }
     }*/
 
+}
+
+impl <'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
+    #[rustc_allow_incoherent_impl]
+    pub proof fn present_frame(self)
+        ensures
+            self.subtree.inner.value.is_frame() ==> self@.present()
+        { admit() }
+
+    #[rustc_allow_incoherent_impl]
+    pub proof fn present_not_absent(self)
+        ensures
+            self.subtree.inner.value.is_absent() ==> !self@.present()
+        { admit() }
+
+    #[rustc_allow_incoherent_impl]
+    pub proof fn push_level_owner_spec(&mut self)
+        requires
+            old(self).subtree.inner.children[0] is Some
+    {
+        let (child, cont) = CursorContinuation::make_cont(0, self.subtree.inner);
+        self.subtree = OwnerAsTreeNode{ inner: child };
+        self.continuations = self.continuations.push(cont);
+    }
 }
 
 } // verus!

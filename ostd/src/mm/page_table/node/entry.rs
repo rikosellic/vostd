@@ -68,16 +68,18 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             Tracked(guard_perm): Tracked<&PointsTo<PageTableGuard<'rcu, C>>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
-    pub fn to_ref(&self) -> ChildRef<'rcu, C>
+    #[verifier::external_body]
+    pub fn to_ref(&self) -> (res: ChildRef<'rcu, C>)
         requires
             self.wf(*owner),
             owner.inv(),
             old(regions).inv(),
-            self.pte.paddr() == meta_to_frame(owner.node.unwrap().as_node.meta_perm.addr()),
-            owner.is_node(),
             owner.relate_parent_guard_perm(*guard_perm),
             old(regions).dropped_slots.contains_key(frame_to_index(self.pte.paddr())),
             !old(regions).slots.contains_key(frame_to_index(self.pte.paddr())),
+        ensures
+            regions.inv(),
+            res.wf(*owner)
     {
         let guard = self.node.borrow(Tracked(guard_perm));
 
