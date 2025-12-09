@@ -80,13 +80,11 @@ impl<C: PageTableConfig> CursorView<C> {
     }
 
     #[rustc_allow_incoherent_impl]
-    pub open spec fn query_item_spec(self) -> Option<C::Item> {
+    pub open spec fn query_item_spec(self) -> C::Item
+        recommends self.present()
+    {
         let entry = self.rear[0];
-        if self.cur_va == entry.leaf.map_va {
-            Some(C::item_from_raw(entry.leaf.map_to_pa as usize, entry.leaf.level, entry.leaf.prop))
-        } else {
-            None
-        }
+        C::item_from_raw(entry.leaf.map_to_pa as usize, entry.leaf.level, entry.leaf.prop)
     }
 
     #[rustc_allow_incoherent_impl]
@@ -166,7 +164,12 @@ impl <'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     #[rustc_allow_incoherent_impl]
     pub proof fn present_frame(self)
         ensures
-            self.subtree.inner.value.is_frame() ==> self@.present()
+            self.subtree.inner.value.is_frame() ==> {
+                &&& self@.present()
+                &&& self.subtree.inner.value.frame.unwrap().mapped_pa == self@.rear[0].leaf.map_to_pa
+                &&& self.subtree.inner.value.frame.unwrap().prop == self@.rear[0].leaf.prop
+                &&& self@.rear[0].leaf.level == self.subtree.inner.level
+            }
         { admit() }
 
     #[rustc_allow_incoherent_impl]

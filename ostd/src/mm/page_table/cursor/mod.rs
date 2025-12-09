@@ -55,6 +55,12 @@ use super::{
 
 verus! {
 
+/*pub assume_specification<C: PageTableConfig>[ C::Item::clone ](item: &C::Item) -> (res: C::Item)
+    ensures
+        res == *item,
+;*/
+
+
 impl<C: PageTableConfig> PageTableFrag<C> {
     #[cfg(ktest)]
     #[rustc_allow_incoherent_impl]
@@ -73,6 +79,14 @@ impl<C: PageTableConfig> PageTableFrag<C> {
 }
 
 impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
+    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
+    pub fn clone_item(item: &C::Item) -> C::Item
+        returns item
+    {
+        item.clone()
+    }
+
     /// Creates a cursor claiming exclusive access over the given range.
     ///
     /// The cursor created will only be able to query or jump within the given
@@ -130,6 +144,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                 &&& res.unwrap().0.start == self.va
                 &&& res.unwrap().0.end == self.va + self.model(*owner).scope
                 &&& res.unwrap().1 is Some
+                &&& res.unwrap().1.unwrap() == self.model(*owner).query_item_spec()
             },
             !old(self).model(*owner).present() ==> res is Ok && res.unwrap().1 is None,
     {
@@ -162,6 +177,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
             #[verus_spec(with Tracked(&owner.subtree.inner.value), Tracked(&parent_own.guard_perm), Tracked(regions))]
             let cur_child = entry.to_ref();
+            assert(cur_child.wf(owner.subtree.inner.value));
 
             proof {
                 parent_continuation.entry_own.node = Some(parent_own);
@@ -195,8 +211,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     // (currently, only kernel page tables), the callers of the unsafe
                     // `protect_next` method uphold this invariant.
                     let item =   /*ManuallyDrop::new(unsafe {*/ C::item_from_raw(pa, level, prop)  /*})*/;
+
                     // TODO: Provide a `PageTableItemRef` to reduce copies.
-                    Some(item.clone())
+                    Some(Self::clone_item(&item))
                 },
             };
 
