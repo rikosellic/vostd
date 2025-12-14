@@ -2800,7 +2800,7 @@ pub proof fn strengthen_next<T>(
 #[macro_export]
 macro_rules! leads_to_trans_n {
     [$($tail:tt)*] => {
-        ::verus_builtin_macros::verus_proof_macro_exprs!($crate::temporal_logic::rules::leads_to_trans_n_internal!($($tail)*));
+        ::vstd::prelude::verus_proof_macro_exprs!($crate::temporal_logic::rules::leads_to_trans_n_internal!($($tail)*));
     };
 }
 
@@ -2911,7 +2911,7 @@ pub use entails_and_n_internal;
 #[macro_export]
 macro_rules! entails_always_and_n {
     [$($tail:tt)*] => {
-        ::verus_builtin_macros::verus_proof_macro_exprs!($crate::temporal_logic::rules::entails_always_and_n_internal!($($tail)*));
+        ::vstd::prelude::verus_proof_macro_exprs!($crate::temporal_logic::rules::entails_always_and_n_internal!($($tail)*));
     };
 }
 
@@ -3119,7 +3119,7 @@ pub use combine_spec_entails_always_n_internal;
 #[macro_export]
 macro_rules! entails_always_lift_state_and_n {
     [$($tail:tt)*] => {
-        ::verus_builtin_macros::verus_proof_macro_exprs!($crate::temporal_logic::rules::entails_always_lift_state_and_n_internal!($($tail)*))
+        ::vstd::prelude::verus_proof_macro_exprs!($crate::temporal_logic::rules::entails_always_lift_state_and_n_internal!($($tail)*))
     };
 }
 
@@ -3259,7 +3259,7 @@ pub use stable_and_always_n_internal;
 #[macro_export]
 macro_rules! implies_new_invariant_n {
     [$($tail:tt)*] => {
-        ::verus_builtin_macros::verus_proof_macro_exprs!($crate::temporal_logic::rules::implies_new_invariant_n_internal!($($tail)*))
+        ::vstd::prelude::verus_proof_macro_exprs!($crate::temporal_logic::rules::implies_new_invariant_n_internal!($($tail)*))
     };
 }
 
@@ -3327,7 +3327,7 @@ pub use wf1_by_borrowing_inv_n;
 #[macro_export]
 macro_rules! always_lift_state_weaken_n {
     [$($tail:tt)*] => {
-        ::verus_builtin_macros::verus_proof_macro_exprs!($crate::temporal_logic::rules::always_lift_state_weaken_n_internal!($($tail)*))
+        ::vstd::prelude::verus_proof_macro_exprs!($crate::temporal_logic::rules::always_lift_state_weaken_n_internal!($($tail)*))
     };
 }
 
