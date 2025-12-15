@@ -54,6 +54,10 @@ impl<C: PageTableConfig> Inv for LeafPageTableEntryView<C> {
     }
 }
 
+impl<C: PageTableConfig> LeafPageTableEntryView<C> {
+    pub closed spec fn va_end(self) -> Vaddr;
+}
+
 pub ghost struct IntermediatePageTableEntryView<C: PageTableConfig> {
     pub map_va: int,
     pub frame_pa: int,

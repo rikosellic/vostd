@@ -88,7 +88,13 @@ impl<C: PageTableConfig> CursorView<C> {
     }
 
     #[rustc_allow_incoherent_impl]
-    pub closed spec fn find_next_spec(self) -> Option<Vaddr>;
+    pub open spec fn find_next_spec(self, len: usize) -> Option<Vaddr> {
+        if self.rear.len() > 0 && self.rear[0].leaf.va_end() < self.cur_va + len {
+            Some(self.rear[0].leaf.map_va as usize)
+        } else {
+            None
+        }
+    }
 
     #[rustc_allow_incoherent_impl]
     pub closed spec fn jump(self, va: usize) -> Self;

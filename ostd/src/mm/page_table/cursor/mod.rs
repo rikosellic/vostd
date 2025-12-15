@@ -287,11 +287,16 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             Tracked(guard_perm): Tracked<&PointsTo<PageTableGuard<'rcu, C>>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
-    fn find_next_impl(&mut self, len: usize, find_unmap_subtree: bool, split_huge: bool) -> Option<Vaddr>
+    fn find_next_impl(&mut self, len: usize, find_unmap_subtree: bool, split_huge: bool) -> (res: Option<Vaddr>)
         requires
             old(owner).inv(),
             old(self).wf(*old(owner)),
-            old(regions).inv()
+            old(regions).inv(),
+//            old(self).model(old(owner)).
+        ensures
+            owner.inv(),
+            self.wf(*owner),
+            regions.inv(),
     {
         assert(self.va + len < usize::MAX) by { admit() };
 
@@ -312,15 +317,11 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             decreases owner.max_steps_partial((self.level - 1) as usize),
         {
             let ghost owner0 = *owner;
-//            let ghost dec = owner.max_steps();
 
             let cur_va = self.va;
             #[verus_spec(with Tracked(owner))]
             let cur_va_range = self.cur_va_range();
             let cur_entry_fits_range = cur_va == cur_va_range.start && cur_va_range.end <= end;
-
-            assert(owner.inv()) by { admit() };
-            assert(self.wf(*owner)) by { admit() };
 
             assert(regions.slot_owners.contains_key(frame_to_index(meta_to_frame(
                 owner.continuations[(owner.level-1) as int].entry_own.node.unwrap().as_node.meta_perm.addr)))) by { admit() };
@@ -329,7 +330,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             let mut cur_entry = self.cur_entry();
 
             assert(owner == owner0);
-//            assert(owner.max_steps() == dec);
 
             assert(regions.dropped_slots.contains_key(frame_to_index(cur_entry.pte.paddr()))) by { admit() };
 
@@ -405,8 +405,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     continue ;
                 },
                 ChildRef::None => {
-                    assert(owner.inv()) by { admit() };
-                    assert(self.wf(*owner)) by { admit() };
                     #[verus_spec(with Tracked(owner))]
                     self.move_forward();
 
@@ -418,8 +416,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     }
 
                     let tracked mut continuation = owner.continuations.tracked_remove(owner.level - 1);
-                    let tracked mut child_owner_opt = continuation.children.tracked_remove(owner.index as int);
-                    let tracked mut child_owner = child_owner_opt.tracked_take();
+                    let tracked mut child_owner = continuation.take_child(owner.index);
 
                     assert(child_owner.value.is_frame()) by { admit() };
                     let split_child = (#[verus_spec(with Tracked(&child_owner.value))] cur_entry.split_if_mapped_huge(rcu_guard)).expect(
@@ -427,10 +424,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     );
 
                     proof {
-                        continuation.children.tracked_insert(owner.index as int, Some(child_owner));
+                        continuation.put_child(owner.index, child_owner);
                     }
 
-                    assert(owner.inv()) by { admit() };
                     assert(self.wf(*owner)) by { admit() };
                     #[verus_spec(with Tracked(owner))]
                     self.push_level(split_child);
