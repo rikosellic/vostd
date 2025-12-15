@@ -197,7 +197,6 @@ impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
     /// it will return the virtual address range and the mapped item.
     #[verus_spec(
         with Tracked(owner): Tracked<&mut CursorOwner<'rcu, UserPtConfig>>,
-            Tracked(guard_perm): Tracked<&vstd::simple_pptr::PointsTo<PageTableGuard<'rcu, UserPtConfig>>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
     pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)>
@@ -206,7 +205,7 @@ impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
             old(self).0.wf(*old(owner)),
             old(regions).inv()
     {
-        Ok(#[verus_spec(with Tracked(owner), Tracked(guard_perm), Tracked(regions))] self.0.query()?)
+        Ok(#[verus_spec(with Tracked(owner), Tracked(regions))] self.0.query()?)
     }
 
     /// Moves the cursor forward to the next mapped virtual address.
@@ -257,7 +256,6 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
     /// it will return the virtual address range and the mapped item.
     #[verus_spec(
         with Tracked(owner): Tracked<&mut CursorOwner<'a, UserPtConfig>>,
-            Tracked(guard_perm): Tracked<&vstd::simple_pptr::PointsTo<PageTableGuard<'a, UserPtConfig>>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
     pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)>
@@ -267,7 +265,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
             old(regions).inv()
 
     {
-        Ok(#[verus_spec(with Tracked(owner), Tracked(guard_perm), Tracked(regions))] self.pt_cursor.query()?)
+        Ok(#[verus_spec(with Tracked(owner), Tracked(regions))] self.pt_cursor.query()?)
     }
 
     /// Moves the cursor forward to the next mapped virtual address.

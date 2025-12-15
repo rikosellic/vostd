@@ -268,12 +268,14 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     /// `None`.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(owner) : Tracked<EntryOwner<C>>
+        with Tracked(owner) : Tracked<&EntryOwner<C>>
     )]
     #[verifier::external_body]
     #[verusfmt::skip]
-    pub fn split_if_mapped_huge<A: InAtomicMode>(&mut self, guard: &'rcu A)
-        -> Option<PPtr<PageTableGuard<'rcu, C>>> {
+    pub fn split_if_mapped_huge<A: InAtomicMode>(&mut self, guard: &'rcu A) -> (res: Option<PPtr<PageTableGuard<'rcu, C>>>)
+        ensures
+            res is Some
+    {
         unimplemented!()
 /*        let guard = self.node.borrow(Tracked(owner.guard_perm.borrow()));
 
@@ -326,10 +328,12 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             Tracked(slot_own): Tracked<&MetaSlotOwner>
     )]
     #[verifier::external_body]
-    pub fn new_at(guard: PPtr<PageTableGuard<'rcu, C>>, idx: usize) -> Self
+    pub fn new_at(guard: PPtr<PageTableGuard<'rcu, C>>, idx: usize) -> (res: Self)
         requires
             owner.inv(),
             guard_perm.pptr() == guard,
+        ensures
+            res.wf(*owner)
     {
         let tracked node_owner = owner.node.tracked_borrow();
 

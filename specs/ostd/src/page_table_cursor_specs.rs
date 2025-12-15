@@ -164,28 +164,32 @@ impl <'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     #[rustc_allow_incoherent_impl]
     pub proof fn present_frame(self)
         ensures
-            self.subtree.inner.value.is_frame() ==> {
+            self.cur_entry_owner().unwrap().is_frame() ==> {
                 &&& self@.present()
-                &&& self.subtree.inner.value.frame.unwrap().mapped_pa == self@.rear[0].leaf.map_to_pa
-                &&& self.subtree.inner.value.frame.unwrap().prop == self@.rear[0].leaf.prop
-                &&& self@.rear[0].leaf.level == self.subtree.inner.level
+                &&& self.cur_entry_owner().unwrap().frame.unwrap().mapped_pa == self@.rear[0].leaf.map_to_pa
+                &&& self.cur_entry_owner().unwrap().frame.unwrap().prop == self@.rear[0].leaf.prop
+                &&& self@.rear[0].leaf.level == self.level
             }
         { admit() }
 
     #[rustc_allow_incoherent_impl]
     pub proof fn present_not_absent(self)
         ensures
-            self.subtree.inner.value.is_absent() ==> !self@.present()
+            self.cur_entry_owner().unwrap().is_absent() ==> !self@.present()
         { admit() }
 
     #[rustc_allow_incoherent_impl]
-    pub proof fn push_level_owner_spec(&mut self)
+    #[verifier::returns(proof)]
+    pub proof fn push_level_owner_spec(tracked &mut self)
         requires
-            old(self).subtree.inner.children[0] is Some
+            old(self).inv(),
     {
-        let (child, cont) = CursorContinuation::make_cont(0, self.subtree.inner);
-        self.subtree = OwnerAsTreeNode{ inner: child };
-        self.continuations = self.continuations.push(cont);
+        let tracked mut cont = self.continuations.tracked_remove(self.level-1);
+        let tracked mut child = cont.make_cont(self.index);
+        self.continuations.tracked_insert(self.level-1, cont);
+        self.continuations.tracked_insert(self.level-2, child);
+        self.path.0.push(self.index);
+        self.level = (self.level - 1) as u8;
     }
 }
 
