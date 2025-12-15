@@ -1,13 +1,13 @@
-use aster_common::prelude::CONST_MAX_PADDR;
+use aster_common::prelude::{CONST_MAX_PADDR, PAGE_SIZE};
 use vstd::prelude::*;
 use vstd_extra::prelude::*;
 
 verus! {
 
 pub ghost struct MemRegionModel {
-    pub ghost base: int,
-    pub ghost end: int,
-    pub ghost typ: int,
+    pub ghost base: nat,
+    pub ghost end: nat,
+    pub ghost typ: nat,
 }
 
 impl Inv for MemRegionModel {
@@ -27,6 +27,22 @@ impl MemRegionModel {
 
     pub open spec fn bad() -> Self {
         MemRegionModel { base: 0, end: 0, typ: 0 }
+    }
+
+    pub open spec fn as_aligned(self) -> Self {
+        if self.typ == 8 {
+            MemRegionModel {
+                base: nat_align_up(self.base, PAGE_SIZE() as nat),
+                end: nat_align_down(self.end, PAGE_SIZE() as nat),
+                typ: self.typ,
+            }
+        } else {
+            MemRegionModel {
+                base: nat_align_down(self.base, PAGE_SIZE() as nat),
+                end: nat_align_up(self.end, PAGE_SIZE() as nat),
+                typ: self.typ,
+            }
+        }
     }
 }
 

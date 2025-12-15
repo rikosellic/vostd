@@ -50,7 +50,7 @@ pub struct MemoryRegion {
 verus! {
 
 impl MemoryRegionType {
-    pub open spec fn to_int(self) -> int {
+    pub open spec fn to_nat(self) -> nat {
         match self {
             MemoryRegionType::BadMemory => 0,
             MemoryRegionType::Unknown => 1,
@@ -75,7 +75,7 @@ impl View for MemoryRegion {
     type V = MemRegionModel;
 
     closed spec fn view(&self) -> Self::V {
-        MemRegionModel { base: self.base as int, end: self.base + self.len, typ: self.typ.to_int() }
+        MemRegionModel { base: self.base as nat, end: (self.base + self.len) as nat, typ: self.typ.to_nat() }
     }
 }
 
@@ -94,9 +94,9 @@ impl MemoryRegion {
         ensures
             ret.inv(),
             ret@ == (MemRegionModel {
-                base: base as int,
-                end: base + len,
-                typ: typ.to_int(),
+                base: base as nat,
+                end: (base + len) as nat,
+                typ: typ.to_nat(),
             }),
     )]
     pub const fn new(base: Paddr, len: usize, typ: MemoryRegionType) -> Self {
@@ -192,7 +192,16 @@ impl MemoryRegion {
     }
     
     #[verus_verify(external_body)]
+    #[verus_spec(ret => 
+        requires self.inv(),
+        ensures
+            ret.inv(),
+            ret@ == self@.as_aligned()
+            )]
     fn as_aligned(&self) -> Self {
+        proof!{
+            vstd::arithmetic::power2::lemma2_to64();
+        }
         let (base, end) = match self.typ() {
             MemoryRegionType::Usable => (
                 self.base().align_up(PAGE_SIZE()),
