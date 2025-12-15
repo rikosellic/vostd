@@ -64,9 +64,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
         with Tracked(owner): Tracked<&EntryOwner<C>>,
+            Tracked(parent_owner): Tracked<&NodeOwner<C>>,
             Tracked(guard_perm): Tracked<&PointsTo<PageTableGuard<'rcu, C>>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(inner_perm): Tracked<&vstd_extra::cast_ptr::PointsTo<MetaSlot, PageTablePageMeta<C>>>
     )]
     pub fn to_ref(&self) -> ChildRef<'rcu, C>
         requires
@@ -78,10 +78,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             owner.relate_parent_guard_perm(*guard_perm),
             old(regions).dropped_slots.contains_key(frame_to_index(self.pte.paddr())),
             !old(regions).slots.contains_key(frame_to_index(self.pte.paddr())),
-            inner_perm.addr() == guard_perm.value().inner.inner.ptr.addr(),
-            inner_perm.points_to.addr() == guard_perm.value().inner.inner.ptr.addr(),
-            inner_perm.is_init(),
-            inner_perm.wf(),
+            parent_owner.inv(),
+            parent_owner.meta_perm.addr() == guard_perm.value().inner.inner.ptr.addr(),
+            parent_owner.meta_perm.points_to.addr() == guard_perm.value().inner.inner.ptr.addr(),
     {
         let guard = self.node.borrow(Tracked(guard_perm));
 
@@ -89,7 +88,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
 
         let tracked node_owner = owner.node.tracked_borrow();
 
-        #[verus_spec(with Tracked(inner_perm))]
+        #[verus_spec(with Tracked(&parent_owner.meta_perm))]
         let level = guard.level();
 
         // SAFETY:
