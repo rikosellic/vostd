@@ -166,7 +166,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                 admit()
             };
 
-            #[verus_spec(with Tracked(entry_own), Tracked(guard_perm), Tracked(regions))]
+            // WARNING: The second ghost parameter only type checks, and it is not carefully inspected whether this is true.
+            #[verus_spec(with Tracked(entry_own), Tracked(&entry_own.node.tracked_borrow().as_node),Tracked(guard_perm), Tracked(regions) )]
             let cur_child = entry.to_ref();
 
             let item = match cur_child {
