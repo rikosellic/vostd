@@ -190,16 +190,17 @@ impl MemoryRegion {
     pub fn typ(&self) -> MemoryRegionType {
         self.typ
     }
-    /*
+    
+    #[verus_verify(external_body)]
     fn as_aligned(&self) -> Self {
         let (base, end) = match self.typ() {
             MemoryRegionType::Usable => (
-                self.base().align_up(PAGE_SIZE),
-                self.end().align_down(PAGE_SIZE),
+                self.base().align_up(PAGE_SIZE()),
+                self.end().align_down(PAGE_SIZE()),
             ),
             _ => (
-                self.base().align_down(PAGE_SIZE),
-                self.end().align_up(PAGE_SIZE),
+                self.base().align_down(PAGE_SIZE()),
+                self.end().align_up(PAGE_SIZE()),
             ),
         };
         MemoryRegion {
@@ -207,7 +208,7 @@ impl MemoryRegion {
             len: end - base,
             typ: self.typ,
         }
-    }*/
+    }
 }
 
 /// The maximum number of regions that can be handled.
