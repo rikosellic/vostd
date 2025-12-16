@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 use core::mem::ManuallyDrop;
 
-use vstd_extra::manually_drop::*;
+use vstd_extra::external::manually_drop::*;
 
 use super::*;
 

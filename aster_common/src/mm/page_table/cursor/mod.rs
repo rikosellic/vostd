@@ -197,6 +197,7 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
                 &&& self.children[i].unwrap().value.relate_parent_guard_perm(self.entry_own.node.unwrap().guard_perm)
             }
         &&& self.entry_own.is_node()
+        &&& self.entry_own.inv()
     }
 
     pub open spec fn all_some(self) -> bool {
