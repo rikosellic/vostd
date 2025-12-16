@@ -178,17 +178,14 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             assert(regions.dropped_slots.contains_key(frame_to_index(entry.pte.paddr()))) by { admit() };
 
             let tracked mut continuation = owner.continuations.tracked_remove(owner.level - 1);
-            let tracked mut child_owner_opt = continuation.children.tracked_remove(owner.index as int);
-            let tracked child_owner = child_owner_opt.tracked_take();
+            let tracked child_owner = continuation.take_child(owner.index);
+            let tracked parent_owner = continuation.entry_own.node.tracked_borrow();
 
-            let tracked mut node_owner = continuation.entry_own.node.tracked_take();
-
-            #[verus_spec(with Tracked(&child_owner.value), Tracked(&node_owner.guard_perm), Tracked(regions))]
+            #[verus_spec(with Tracked(&child_owner.value), Tracked(&parent_owner), Tracked(regions) )]
             let cur_child = entry.to_ref();
 
             proof {
-                continuation.entry_own.node = Some(node_owner);
-                continuation.children.tracked_insert(owner.index as int, Some(child_owner));
+                continuation.put_child(owner.index, child_owner);
                 owner.continuations.tracked_insert(owner.level - 1, continuation);
             }
 
@@ -337,15 +334,14 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             let ghost cont0 = continuation;
             let tracked child_owner = continuation.take_child(owner.index);
 
-            let tracked mut node_owner = continuation.entry_own.node.tracked_take();
+            let tracked node_owner = continuation.entry_own.node.tracked_borrow();
 
             assert(child_owner.value.relate_parent_guard_perm(node_owner.guard_perm)) by { admit() };
 
-            #[verus_spec(with Tracked(&child_owner.value), Tracked(&node_owner.guard_perm), Tracked(regions))]
+            #[verus_spec(with Tracked(&child_owner.value), Tracked(&node_owner), Tracked(regions))]
             let cur_child = cur_entry.to_ref();
 
             proof {
-                continuation.entry_own.node = Some(node_owner);
                 continuation.put_child(owner.index, child_owner);
                 assert(continuation.children == cont0.children);
                 owner.continuations.tracked_insert(owner.level - 1, continuation);
