@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 #![feature(sized_hierarchy)]
+#![feature(proc_macro_hygiene)]
 
 pub mod arithmetic;
 pub mod array_ptr;
@@ -17,6 +18,7 @@ pub mod ptr_extra;
 pub mod map_extra;
 
 pub mod prelude;
+pub mod raw_ptr_extra;
 pub mod seq_extra;
 pub mod set_extra;
 pub mod state_machine;
