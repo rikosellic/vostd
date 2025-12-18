@@ -272,16 +272,10 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> LinkedList<M> {
             return None;
         };
 
-        let slot = slot_ptr.take(Tracked(&mut slot_perm));
+        let slot = slot_ptr.borrow(Tracked(&slot_perm));
         let in_list = slot.in_list.load(Tracked(&mut slot_own.in_list));
         let contains = in_list == #[verus_spec(with Tracked(owner))]
         Self::lazy_get_id(ptr);
-
-        proof {
-            assert(slot_perm.value() == slot) by {
-                admit();
-            }
-        }
 
         #[verus_spec(with Tracked(&slot_perm))]
         let meta_ptr = slot.as_meta_ptr::<Link<M>>();
@@ -291,8 +285,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> LinkedList<M> {
         } else {
             None
         };
-
-        slot_ptr.put(Tracked(&mut slot_perm), slot);
         proof {
             regions.slots.tracked_insert(frame_to_index(frame), slot_perm);
             regions.slot_owners.tracked_insert(frame_to_index(frame), slot_own);
@@ -735,7 +727,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorMut<M> {
         update_field!(self.list => size += 1; owner.list_perm);
 
         // TODO: these broke, figure out why (it's related to meta-frame conversions)
-        assert(forall|i: int| 0 <= i < owner.index - 1 ==> owner0.list_own.inv_at(i) ==> owner.list_own.inv_at(i)) by { admit() };
+        assert(forall|i: int| 0 <= i < owner.index - 1 ==> owner0.list_own.inv_at(i) ==> owner.list_own.inv_at(i)) by {};
         assert(forall|i: int| owner.index <= i < owner.length() ==> owner0.list_own.inv_at(i - 1) == owner.list_own.inv_at(i)) by { admit() };
 
         proof {
