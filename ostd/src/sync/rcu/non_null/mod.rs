@@ -57,6 +57,7 @@ pub unsafe trait NonNullPtr: Sized +'static {
     /// SOUNDNESS: Considering also returning the Dealloc permission to ensure no memory leak.
     fn into_raw(self) -> (ret:(NonNull<Self::Target>, Tracked<SmartPtrPointsTo<Self::Target>>))
         ensures
+            ptr_mut_from_nonull(ret.0) == self.ptr_mut_spec(),
             ptr_mut_from_nonull(ret.0) == ret.1@.ptr(),
             ret.1@.inv(),
             Self::match_points_to_type(ret.1@),
@@ -78,11 +79,13 @@ pub unsafe trait NonNullPtr: Sized +'static {
     /// so we can do nothing with the raw pointer because of the absence of permission.
     /// VERUS LIMITATION: the #[verus_spec] attribute does not support `with` in trait yet.
     /// SOUNDNESS: Considering consuming the Dealloc permission to ensure no double free.
-    unsafe fn from_raw(ptr: NonNull<Self::Target>, perm: Tracked<SmartPtrPointsTo<Self::Target>>) -> Self
+    unsafe fn from_raw(ptr: NonNull<Self::Target>, perm: Tracked<SmartPtrPointsTo<Self::Target>>) -> (ret:Self)
         requires
             Self::match_points_to_type(perm@),
             ptr_mut_from_nonull(ptr) == perm@.ptr(),
             perm@.inv(),
+        ensures
+            ptr_mut_from_nonull(ptr) == ret.ptr_mut_spec(),
     ;
 
     // VERUS LIMITATION: Cannot use associated type with lifetime yet, will implement it as a free function for each type.
@@ -99,6 +102,9 @@ pub unsafe trait NonNullPtr: Sized +'static {
     fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> NonNull<Self::Target>;*/
 
     spec fn match_points_to_type(perm: SmartPtrPointsTo<Self::Target>) -> bool;
+
+    // A uninterpreted spec function that returns the inner raw pointer.
+    spec fn ptr_mut_spec(self) -> *mut Self::Target;
 }
 
 /// A type that represents `&'a Box<T>`.
@@ -122,6 +128,10 @@ impl<'a, T> BoxRef<'a, T> {
     pub closed spec fn ptr(self) -> *mut T {
         self.inner
     }
+
+    pub closed spec fn value(self) -> T {
+        self.v_perm@.value()
+    }
 }
 
 /*
@@ -138,16 +148,24 @@ impl<T> Deref for BoxRef<'_, T> {
     }
 }
 */
-/* 
+
+#[verus_verify]
 impl<'a, T> BoxRef<'a, T> {
     /// Dereferences `self` to get a reference to `T` with the lifetime `'a`.
+    #[verus_spec(ret => ensures *ret == self.value())]
     pub fn deref_target(&self) -> &'a T {
-        // SAFETY: The reference is created through `NonNullPtr::raw_as_ref`, hence
+        // [VERIFIED] SAFETY: The reference is created through `NonNullPtr::raw_as_ref`, hence
         // the original owned pointer and target must outlive the lifetime parameter `'a`,
         // and during `'a` no mutable references to the pointer will exist.
-        unsafe { &*(self.inner) }
+        
+        let Tracked(perm) = self.v_perm;
+        proof!{
+            use_type_invariant(self);
+        }
+        //unsafe { &*(self.inner) }
+        vstd::raw_ptr::ptr_ref(self.inner, Tracked(perm.tracked_borrow_points_to())) // The function body of ptr_ref is exactly the same as `unsafe { &*(self.inner) }`
     }
-}*/
+}
 
 #[verus_verify]
 unsafe impl<T: 'static> NonNullPtr for Box<T> {
@@ -176,7 +194,7 @@ unsafe impl<T: 'static> NonNullPtr for Box<T> {
 
     unsafe fn from_raw(ptr: NonNull<Self::Target>, Tracked(perm): Tracked<SmartPtrPointsTo<Self::Target>>) -> Self {
         proof_decl!{
-            let tracked perm = perm.get_box_points_to().tracked_get_perm();
+            let tracked perm = perm.get_box_points_to().tracked_get_points_to_with_dealloc();
         }
         let ptr = ptr.as_ptr();
         
@@ -199,6 +217,10 @@ unsafe impl<T: 'static> NonNullPtr for Box<T> {
 
     open spec fn match_points_to_type(perm: SmartPtrPointsTo<Self::Target>) -> bool {
         perm is Box
+    }
+
+    open spec fn ptr_mut_spec(self) -> *mut Self::Target {
+        box_pointer_spec(self)
     }
 }
 
@@ -233,20 +255,47 @@ pub unsafe fn box_raw_as_ref<'a, T: 'static>(raw: NonNull<T>, perm: Tracked<&'a 
 /// A type that represents `&'a Arc<T>`.
 #[verus_verify]
 #[derive(Debug)]
-pub struct ArcRef<'a, T> {
+pub struct ArcRef<'a, T: 'static> {
     inner: ManuallyDrop<Arc<T>>,
     _marker: PhantomData<&'a Arc<T>>,
+    v_perm: Tracked<ArcPointsTo<T>>,
 }
 
-/* 
+impl<'a, T> ArcRef<'a, T> {
+    #[verifier::type_invariant]
+    spec fn type_inv(self) -> bool {
+        &&& self.ptr() == self.v_perm@.ptr()
+        &&& self.v_perm@.inv()
+        &&& self.ptr()@.addr != 0
+        &&& self.ptr()@.addr as int % vstd::layout::align_of::<T>() as int == 0
+    }
+
+    pub open spec fn ptr(self) -> *const T {
+        arc_pointer_spec(*self.deref_as_arc_spec())
+    }
+    
+    pub closed spec fn deref_as_arc_spec(&self) -> &Arc<T> {
+        manually_drop_deref_spec(&self.inner)
+    }
+
+    /// A workaround that Verus does not support implementing spec for Deref trait yet.
+    pub broadcast axiom fn arcref_deref_spec_eq(self)
+        ensures
+            #[trigger] self.deref_as_arc_spec() == #[trigger] self.deref_spec(),
+    ;
+}
+
+#[verus_verify]
 impl<T> Deref for ArcRef<'_, T> {
     type Target = Arc<T>;
 
+    #[verus_verify]
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
+/* 
 impl<'a, T> ArcRef<'a, T> {
     /// Dereferences `self` to get a reference to `T` with the lifetime `'a`.
     pub fn deref_target(&self) -> &'a T {
@@ -313,6 +362,26 @@ unsafe impl<T: 'static> NonNullPtr for Arc<T> {
     open spec fn match_points_to_type(perm: SmartPtrPointsTo<Self::Target>) -> bool {
         perm is Arc
     }
+
+    open spec fn ptr_mut_spec(self) -> *mut Self::Target {
+        arc_pointer_spec(self) as *mut Self::Target
+    }
+}
+
+pub fn arc_ref_as_raw<T: 'static>(ptr_ref: ArcRef<'_ ,T>) -> (ret:(NonNull<T>, Tracked<ArcPointsTo<T>>)) 
+    ensures
+        ret.0 == nonnull_from_ptr_mut(ptr_ref.ptr() as *mut T),
+        ret.1@.ptr().addr() != 0,
+        ret.1@.ptr().addr() as int % vstd::layout::align_of::<T>() as int == 0,
+        ret.1@.ptr() == ptr_mut_from_nonull(ret.0),
+        ret.1@.inv(),
+{
+    proof!{
+        use_type_invariant(&ptr_ref);
+    }
+    // NonNullPtr::into_raw(ManuallyDrop::into_inner(ptr_ref.inner))
+    let (ptr, Tracked(perm)) = NonNullPtr::into_raw(ManuallyDrop::into_inner(ptr_ref.inner));
+    (ptr, Tracked(perm.get_arc_points_to()))
 }
 
 /* 
