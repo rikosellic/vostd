@@ -11,6 +11,7 @@ verus! {
 ///
 /// In modern Iris, it uses CMRA instead of PCM, which uses a core for every element instead of a unit element.
 /// Here we add a unit element to stick to the PCM definition.
+#[verifier::ext_equal]
 pub tracked enum Agree<A> {
     Unit,
     /// Agreement on a value.
