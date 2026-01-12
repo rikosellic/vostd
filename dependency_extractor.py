@@ -1,250 +1,354 @@
 #!/usr/bin/env python3
 """
-依赖关系提取器（简化版）
-从Verus验证日志中提取给定函数的所有依赖项
-单一crate版本
+dependency_extractor.py
+
+Extract Rust path dependencies for a given function by analyzing VIR files
+in `.verus-log` directory. Looks for call graphs, function dependencies,
+and type information from Verus verification intermediate representation.
+
+Usage:
+    python dependency_extractor.py vostd::ostd::mm::frame::linked_list::LinkedList::push_front
+
+Output: prints dependencies found in VIR files (functions, types, traits, impls)
 """
-
-import re
 import sys
-from pathlib import Path
-from typing import Set, List
+import os
+import re
+import json
+from collections import defaultdict, deque
 
+ROOT = os.path.abspath(os.path.dirname(__file__))
+VERUS_LOG_DIR = os.path.join(ROOT, ".verus-log")
 
-class DependencyExtractor:
-    def __init__(self, verus_log_dir: str = ".verus-log"):
-        self.verus_log_dir = Path(verus_log_dir)
-        self.vir_files: List[Path] = []
-        
-        # 扫描所有验证文件
-        self._scan_vir_files()
+def walk_vir_files(root):
+    """Walk through all files in .verus-log directory"""
+    for dirpath, dirs, files in os.walk(root):
+        for f in files:
+            path = os.path.join(dirpath, f)
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                    yield path, fh.read()
+            except OSError:
+                continue
+
+def parse_vir_dependencies(text, target_function):
+    """Parse VIR files for type and function dependencies"""
+    dependencies = set()
     
-    def _scan_vir_files(self):
-        """扫描.verus-log目录下所有的poly.vir文件"""
-        if not self.verus_log_dir.exists():
-            print(f"错误：目录 {self.verus_log_dir} 不存在")
-            return
-        
-        self.vir_files = list(self.verus_log_dir.glob("**/*-poly.vir"))
-        print(f"发现 {len(self.vir_files)} 个验证文件", file=sys.stderr)
+    # VIR contains structured info like:
+    # :typ (Typ Datatype (Dt Path "lib!aster_common.mm.frame.LinkedList.") 
+    dt_paths = re.findall(r'Dt Path "([^"]*)"', text)
+    for path in dt_paths:
+        # Convert lib!path.to.Type. format to path::to::Type
+        clean_path = path.replace('!', '::').replace('.', '').rstrip(':')
+        if clean_path and clean_path != "lib":
+            dependencies.add(clean_path)
     
-    def _normalize_path(self, path: str) -> str:
-        """
-        将验证文件中的路径标准化为模块路径
-        
-        参数:
-            path: 验证文件中的路径（如 "lib!mm.frame.linked_list.LinkedList."）
-        
-        返回:
-            标准化的路径（如 "mm::frame::linked_list::LinkedList"），或None如果应该过滤
-        """
-        # 移除尾部的点
-        path = path.rstrip('.')
-        
-        # 过滤掉匿名impl块和其他自动生成的项目
-        if 'impl&%' in path or 'anonymous_closure' in path or 'verus_builtin' in path:
-            return None
-        
-        # 移除lib!前缀（表示当前crate）
-        if path.startswith("lib!"):
-            path = path[4:]
-        # 过滤标准库
-        elif path.startswith(('vstd!', 'core!', 'alloc!', 'std!')):
-            return None
-        
-        # 将点号替换为::
-        return path.replace('.', '::')
-    
-    def _extract_function_module_path(self, function_path: str) -> tuple:
-        """
-        从函数路径中提取模块路径和函数名
-        
-        参数:
-            function_path: 如 "mm::frame::linked_list::LinkedList::push_front"
-        
-        返回:
-            (module_path, function_name)
-        """
-        parts = function_path.split("::")
-        
-        if len(parts) < 2:
-            raise ValueError(f"无效的函数路径: {function_path}")
-        
-        # 最后一个或两个部分是函数名
-        if len(parts) >= 3:
-            module_parts = parts[:-2]
-            type_and_func = parts[-2:]
-            module_path = '.'.join(module_parts)
-            function_name = '::'.join(type_and_func)
-        else:
-            module_path = ""
-            function_name = parts[-1]
-        
-        return module_path, function_name
-    
-    def _find_module_files(self, module_path: str) -> List[Path]:
-        """
-        查找包含指定模块的验证文件
-        
-        参数:
-            module_path: 模块路径，用点分隔（如 "mm.frame.linked_list"）
-        
-        返回:
-            匹配的文件路径列表
-        """
-        if not module_path:
-            # 如果没有模块路径，返回所有文件
-            return self.vir_files
-        
-        # 将模块路径转换为文件名模式
-        file_pattern = module_path.replace('.', '__')
-        
-        matching_files = []
-        for vir_file in self.vir_files:
-            if file_pattern in vir_file.stem:
-                matching_files.append(vir_file)
-        
-        return matching_files
-    
-    def _parse_vir_file(self, vir_file: Path) -> Set[str]:
-        """
-        解析VIR文件，提取所有依赖的类型和函数
-        
-        参数:
-            vir_file: VIR文件路径
-        
-        返回:
-            依赖项集合
-        """
-        dependencies = set()
-        
-        try:
-            with open(vir_file, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
+    # Look for trait implementations
+    impl_paths = re.findall(r'ImplPath.*?"([^"]*)"', text) 
+    for path in impl_paths:
+        clean_path = path.replace('!', '::').replace('.', '').rstrip(':')
+        if clean_path:
+            dependencies.add(clean_path)
             
-            # 提取所有路径引用
-            # 匹配格式: (Dt Path "lib!mm.frame.linked_list.LinkedList.")
-            path_pattern = r'\(Dt Path "([^"]+)"\)'
-            for match in re.finditer(path_pattern, content):
-                path = match.group(1)
-                normalized = self._normalize_path(path)
-                if normalized:
-                    dependencies.add(normalized)
+    # Look for function calls in VIR
+    fun_paths = re.findall(r'Fun :path "([^"]*)"', text)
+    for path in fun_paths:
+        clean_path = path.replace('!', '::').replace('.', '').rstrip(':')
+        if clean_path:
+            dependencies.add(clean_path)
+    
+    return dependencies
+
+def parse_air_dependencies(text, target_function):
+    """Parse AIR/SMT files for function calls and type dependencies"""
+    dependencies = set()
+    
+    # AIR contains function declarations and calls
+    # Look for declare-fun and function applications
+    declare_funs = re.findall(r'declare-fun\s+[^%]*%([^%\s\)]+)', text)
+    for fun in declare_funs:
+        clean_path = fun.replace('!', '::').replace('.', '').rstrip(':')
+        if clean_path and '::' in clean_path:
+            dependencies.add(clean_path)
+    
+    # Look for function calls/applications
+    apply_funs = re.findall(r'%%apply%%.*?([a-zA-Z_][a-zA-Z0-9_]*(?:::[a-zA-Z_][a-zA-Z0-9_]*)+)', text)
+    for fun in apply_funs:
+        if fun:
+            dependencies.add(fun)
             
-            # 提取trait引用
-            # 匹配格式: (TraitId Path "lib!cast_ptr.Repr.")
-            trait_pattern = r'\(TraitId Path "([^"]+)"\)'
-            for match in re.finditer(trait_pattern, content):
-                path = match.group(1)
-                normalized = self._normalize_path(path)
-                if normalized:
-                    dependencies.add(normalized)
+    return dependencies
+
+def parse_type_definitions(text):
+    """Parse VIR text to find type definitions"""
+    type_defs = {}
+    lines = text.splitlines()
+    
+    for line in lines:
+        # Look for struct definitions
+        struct_match = re.search(r'struct\s+([A-Za-z_][A-Za-z0-9_]*)', line)
+        if struct_match:
+            type_defs[struct_match.group(1)] = 'struct'
             
-            # 提取函数调用
-            # 匹配格式: (FunId Path "lib!mm.frame.linked_list.LinkedList.push_front.")
-            fn_pattern = r'\(FunId Path "([^"]+)"\)'
-            for match in re.finditer(fn_pattern, content):
-                path = match.group(1)
-                normalized = self._normalize_path(path)
-                if normalized:
-                    dependencies.add(normalized)
+        # Look for enum definitions  
+        enum_match = re.search(r'enum\s+([A-Za-z_][A-Za-z0-9_]*)', line)
+        if enum_match:
+            type_defs[enum_match.group(1)] = 'enum'
+            
+        # Look for type aliases
+        type_match = re.search(r'type\s+([A-Za-z_][A-Za-z0-9_]*)', line)
+        if type_match:
+            type_defs[type_match.group(1)] = 'type'
+    
+    return type_defs
+
+def resolve_dependencies_recursive(target, all_files):
+    """Recursively resolve all dependencies from multiple file types"""
+    seen = set()
+    queue = deque([target])
+    all_dependencies = set()
+    
+    while queue:
+        current = queue.popleft()
+        if current in seen:
+            continue
+        seen.add(current)
+        
+        # Search for this function/type in all files
+        for file_path, content in all_files:
+            deps = set()
+            
+            if file_path.endswith('.vir'):
+                deps = parse_vir_dependencies(content, current)
+            elif file_path.endswith(('.air', '.smt2')):
+                deps = parse_air_dependencies(content, current)
+            
+            for dep in deps:
+                if dep not in seen and len(dep) > 3:  # Filter out very short names
+                    queue.append(dep)
+                    all_dependencies.add(dep)
+    
+    return sorted(all_dependencies)
+
+def parse_function_definition(content, target_function):
+    """Parse specific function definition from VIR content"""
+    function_pattern = re.compile(
+        r'\(Function\s+:name\s+\(Fun\s+:path\s+"([^"]+)"\)', 
+        re.MULTILINE | re.DOTALL
+    )
+    
+    matches = function_pattern.finditer(content)
+    
+    # Convert target function to match VIR format
+    # vostd::ostd::mm::frame::linked_list::LinkedList::push_front
+    # becomes lib!ostd.mm.frame.linked_list.impl&%0.push_front.
+    target_parts = target_function.split('::')
+    if len(target_parts) >= 4:
+        # Extract the function name
+        func_name = target_parts[-1]  # push_front
+        # Build the expected pattern
+        expected_patterns = [
+            f"lib!{'.'.join(target_parts[1:-2])}.impl&%0.{func_name}.",
+            f"lib!{'.'.join(target_parts[1:-2])}.impl&%0._VERUS_VERIFIED_{func_name}.",
+            f"lib!{'.'.join(target_parts[1:])}.{func_name}."
+        ]
+    else:
+        return None, None
+    
+    for match in matches:
+        fun_path = match.group(1)
+        # Check if this matches any of our expected patterns
+        for pattern in expected_patterns:
+            if pattern in fun_path:
+                # Found our function, now extract its complete definition
+                start_pos = match.start()
                 
-        except Exception as e:
-            print(f"警告：解析文件 {vir_file} 时出错: {e}", file=sys.stderr)
-        
+                # Find the complete function definition by counting parentheses
+                paren_count = 0
+                pos = start_pos
+                in_function = False
+                
+                while pos < len(content):
+                    char = content[pos]
+                    if char == '(':
+                        paren_count += 1
+                        in_function = True
+                    elif char == ')':
+                        paren_count -= 1
+                        if in_function and paren_count == 0:
+                            # Found the end of function definition
+                            return content[start_pos:pos+1], fun_path
+                    pos += 1
+    
+    return None, None
+
+def extract_dependencies_from_function_def(function_def):
+    """Extract dependencies from a specific function definition"""
+    dependencies = set()
+    
+    if not function_def:
         return dependencies
     
-    def extract_dependencies(self, function_path: str, max_depth: int = 5) -> Set[str]:
-        """
-        提取给定函数的所有依赖项
-        
-        参数:
-            function_path: 函数的完整路径（如 "mm::frame::linked_list::LinkedList::push_front"）
-            max_depth: 最大递归深度
-        
-        返回:
-            所有依赖项的集合
-        """
-        # 解析函数路径
-        module_path, function_name = self._extract_function_module_path(function_path)
-        
-        print(f"\n分析函数: {function_path}", file=sys.stderr)
-        print(f"  模块: {module_path}", file=sys.stderr)
-        print(f"  函数: {function_name}", file=sys.stderr)
-        
-        # 查找相关的验证文件
-        module_files = self._find_module_files(module_path)
-        
-        if not module_files:
-            print(f"警告：未找到模块 {module_path} 的验证文件", file=sys.stderr)
-            return set()
-        
-        print(f"\n找到 {len(module_files)} 个相关文件", file=sys.stderr)
-        
-        # 用于追踪已处理的依赖，避免重复处理
-        processed = set()
-        to_process = set()
-        all_dependencies = set()
-        
-        # 首先处理主模块文件
-        for vir_file in module_files:
-            deps = self._parse_vir_file(vir_file)
-            all_dependencies.update(deps)
-            to_process.update(deps)
-        
-        # 递归处理依赖
-        depth = 0
-        while to_process and depth < max_depth:
-            depth += 1
-            print(f"深度 {depth}: 处理 {len(to_process)} 个依赖项...", file=sys.stderr)
-            
-            current_batch = to_process - processed
-            to_process = set()
-            
-            for dep in current_batch:
-                processed.add(dep)
-                
-                # 从路径中提取模块部分
-                dep_parts = dep.split("::")
-                if len(dep_parts) >= 2:
-                    # 假设最后一个是类型/函数名
-                    dep_module = '.'.join(dep_parts[:-1])
-                    dep_files = self._find_module_files(dep_module)
-                    
-                    for vir_file in dep_files:
-                        new_deps = self._parse_vir_file(vir_file)
-                        new_deps = new_deps - processed
-                        all_dependencies.update(new_deps)
-                        to_process.update(new_deps)
-        
-        return all_dependencies
+    # Extract type paths from the function definition
+    # Look for (Dt Path "lib!...") patterns
+    dt_paths = re.findall(r'Dt\s+Path\s+"([^"]+)"', function_def)
+    for path in dt_paths:
+        if path.startswith('lib!'):
+            clean = path[4:].replace('.', '::').rstrip(':')
+            if clean and '::' in clean:
+                dependencies.add('lib::' + clean)
     
-    def print_dependencies(self, dependencies: Set[str]):
-        """打印依赖项，排序输出"""
-        print("\n" + "="*80)
-        print("依赖项列表")
-        print("="*80 + "\n")
-        
-        for dep in sorted(dependencies):
-            print(f"  {dep}")
-        
-        print(f"\n总计: {len(dependencies)} 个依赖项")
-        print("="*80)
+    # Look for TraitId Path patterns
+    trait_paths = re.findall(r'TraitId\s+Path\s+"([^"]+)"', function_def)
+    for path in trait_paths:
+        if path.startswith('lib!'):
+            clean = path[4:].replace('.', '::').rstrip(':')
+            if clean and '::' in clean:
+                dependencies.add('lib::' + clean)
+    
+    # Look for ImplPath patterns
+    impl_paths = re.findall(r'ImplPath\s+[^"]*"([^"]+)"', function_def)
+    for path in impl_paths:
+        if path.startswith('lib!'):
+            clean = path[4:].replace('.', '::').rstrip(':')
+            if clean and '::' in clean:
+                dependencies.add('lib::' + clean)
+    
+    # Look for function calls in :body if present
+    fun_calls = re.findall(r'Fun\s+:path\s+"([^"]+)"', function_def)
+    for path in fun_calls:
+        if path.startswith('lib!'):
+            clean = path[4:].replace('.', '::').rstrip(':')
+            if clean and '::' in clean:
+                dependencies.add('lib::' + clean)
+    
+    return dependencies
 
+def resolve_transitive_dependencies(dependencies, content):
+    """Resolve transitive dependencies by following type and trait definitions"""
+    all_deps = set(dependencies)
+    queue = deque(dependencies)
+    seen = set()
+    
+    while queue:
+        current = queue.popleft()
+        if current in seen:
+            continue
+        seen.add(current)
+        
+        # Convert back to VIR format for searching
+        vir_path = current.replace('lib::', 'lib!').replace('::', '.') + '.'
+        
+        # Find definitions of this type/trait in the content
+        patterns = [
+            rf'Datatype\s+:name\s+\(Dt\s+Path\s+"{re.escape(vir_path)}"',
+            rf'Trait\s+:name\s+\(TraitPath\s+"{re.escape(vir_path)}"',
+            rf'Function\s+:name\s+\(Fun\s+:path\s+"{re.escape(vir_path)}'
+        ]
+        
+        for pattern in patterns:
+            matches = re.finditer(pattern, content, re.MULTILINE)
+            for match in matches:
+                # Extract definition by finding matching parentheses
+                start_pos = match.start()
+                paren_count = 0
+                pos = start_pos
+                
+                while pos < len(content):
+                    char = content[pos]
+                    if char == '(':
+                        paren_count += 1
+                    elif char == ')':
+                        paren_count -= 1
+                        if paren_count == 0:
+                            definition = content[start_pos:pos+1]
+                            # Extract dependencies from this definition
+                            new_deps = extract_dependencies_from_function_def(definition)
+                            for dep in new_deps:
+                                if dep not in all_deps:
+                                    all_deps.add(dep)
+                                    queue.append(dep)
+                            break
+                    pos += 1
+    
+    return sorted(all_deps)
+
+def extract_dependencies_precise(target_function):
+    """Precise dependency extraction for a specific function"""
+    dependencies = set()
+    
+    # Convert target to find matching VIR file
+    target_parts = target_function.split('::')
+    if len(target_parts) >= 4:
+        module_file = '__'.join(target_parts[1:-2]) + '-poly.vir'
+        file_path = os.path.join(VERUS_LOG_DIR, 'vostd', module_file)
+        
+        if os.path.exists(file_path):
+            print(f"Reading {file_path}")
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+                
+                # Find the specific function definition
+                function_def, found_path = parse_function_definition(content, target_function)
+                
+                if function_def:
+                    print(f"Found function definition: {found_path}")
+                    # Extract dependencies only from this function
+                    dependencies = extract_dependencies_from_function_def(function_def)
+                    print(f"Found {len(dependencies)} direct dependencies")
+                    
+                    # Also check for _VERUS_VERIFIED_ version
+                    verified_target = target_function.replace('::', '.') + '.'
+                    verified_pattern = verified_target.replace('.', '\\._VERUS_VERIFIED_')
+                    verified_matches = re.finditer(
+                        rf'Fun\s+:path\s+"[^"]*{re.escape("_VERUS_VERIFIED_")}[^"]*{re.escape(target_parts[-1])}\."',
+                        content
+                    )
+                    
+                    for match in verified_matches:
+                        verified_def, verified_path = parse_function_definition(
+                            content[match.start()-1000:match.end()+5000], 
+                            target_function
+                        )
+                        if verified_def:
+                            print(f"Found verified version: {verified_path}")
+                            verified_deps = extract_dependencies_from_function_def(verified_def)
+                            dependencies.update(verified_deps)
+                            
+                    # Resolve transitive dependencies
+                    print("Resolving transitive dependencies...")
+                    all_dependencies = resolve_transitive_dependencies(dependencies, content)
+                    return all_dependencies
+                else:
+                    print(f"Function {target_function} not found in VIR file")
+                    
+            except Exception as e:
+                print(f"Error reading {file_path}: {e}")
+        else:
+            print(f"VIR file not found: {file_path}")
+    
+    return dependencies
 
 def main():
     if len(sys.argv) < 2:
-        print("用法: python dependency_extractor.py <函数路径> [最大深度]")
-        print("示例: python dependency_extractor.py mm::frame::linked_list::LinkedList::push_front")
+        print("Usage: python dependency_extractor.py <fully::qualified::path>")
+        sys.exit(2)
+    target = sys.argv[1]
+
+    if not os.path.isdir(VERUS_LOG_DIR):
+        print(f"Error: {VERUS_LOG_DIR} does not exist. Run Verus verification first.")
         sys.exit(1)
-    
-    function_path = sys.argv[1]
-    max_depth = int(sys.argv[2]) if len(sys.argv) > 2 else 5
-    
-    extractor = DependencyExtractor()
-    dependencies = extractor.extract_dependencies(function_path, max_depth)
-    extractor.print_dependencies(dependencies)
 
+    # Precise extraction from target function's VIR file
+    dependencies = extract_dependencies_precise(target)
+    
+    print(f"\nDependencies for {target}:")
+    for dep in sorted(dependencies):
+        print(dep)
+    
+    print(f"\nTotal: {len(dependencies)} dependencies found")
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

@@ -8,7 +8,7 @@ use crate::vstd_extra::ownership::*;
 use crate::aster_common::prelude::frame::*;
 use crate::aster_common::prelude::*;
 
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 verus! {
 

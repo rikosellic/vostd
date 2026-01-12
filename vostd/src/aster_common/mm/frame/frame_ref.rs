@@ -1,6 +1,6 @@
 use vstd::prelude::*;
 
-use std::ops::Deref;
+use core::ops::Deref;
 
 use core::mem::ManuallyDrop;
 

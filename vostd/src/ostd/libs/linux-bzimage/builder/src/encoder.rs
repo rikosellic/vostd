@@ -2,7 +2,7 @@
 
 //! This module is used to compress kernel ELF.
 
-use std::{
+use core::{
     ffi::{OsStr, OsString},
     io::Write,
     str::FromStr,

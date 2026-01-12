@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::{path::PathBuf, process::Command};
+use core::{path::PathBuf, process::Command};
 
 fn main() {
     let source_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());

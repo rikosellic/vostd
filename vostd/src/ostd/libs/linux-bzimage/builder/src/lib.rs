@@ -17,7 +17,7 @@ pub mod encoder;
 mod mapping;
 mod pe_header;
 
-use std::{
+use core::{
     fs::File,
     io::{Read, Seek, SeekFrom, Write},
     path::Path,

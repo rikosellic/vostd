@@ -8,7 +8,7 @@ use crate::aster_common::frame::{UFrame, Frame, AnyFrameMeta};
 
 use core::ops::Range;
 
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 verus! {
 

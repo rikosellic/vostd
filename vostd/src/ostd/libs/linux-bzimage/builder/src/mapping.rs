@@ -5,7 +5,7 @@
 //!
 //! This module centralizes the conversion between VA and FileOffset.
 
-use std::{
+use core::{
     cmp::PartialOrd,
     convert::From,
     ops::{Add, Sub},
