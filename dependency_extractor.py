@@ -231,46 +231,11 @@ class VIRAnalyzer:
     
     def _infer_type_from_context(self, func_path, params):
         """Infer the type that an impl&%N refers to from function context"""
-        # Method 1: Extract from the module path and function context
-        # lib!ostd.mm.frame.linked_list.impl&%0.push_front -> LinkedList
-        # lib!aster_common.mm.frame.linked_list_owners.impl&%14.front_owner -> CursorOwner (based on function name)
+        # This is a fallback method when source code analysis fails
+        # Try to extract basic type info from the module path
         parts = func_path.split('.')
         if len(parts) >= 3:
             module_part = parts[-3]  # Get the part before impl&%N
-            func_name = parts[-1] if len(parts) > 1 else ""
-            
-            # Special mapping logic based on module and function patterns
-            if 'linked_list' in module_part:
-                if 'owners' in module_part:
-                    # This is in linked_list_owners module
-                    if any(name in func_name.lower() for name in ['front_owner', 'back_owner', 'length', 'current']):
-                        return 'CursorOwner'
-                    elif any(name in func_name.lower() for name in ['view_helper', 'view_preserves_len', 'inv_at']):
-                        return 'LinkedListOwner'
-                    elif 'frame_link_inv' in func_name:
-                        return 'UniqueFrameOwner'
-                    else:
-                        return 'LinkedListOwner'  # Default for owners module
-                else:
-                    # This is in linked_list module
-                    if any(name in func_name.lower() for name in ['move_next', 'move_prev', 'insert_before', 'take_current']):
-                        return 'CursorMut'
-                    else:
-                        return 'LinkedList'  # Default for main module
-            
-            elif 'unique' in module_part:
-                return 'UniqueFrameOwner'
-            elif 'meta_region_owners' in module_part:
-                return 'MetaRegionOwners'
-            elif 'meta_owners' in module_part:
-                return 'MetaSlotOwner'
-            elif 'cast_ptr' in module_part:
-                if any(name in func_name.lower() for name in ['addr', 'borrow', 'put', 'take', 'addr_spec']):
-                    return 'ReprPtr'
-                elif any(name in func_name.lower() for name in ['is_init', 'mem_contents', 'pptr', 'value', 'wf']):
-                    return 'PointsTo'
-                else:
-                    return 'Repr'
             
             # Generic fallback: convert snake_case to PascalCase
             if '_' in module_part:
