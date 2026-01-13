@@ -543,7 +543,6 @@ class DependencyExtractor:
         
         # 1. Find all relevant VIR files
         vir_files = self.find_relevant_vir_files(target_function)
-        print(f"Found {len(vir_files)} relevant VIR files")
         
         # 2. Analyze all VIR files to build type mappings and function definitions
         for vir_file in vir_files:
@@ -551,11 +550,6 @@ class DependencyExtractor:
         
         # 3. Check AIR/SMT2 files for additional info
         air_info = self.check_air_smt_files(target_function)
-        if air_info:
-            print(f"Found {len(air_info)} AIR/SMT2 files:")
-            for file_path, info in air_info.items():
-                if 'error' not in info:
-                    print(f"  {os.path.basename(file_path)}: {info['functions']} functions, {info['size']} bytes")
         
         # 4. Find the target function and extract its dependencies
         dependencies = set()
@@ -564,8 +558,6 @@ class DependencyExtractor:
         # Look for exact matches and VERUS_VERIFIED versions
         for func_path, func_info in self.analyzer.function_defs.items():
             if self._matches_target(func_path, func_info['raw_path'], target_function):
-                print(f"Found target function: {func_path}")
-                print(f"VIR path: {func_info['raw_path']}")
                 
                 # Extract dependencies from function body
                 body_deps = self.analyzer.extract_dependencies_from_body(func_info['body'])
@@ -590,7 +582,6 @@ class DependencyExtractor:
         # 6. Resolve transitive dependencies
         all_dependencies = self._resolve_transitive_dependencies(resolved_dependencies)
         
-        print(f"Found {len(dependencies)} direct dependencies, {len(all_dependencies)} total")
         return all_dependencies
     
     def _convert_target_to_vir_format(self, target_function):
@@ -663,18 +654,6 @@ def main():
     
     print(f"Analyzing dependencies for: {target}")
     print("=" * 60)
-    
-    # Test source code analysis on a known file first
-    print("Testing source code analysis...")
-    source_analyzer = extractor.analyzer.source_analyzer
-    source_file = Path('vostd/src/aster_common/mm/frame/unique.rs')
-    
-    if source_file.exists():
-        mappings = source_analyzer.analyze_source_file(source_file)
-        print(f"Found {len(mappings)} impl blocks in {source_file}:")
-        for impl_index, type_name in mappings.items():
-            print(f"  impl&%{impl_index} -> {type_name}")
-        print()
     
     dependencies = extractor.extract_dependencies(target)
     
