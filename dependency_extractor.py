@@ -2,350 +2,684 @@
 """
 dependency_extractor.py
 
-Extract Rust path dependencies for a given function by analyzing VIR files
-in `.verus-log` directory. Looks for call graphs, function dependencies,
-and type information from Verus verification intermediate representation.
+Extract Rust path dependencies for a given function by analyzing structured VIR files
+in `.verus-log` directory. Properly parses S-expressions to extract type mappings,
+impl relationships, and cross-module dependencies.
 
 Usage:
     python dependency_extractor.py vostd::ostd::mm::frame::linked_list::LinkedList::push_front
 
-Output: prints dependencies found in VIR files (functions, types, traits, impls)
+Output: prints dependencies found with accurate type information from VIR parsing
 """
 import sys
 import os
 import re
 import json
 from collections import defaultdict, deque
+from pathlib import Path
 
 ROOT = os.path.abspath(os.path.dirname(__file__))
 VERUS_LOG_DIR = os.path.join(ROOT, ".verus-log")
 
-def walk_vir_files(root):
-    """Walk through all files in .verus-log directory"""
-    for dirpath, dirs, files in os.walk(root):
-        for f in files:
-            path = os.path.join(dirpath, f)
-            try:
-                with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-                    yield path, fh.read()
-            except OSError:
-                continue
-
-def parse_vir_dependencies(text, target_function):
-    """Parse VIR files for type and function dependencies"""
-    dependencies = set()
+class SExprParser:
+    """Simple S-expression parser for VIR files"""
     
-    # VIR contains structured info like:
-    # :typ (Typ Datatype (Dt Path "lib!aster_common.mm.frame.LinkedList.") 
-    dt_paths = re.findall(r'Dt Path "([^"]*)"', text)
-    for path in dt_paths:
-        # Convert lib!path.to.Type. format to path::to::Type
-        clean_path = path.replace('!', '::').replace('.', '').rstrip(':')
-        if clean_path and clean_path != "lib":
-            dependencies.add(clean_path)
+    def __init__(self, text):
+        self.text = text
+        self.pos = 0
+        self.length = len(text)
     
-    # Look for trait implementations
-    impl_paths = re.findall(r'ImplPath.*?"([^"]*)"', text) 
-    for path in impl_paths:
-        clean_path = path.replace('!', '::').replace('.', '').rstrip(':')
-        if clean_path:
-            dependencies.add(clean_path)
-            
-    # Look for function calls in VIR
-    fun_paths = re.findall(r'Fun :path "([^"]*)"', text)
-    for path in fun_paths:
-        clean_path = path.replace('!', '::').replace('.', '').rstrip(':')
-        if clean_path:
-            dependencies.add(clean_path)
+    def skip_whitespace(self):
+        while self.pos < self.length and self.text[self.pos].isspace():
+            self.pos += 1
     
-    return dependencies
-
-def parse_air_dependencies(text, target_function):
-    """Parse AIR/SMT files for function calls and type dependencies"""
-    dependencies = set()
+    def parse_string(self):
+        """Parse quoted string"""
+        if self.pos >= self.length or self.text[self.pos] != '"':
+            return None
+        self.pos += 1  # skip opening quote
+        start = self.pos
+        while self.pos < self.length and self.text[self.pos] != '"':
+            if self.text[self.pos] == '\\':
+                self.pos += 1  # skip escape character
+            self.pos += 1
+        result = self.text[start:self.pos]
+        self.pos += 1  # skip closing quote
+        return result
     
-    # AIR contains function declarations and calls
-    # Look for declare-fun and function applications
-    declare_funs = re.findall(r'declare-fun\s+[^%]*%([^%\s\)]+)', text)
-    for fun in declare_funs:
-        clean_path = fun.replace('!', '::').replace('.', '').rstrip(':')
-        if clean_path and '::' in clean_path:
-            dependencies.add(clean_path)
+    def parse_symbol(self):
+        """Parse unquoted symbol"""
+        start = self.pos
+        while (self.pos < self.length and 
+               not self.text[self.pos].isspace() and 
+               self.text[self.pos] not in '()'):
+            self.pos += 1
+        return self.text[start:self.pos]
     
-    # Look for function calls/applications
-    apply_funs = re.findall(r'%%apply%%.*?([a-zA-Z_][a-zA-Z0-9_]*(?:::[a-zA-Z_][a-zA-Z0-9_]*)+)', text)
-    for fun in apply_funs:
-        if fun:
-            dependencies.add(fun)
-            
-    return dependencies
-
-def parse_type_definitions(text):
-    """Parse VIR text to find type definitions"""
-    type_defs = {}
-    lines = text.splitlines()
-    
-    for line in lines:
-        # Look for struct definitions
-        struct_match = re.search(r'struct\s+([A-Za-z_][A-Za-z0-9_]*)', line)
-        if struct_match:
-            type_defs[struct_match.group(1)] = 'struct'
-            
-        # Look for enum definitions  
-        enum_match = re.search(r'enum\s+([A-Za-z_][A-Za-z0-9_]*)', line)
-        if enum_match:
-            type_defs[enum_match.group(1)] = 'enum'
-            
-        # Look for type aliases
-        type_match = re.search(r'type\s+([A-Za-z_][A-Za-z0-9_]*)', line)
-        if type_match:
-            type_defs[type_match.group(1)] = 'type'
-    
-    return type_defs
-
-def resolve_dependencies_recursive(target, all_files):
-    """Recursively resolve all dependencies from multiple file types"""
-    seen = set()
-    queue = deque([target])
-    all_dependencies = set()
-    
-    while queue:
-        current = queue.popleft()
-        if current in seen:
-            continue
-        seen.add(current)
+    def parse_list(self):
+        """Parse S-expression list"""
+        if self.pos >= self.length or self.text[self.pos] != '(':
+            return None
+        self.pos += 1  # skip opening paren
+        result = []
         
-        # Search for this function/type in all files
-        for file_path, content in all_files:
-            deps = set()
-            
-            if file_path.endswith('.vir'):
-                deps = parse_vir_dependencies(content, current)
-            elif file_path.endswith(('.air', '.smt2')):
-                deps = parse_air_dependencies(content, current)
-            
-            for dep in deps:
-                if dep not in seen and len(dep) > 3:  # Filter out very short names
-                    queue.append(dep)
-                    all_dependencies.add(dep)
+        while self.pos < self.length:
+            self.skip_whitespace()
+            if self.pos >= self.length:
+                break
+            if self.text[self.pos] == ')':
+                self.pos += 1  # skip closing paren
+                return result
+            elif self.text[self.pos] == '(':
+                result.append(self.parse_list())
+            elif self.text[self.pos] == '"':
+                result.append(self.parse_string())
+            else:
+                result.append(self.parse_symbol())
+        
+        return result
     
-    return sorted(all_dependencies)
+    def parse(self):
+        """Parse the entire expression"""
+        self.skip_whitespace()
+        if self.pos < self.length and self.text[self.pos] == '(':
+            return self.parse_list()
+        elif self.pos < self.length and self.text[self.pos] == '"':
+            return self.parse_string()
+        else:
+            return self.parse_symbol()
 
-def parse_function_definition(content, target_function):
-    """Parse specific function definition from VIR content"""
-    function_pattern = re.compile(
-        r'\(Function\s+:name\s+\(Fun\s+:path\s+"([^"]+)"\)', 
-        re.MULTILINE | re.DOTALL
-    )
+class SourceCodeAnalyzer:
+    """Analyze source code to map impl&%N to actual types"""
     
-    matches = function_pattern.finditer(content)
+    def __init__(self):
+        self.impl_mappings = {}  # file_path -> {impl_index -> type_info}
     
-    # Convert target function to match VIR format
-    # vostd::ostd::mm::frame::linked_list::LinkedList::push_front
-    # becomes lib!ostd.mm.frame.linked_list.impl&%0.push_front.
-    target_parts = target_function.split('::')
-    if len(target_parts) >= 4:
-        # Extract the function name
-        func_name = target_parts[-1]  # push_front
-        # Build the expected pattern
-        expected_patterns = [
-            f"lib!{'.'.join(target_parts[1:-2])}.impl&%0.{func_name}.",
-            f"lib!{'.'.join(target_parts[1:-2])}.impl&%0._VERUS_VERIFIED_{func_name}.",
-            f"lib!{'.'.join(target_parts[1:])}.{func_name}."
-        ]
-    else:
-        return None, None
+    def analyze_source_file(self, file_path):
+        """Parse source file and extract impl blocks with their types"""
+        if file_path in self.impl_mappings:
+            return self.impl_mappings[file_path]
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            mappings = {}
+            # Simple pattern - just find lines starting with impl
+            impl_pattern = r'^\s*impl\b'
+            
+            impl_index = 0
+            for line in content.split('\n'):
+                if re.match(impl_pattern, line):
+                    impl_line = line.strip()
+                    
+                    # 两种impl模式:
+                    # 1. impl Trait for Type -> Type是我们要的类型
+                    # 2. impl Type -> Type是我们要的类型
+                    type_name = "Unknown"
+                    
+                    if ' for ' in impl_line:
+                        # Pattern 1: impl ... for TypeName
+                        for_match = re.search(r'\bfor\s+([A-Z][A-Za-z0-9_]*)', impl_line)
+                        if for_match:
+                            type_name = for_match.group(1)
+                    else:
+                        # Pattern 2: impl TypeName (没有for的情况)
+                        # 移除impl和泛型约束，然后提取类型名
+                        impl_part = re.sub(r'^\s*impl\s*', '', impl_line)  # 移除开头的impl
+                        
+                        # 如果有泛型约束<...>，移除它
+                        if impl_part.startswith('<'):
+                            # 找到匹配的>，考虑嵌套
+                            bracket_count = 0
+                            i = 0
+                            for i, char in enumerate(impl_part):
+                                if char == '<':
+                                    bracket_count += 1
+                                elif char == '>':
+                                    bracket_count -= 1
+                                    if bracket_count == 0:
+                                        break
+                            
+                            if bracket_count == 0:
+                                impl_part = impl_part[i+1:].strip()
+                        
+                        # 从剩余部分提取第一个类型名
+                        type_match = re.match(r'\s*([A-Z][A-Za-z0-9_]*)', impl_part)
+                        if type_match:
+                            type_name = type_match.group(1)
+                    
+                    mappings[impl_index] = type_name
+                    impl_index += 1
+            
+            self.impl_mappings[file_path] = mappings
+            return mappings
+            
+        except Exception:
+            return {}
     
-    for match in matches:
-        fun_path = match.group(1)
-        # Check if this matches any of our expected patterns
-        for pattern in expected_patterns:
-            if pattern in fun_path:
-                # Found our function, now extract its complete definition
-                start_pos = match.start()
-                
-                # Find the complete function definition by counting parentheses
-                paren_count = 0
-                pos = start_pos
-                in_function = False
-                
-                while pos < len(content):
-                    char = content[pos]
-                    if char == '(':
-                        paren_count += 1
-                        in_function = True
-                    elif char == ')':
-                        paren_count -= 1
-                        if in_function and paren_count == 0:
-                            # Found the end of function definition
-                            return content[start_pos:pos+1], fun_path
-                    pos += 1
-    
-    return None, None
+    def get_impl_type(self, module_path, impl_num):
+        """Get the actual type for impl&%N in a given module"""
+        # Convert module path to source file path
+        # lib::aster_common::mm::frame::unique -> vostd/src/aster_common/mm/frame/unique.rs
+        if not module_path.startswith('lib::'):
+            return None
+        
+        path_parts = module_path[5:].split('::')  # Remove 'lib::'
+        source_file = Path('vostd/src') / Path(*path_parts).with_suffix('.rs')
+        
+        if not source_file.exists():
+            # Try other possible locations
+            for base_path in ['kernel/src', 'osdk/src']:
+                alt_file = Path(base_path) / Path(*path_parts).with_suffix('.rs')
+                if alt_file.exists():
+                    source_file = alt_file
+                    break
+        
+        if not source_file.exists():
+            return None
+        
+        mappings = self.analyze_source_file(source_file)
+        return mappings.get(impl_num)
 
-def extract_dependencies_from_function_def(function_def):
-    """Extract dependencies from a specific function definition"""
-    dependencies = set()
+class VIRAnalyzer:
+    """Analyzer for VIR file structure"""
     
-    if not function_def:
+    def __init__(self):
+        self.function_defs = {}  # function path -> definition
+        self.datatype_defs = {}  # type path -> definition
+        self.trait_defs = {}     # trait path -> definition
+        self.dependencies = defaultdict(set)  # function -> set of dependencies
+        self.source_analyzer = SourceCodeAnalyzer()
+    
+    def clean_path(self, path):
+        """Convert VIR path format to Rust format"""
+        if not path or not path.startswith('lib!'):
+            return None
+        clean = path[4:].replace('.', '::').rstrip(':').rstrip('::')
+        return f"lib::{clean}" if clean else None
+    
+    def extract_impl_mappings(self, expr):
+        """Extract impl&%N to type mappings from VIR expression"""
+        if not isinstance(expr, list):
+            return
+        
+        # Look for function definitions that can help us map impl&%N to types
+        if len(expr) >= 3 and expr[0] == 'Function':
+            func_path = None
+            func_params = []
+            
+            for i in range(1, len(expr)):
+                if expr[i] == ':name' and i + 1 < len(expr):
+                    if isinstance(expr[i + 1], list) and expr[i + 1][0] == 'Fun':
+                        func_path = self._extract_path_from_expr(expr[i + 1])
+                elif expr[i] == ':params' and i + 1 < len(expr):
+                    func_params = expr[i + 1]
+            
+            # If this is an impl&%N function, try to infer the type from context
+            if func_path and 'impl&%' in func_path:
+                impl_match = re.search(r'impl&%(\d+)', func_path)
+                if impl_match:
+                    impl_num = impl_match.group(1)
+                    # Look for type information in the function path or parameters
+                    # No longer store type mappings in VIR analyzer - use source code analysis instead
+        
+        # Recursively process nested expressions
+        if isinstance(expr, list):
+            for item in expr:
+                self.extract_impl_mappings(item)
+    
+    def _infer_type_from_context(self, func_path, params):
+        """Infer the type that an impl&%N refers to from function context"""
+        # Method 1: Extract from the module path and function context
+        # lib!ostd.mm.frame.linked_list.impl&%0.push_front -> LinkedList
+        # lib!aster_common.mm.frame.linked_list_owners.impl&%14.front_owner -> CursorOwner (based on function name)
+        parts = func_path.split('.')
+        if len(parts) >= 3:
+            module_part = parts[-3]  # Get the part before impl&%N
+            func_name = parts[-1] if len(parts) > 1 else ""
+            
+            # Special mapping logic based on module and function patterns
+            if 'linked_list' in module_part:
+                if 'owners' in module_part:
+                    # This is in linked_list_owners module
+                    if any(name in func_name.lower() for name in ['front_owner', 'back_owner', 'length', 'current']):
+                        return 'CursorOwner'
+                    elif any(name in func_name.lower() for name in ['view_helper', 'view_preserves_len', 'inv_at']):
+                        return 'LinkedListOwner'
+                    elif 'frame_link_inv' in func_name:
+                        return 'UniqueFrameOwner'
+                    else:
+                        return 'LinkedListOwner'  # Default for owners module
+                else:
+                    # This is in linked_list module
+                    if any(name in func_name.lower() for name in ['move_next', 'move_prev', 'insert_before', 'take_current']):
+                        return 'CursorMut'
+                    else:
+                        return 'LinkedList'  # Default for main module
+            
+            elif 'unique' in module_part:
+                return 'UniqueFrameOwner'
+            elif 'meta_region_owners' in module_part:
+                return 'MetaRegionOwners'
+            elif 'meta_owners' in module_part:
+                return 'MetaSlotOwner'
+            elif 'cast_ptr' in module_part:
+                if any(name in func_name.lower() for name in ['addr', 'borrow', 'put', 'take', 'addr_spec']):
+                    return 'ReprPtr'
+                elif any(name in func_name.lower() for name in ['is_init', 'mem_contents', 'pptr', 'value', 'wf']):
+                    return 'PointsTo'
+                else:
+                    return 'Repr'
+            
+            # Generic fallback: convert snake_case to PascalCase
+            if '_' in module_part:
+                type_name = ''.join(word.capitalize() for word in module_part.split('_'))
+                return type_name
+            else:
+                return module_part.capitalize()
+        
+        return None
+    
+    def _extract_type_from_param(self, param):
+        """Extract type information from a parameter definition"""
+        if isinstance(param, list):
+            for item in param:
+                if isinstance(item, list) and len(item) >= 3:
+                    if item[0] == 'Dt' and item[1] == 'Path':
+                        path = item[2]
+                        if 'lib!' in path:
+                            clean_path = self.clean_path(path)
+                            if clean_path:
+                                parts = clean_path.split('::')
+                                return parts[-1] if parts else None
+        return None
+    
+    def _extract_path_from_expr(self, expr):
+        """Extract path string from VIR path expression"""
+        if isinstance(expr, list):
+            for item in expr:
+                if isinstance(item, str) and 'lib!' in item:
+                    return item
+        return None
+    
+    def _extract_type_info(self, expr):
+        """Extract type information from VIR type expression"""
+        if isinstance(expr, list):
+            if len(expr) >= 2 and expr[0] == 'Datatype':
+                # Look for (Dt Path "lib!...")
+                for item in expr:
+                    if isinstance(item, list) and len(item) >= 3 and item[0] == 'Dt' and item[1] == 'Path':
+                        path = self.clean_path(item[2])
+                        if path:
+                            # Extract just the type name
+                            parts = path.split('::')
+                            return parts[-1] if parts else None
+        return None
+    
+    def extract_function_definition(self, expr):
+        """Extract function definition from VIR expression"""
+        if not isinstance(expr, list) or len(expr) < 2:
+            return
+        
+        if expr[0] == 'Function':
+            func_path = None
+            func_body = None
+            
+            for i in range(1, len(expr)):
+                if expr[i] == ':name' and i + 1 < len(expr):
+                    if isinstance(expr[i + 1], list) and expr[i + 1][0] == 'Fun':
+                        func_path = self._extract_path_from_expr(expr[i + 1])
+                elif expr[i] == ':body' and i + 1 < len(expr):
+                    func_body = expr[i + 1]
+            
+            if func_path:
+                clean_path = self.clean_path(func_path)
+                if clean_path:
+                    self.function_defs[clean_path] = {
+                        'raw_path': func_path,
+                        'body': func_body,
+                        'definition': expr
+                    }
+        
+        # Recursively process nested expressions
+        if isinstance(expr, list):
+            for item in expr:
+                self.extract_function_definition(item)
+
+    def extract_dependencies_from_body(self, body_expr, base_module=None):
+        """Extract dependencies from function body expression"""
+        dependencies = set()
+        
+        if not isinstance(body_expr, list):
+            return dependencies
+        
+        # Look for function calls, type references, etc.
+        self._collect_dependencies_recursive(body_expr, dependencies)
+        
         return dependencies
     
-    # Extract type paths from the function definition
-    # Look for (Dt Path "lib!...") patterns
-    dt_paths = re.findall(r'Dt\s+Path\s+"([^"]+)"', function_def)
-    for path in dt_paths:
-        if path.startswith('lib!'):
-            clean = path[4:].replace('.', '::').rstrip(':')
-            if clean and '::' in clean:
-                dependencies.add('lib::' + clean)
-    
-    # Look for TraitId Path patterns
-    trait_paths = re.findall(r'TraitId\s+Path\s+"([^"]+)"', function_def)
-    for path in trait_paths:
-        if path.startswith('lib!'):
-            clean = path[4:].replace('.', '::').rstrip(':')
-            if clean and '::' in clean:
-                dependencies.add('lib::' + clean)
-    
-    # Look for ImplPath patterns
-    impl_paths = re.findall(r'ImplPath\s+[^"]*"([^"]+)"', function_def)
-    for path in impl_paths:
-        if path.startswith('lib!'):
-            clean = path[4:].replace('.', '::').rstrip(':')
-            if clean and '::' in clean:
-                dependencies.add('lib::' + clean)
-    
-    # Look for function calls in :body if present
-    fun_calls = re.findall(r'Fun\s+:path\s+"([^"]+)"', function_def)
-    for path in fun_calls:
-        if path.startswith('lib!'):
-            clean = path[4:].replace('.', '::').rstrip(':')
-            if clean and '::' in clean:
-                dependencies.add('lib::' + clean)
-    
-    return dependencies
-
-def resolve_transitive_dependencies(dependencies, content):
-    """Resolve transitive dependencies by following type and trait definitions"""
-    all_deps = set(dependencies)
-    queue = deque(dependencies)
-    seen = set()
-    
-    while queue:
-        current = queue.popleft()
-        if current in seen:
-            continue
-        seen.add(current)
+    def _collect_dependencies_recursive(self, expr, dependencies):
+        """Recursively collect dependencies from expression"""
+        if not isinstance(expr, list):
+            return
         
-        # Convert back to VIR format for searching
-        vir_path = current.replace('lib::', 'lib!').replace('::', '.') + '.'
+        # Look for various dependency patterns
+        if len(expr) >= 3:
+            # Function calls: (Fun :path "lib!...")
+            if expr[0] == 'Fun' and expr[1] == ':path':
+                path = self.clean_path(expr[2])
+                if path:
+                    dependencies.add(path)
+            
+            # Datatype references: (Dt Path "lib!...")
+            elif expr[0] == 'Dt' and expr[1] == 'Path':
+                path = self.clean_path(expr[2])
+                if path:
+                    dependencies.add(path)
+            
+            # Trait references: (TraitId Path "lib!...")
+            elif expr[0] == 'TraitId' and expr[1] == 'Path':
+                path = self.clean_path(expr[2])
+                if path:
+                    dependencies.add(path)
         
-        # Find definitions of this type/trait in the content
-        patterns = [
-            rf'Datatype\s+:name\s+\(Dt\s+Path\s+"{re.escape(vir_path)}"',
-            rf'Trait\s+:name\s+\(TraitPath\s+"{re.escape(vir_path)}"',
-            rf'Function\s+:name\s+\(Fun\s+:path\s+"{re.escape(vir_path)}'
-        ]
+        # Recursively process all sub-expressions
+        for item in expr:
+            if isinstance(item, list):
+                self._collect_dependencies_recursive(item, dependencies)
+    
+    def analyze_vir_file(self, file_path):
+        """Analyze a complete VIR file"""
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            
+            # Parse the VIR file as S-expressions
+            parser = SExprParser(content)
+            
+            # VIR files can contain multiple top-level expressions
+            expressions = []
+            while parser.pos < parser.length:
+                parser.skip_whitespace()
+                if parser.pos >= parser.length:
+                    break
+                expr = parser.parse()
+                if expr:
+                    expressions.append(expr)
+            
+            # Extract information from all expressions
+            for expr in expressions:
+                self.extract_impl_mappings(expr)
+                self.extract_function_definition(expr)
+            
+            pass  # Analysis complete
+            
+        except Exception as e:
+            print(f"Error analyzing {file_path}: {e}")
+    
+    def clean_verus_artifacts(self, path):
+        """Remove Verus internal artifacts from function/type names"""
+        if not path:
+            return path
         
-        for pattern in patterns:
-            matches = re.finditer(pattern, content, re.MULTILINE)
-            for match in matches:
-                # Extract definition by finding matching parentheses
-                start_pos = match.start()
-                paren_count = 0
-                pos = start_pos
+        # Remove _VERUS_VERIFIED_ prefix
+        path = re.sub(r'_VERUS_VERIFIED_', '', path)
+        
+        # Replace %default% with :: for trait method calls
+        # impl&%20%default%model -> impl&%20::model
+        path = re.sub(r'%default%', '::', path)
+        
+        # Remove other Verus internal artifacts if needed
+        # path = re.sub(r'_VERUS_[A-Z_]+_', '', path)
+        
+        return path
+    
+    def resolve_impl_path(self, path):
+        """Resolve impl&%N paths to actual types using source code analysis"""
+        if 'impl&%' not in path:
+            return self.clean_verus_artifacts(path)
+        
+        # Make a copy to work with
+        resolved_path = path
+        
+        # Extract module path for source code analysis
+        # Remove function name AND impl&%N part
+        path_parts = path.split('::')
+        module_parts = []
+        for part in path_parts[:-1]:  # Remove function name
+            if not part.startswith('impl&%'):
+                module_parts.append(part)
+        module_str = '::'.join(module_parts)
+        
+        # Find and replace all impl&%N patterns
+        impl_pattern = r'impl&%(\d+)'
+        matches = list(re.finditer(impl_pattern, path))
+        
+        # Process matches in reverse order to avoid position shifting
+        for match in reversed(matches):
+            impl_key = match.group(0)  # e.g., "impl&%13"
+            impl_num = int(match.group(1))  # e.g., 13
+            
+            # Try source code analysis
+            actual_type = self.source_analyzer.get_impl_type(module_str, impl_num)
+            
+            # Apply the replacement if we found a mapping
+            if actual_type and actual_type != impl_key and not actual_type.startswith('impl&%'):
+                # Replace the impl&%N with the actual type
+                start, end = match.span()
+                resolved_path = resolved_path[:start] + actual_type + resolved_path[end:]
                 
-                while pos < len(content):
-                    char = content[pos]
-                    if char == '(':
-                        paren_count += 1
-                    elif char == ')':
-                        paren_count -= 1
-                        if paren_count == 0:
-                            definition = content[start_pos:pos+1]
-                            # Extract dependencies from this definition
-                            new_deps = extract_dependencies_from_function_def(definition)
-                            for dep in new_deps:
-                                if dep not in all_deps:
-                                    all_deps.add(dep)
-                                    queue.append(dep)
-                            break
-                    pos += 1
-    
-    return sorted(all_deps)
+        return self.clean_verus_artifacts(resolved_path)
 
-def extract_dependencies_precise(target_function):
-    """Precise dependency extraction for a specific function"""
-    dependencies = set()
+class DependencyExtractor:
+    """Main dependency extraction orchestrator"""
     
-    # Convert target to find matching VIR file
-    target_parts = target_function.split('::')
-    if len(target_parts) >= 4:
+    def __init__(self):
+        self.analyzer = VIRAnalyzer()
+        self.vir_files_cache = {}
+    
+    def find_relevant_vir_files(self, target_function):
+        """Find all VIR files that might contain relevant dependencies"""
+        target_parts = target_function.split('::')
+        if len(target_parts) < 4:
+            return []
+        
+        vir_files = []
+        vostd_dir = os.path.join(VERUS_LOG_DIR, 'vostd')
+        
+        if not os.path.exists(vostd_dir):
+            print(f"Error: {vostd_dir} does not exist")
+            return []
+        
+        # Primary target file
         module_file = '__'.join(target_parts[1:-2]) + '-poly.vir'
-        file_path = os.path.join(VERUS_LOG_DIR, 'vostd', module_file)
+        primary_file = os.path.join(vostd_dir, module_file)
+        if os.path.exists(primary_file):
+            vir_files.append(primary_file)
         
-        if os.path.exists(file_path):
-            print(f"Reading {file_path}")
-            try:
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read()
-                
-                # Find the specific function definition
-                function_def, found_path = parse_function_definition(content, target_function)
-                
-                if function_def:
-                    print(f"Found function definition: {found_path}")
-                    # Extract dependencies only from this function
-                    dependencies = extract_dependencies_from_function_def(function_def)
-                    print(f"Found {len(dependencies)} direct dependencies")
-                    
-                    # Also check for _VERUS_VERIFIED_ version
-                    verified_target = target_function.replace('::', '.') + '.'
-                    verified_pattern = verified_target.replace('.', '\\._VERUS_VERIFIED_')
-                    verified_matches = re.finditer(
-                        rf'Fun\s+:path\s+"[^"]*{re.escape("_VERUS_VERIFIED_")}[^"]*{re.escape(target_parts[-1])}\."',
-                        content
-                    )
-                    
-                    for match in verified_matches:
-                        verified_def, verified_path = parse_function_definition(
-                            content[match.start()-1000:match.end()+5000], 
-                            target_function
-                        )
-                        if verified_def:
-                            print(f"Found verified version: {verified_path}")
-                            verified_deps = extract_dependencies_from_function_def(verified_def)
-                            dependencies.update(verified_deps)
-                            
-                    # Resolve transitive dependencies
-                    print("Resolving transitive dependencies...")
-                    all_dependencies = resolve_transitive_dependencies(dependencies, content)
-                    return all_dependencies
-                else:
-                    print(f"Function {target_function} not found in VIR file")
-                    
-            except Exception as e:
-                print(f"Error reading {file_path}: {e}")
-        else:
-            print(f"VIR file not found: {file_path}")
+        # Find related files (same parent modules)
+        for file_name in os.listdir(vostd_dir):
+            if file_name.endswith('-poly.vir'):
+                file_path = os.path.join(vostd_dir, file_name)
+                # Include files from related modules
+                module_parts = file_name[:-9].split('__')  # remove -poly.vir
+                if any(part in target_parts for part in module_parts):
+                    if file_path not in vir_files:
+                        vir_files.append(file_path)
+        
+        return vir_files
     
-    return dependencies
+    def check_air_smt_files(self, target_function):
+        """Check if AIR/SMT2 files provide additional useful information"""
+        air_info = {}
+        target_parts = target_function.split('::')
+        
+        # Look for corresponding AIR/SMT2 files
+        vostd_dir = os.path.join(VERUS_LOG_DIR, 'vostd')
+        if os.path.exists(vostd_dir):
+            module_base = '__'.join(target_parts[1:-2])
+            for ext in ['.air', '.smt2']:
+                for suffix in ['', '-poly']:
+                    air_file = os.path.join(vostd_dir, f"{module_base}{suffix}{ext}")
+                    if os.path.exists(air_file):
+                        try:
+                            with open(air_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                content = f.read()
+                            # Basic analysis of AIR/SMT content
+                            air_info[air_file] = {
+                                'functions': len(re.findall(r'declare-fun', content)),
+                                'calls': len(re.findall(r'\([a-zA-Z_]', content)),
+                                'size': len(content)
+                            }
+                        except Exception as e:
+                            air_info[air_file] = {'error': str(e)}
+        
+        return air_info
+
+    def extract_dependencies(self, target_function):
+        """Extract complete dependency graph for target function"""
+        print(f"Analyzing dependencies for: {target_function}")
+        
+        # 1. Find all relevant VIR files
+        vir_files = self.find_relevant_vir_files(target_function)
+        print(f"Found {len(vir_files)} relevant VIR files")
+        
+        # 2. Analyze all VIR files to build type mappings and function definitions
+        for vir_file in vir_files:
+            self.analyzer.analyze_vir_file(vir_file)
+        
+        # 3. Check AIR/SMT2 files for additional info
+        air_info = self.check_air_smt_files(target_function)
+        if air_info:
+            print(f"Found {len(air_info)} AIR/SMT2 files:")
+            for file_path, info in air_info.items():
+                if 'error' not in info:
+                    print(f"  {os.path.basename(file_path)}: {info['functions']} functions, {info['size']} bytes")
+        
+        # 4. Find the target function and extract its dependencies
+        dependencies = set()
+        target_clean = self._convert_target_to_vir_format(target_function)
+        
+        # Look for exact matches and VERUS_VERIFIED versions
+        for func_path, func_info in self.analyzer.function_defs.items():
+            if self._matches_target(func_path, func_info['raw_path'], target_function):
+                print(f"Found target function: {func_path}")
+                print(f"VIR path: {func_info['raw_path']}")
+                
+                # Extract dependencies from function body
+                body_deps = self.analyzer.extract_dependencies_from_body(func_info['body'])
+                dependencies.update(body_deps)
+                
+                # Also analyze the complete function definition
+                def_deps = set()
+                self.analyzer._collect_dependencies_recursive(func_info['definition'], def_deps)
+                dependencies.update(def_deps)
+        
+        if not dependencies:
+            print(f"Target function {target_function} not found in VIR files")
+            return set()
+        
+        # 5. Resolve impl&%N paths to actual types
+        resolved_dependencies = set()
+        # Resolve impl&%N mappings
+        for dep in dependencies:
+            resolved = self.analyzer.resolve_impl_path(dep)
+            resolved_dependencies.add(resolved)
+        
+        # 6. Resolve transitive dependencies
+        all_dependencies = self._resolve_transitive_dependencies(resolved_dependencies)
+        
+        print(f"Found {len(dependencies)} direct dependencies, {len(all_dependencies)} total")
+        return all_dependencies
+    
+    def _convert_target_to_vir_format(self, target_function):
+        """Convert Rust function path to VIR format"""
+        parts = target_function.split('::')
+        if len(parts) >= 4:
+            # vostd::ostd::mm::frame::LinkedList::push_front
+            # -> lib!ostd.mm.frame.impl&%0.push_front.
+            func_name = parts[-1]
+            module_parts = parts[1:-2]  # skip vostd and function name
+            return f"lib!{'.'.join(module_parts)}.impl&%0.{func_name}."
+        return target_function
+    
+    def _matches_target(self, func_path, raw_vir_path, target_function):
+        """Check if function path matches target"""
+        target_parts = target_function.split('::')
+        func_name = target_parts[-1]
+        
+        # Check if this function matches our target
+        if func_name in raw_vir_path:
+            # Check for exact match or _VERUS_VERIFIED_ version
+            if (f".{func_name}." in raw_vir_path or 
+                f"._VERUS_VERIFIED_{func_name}." in raw_vir_path):
+                # Also check module path
+                module_parts = target_parts[1:-2]
+                module_pattern = '.'.join(module_parts)
+                if module_pattern in raw_vir_path:
+                    return True
+        return False
+    
+    def _resolve_transitive_dependencies(self, direct_deps):
+        """Resolve transitive dependencies by following the dependency graph"""
+        all_deps = set(direct_deps)
+        queue = deque(direct_deps)
+        seen = set()
+        
+        while queue:
+            current = queue.popleft()
+            if current in seen:
+                continue
+            seen.add(current)
+            
+            # Find this dependency in our function definitions
+            for func_path, func_info in self.analyzer.function_defs.items():
+                if current in func_path:
+                    # Extract dependencies from this function
+                    new_deps = self.analyzer.extract_dependencies_from_body(func_info['body'])
+                    for dep in new_deps:
+                        resolved_dep = self.analyzer.resolve_impl_path(dep)
+                        if resolved_dep not in all_deps:
+                            all_deps.add(resolved_dep)
+                            queue.append(resolved_dep)
+        
+        return sorted(all_deps)
 
 def main():
     if len(sys.argv) < 2:
         print("Usage: python dependency_extractor.py <fully::qualified::path>")
+        print("Example: python dependency_extractor.py vostd::ostd::mm::frame::linked_list::LinkedList::push_front")
         sys.exit(2)
+    
     target = sys.argv[1]
 
     if not os.path.isdir(VERUS_LOG_DIR):
         print(f"Error: {VERUS_LOG_DIR} does not exist. Run Verus verification first.")
         sys.exit(1)
 
-    # Precise extraction from target function's VIR file
-    dependencies = extract_dependencies_precise(target)
+    # Create dependency extractor and analyze
+    extractor = DependencyExtractor()
     
-    print(f"\nDependencies for {target}:")
-    for dep in sorted(dependencies):
+    print(f"Analyzing dependencies for: {target}")
+    print("=" * 60)
+    
+    # Test source code analysis on a known file first
+    print("Testing source code analysis...")
+    source_analyzer = extractor.analyzer.source_analyzer
+    source_file = Path('vostd/src/aster_common/mm/frame/unique.rs')
+    
+    if source_file.exists():
+        mappings = source_analyzer.analyze_source_file(source_file)
+        print(f"Found {len(mappings)} impl blocks in {source_file}:")
+        for impl_index, type_name in mappings.items():
+            print(f"  impl&%{impl_index} -> {type_name}")
+        print()
+    
+    dependencies = extractor.extract_dependencies(target)
+    
+    print(f"\n=== Dependencies for {target} ===")
+    for dep in dependencies:
         print(dep)
     
     print(f"\nTotal: {len(dependencies)} dependencies found")
