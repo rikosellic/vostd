@@ -182,6 +182,83 @@ class SourceCodeAnalyzer:
         mappings = self.analyze_source_file(source_file)
         return mappings.get(impl_num)
 
+class SpecFunctionAnalyzer:
+    """Analyzer for when_used_as_spec annotations"""
+    
+    def __init__(self, source_analyzer):
+        self.source_analyzer = source_analyzer
+        self.spec_to_exec_mappings = {}  # spec_function_name -> exec_function_name
+    
+    def find_when_used_as_spec_mappings(self, module_path):
+        """Find all when_used_as_spec mappings in a source file"""
+        # Convert module path to source file path
+        if not module_path.startswith('lib::'):
+            return {}
+            
+        path_parts = module_path[5:].split('::')  # Remove 'lib::'
+        source_file = Path('vostd/src') / Path(*path_parts).with_suffix('.rs')
+        
+        if not source_file.exists():
+            # Try other possible locations
+            for base_path in ['kernel/src', 'osdk/src']:
+                alt_file = Path(base_path) / Path(*path_parts).with_suffix('.rs')
+                if alt_file.exists():
+                    source_file = alt_file
+                    break
+        
+        if not source_file.exists():
+            return {}
+            
+        try:
+            with open(source_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            mappings = {}
+            lines = content.split('\n')
+            
+            for i, line in enumerate(lines):
+                # Look for #[verifier::when_used_as_spec(...)]
+                when_used_match = re.search(r'#\[verifier::when_used_as_spec\(([^)]+)\)\]', line)
+                if when_used_match:
+                    spec_func_name = when_used_match.group(1)
+                    
+                    # Look for the next function definition
+                    for j in range(i + 1, min(i + 10, len(lines))):  # Look ahead up to 10 lines
+                        next_line = lines[j]
+                        # Match function definitions: "pub fn function_name(" or "fn function_name("
+                        func_match = re.search(r'(?:pub\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(', next_line)
+                        if func_match:
+                            exec_func_name = func_match.group(1)
+                            mappings[spec_func_name] = exec_func_name
+                            break
+                        # Skip empty lines and lines with only attributes
+                        if next_line.strip() and not next_line.strip().startswith('#['):
+                            break
+            
+            return mappings
+            
+        except Exception:
+            return {}
+    
+    def get_exec_function_for_spec(self, spec_function_path):
+        """Get the execution function path for a given spec function path"""
+        # Extract function name and module from the path
+        path_parts = spec_function_path.split('::')
+        if len(path_parts) < 2:
+            return None
+            
+        spec_func_name = path_parts[-1]
+        module_path = '::'.join(path_parts[:-1])
+        
+        # Get mappings for this module
+        mappings = self.find_when_used_as_spec_mappings(module_path)
+        
+        if spec_func_name in mappings:
+            exec_func_name = mappings[spec_func_name]
+            return f"{module_path}::{exec_func_name}"
+        
+        return None
+
 class VIRAnalyzer:
     """Analyzer for VIR file structure"""
     
@@ -191,6 +268,8 @@ class VIRAnalyzer:
         self.trait_defs = {}     # trait path -> definition
         self.dependencies = defaultdict(set)  # function -> set of dependencies
         self.source_analyzer = SourceCodeAnalyzer()
+        self.vir_impl_mappings = {}  # impl_path -> type_name
+        self.spec_analyzer = SpecFunctionAnalyzer(self.source_analyzer)
     
     def clean_path(self, path):
         """Convert VIR path format to Rust format"""
@@ -201,34 +280,114 @@ class VIRAnalyzer:
     
     def extract_impl_mappings(self, expr):
         """Extract impl&%N to type mappings from VIR expression"""
-        if not isinstance(expr, list):
+        if not isinstance(expr, list) or len(expr) < 2:
             return
-        
-        # Look for function definitions that can help us map impl&%N to types
-        if len(expr) >= 3 and expr[0] == 'Function':
+            
+        # 1. Processing Function definitions to find impl context
+        if expr[0] == 'Function':
             func_path = None
-            func_params = []
+            trait_typ_args = None
+            first_param_type = None
             
+            # Iterate through key-value pairs in the function expression
             for i in range(1, len(expr)):
-                if expr[i] == ':name' and i + 1 < len(expr):
-                    if isinstance(expr[i + 1], list) and expr[i + 1][0] == 'Fun':
-                        func_path = self._extract_path_from_expr(expr[i + 1])
-                elif expr[i] == ':params' and i + 1 < len(expr):
-                    func_params = expr[i + 1]
+                key = expr[i]
+                if key == ':name' and i + 1 < len(expr):
+                    # Extract function path
+                    name_expr = expr[i+1]
+                    if isinstance(name_expr, list) and len(name_expr) >= 2 and name_expr[0] == 'Fun':
+                         # Search for :path key inside Fun
+                        for j in range(1, len(name_expr)):
+                            if name_expr[j] == ':path' and j+1 < len(name_expr):
+                                func_path = name_expr[j+1]
+                                break
+
+                elif key == ':trait_typ_args' and i + 1 < len(expr):
+                    # Extract trait type arguments (usually [SelfType, ...])
+                    type_args = expr[i+1]
+                    if isinstance(type_args, list) and len(type_args) > 0:
+                        first_arg = type_args[0]
+                        # Try to extract type name from (Typ Datatype (Dt Path "lib!..."))
+                        trait_typ_args = self._extract_type_name_from_vir_type(first_arg)
+
+                elif key == ':kind' and i + 1 < len(expr):
+                    # Look inside :kind for :trait_typ_args
+                    kind_expr = expr[i+1]
+                    if isinstance(kind_expr, list):
+                        for k in range(len(kind_expr)):
+                            if kind_expr[k] == ':trait_typ_args' and k+1 < len(kind_expr):
+                                type_args = kind_expr[k+1]
+                                if isinstance(type_args, list) and len(type_args) > 0:
+                                    first_arg = type_args[0]
+                                    trait_typ_args = self._extract_type_name_from_vir_type(first_arg)
+                                break
+
+                elif key == ':params' and i + 1 < len(expr):
+                    # Extract first parameter type (usually 'self')
+                    params = expr[i+1]
+                    if isinstance(params, list) and len(params) > 0:
+                        first_param = params[0]
+                        # (Param :name ... :typ (Typ ...) ...)
+                        if isinstance(first_param, list):
+                            for j in range(len(first_param)):
+                                if first_param[j] == ':typ' and j+1 < len(first_param):
+                                     first_param_type = self._extract_type_name_from_vir_type(first_param[j+1])
+                                     break
             
-            # If this is an impl&%N function, try to infer the type from context
+            # If we found a path containing impl&%, try to map it
             if func_path and 'impl&%' in func_path:
-                impl_match = re.search(r'impl&%(\d+)', func_path)
+                # Extract the impl prefix: lib!module.impl&%N
+                impl_match = re.search(r'(lib!.*\.impl&%\d+)', func_path)
                 if impl_match:
-                    impl_num = impl_match.group(1)
-                    # Look for type information in the function path or parameters
-                    # No longer store type mappings in VIR analyzer - use source code analysis instead
+                    impl_key = impl_match.group(1)
+                    impl_key_clean = self.clean_path(impl_key + '.') # clean_path expects trailing dot or colon usually
+                    if impl_key_clean and impl_key_clean.endswith('::'): 
+                        impl_key_clean = impl_key_clean[:-2]
+                    elif not impl_key_clean:
+                         # Manual clean if clean_path fails/is strict
+                         impl_key_clean = impl_key.replace('lib!', 'lib::').replace('.', '::')
+
+                    # Priority 1: Trait Type Args (Function implements Trait for Type)
+                    if trait_typ_args:
+                        # print(f"DEBUG: Found implicit mapping via trait_typ_args: {impl_key_clean} -> {trait_typ_args}")
+                        self.vir_impl_mappings[impl_key_clean] = trait_typ_args
+                    # Priority 2: First parameter type (Inherent impl or method)
+                    elif first_param_type:
+                        # print(f"DEBUG: Found implicit mapping via first_param_type: {impl_key_clean} -> {first_param_type}")
+                        self.vir_impl_mappings[impl_key_clean] = first_param_type
         
         # Recursively process nested expressions
-        if isinstance(expr, list):
-            for item in expr:
+        for item in expr:
+            if isinstance(item, list):
                 self.extract_impl_mappings(item)
-    
+
+    def _extract_type_name_from_vir_type(self, type_expr):
+        """Helper to extract simple type name from VIR type expression"""
+        # Matches (Typ Datatype (Dt Path "lib!path.TypeName.") ...)
+        if isinstance(type_expr, list) and len(type_expr) > 1:
+            if type_expr[0] == 'Typ' or type_expr[0] == 'Datatype': # Handle unwrapped Datatype too if needed
+                 # Search recursively or specifically
+                 pass
+            
+            # Recursive search for (Dt Path "...")
+            return self._find_dt_path_recursive(type_expr)
+        return None
+
+    def _find_dt_path_recursive(self, expr):
+        if not isinstance(expr, list):
+            return None
+        if len(expr) >= 3 and expr[0] == 'Dt' and expr[1] == 'Path':
+            # Found path: "lib!crate.mod.Type."
+            raw_path = expr[2]
+            clean = self.clean_path(raw_path)
+            if clean:
+                return clean.split('::')[-1] # Return just TypeName
+        
+        for item in expr:
+            res = self._find_dt_path_recursive(item)
+            if res: return res
+        return None
+
     def _infer_type_from_context(self, func_path, params):
         """Infer the type that an impl&%N refers to from function context"""
         # This is a fallback method when source code analysis fails
@@ -407,16 +566,7 @@ class VIRAnalyzer:
         
         # Make a copy to work with
         resolved_path = path
-        
-        # Extract module path for source code analysis
-        # Remove function name AND impl&%N part
-        path_parts = path.split('::')
-        module_parts = []
-        for part in path_parts[:-1]:  # Remove function name
-            if not part.startswith('impl&%'):
-                module_parts.append(part)
-        module_str = '::'.join(module_parts)
-        
+
         # Find and replace all impl&%N patterns
         impl_pattern = r'impl&%(\d+)'
         matches = list(re.finditer(impl_pattern, path))
@@ -426,8 +576,27 @@ class VIRAnalyzer:
             impl_key = match.group(0)  # e.g., "impl&%13"
             impl_num = int(match.group(1))  # e.g., 13
             
-            # Try source code analysis
-            actual_type = self.source_analyzer.get_impl_type(module_str, impl_num)
+            # Construct the full impl path key (e.g., lib::aster_common::...::impl&%13)
+            # We need to extract the prefix before "impl&%13"
+            prefix_end = match.start()
+            # Extract everything before the match, assuming it ends with ::
+            prefix = path[:prefix_end]
+            if prefix.endswith('::'):
+                prefix = prefix[:-2] # remove trailing ::
+            
+            # Try 1: Check VIR mappings first (Robust)
+            path_key = f"{prefix}::{impl_key}"
+            actual_type = self.vir_impl_mappings.get(path_key)
+
+            if not actual_type:
+                # Try 2: Source code analysis (Fallback)
+                # Extract module path for source code analysis
+                # Remove function name AND impl&%N part
+                # Reconstruct module path from prefix
+                module_str = prefix
+                
+                # If prefix contains other impl&%, this might fail, so we rely on VIR mappings primarily
+                actual_type = self.source_analyzer.get_impl_type(module_str, impl_num)
             
             # Apply the replacement if we found a mapping
             if actual_type and actual_type != impl_key and not actual_type.startswith('impl&%'):
@@ -583,22 +752,50 @@ class DependencyExtractor:
         queue = deque(direct_deps)
         seen = set()
         
+        # Build a lookup map of resolved path -> function info
+        # This allows us to find the function definition for a resolved dependency
+        resolved_func_defs = {}
+        for func_path, func_info in self.analyzer.function_defs.items():
+            resolved_path = self.analyzer.resolve_impl_path(func_path)
+            if resolved_path:
+                resolved_func_defs[resolved_path] = func_info
+        
         while queue:
             current = queue.popleft()
             if current in seen:
                 continue
             seen.add(current)
             
-            # Find this dependency in our function definitions
-            for func_path, func_info in self.analyzer.function_defs.items():
-                if current in func_path:
-                    # Extract dependencies from this function
-                    new_deps = self.analyzer.extract_dependencies_from_body(func_info['body'])
-                    for dep in new_deps:
-                        resolved_dep = self.analyzer.resolve_impl_path(dep)
-                        if resolved_dep not in all_deps:
-                            all_deps.add(resolved_dep)
-                            queue.append(resolved_dep)
+            # Check if this is a spec function and find its exec counterpart
+            if current.endswith('_spec'):
+                exec_func_path = self.analyzer.spec_analyzer.get_exec_function_for_spec(current)
+                if exec_func_path and exec_func_path not in all_deps:
+                    all_deps.add(exec_func_path)
+                    queue.append(exec_func_path)
+            
+            # Find this dependency in our resolved function definitions
+            if current in resolved_func_defs:
+                func_info = resolved_func_defs[current]
+                
+                # Extract dependencies from this function
+                new_deps = self.analyzer.extract_dependencies_from_body(func_info['body'])
+                for dep in new_deps:
+                    resolved_dep = self.analyzer.resolve_impl_path(dep)
+                    if resolved_dep not in all_deps:
+                        all_deps.add(resolved_dep)
+                        queue.append(resolved_dep)
+            
+            # Fallback: Try to match by substring if exact match failed
+            # This helps with some partial path matches if resolution wasn't perfect
+            else:
+                for func_path, func_info in self.analyzer.function_defs.items():
+                    if current in func_path:
+                        new_deps = self.analyzer.extract_dependencies_from_body(func_info['body'])
+                        for dep in new_deps:
+                            resolved_dep = self.analyzer.resolve_impl_path(dep)
+                            if resolved_dep not in all_deps:
+                                all_deps.add(resolved_dep)
+                                queue.append(resolved_dep)
         
         return sorted(all_deps)
 
