@@ -181,8 +181,8 @@ impl MetaSlot {
     pub fn cast_perm<T: Repr<MetaSlot>>(
         addr: usize,
         Tracked(perm): Tracked<vstd::simple_pptr::PointsTo<MetaSlot>>,
-    ) -> Tracked<PointsTo<MetaSlot, T>> {
-        Tracked(PointsTo { addr: addr, points_to: perm, _T: PhantomData })
+    ) -> Tracked<ReprPointsTo<MetaSlot, T>> {
+        Tracked(ReprPointsTo { addr: addr, points_to: perm, _T: PhantomData })
     }
 }
 

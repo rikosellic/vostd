@@ -2,7 +2,7 @@ use vstd::atomic::*;
 use vstd::prelude::*;
 use vstd::seq_lib::*;
 use vstd::simple_pptr::*;
-use crate::vstd_extra::cast_ptr::Repr;
+use crate::vstd_extra::cast_ptr::*;
 use crate::vstd_extra::ownership::*;
 
 use super::*;
@@ -91,7 +91,7 @@ impl Inv for LinkedListModel {
 #[rustc_has_incoherent_inherent_impls]
 pub tracked struct LinkedListOwner<M: AnyFrameMeta + Repr<MetaSlot>> {
     pub list: Seq<LinkOwner>,
-    pub perms: Map<int, crate::vstd_extra::cast_ptr::PointsTo<MetaSlot, Link<M>>>,
+    pub perms: Map<int, ReprPointsTo<MetaSlot, Link<M>>>,
     pub list_id: u64,
 }
 
@@ -285,7 +285,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorOwner<M> {
     pub fn list_insert(
         Tracked(cursor): Tracked<&mut Self>,
         Tracked(link): Tracked<&mut LinkOwner>,
-        Tracked(perm): Tracked<&crate::vstd_extra::cast_ptr::PointsTo<MetaSlot, Link<M>>>,
+        Tracked(perm): Tracked<&ReprPointsTo<MetaSlot, Link<M>>>,
     )
         ensures
             cursor.list_own.list == old(cursor).list_own.list.insert(old(cursor).index, *old(link)),

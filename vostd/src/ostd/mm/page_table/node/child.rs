@@ -23,7 +23,7 @@ impl<C: PageTableConfig> Child<C> {
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
         with slot_own: Option<Tracked<&MetaSlotOwner>>,
-            slot_perm: Option<Tracked<&PointsTo<MetaSlot, PageTablePageMeta<C>>>>
+            slot_perm: Option<Tracked<&ReprPointsTo<MetaSlot, PageTablePageMeta<C>>>>
     )]
     pub fn into_pte(self) -> (res: C::E)
         requires

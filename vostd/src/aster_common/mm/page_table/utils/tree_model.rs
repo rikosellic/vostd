@@ -5,17 +5,16 @@ use vstd::prelude::*;
 use crate::vstd_extra::ghost_tree;
 
 use crate::prelude::*;
-use crate::vstd_extra::prelude::Node;
+use crate::vstd_extra::prelude::*;
 
 verus! {
 
 pub tracked struct PageTableNodeModel {
-    pub tracked inner: ghost_tree::Node<PageTableNodeValue, CONST_NR_ENTRIES, CONST_NR_LEVELS>,
+    pub tracked inner: Node<PageTableNodeValue, CONST_NR_ENTRIES, CONST_NR_LEVELS>,
 }
 
 impl View for PageTableNodeModel {
-    type V = ghost_tree::Node<PageTableNodeValue, CONST_NR_ENTRIES, CONST_NR_LEVELS>;
-
+    type V = Node<PageTableNodeValue, CONST_NR_ENTRIES, CONST_NR_LEVELS>;
     open spec fn view(&self) -> Self::V {
         self.inner
     }
@@ -39,18 +38,18 @@ impl PageTableNodeModel {
     }
 
     pub open spec fn from_node(
-        node: ghost_tree::Node<PageTableNodeValue, CONST_NR_ENTRIES, CONST_NR_LEVELS>,
+        node: Node<PageTableNodeValue, CONST_NR_ENTRIES, CONST_NR_LEVELS>,
     ) -> PageTableNodeModel {
         PageTableNodeModel { inner: node }
     }
 }
 
 pub tracked struct PageTableTreeModel {
-    pub tracked inner: ghost_tree::Tree<PageTableNodeValue, CONST_NR_ENTRIES, CONST_NR_LEVELS>,
+    pub tracked inner: Tree<PageTableNodeValue, CONST_NR_ENTRIES, CONST_NR_LEVELS>,
 }
 
 impl View for PageTableTreeModel {
-    type V = ghost_tree::Tree<PageTableNodeValue, CONST_NR_ENTRIES, CONST_NR_LEVELS>;
+    type V = Tree<PageTableNodeValue, CONST_NR_ENTRIES, CONST_NR_LEVELS>;
 
     open spec fn view(&self) -> Self::V {
         self.inner

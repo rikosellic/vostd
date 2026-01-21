@@ -1,7 +1,7 @@
 use vstd::prelude::*;
 
 use vstd::simple_pptr::*;
-use crate::vstd_extra::cast_ptr::{self, Repr};
+use crate::vstd_extra::cast_ptr::*;
 
 use super::*;
 
@@ -15,7 +15,7 @@ pub struct UniqueFrame<M: AnyFrameMeta> {
 
 pub tracked struct UniqueFrameOwner<M: AnyFrameMeta + Repr<MetaSlot> + OwnerOf> {
     pub meta_own: M::Owner,
-    pub meta_perm: crate::vstd_extra::cast_ptr::PointsTo<MetaSlot, M>,
+    pub meta_perm: ReprPointsTo<MetaSlot, M>,
     pub ghost slot_index: usize,
 }
 
@@ -87,7 +87,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot> + OwnerOf> UniqueFrameOwner<M> {
     pub proof fn from_raw_owner(
         owner: M::Owner,
         index: Ghost<usize>,
-        perm: crate::vstd_extra::cast_ptr::PointsTo<MetaSlot, M>,
+        perm: ReprPointsTo<MetaSlot, M>,
     ) -> Self {
         UniqueFrameOwner::<M> { meta_own: owner, meta_perm: perm, slot_index: index@ }
     }

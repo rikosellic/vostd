@@ -148,7 +148,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
 
     /// Gets the metadata of this page.
     #[verus_spec(
-        with Tracked(perm) : Tracked<&'a PointsTo<MetaSlot, M>>,
+        with Tracked(perm) : Tracked<&'a ReprPointsTo<MetaSlot, M>>,
         requires
             self.ptr.addr() == perm.addr(),
             self.ptr == perm.points_to.pptr(),
@@ -374,7 +374,7 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         #[verus_spec(with Tracked(&perm))]
         let paddr = self.start_paddr();
 
-        let tracked meta_perm = PointsTo::<MetaSlot, M>::new(Ghost(self.ptr.addr()), perm);
+        let tracked meta_perm = ReprPointsTo::<MetaSlot, M>::new(Ghost(self.ptr.addr()), perm);
 
         // TODO: implement ManuallyDrop
         // let this = ManuallyDrop::new(self);

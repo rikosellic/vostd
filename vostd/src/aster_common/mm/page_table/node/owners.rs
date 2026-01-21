@@ -2,6 +2,7 @@ use vstd::prelude::*;
 
 use vstd::cell;
 use vstd::simple_pptr::*;
+use crate::vstd_extra::cast_ptr::*;
 
 use super::*;
 
@@ -54,7 +55,7 @@ impl<C: PageTableConfig> OwnerOf for PageTablePageMeta<C> {
 
 pub tracked struct NodeOwner<C: PageTableConfig> {
     pub meta_own: PageMetaOwner,
-    pub meta_perm: crate::vstd_extra::cast_ptr::PointsTo<MetaSlot, PageTablePageMeta<C>>,
+    pub meta_perm: ReprPointsTo<MetaSlot, PageTablePageMeta<C>>,
 }
 
 impl<C: PageTableConfig> Inv for NodeOwner<C> {

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 use vstd::prelude::*;
+use crate::vstd_extra::array_ptr::*;
 
 use core::{
     fmt::Debug,
@@ -427,7 +428,7 @@ pub(super) unsafe fn page_walk<C: PageTableConfig>(root_paddr: Paddr, vaddr: Vad
 /// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
 #[verifier::external_body]
 pub fn load_pte<E: PageTableEntryTrait>(
-    ptr: crate::vstd_extra::array_ptr::ArrayPtr<E, CONST_NR_ENTRIES>,
+    ptr: ArrayPtr<E, CONST_NR_ENTRIES>,
     ordering: Ordering,
 ) -> E {
     unimplemented!()/*    // SAFETY: The safety is upheld by the caller.
@@ -444,7 +445,7 @@ pub fn load_pte<E: PageTableEntryTrait>(
 /// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
 #[verifier::external_body]
 pub fn store_pte<E: PageTableEntryTrait>(
-    ptr: crate::vstd_extra::array_ptr::ArrayPtr<E, CONST_NR_ENTRIES>,
+    ptr: ArrayPtr<E, CONST_NR_ENTRIES>,
     new_val: E,
     ordering: Ordering,
 ) {

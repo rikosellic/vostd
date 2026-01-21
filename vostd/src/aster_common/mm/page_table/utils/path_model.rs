@@ -5,12 +5,12 @@ use vstd::prelude::*;
 use crate::vstd_extra::ghost_tree;
 
 use crate::prelude::*;
-use crate::vstd_extra::prelude::TreePath;
+use crate::vstd_extra::prelude::*;
 
 verus! {
 
 pub tracked struct PageTableTreePathModel {
-    pub tracked inner: ghost_tree::TreePath<CONST_NR_ENTRIES>,
+    pub tracked inner: TreePath<CONST_NR_ENTRIES>,
 }
 
 #[verifier::inline]

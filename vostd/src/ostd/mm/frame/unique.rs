@@ -179,7 +179,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot> + OwnerOf> UniqueFrame<M> {
     #[rustc_allow_incoherent_impl]
     #[verus_spec(res =>
         with Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(meta_perm): Tracked<PointsTo<MetaSlot, M>>,
+            Tracked(meta_perm): Tracked<ReprPointsTo<MetaSlot, M>>,
             Tracked(meta_own): Tracked<M::Owner>
     )]
     #[verifier::external_body]

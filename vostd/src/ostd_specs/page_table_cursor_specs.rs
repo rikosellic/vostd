@@ -1,7 +1,7 @@
 use vstd::prelude::*;
 
 use crate::vstd_extra::ownership::*;
-use crate::vstd_extra::prelude::TreePath;
+use crate::vstd_extra::prelude::*;
 
 use crate::aster_common::prelude::page_table::*;
 use crate::aster_common::prelude::*;

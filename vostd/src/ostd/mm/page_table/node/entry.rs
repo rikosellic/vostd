@@ -4,7 +4,7 @@ use vstd::prelude::*;
 
 use vstd::simple_pptr::*;
 
-use crate::vstd_extra::cast_ptr;
+use crate::vstd_extra::cast_ptr::*;
 use crate::vstd_extra::ownership::*;
 
 use crate::aster_common::prelude::frame::*;
@@ -38,7 +38,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
         with Tracked(owner) : Tracked<EntryOwner<C>>,
             Tracked(guard_perm) : Tracked<&PointsTo<PageTableGuard<'rcu, C>>>,
             Tracked(slot_own) : Tracked<&MetaSlotOwner>,
-            Tracked(inner_perm) : Tracked<&crate::vstd_extra::cast_ptr::PointsTo<MetaSlot, PageTablePageMeta<C>>>
+            Tracked(inner_perm) : Tracked<&ReprPointsTo<MetaSlot, PageTablePageMeta<C>>>
     )]
     #[verusfmt::skip]
     pub fn is_node(&self) -> bool
@@ -161,7 +161,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
             Tracked(guard_perm): Tracked<&mut PointsTo<PageTableGuard<'rcu, C>>>,
             Tracked(slot_own) : Tracked<&MetaSlotOwner>,
             Tracked(nr_children_perm) : Tracked<&mut vstd::cell::PointsTo<u16>>,
-            Tracked(inner_perm) : Tracked<&crate::vstd_extra::cast_ptr::PointsTo<MetaSlot, PageTablePageMeta<C>>>
+            Tracked(inner_perm) : Tracked<&ReprPointsTo<MetaSlot, PageTablePageMeta<C>>>
     )]
     pub fn replace(&mut self, new_child: Child<C>) -> Child<C>
         requires

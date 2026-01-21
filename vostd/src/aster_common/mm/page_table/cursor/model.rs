@@ -1,7 +1,7 @@
 use vstd::prelude::*;
 
 use crate::prelude::*;
-use crate::vstd_extra::prelude::TreePath;
+use crate::vstd_extra::prelude::*;
 
 verus! {
 

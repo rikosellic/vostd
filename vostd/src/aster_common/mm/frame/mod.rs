@@ -21,7 +21,7 @@ pub use untyped::*;
 use vstd::prelude::*;
 use vstd::simple_pptr::{self, PPtr};
 
-use crate::vstd_extra::cast_ptr;
+use crate::vstd_extra::cast_ptr::*;
 use crate::vstd_extra::ownership::*;
 
 use core::marker::PhantomData;
@@ -34,9 +34,9 @@ verus! {
 ///
 /// [`Frame<M`] the high-level representation of the low-level pointer
 /// to the [`super::meta::MetaSlot`].
-pub type FramePerm<M> = cast_ptr::PointsTo<MetaSlot, Frame<M>>;
+pub type FramePerm<M> = ReprPointsTo<MetaSlot, Frame<M>>;
 
-pub type MetaPerm<M> = cast_ptr::PointsTo<MetaSlot, M>;
+pub type MetaPerm<M> = ReprPointsTo<MetaSlot, M>;
 
 /// A smart pointer to a frame.
 ///
@@ -62,7 +62,7 @@ impl<M: AnyFrameMeta> Clone for Frame<M> {
     }
 }
 
-impl<M: AnyFrameMeta> cast_ptr::Repr<MetaSlot> for Frame<M> {
+impl<M: AnyFrameMeta> Repr<MetaSlot> for Frame<M> {
     open spec fn wf(m: MetaSlot) -> bool {
         true  /* Placeholder */
 

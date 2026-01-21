@@ -1,12 +1,12 @@
 use vstd::prelude::*;
 
 use vstd::arithmetic::power2::pow2;
-use crate::vstd_extra::array_ptr;
-use crate::vstd_extra::cast_ptr::Repr;
+use crate::vstd_extra::array_ptr::*;
+use crate::vstd_extra::cast_ptr::*;
 use crate::vstd_extra::extern_const::*;
 use crate::vstd_extra::ghost_tree::*;
 use crate::vstd_extra::ownership::*;
-use crate::vstd_extra::prelude::TreeNodeValue;
+use crate::vstd_extra::prelude::*;
 
 use super::*;
 

@@ -7,7 +7,7 @@ use vstd::cell;
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
-use crate::vstd_extra::cast_ptr::{self, Repr};
+use crate::vstd_extra::cast_ptr::*;
 use crate::vstd_extra::ownership::*;
 
 use super::*;

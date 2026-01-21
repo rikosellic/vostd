@@ -11,7 +11,7 @@ pub use view::*;
 use vstd::prelude::*;
 use vstd::std_specs::clone::*;
 
-use crate::vstd_extra::prelude::lemma_usize_ilog2_ordered;
+use crate::vstd_extra::prelude::*;
 
 use core::ops::Range;
 

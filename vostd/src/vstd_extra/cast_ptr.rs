@@ -87,7 +87,7 @@ impl<R, T: Repr<R>> ReprPtr<R, T> {
         self.addr
     }
 
-    pub exec fn take(self, Tracked(perm): Tracked<&mut PointsTo<R, T>>) -> (v: T)
+    pub exec fn take(self, Tracked(perm): Tracked<&mut ReprPointsTo<R, T>>) -> (v: T)
         requires
             old(perm).pptr() == self,
             old(perm).is_init(),
@@ -103,7 +103,7 @@ impl<R, T: Repr<R>> ReprPtr<R, T> {
         T::from_repr(self.ptr.take(Tracked(&mut perm.points_to)))
     }
 
-    pub exec fn put(self, Tracked(perm): Tracked<&mut PointsTo<R, T>>, v: T)
+    pub exec fn put(self, Tracked(perm): Tracked<&mut ReprPointsTo<R, T>>, v: T)
         requires
             old(perm).pptr() == self,
             old(perm).mem_contents() == MemContents::Uninit::<T>,
@@ -119,7 +119,7 @@ impl<R, T: Repr<R>> ReprPtr<R, T> {
         self.ptr.put(Tracked(&mut perm.points_to), v.to_repr())
     }
 
-    pub exec fn borrow<'a>(self, Tracked(perm): Tracked<&'a PointsTo<R, T>>) -> (v: &'a T)
+    pub exec fn borrow<'a>(self, Tracked(perm): Tracked<&'a ReprPointsTo<R, T>>) -> (v: &'a T)
         requires
             perm.pptr() == self,
             perm.is_init(),
@@ -132,13 +132,13 @@ impl<R, T: Repr<R>> ReprPtr<R, T> {
 }
 
 #[verifier::accept_recursive_types(T)]
-pub tracked struct PointsTo<R, T: Repr<R>> {
+pub tracked struct ReprPointsTo<R, T: Repr<R>> {
     pub ghost addr: usize,
     pub points_to: simple_pptr::PointsTo<R>,
     pub _T: PhantomData<T>,
 }
 
-impl<R, T: Repr<R>> PointsTo<R, T> {
+impl<R, T: Repr<R>> ReprPointsTo<R, T> {
     pub proof fn new(
         addr: Ghost<usize>,
         tracked points_to: simple_pptr::PointsTo<R>,

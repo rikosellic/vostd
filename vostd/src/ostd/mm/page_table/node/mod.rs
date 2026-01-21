@@ -32,7 +32,7 @@ use vstd::atomic::PAtomicU8;
 use vstd::cell::PCell;
 use vstd::simple_pptr::{self, PPtr};
 
-use crate::vstd_extra::array_ptr;
+use crate::vstd_extra::array_ptr::*;
 use crate::vstd_extra::cast_ptr::*;
 use crate::vstd_extra::ownership::*;
 
@@ -58,7 +58,7 @@ verus! {
 impl<C: PageTableConfig> PageTableNode<C> {
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(perm) : Tracked<&PointsTo<MetaSlot, PageTablePageMeta<C>>>
+        with Tracked(perm) : Tracked<&ReprPointsTo<MetaSlot, PageTablePageMeta<C>>>
     )]
     pub fn level(&self) -> PagingLevel
         requires
@@ -279,7 +279,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             idx < NR_ENTRIES(),
     {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = crate::vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(
+        let ptr = ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(
             #[verusfmt::skip]
             paddr_to_vaddr(
                 #[verus_spec(with Tracked(&owner.meta_perm.points_to))]
@@ -317,7 +317,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             idx < NR_ENTRIES(),
     {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = crate::vstd_extra::array_ptr::ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(
+        let ptr = ArrayPtr::<C::E, CONST_NR_ENTRIES>::from_addr(
             paddr_to_vaddr(
                 #[verus_spec(with Tracked(&owner.meta_perm.points_to))]
                 self.start_paddr()
@@ -333,7 +333,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     /// Gets the mutable reference to the number of valid PTEs in the node.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(meta_perm): Tracked<&'a PointsTo<MetaSlot, PageTablePageMeta<C>>>
+        with Tracked(meta_perm): Tracked<&'a ReprPointsTo<MetaSlot, PageTablePageMeta<C>>>
     )]
     fn nr_children_mut<'a>(&'a mut self) -> &'a PCell<u16>
         requires
