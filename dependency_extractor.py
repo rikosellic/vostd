@@ -612,6 +612,7 @@ class DependencyExtractor:
     def __init__(self):
         self.analyzer = VIRAnalyzer()
         self.vir_files_cache = {}
+        self.source_locations_cache = {}  # Cache for source file locations
     
     def find_relevant_vir_files(self, target_function):
         """Find all VIR files that might contain relevant dependencies"""
@@ -798,6 +799,204 @@ class DependencyExtractor:
                                 queue.append(resolved_dep)
         
         return sorted(all_deps)
+    
+    def find_source_location(self, module_path):
+        """Find the source file and line number for a given module path"""
+        if module_path in self.source_locations_cache:
+            return self.source_locations_cache[module_path]
+        
+        # Extract parts from module path
+        # Format: lib::module::path::Type::function or lib::module::path::function
+        if not module_path.startswith('lib::'):
+            return None
+        
+        parts = module_path[5:].split('::')
+        if len(parts) < 2:
+            return None
+        
+        # Determine function/item name (last part) and potential type name
+        item_name = parts[-1]
+        
+        # Try to determine the file path
+        # Heuristic: find the module path before the Type/function
+        possible_module_paths = []
+        
+        # Strategy 1: Check if second-to-last part is a type (PascalCase)
+        if len(parts) >= 2 and parts[-2][0].isupper():
+            # Has a type: lib::module::Type::function
+            module_parts = parts[:-2]
+            type_name = parts[-2]
+        else:
+            # No type: lib::module::function or lib::module::CONST
+            module_parts = parts[:-1]
+            type_name = None
+        
+        # Build file paths to search
+        base_paths = ['vostd/src', 'kernel/src', 'osdk/src']
+        for base_path in base_paths:
+            file_path = Path(base_path) / Path(*module_parts).with_suffix('.rs')
+            if file_path.exists():
+                possible_module_paths.append(file_path)
+        
+        # Search in each possible file for the item definition
+        for file_path in possible_module_paths:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                
+                for line_num, line in enumerate(lines, 1):
+                    # Look for various definition patterns
+                    
+                    # 1. Function definitions: "fn function_name", "pub fn function_name"
+                    # Also match Verus-specific modifiers: open spec, closed spec, tracked, etc.
+                    func_pattern = rf'\b(?:pub\s+)?(?:const\s+)?(?:open\s+)?(?:closed\s+)?(?:spec\s+)?(?:tracked\s+)?(?:exec\s+)?fn\s+{re.escape(item_name)}\s*[<(]'
+                    if re.search(func_pattern, line):
+                        # Check if this function is inside an impl block
+                        impl_info = self._find_impl_block_start(lines, line_num - 1)
+                        if impl_info is not None:
+                            # Check if it's a trait impl or inherent impl
+                            if impl_info['is_trait_impl']:
+                                # Trait impl: show impl block location and signature
+                                relative_path = str(file_path).replace('\\', '/')
+                                location_info = {
+                                    'file': relative_path,
+                                    'line': impl_info['line'] + 1,  # Convert to 1-based
+                                    'in_impl': True,
+                                    'impl_signature': impl_info['signature']
+                                }
+                            else:
+                                # Inherent impl: show function's actual location
+                                relative_path = str(file_path).replace('\\', '/')
+                                location_info = {
+                                    'file': relative_path,
+                                    'line': line_num,
+                                    'in_impl': False
+                                }
+                        else:
+                            # Standalone function
+                            relative_path = str(file_path).replace('\\', '/')
+                            location_info = {
+                                'file': relative_path,
+                                'line': line_num,
+                                'in_impl': False
+                            }
+                        self.source_locations_cache[module_path] = location_info
+                        return location_info
+                    
+                    # 2. Constant definitions: "pub const CONST_NAME", "const CONST_NAME"
+                    const_pattern = rf'\b(?:pub\s+)?const\s+{re.escape(item_name)}\s*:'
+                    if re.search(const_pattern, line):
+                        relative_path = str(file_path).replace('\\', '/')
+                        location_info = {
+                            'file': relative_path,
+                            'line': line_num
+                        }
+                        self.source_locations_cache[module_path] = location_info
+                        return location_info
+                    
+                    # 2b. extern_const! macro - matches constants within brackets
+                    # Matches: pub PAGE_SIZE [PAGE_SIZE_SPEC, CONST_PAGE_SIZE]: usize
+                    # Can match either the first name, or names in brackets
+                    extern_const_pattern = rf'\b(?:pub\s+)?{re.escape(item_name)}\s*\[[^]]*\]\s*:'
+                    if re.search(extern_const_pattern, line):
+                        relative_path = str(file_path).replace('\\', '/')
+                        location_info = {
+                            'file': relative_path,
+                            'line': line_num
+                        }
+                        self.source_locations_cache[module_path] = location_info
+                        return location_info
+                    
+                    # 2c. extern_const! macro - match items inside brackets
+                    # Matches: pub NAME [SPEC, CONST_NAME]: where CONST_NAME or SPEC is what we're looking for
+                    extern_const_bracket_pattern = rf'\b(?:pub\s+)?[A-Z_]+\s*\[[^]]*{re.escape(item_name)}[^]]*\]\s*:'
+                    if re.search(extern_const_bracket_pattern, line):
+                        relative_path = str(file_path).replace('\\', '/')
+                        location_info = {
+                            'file': relative_path,
+                            'line': line_num
+                        }
+                        self.source_locations_cache[module_path] = location_info
+                        return location_info
+                    
+                    # 3. Type definitions: "pub struct TypeName", "pub enum TypeName"
+                    type_pattern = rf'\b(?:pub\s+)?(?:struct|enum|union|trait)\s+{re.escape(item_name)}\s*[<{{(]'
+                    if re.search(type_pattern, line):
+                        relative_path = str(file_path).replace('\\', '/')
+                        location_info = {
+                            'file': relative_path,
+                            'line': line_num
+                        }
+                        self.source_locations_cache[module_path] = location_info
+                        return location_info
+                    
+                    # 4. Type alias: "pub type TypeName"
+                    alias_pattern = rf'\b(?:pub\s+)?type\s+{re.escape(item_name)}\s*[=<]'
+                    if re.search(alias_pattern, line):
+                        relative_path = str(file_path).replace('\\', '/')
+                        location_info = {
+                            'file': relative_path,
+                            'line': line_num
+                        }
+                        self.source_locations_cache[module_path] = location_info
+                        return location_info
+                
+            except Exception:
+                continue
+        
+        # If not found, return None
+        self.source_locations_cache[module_path] = None
+        return None
+    
+    def _find_impl_block_start(self, lines, current_line_idx):
+        """Find the start line of an impl block that contains the given line.
+        Returns dict with 'line' (0-based index), 'signature', and 'is_trait_impl', or None if not in an impl block."""
+        # Simple approach: search backwards for an 'impl' line
+        # Stop when we find a closing brace at the same or lower indentation level
+        
+        current_indent = len(lines[current_line_idx]) - len(lines[current_line_idx].lstrip())
+        
+        for i in range(current_line_idx - 1, -1, -1):
+            line = lines[i]
+            stripped = line.strip()
+            
+            # Skip empty lines and comments
+            if not stripped or stripped.startswith('//'):
+                continue
+            
+            line_indent = len(line) - len(line.lstrip())
+            
+            # If we find a closing brace at same or lower indentation, we've left the block
+            if stripped.startswith('}') and line_indent <= current_indent - 4:  # assuming 4-space indent
+                return None
+            
+            # If we find an impl line
+            if stripped.startswith('impl'):
+                # Extract the impl signature
+                signature = self._extract_impl_signature(stripped)
+                # Check if it's a trait impl (contains ' for ')
+                is_trait_impl = ' for ' in stripped
+                return {
+                    'line': i,
+                    'signature': signature,
+                    'is_trait_impl': is_trait_impl
+                }
+        
+        return None
+    
+    def _extract_impl_signature(self, impl_line):
+        """Extract the complete impl signature from an impl line, preserving generics.
+        Examples:
+        - 'impl<M: AnyFrameMeta + Repr<MetaSlot>> OwnerOf for Link<M> {' 
+          -> 'impl<M: AnyFrameMeta + Repr<MetaSlot>> OwnerOf for Link<M>'
+        - 'impl<T> MyType<T> {' -> 'impl<T> MyType<T>'
+        """
+        # Simply remove the trailing '{' and any whitespace
+        impl_line = impl_line.strip()
+        if impl_line.endswith('{'):
+            impl_line = impl_line[:-1].strip()
+        
+        return impl_line
 
 def main():
     if len(sys.argv) < 2:
@@ -820,10 +1019,39 @@ def main():
     dependencies = extractor.extract_dependencies(target)
     
     print(f"\n=== Dependencies for {target} ===")
-    for dep in dependencies:
-        print(dep)
     
-    print(f"\nTotal: {len(dependencies)} dependencies found")
+    # Deduplicate based on file location and display text
+    seen = set()
+    unique_deps = []
+    
+    for dep in dependencies:
+        # Find source location
+        location = extractor.find_source_location(dep)
+        
+        if location:
+            if location.get('in_impl'):
+                # Show impl signature instead of full path
+                key = (location['file'], location['line'], location['impl_signature'])
+                display_text = location['impl_signature']
+            else:
+                key = (location['file'], location['line'], dep)
+                display_text = dep
+        else:
+            key = ('not_found', 0, dep)
+            display_text = dep
+        
+        if key not in seen:
+            seen.add(key)
+            unique_deps.append((location, display_text))
+    
+    # Output unique dependencies
+    for location, display_text in unique_deps:
+        if location:
+            print(f"[{location['file']}:{location['line']}]  {display_text}")
+        else:
+            print(f"[location not found]  {display_text}")
+    
+    print(f"\nTotal: {len(unique_deps)} unique dependencies found (from {len(dependencies)} total)")
 
 if __name__ == '__main__':
     main()
