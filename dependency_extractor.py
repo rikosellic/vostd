@@ -715,9 +715,18 @@ class DependencyExtractor:
             resolved_dependencies.add(resolved)
         
         # 6. Resolve transitive dependencies
-        all_dependencies = self._resolve_transitive_dependencies(resolved_dependencies)
+        all_dependencies_list = self._resolve_transitive_dependencies(resolved_dependencies)
+        all_dependencies = set(all_dependencies_list)
         
-        return all_dependencies
+        # 7. Extract trait constraints from trait implementations
+        trait_constraint_deps = self.extract_trait_constraints(all_dependencies)
+        all_dependencies.update(trait_constraint_deps)
+        
+        # 8. For each type, find its trait implementations and extract associated types
+        type_impl_deps = self.extract_type_implementations(all_dependencies)
+        all_dependencies.update(type_impl_deps)
+        
+        return sorted(all_dependencies)
     
     def _convert_target_to_vir_format(self, target_function):
         """Convert Rust function path to VIR format"""
@@ -800,13 +809,326 @@ class DependencyExtractor:
         
         return sorted(all_deps)
     
+    def extract_trait_constraints(self, dependencies):
+        """Extract additional dependencies from trait constraints.
+        For example, if we have 'impl OwnerOf for Type', we need to find:
+        1. The OwnerOf trait definition
+        2. Its associated type constraints (e.g., type Owner: InvView)
+        3. Add those constrained traits to dependencies
+        4. For types implementing InvView/View, extract their associated types
+        """
+        additional_deps = set()
+        
+        for dep in dependencies:
+            # Check if this is a trait implementation
+            location = self.find_source_location(dep)
+            if location and location.get('in_impl') and location.get('impl_signature'):
+                sig = location['impl_signature']
+                # Extract trait name from "impl Trait for Type" or "impl<...> Trait for Type"
+                if ' for ' in sig:
+                    # Parse the trait name and type name
+                    parts = sig.split(' for ')
+                    trait_part = parts[0].strip()
+                    type_part = parts[1].strip() if len(parts) > 1 else ''
+                    
+                    # Remove 'impl' and generics from trait part
+                    trait_part = re.sub(r'^impl\s*(<[^>]+>)?\s*', '', trait_part)
+                    trait_name = trait_part.split('<')[0].strip()
+                    
+                    # Extract the implementing type name (without generics)
+                    type_name = type_part.split('<')[0].strip()
+                    
+                    # Try to find the trait definition and extract its constraints
+                    trait_constraints = self._find_trait_constraints(dep, trait_name)
+                    additional_deps.update(trait_constraints)
+                    
+                    # For any trait implementation, extract associated types
+                    assoc_types = self._extract_associated_types_from_impl(location['file'], location['line'], type_name)
+                    
+                    # Add the associated types themselves
+                    additional_deps.update(assoc_types)
+                    
+                    # For each associated type, find its trait implementations
+                    for assoc_type_path in assoc_types:
+                        assoc_parts = assoc_type_path.split('::')
+                        if len(assoc_parts) >= 2:
+                            assoc_type_name = assoc_parts[-1]
+                            # Find the file where this type is defined
+                            module_parts = assoc_parts[1:-1]
+                            for base_path in [Path('vostd') / 'src']:
+                                file_path = base_path / Path(*module_parts).with_suffix('.rs')
+                                if file_path.exists():
+                                    # Find all trait implementations for this associated type
+                                    type_impls = self._find_type_trait_impls(
+                                        file_path, assoc_type_name, '::'.join(assoc_parts[:-1])
+                                    )
+                                    additional_deps.update(type_impls)
+                                    break
+        
+        return additional_deps
+    
+    def _find_trait_constraints(self, impl_path, trait_name):
+        """Find trait definition and extract associated type constraints."""
+        constraints = set()
+        
+        # Build possible module paths for the trait
+        # Extract module path from impl_path
+        parts = impl_path.split('::')
+        if len(parts) < 3:
+            return constraints
+        
+        # Try common locations for traits
+        # First, try the same module as the impl
+        module_parts_candidates = []
+        for i in range(len(parts) - 1, 1, -1):
+            module_parts_candidates.append(parts[1:i])
+        
+        # Also check common trait locations
+        module_parts_candidates.append(['vstd_extra', 'ownership'])
+        module_parts_candidates.append(['aster_common', 'mm', 'frame'])
+        
+        for module_parts in module_parts_candidates:
+            base_paths = [Path('vostd') / 'src']
+            for base_path in base_paths:
+                file_path = base_path / Path(*module_parts).with_suffix('.rs')
+                if file_path.exists():
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                        
+                        # Find the trait definition
+                        # Pattern: pub trait TraitName ... { ... }
+                        trait_pattern = rf'\bpub\s+trait\s+{re.escape(trait_name)}\b'
+                        match = re.search(trait_pattern, content)
+                        if match:
+                            # Found the trait, now extract associated type constraints
+                            # Find the trait block
+                            start_pos = match.start()
+                            brace_count = 0
+                            in_trait = False
+                            trait_content = []
+                            
+                            for i in range(start_pos, len(content)):
+                                char = content[i]
+                                if char == '{':
+                                    brace_count += 1
+                                    in_trait = True
+                                elif char == '}':
+                                    brace_count -= 1
+                                    if brace_count == 0 and in_trait:
+                                        break
+                                if in_trait:
+                                    trait_content.append(char)
+                            
+                            trait_block = ''.join(trait_content)
+                            
+                            # Extract associated types with constraints
+                            # Pattern: type TypeName: Constraint1 + Constraint2;
+                            assoc_type_pattern = r'type\s+\w+\s*:\s*([^;]+);'
+                            for assoc_match in re.finditer(assoc_type_pattern, trait_block):
+                                constraint_str = assoc_match.group(1)
+                                # Parse traits from constraint (e.g., "InvView + Sized")
+                                trait_constraints = re.findall(r'\b([A-Z][A-Za-z0-9_]*)\b', constraint_str)
+                                for constraint_trait in trait_constraints:
+                                    if constraint_trait not in ['Self', 'Sized']:  # Skip special types
+                                        # Try to construct full path
+                                        # First try same module
+                                        constraint_path = f"lib::{'::'.join(module_parts)}::{constraint_trait}"
+                                        constraints.add(constraint_path)
+                            
+                            return constraints  # Found the trait, stop searching
+                    except Exception:
+                        continue
+        
+        return constraints
+    
+    def _extract_associated_types_from_impl(self, file_path, line_num, type_name):
+        """Extract associated types defined in an impl block.
+        For example, from 'impl View for CursorOwner', extract 'type V = CursorModel'.
+        """
+        assoc_types = set()
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # Find the impl block starting at line_num (1-based)
+            if line_num < 1 or line_num > len(lines):
+                return assoc_types
+            
+            # Read the impl block
+            start_idx = line_num - 1  # Convert to 0-based
+            brace_count = 0
+            impl_lines = []
+            
+            for i in range(start_idx, len(lines)):
+                line = lines[i]
+                impl_lines.append(line)
+                
+                for char in line:
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            # End of impl block
+                            break
+                
+                if brace_count == 0 and '{' in ''.join(impl_lines):
+                    break
+            
+            impl_content = ''.join(impl_lines)
+            
+            # Extract associated type definitions
+            # Pattern: type TypeName = SomeType;
+            assoc_type_pattern = r'type\s+\w+\s*=\s*([A-Z][A-Za-z0-9_<>]*)'
+            for match in re.finditer(assoc_type_pattern, impl_content):
+                assoc_type_name = match.group(1)
+                # Remove generics for simple matching
+                base_type = assoc_type_name.split('<')[0]
+                
+                # Try to construct full path
+                # First, extract the module path from the file path
+                file_path_obj = Path(file_path)
+                # Get the relative path from vostd/src
+                try:
+                    vostd_src = Path('vostd') / 'src'
+                    if file_path_obj.is_absolute():
+                        # Try to make it relative to current working directory
+                        rel_to_cwd = file_path_obj.relative_to(Path.cwd())
+                        rel_path = str(rel_to_cwd.relative_to(vostd_src)).replace('.rs', '')
+                    else:
+                        rel_path = str(file_path_obj.relative_to(vostd_src)).replace('.rs', '')
+                    
+                    # Convert path separators to ::
+                    module_parts = rel_path.replace(os.sep, '::')
+                    full_path = f"lib::{module_parts}::{base_type}"
+                    assoc_types.add(full_path)
+                except ValueError:
+                    # If can't make relative, skip
+                    pass
+        
+        except Exception:
+            pass
+        
+        return assoc_types
+    
+    def extract_type_implementations(self, dependencies):
+        """For each type in dependencies, find all its trait implementations.
+        This helps discover impl View, impl InvView, etc., and their associated types.
+        """
+        additional_deps = set()
+        
+        for dep in dependencies:
+            # Extract type names from the dependency
+            # Skip if it's already an impl
+            location = self.find_source_location(dep)
+            if location and location.get('in_impl'):
+                continue
+            
+            # Extract potential type names
+            parts = dep.split('::')
+            if len(parts) < 2:
+                continue
+            
+            # Check if this looks like a type (PascalCase)
+            last_part = parts[-1]
+            # Type names start with uppercase and typically don't contain all uppercase (constants)
+            # Also skip if it looks like a function (lowercase or mixed case with method calls)
+            if last_part and last_part[0].isupper() and last_part != last_part.upper():
+                # This might be a type, find its implementations
+                module_path = '::'.join(parts[:-1])
+                type_name = last_part
+                
+                # Find the file
+                if not dep.startswith('lib::'):
+                    continue
+                
+                module_parts = parts[1:-1]
+                base_paths = [Path('vostd') / 'src']
+                
+                for base_path in base_paths:
+                    file_path = base_path / Path(*module_parts).with_suffix('.rs')
+                    if file_path.exists():
+                        impl_deps = self._find_type_trait_impls(file_path, type_name, module_path)
+                        additional_deps.update(impl_deps)
+                        break
+        
+        return additional_deps
+    
+    def _find_type_trait_impls(self, file_path, type_name, module_path):
+        """Find all trait implementations for a given type."""
+        impl_deps = set()
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # Find impl blocks for this type
+            # Pattern: impl Trait for TypeName or impl TypeName
+            for line_num, line in enumerate(lines, 1):
+                stripped = line.strip()
+                
+                # Match impl Trait for TypeName
+                impl_trait_pattern = rf'impl.*\s+for\s+{re.escape(type_name)}\s*[<{{]'
+                if re.search(impl_trait_pattern, stripped):
+                    # Extract the trait name
+                    # Handle complex generics with nested < > by finding the trait name before 'for'
+                    # Pattern: impl<...> TraitName for TypeName
+                    # or: impl TraitName for TypeName
+                    for_match = re.search(r'\s+for\s+', stripped)
+                    if for_match:
+                        # Get the part before 'for'
+                        before_for = stripped[:for_match.start()]
+                        # Extract the last word (trait name) from before 'for'
+                        trait_match = re.search(r'(\w+)\s*$', before_for)
+                        if trait_match:
+                            trait_name = trait_match.group(1)
+                        
+                        # Add the impl block itself as a dependency
+                        # Use @ as separator between module_path and impl_sig
+                        # Format: lib::module::path@impl Trait for Type
+                        impl_sig = self._extract_impl_signature(stripped)
+                        if impl_sig:
+                            impl_path = f"{module_path}@{impl_sig}"
+                            impl_deps.add(impl_path)
+                        
+                        # Extract associated types
+                        assoc_types = self._extract_associated_types_from_impl(
+                            str(file_path), line_num, type_name
+                        )
+                        # Add both the types themselves and recursively find their impls
+                        for assoc_type_path in assoc_types:
+                            impl_deps.add(assoc_type_path)
+                            # Recursively find trait impls for the associated type
+                            assoc_parts = assoc_type_path.split('::')
+                            if len(assoc_parts) >= 2:
+                                assoc_type_name = assoc_parts[-1]
+                                # Recursively find impls for this associated type
+                                # Avoid infinite recursion by limiting depth
+                                if assoc_type_name != type_name:
+                                    recursive_deps = self._find_type_trait_impls(
+                                        file_path, assoc_type_name, module_path
+                                    )
+                                    impl_deps.update(recursive_deps)
+        
+        except Exception:
+            pass
+        
+        return impl_deps
+    
     def find_source_location(self, module_path):
         """Find the source file and line number for a given module path"""
         if module_path in self.source_locations_cache:
             return self.source_locations_cache[module_path]
         
+        # Check if this is an impl block path with @ separator
+        if '@' in module_path:
+            return self._find_impl_block_location_with_separator(module_path)
+        
         # Extract parts from module path
         # Format: lib::module::path::Type::function or lib::module::path::function
+        # Or: lib::module::path::impl Trait for Type (old format, kept for compatibility)
         if not module_path.startswith('lib::'):
             return None
         
@@ -816,6 +1138,10 @@ class DependencyExtractor:
         
         # Determine function/item name (last part) and potential type name
         item_name = parts[-1]
+        
+        # Check if this is an impl block path (old format)
+        if item_name.startswith('impl '):
+            return self._find_impl_block_location(module_path, parts)
         
         # Try to determine the file path
         # Heuristic: find the module path before the Type/function
@@ -832,9 +1158,9 @@ class DependencyExtractor:
             type_name = None
         
         # Build file paths to search
-        base_paths = ['vostd/src', 'kernel/src', 'osdk/src']
+        base_paths = [Path('vostd') / 'src']
         for base_path in base_paths:
-            file_path = Path(base_path) / Path(*module_parts).with_suffix('.rs')
+            file_path = base_path / Path(*module_parts).with_suffix('.rs')
             if file_path.exists():
                 possible_module_paths.append(file_path)
         
@@ -919,8 +1245,9 @@ class DependencyExtractor:
                         self.source_locations_cache[module_path] = location_info
                         return location_info
                     
-                    # 3. Type definitions: "pub struct TypeName", "pub enum TypeName"
-                    type_pattern = rf'\b(?:pub\s+)?(?:struct|enum|union|trait)\s+{re.escape(item_name)}\s*[<{{(]'
+                    # 3. Type definitions: "pub struct TypeName", "pub enum TypeName", "pub trait TypeName"
+                    # For traits, allow : for trait bounds
+                    type_pattern = rf'\b(?:pub\s+)?(?:struct|enum|union|trait)\s+{re.escape(item_name)}\s*[<{{(:]'
                     if re.search(type_pattern, line):
                         relative_path = str(file_path).replace('\\', '/')
                         location_info = {
@@ -946,6 +1273,136 @@ class DependencyExtractor:
         
         # If not found, return None
         self.source_locations_cache[module_path] = None
+        return None
+    
+    def _find_impl_block_location_with_separator(self, module_path):
+        """Find the source location of an impl block using @ separator.
+        Format: lib::module::path@impl Trait for Type
+        """
+        if '@' not in module_path:
+            return None
+        
+        # Split by @ to separate module path from impl signature
+        parts = module_path.split('@')
+        if len(parts) != 2:
+            return None
+        
+        module_part = parts[0]  # e.g., "lib::aster_common::mm::frame::unique"
+        impl_signature = parts[1]  # e.g., "impl<M: ...> View for UniqueFrameOwner<M>"
+        
+        # Extract module parts
+        if not module_part.startswith('lib::'):
+            return None
+        
+        module_parts = module_part[5:].split('::')  # Remove 'lib::' and split
+        
+        # Build file path
+        base_paths = [Path('vostd') / 'src']
+        for base_path in base_paths:
+            file_path = base_path / Path(*module_parts).with_suffix('.rs')
+            if file_path.exists():
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                    
+                    # Search for the impl block
+                    for line_num, line in enumerate(lines, 1):
+                        stripped = line.strip()
+                        
+                        # Match impl blocks
+                        if stripped.startswith('impl'):
+                            # Extract the impl signature from this line
+                            current_sig = self._extract_impl_signature(stripped)
+                            if current_sig:
+                                # Normalize both signatures for comparison (remove extra spaces)
+                                normalized_current = ' '.join(current_sig.split())
+                                normalized_target = ' '.join(impl_signature.split())
+                                
+                                if normalized_current == normalized_target:
+                                    # Found it!
+                                    relative_path = str(file_path).replace('\\', '/')
+                                    location_info = {
+                                        'file': relative_path,
+                                        'line': line_num,
+                                        'in_impl': True,
+                                        'impl_signature': impl_signature
+                                    }
+                                    self.source_locations_cache[module_path] = location_info
+                                    return location_info
+                except Exception:
+                    continue
+        
+        return None
+    
+    def _find_impl_block_location(self, module_path, parts):
+        """Find the source location of an impl block.
+        Format: lib::module::path::impl Trait for Type
+        or: lib::module::path::impl<...> Trait for Type
+        """
+        impl_signature = parts[-1]  # e.g., "impl AnyFrameMeta for MetaSlotStorage"
+        module_parts = parts[:-1]   # Module path
+        
+        # Debug: log what we're searching for
+        debug = False  # Set to True for debugging
+        
+        # Extract type name from impl signature
+        # Pattern: impl [<generics>] [Trait] for TypeName
+        # or: impl [<generics>] TypeName  (inherent impl)
+        type_match = None
+        if ' for ' in impl_signature:
+            # Trait impl: impl Trait for TypeName
+            type_match = re.search(r'\s+for\s+([A-Za-z_][A-Za-z0-9_<>]*)', impl_signature)
+        else:
+            # Inherent impl: impl TypeName
+            type_match = re.search(r'impl(?:<[^>]+>)?\s+([A-Za-z_][A-Za-z0-9_<>]*)', impl_signature)
+        
+        if not type_match:
+            if debug:
+                print(f"DEBUG: Could not extract type name from impl signature: {impl_signature}")
+            return None
+        
+        type_name = type_match.group(1).split('<')[0]  # Remove generics
+        
+        # Build file path
+        base_paths = [Path('vostd') / 'src']
+        for base_path in base_paths:
+            file_path = base_path / Path(*module_parts).with_suffix('.rs')
+            if file_path.exists():
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                    
+                    # Search for the impl block
+                    for line_num, line in enumerate(lines, 1):
+                        stripped = line.strip()
+                        
+                        # Match impl blocks
+                        if stripped.startswith('impl'):
+                            # Extract the impl signature from this line
+                            current_sig = self._extract_impl_signature(stripped)
+                            if current_sig:
+                                # Normalize both signatures for comparison (remove extra spaces)
+                                normalized_current = ' '.join(current_sig.split())
+                                normalized_target = ' '.join(impl_signature.split())
+                                
+                                if normalized_current == normalized_target:
+                                    # Found it!
+                                    relative_path = str(file_path).replace('\\', '/')
+                                    location_info = {
+                                        'file': relative_path,
+                                        'line': line_num,
+                                        'in_impl': True,
+                                        'impl_signature': impl_signature
+                                    }
+                                    self.source_locations_cache[module_path] = location_info
+                                    return location_info
+                except Exception as e:
+                    if debug:
+                        print(f"DEBUG: Exception reading {file_path}: {e}")
+                    continue
+        
+        if debug:
+            print(f"DEBUG: Could not find impl block for: {impl_signature} in module {module_parts}")
         return None
     
     def _find_impl_block_start(self, lines, current_line_idx):
@@ -1025,20 +1482,26 @@ def main():
     unique_deps = []
     
     for dep in dependencies:
+        # Check if this is an impl block with @ separator
+        if '@' in dep:
+            # Extract impl signature for display
+            impl_sig = dep.split('@')[1]
+            display_text = impl_sig
+        else:
+            display_text = dep
+        
         # Find source location
         location = extractor.find_source_location(dep)
         
         if location:
             if location.get('in_impl'):
-                # Show impl signature instead of full path
+                # Use impl signature from location
                 key = (location['file'], location['line'], location['impl_signature'])
                 display_text = location['impl_signature']
             else:
                 key = (location['file'], location['line'], dep)
-                display_text = dep
         else:
-            key = ('not_found', 0, dep)
-            display_text = dep
+            key = ('not_found', 0, display_text)
         
         if key not in seen:
             seen.add(key)
