@@ -1040,6 +1040,10 @@ class DependencyExtractor:
         type_impl_deps = self.extract_type_implementations(all_dependencies)
         all_dependencies.update(type_impl_deps)
         
+        # 9. Extract spec annotation dependencies from functions
+        spec_deps = self.extract_spec_dependencies(all_dependencies)
+        all_dependencies.update(spec_deps)
+        
         return sorted(all_dependencies)
     
     def _convert_target_to_vir_format(self, target_function):
@@ -1589,6 +1593,53 @@ class DependencyExtractor:
         
         return impl_deps
     
+    def extract_spec_dependencies(self, dependencies):
+        """For each function in dependencies, extract dependencies from its #[verus_spec(...)] annotations."""
+        spec_deps = set()
+        
+        for dep in dependencies:
+            # Only process function paths (not types or impls)
+            if '@' in dep:  # impl blocks
+                continue
+            
+            # Get the location to find the source file
+            location = self.find_source_location(dep)
+            if not location or 'file' not in location:
+                continue
+            
+            file_path = location['file']
+            line_num = location.get('line', 0)
+            
+            if line_num == 0:
+                continue
+            
+            # Extract spec dependencies from this function
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                
+                # Extract module parts from dep
+                parts = dep.split('::')
+                if len(parts) < 2 or not dep.startswith('lib::'):
+                    continue
+                
+                # Determine module path
+                if len(parts) >= 2 and parts[-2][0].isupper():
+                    # Has a type: lib::module::Type::function
+                    module_parts = parts[1:-2]
+                else:
+                    # No type: lib::module::function
+                    module_parts = parts[1:-1]
+                
+                # Extract spec annotation deps
+                fn_spec_deps = self._extract_spec_annotation_deps(lines, line_num - 1, module_parts)
+                spec_deps.update(fn_spec_deps)
+                
+            except Exception:
+                continue
+        
+        return spec_deps
+    
     def find_source_location(self, module_path):
         """Find the source file and line number for a given module path"""
         if module_path in self.source_locations_cache:
@@ -1649,6 +1700,9 @@ class DependencyExtractor:
                     # Also match Verus-specific modifiers: open spec, closed spec, tracked, etc.
                     func_pattern = rf'\b(?:pub\s+)?(?:const\s+)?(?:open\s+)?(?:closed\s+)?(?:spec\s+)?(?:tracked\s+)?(?:exec\s+)?fn\s+{re.escape(item_name)}\s*[<(]'
                     if re.search(func_pattern, line):
+                        # Extract spec annotation dependencies
+                        spec_deps = self._extract_spec_annotation_deps(lines, line_num - 1, module_parts)
+                        
                         # Check if this function is inside an impl block
                         impl_info = self._find_impl_block_start(lines, line_num - 1)
                         if impl_info is not None:
@@ -1745,6 +1799,137 @@ class DependencyExtractor:
         
         # If not found, return None
         self.source_locations_cache[module_path] = None
+        return None
+    
+    def _extract_spec_annotation_deps(self, lines, fn_line_idx, module_parts):
+        """Extract dependencies from #[verus_spec(...)] annotations above a function.
+        Returns a set of function paths called in the spec.
+        """
+        spec_deps = set()
+        
+        # Look backwards from function definition to find #[verus_spec(...)]
+        # We need to find the complete spec annotation, which spans from #[verus_spec( to the matching )]
+        i = fn_line_idx - 1
+        spec_lines = []
+        spec_start = None
+        
+        # First pass: collect lines until we find #[verus_spec or hit another definition
+        while i >= 0:
+            line = lines[i]
+            
+            # Check if this line starts a verus_spec annotation
+            if '#[verus_spec' in line:
+                spec_start = i
+                break
+            
+            # Stop if we hit another function/type definition
+            if re.match(r'^\s*(?:pub\s+)?(?:fn|struct|enum|trait|impl)\s+', line):
+                break
+            
+            # Stop if we hit another attribute that's not verus_spec related
+            if line.strip().startswith('#[') and not any(x in line for x in ['rustc_', 'verifier::', 'verus_']):
+                break
+            
+            i -= 1
+        
+        if spec_start is None:
+            return spec_deps
+        
+        # Second pass: from spec_start, collect all lines until brackets are balanced
+        spec_content = []
+        bracket_count = 0
+        i = spec_start
+        
+        while i < fn_line_idx:
+            line = lines[i]
+            spec_content.append(line)
+            
+            # Count brackets
+            bracket_count += line.count('(') - line.count(')')
+            
+            # If brackets are balanced and we've started, we're done
+            if i > spec_start and bracket_count == 0:
+                break
+            
+            i += 1
+        
+        if not spec_content:
+            return spec_deps
+        
+        # Parse spec content for function calls
+        spec_text = ''.join(spec_content)
+        
+        # Pattern: Type::function_name or module::Type::function_name
+        # Match: CursorOwner::front_owner_spec, Self::some_method, etc.
+        call_pattern = r'\b([A-Z][A-Za-z0-9_]*(?:::[A-Za-z0-9_]+)+)\s*\('
+        
+        for match in re.finditer(call_pattern, spec_text):
+            call_path = match.group(1)
+            
+            # Build full path
+            parts = call_path.split('::')
+            if len(parts) >= 2:
+                type_name = parts[0]
+                func_name = parts[-1]
+                
+                # Special case: Self references
+                if type_name == 'Self':
+                    full_path = f"lib::{'::'.join(module_parts)}::{call_path}"
+                    spec_deps.add(full_path)
+                else:
+                    # For non-Self types, search for the type definition across all files
+                    # This is more reliable than guessing the module path
+                    type_location = self._find_type_module(type_name, func_name)
+                    if type_location:
+                        spec_deps.add(type_location)
+                    else:
+                        # Fallback: try same module
+                        full_path = f"lib::{'::'.join(module_parts)}::{call_path}"
+                        spec_deps.add(full_path)
+        
+        return spec_deps
+    
+    def _find_type_module(self, type_name, method_name):
+        """Find the module containing a type by searching for its definition.
+        Returns the full path like lib::aster_common::mm::frame::linked_list_owners::TypeName::method
+        """
+        # Search in vostd/src for the type definition
+        base_path = Path('vostd') / 'src'
+        if not base_path.exists():
+            return None
+        
+        # Pattern to match: "pub struct TypeName" or "pub enum TypeName" or "impl TypeName"
+        type_pattern = re.compile(rf'\b(?:struct|enum|impl(?:<[^>]+>)?)\s+{re.escape(type_name)}\b')
+        method_pattern = re.compile(rf'^\s*pub\s+(?:open\s+)?(?:closed\s+)?(?:spec\s+)?(?:proof\s+)?fn\s+{re.escape(method_name)}\s*[<\(]', re.MULTILINE)
+        
+        # Search all .rs files
+        for rs_file in base_path.rglob('*.rs'):
+            try:
+                with open(rs_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # Check if this file contains the type definition
+                if type_pattern.search(content):
+                    # Also check if it has the method
+                    if method_pattern.search(content):
+                        # Build module path from file path
+                        rel_path = rs_file.relative_to(base_path)
+                        parts = list(rel_path.parts[:-1])  # Remove file name
+                        
+                        # Handle mod.rs - use parent directory name
+                        if rs_file.name == 'mod.rs':
+                            pass  # parts already correct
+                        else:
+                            # Add file name without .rs
+                            parts.append(rs_file.stem)
+                        
+                        # Build full path
+                        module_path = '::'.join(parts)
+                        full_path = f"lib::{module_path}::{type_name}::{method_name}"
+                        return full_path
+            except Exception:
+                continue
+        
         return None
     
     def _find_impl_block_location_with_separator(self, module_path):
