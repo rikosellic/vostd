@@ -266,6 +266,7 @@ class VIRAnalyzer:
         self.function_defs = {}  # function path -> definition
         self.datatype_defs = {}  # type path -> definition
         self.trait_defs = {}     # trait path -> definition
+        self.trait_impls = defaultdict(list)  # type path -> list of trait impls
         self.dependencies = defaultdict(set)  # function -> set of dependencies
         self.source_analyzer = SourceCodeAnalyzer()
         self.vir_impl_mappings = {}  # impl_path -> type_name
@@ -470,6 +471,316 @@ class VIRAnalyzer:
         if isinstance(expr, list):
             for item in expr:
                 self.extract_function_definition(item)
+    
+    def extract_datatype_definitions(self, expr):
+        """Extract Datatype definitions from VIR expression to get field dependencies.
+        Parses: (Datatype :name (Dt Path "lib!...") ... :variants (...))
+        """
+        if not isinstance(expr, list) or len(expr) < 2:
+            return
+        
+        if expr[0] == 'Datatype':
+            datatype_path = None
+            variants = None
+            
+            # Extract the datatype path and variants
+            i = 1
+            while i < len(expr):
+                if expr[i] == ':name' and i + 1 < len(expr):
+                    # Extract path from (Dt Path "lib!...")
+                    name_expr = expr[i + 1]
+                    if isinstance(name_expr, list) and len(name_expr) >= 3:
+                        if name_expr[0] == 'Dt' and name_expr[1] == 'Path':
+                            raw_path = name_expr[2]
+                            datatype_path = self.clean_path(raw_path)
+                    i += 2
+                elif expr[i] == ':variants' and i + 1 < len(expr):
+                    variants = expr[i + 1]
+                    i += 2
+                else:
+                    i += 1
+            
+            # Store the datatype definition if we found both path and variants
+            if datatype_path and variants:
+                self.datatype_defs[datatype_path] = {
+                    'path': datatype_path,
+                    'variants': variants,
+                    'definition': expr
+                }
+        
+        # Recursively process nested expressions
+        if isinstance(expr, list):
+            for item in expr:
+                self.extract_datatype_definitions(item)
+    
+    def extract_field_dependencies_from_vir(self, type_path):
+        """Extract field type dependencies from a Datatype definition in VIR.
+        For example, from MetaSlotStorage's variants:
+        - FrameLink(StoredLink) → StoredLink
+        - PTNode(StoredPageTablePageMeta) → StoredPageTablePageMeta
+        """
+        field_deps = set()
+        
+        # Find the datatype definition
+        if type_path not in self.datatype_defs:
+            return field_deps
+        
+        datatype_def = self.datatype_defs[type_path]
+        variants = datatype_def.get('variants')
+        
+        if not isinstance(variants, list):
+            return field_deps
+        
+        # Parse each variant
+        for variant in variants:
+            if not isinstance(variant, list) or len(variant) < 2:
+                continue
+            
+            if variant[0] == 'Variant':
+                # Look for :fields in the variant
+                i = 1
+                while i < len(variant):
+                    if variant[i] == ':fields' and i + 1 < len(variant):
+                        fields = variant[i + 1]
+                        # Extract type paths from fields
+                        field_types = self._extract_types_from_fields(fields)
+                        field_deps.update(field_types)
+                        break
+                    i += 1
+        
+        return field_deps
+    
+    def _extract_types_from_fields(self, fields):
+        """Extract type paths from variant fields.
+        Fields format: ((-> 0 (tuple (Typ Datatype (Dt Path "lib!...") ...) ...)))
+        """
+        type_paths = set()
+        
+        if not isinstance(fields, list):
+            return type_paths
+        
+        # Recursively search for (Dt Path "lib!...") patterns
+        self._find_dt_paths_recursive(fields, type_paths)
+        
+        return type_paths
+    
+    def _find_dt_paths_recursive(self, expr, type_paths):
+        """Recursively find all (Dt Path "lib!...") patterns and extract clean paths."""
+        if not isinstance(expr, list):
+            return
+        
+        # Check if this is a Dt Path pattern
+        if len(expr) >= 3 and expr[0] == 'Dt' and expr[1] == 'Path':
+            raw_path = expr[2]
+            clean = self.clean_path(raw_path)
+            if clean:
+                # Skip stdlib types
+                if not any(clean.startswith(prefix) for prefix in ['vstd::', 'core::', 'std::']):
+                    type_paths.add(clean)
+            return  # Don't recurse into Dt Path children
+        
+        # Recurse into all sub-expressions
+        for item in expr:
+            if isinstance(item, list):
+                self._find_dt_paths_recursive(item, type_paths)
+    
+    def extract_trait_definitions(self, expr):
+        """Extract Trait definitions from VIR expression to get associated type constraints.
+        Parses: (Trait :name "lib!..." :assoc_typs (...) :assoc_typs_bounds (...))
+        """
+        if not isinstance(expr, list) or len(expr) < 2:
+            return
+        
+        # Look for (trait (@ ... (Trait :name ...)))
+        if expr[0] == 'trait' and len(expr) >= 2:
+            trait_expr = expr[1]
+            if isinstance(trait_expr, list) and len(trait_expr) >= 2:
+                # Handle (@ location (Trait ...))
+                if trait_expr[0] == '@' and len(trait_expr) >= 3:
+                    trait_def = trait_expr[2]
+                    self._parse_trait_definition(trait_def)
+                elif trait_expr[0] == 'Trait':
+                    self._parse_trait_definition(trait_expr)
+        
+        # Recursively process nested expressions
+        if isinstance(expr, list):
+            for item in expr:
+                self.extract_trait_definitions(item)
+    
+    def _parse_trait_definition(self, trait_def):
+        """Parse a Trait definition and extract associated type constraints."""
+        if not isinstance(trait_def, list) or trait_def[0] != 'Trait':
+            return
+        
+        trait_path = None
+        assoc_typs = []
+        assoc_typs_bounds = []
+        
+        # Parse the trait definition
+        i = 1
+        while i < len(trait_def):
+            if trait_def[i] == ':name' and i + 1 < len(trait_def):
+                raw_path = trait_def[i + 1]
+                if isinstance(raw_path, str):
+                    trait_path = self.clean_path(raw_path)
+                i += 2
+            elif trait_def[i] == ':assoc_typs' and i + 1 < len(trait_def):
+                assoc_typs_list = trait_def[i + 1]
+                if isinstance(assoc_typs_list, list):
+                    assoc_typs = [t for t in assoc_typs_list if isinstance(t, str)]
+                i += 2
+            elif trait_def[i] == ':assoc_typs_bounds' and i + 1 < len(trait_def):
+                assoc_typs_bounds = trait_def[i + 1]
+                i += 2
+            else:
+                i += 1
+        
+        # Store the trait definition
+        if trait_path:
+            self.trait_defs[trait_path] = {
+                'path': trait_path,
+                'assoc_typs': assoc_typs,
+                'assoc_typs_bounds': assoc_typs_bounds,
+                'definition': trait_def
+            }
+    
+    def extract_trait_constraints_from_vir(self, trait_path):
+        """Extract trait constraints from a Trait definition in VIR.
+        For example, from OwnerOf's :assoc_typs_bounds, extract:
+        - InvView (Owner must implement InvView)
+        - View (Owner must implement View)
+        - Inv (Owner must implement Inv)
+        """
+        constraints = set()
+        
+        if trait_path not in self.trait_defs:
+            return constraints
+        
+        trait_def = self.trait_defs[trait_path]
+        assoc_typs_bounds = trait_def.get('assoc_typs_bounds')
+        
+        if not isinstance(assoc_typs_bounds, list):
+            return constraints
+        
+        # Parse each GenericBound to extract trait paths
+        for bound in assoc_typs_bounds:
+            if not isinstance(bound, list) or len(bound) < 2:
+                continue
+            
+            if bound[0] == 'GenericBound' and bound[1] == 'Trait':
+                # Look for (TraitId Path "lib!...")
+                trait_id = None
+                if len(bound) >= 3 and isinstance(bound[2], list):
+                    trait_id = bound[2]
+                
+                if isinstance(trait_id, list) and len(trait_id) >= 3:
+                    if trait_id[0] == 'TraitId' and trait_id[1] == 'Path':
+                        raw_trait_path = trait_id[2]
+                        if isinstance(raw_trait_path, str):
+                            clean_trait = self.clean_path(raw_trait_path)
+                            if clean_trait:
+                                constraints.add(clean_trait)
+        
+        return constraints
+    
+    def extract_trait_impls(self, expr):
+        """Extract trait implementations from VIR.
+        Parses: (trait_impl (@ ... (TraitImpl :impl_path ... :trait_path ... :trait_typ_args ...)))
+        Stores: type_path -> list of (trait_path, impl_path, source_location)
+        """
+        if not isinstance(expr, list) or len(expr) < 2:
+            return
+        
+        # Look for (trait_impl (@ location (TraitImpl ...)))
+        if expr[0] == 'trait_impl' and len(expr) >= 2:
+            trait_impl_expr = expr[1]
+            if isinstance(trait_impl_expr, list) and len(trait_impl_expr) >= 3:
+                # Handle (@ location (TraitImpl ...))
+                if trait_impl_expr[0] == '@':
+                    source_loc = trait_impl_expr[1] if len(trait_impl_expr) > 1 else None
+                    impl_def = trait_impl_expr[2] if len(trait_impl_expr) > 2 else None
+                    if impl_def:
+                        self._parse_trait_impl(impl_def, source_loc)
+        
+        # Recursively process nested expressions
+        if isinstance(expr, list):
+            for item in expr:
+                self.extract_trait_impls(item)
+    
+    def _parse_trait_impl(self, impl_def, source_loc):
+        """Parse a TraitImpl definition and store the mapping."""
+        if not isinstance(impl_def, list) or impl_def[0] != 'TraitImpl':
+            return
+        
+        impl_path = None
+        trait_path = None
+        impl_type = None  # The type implementing the trait
+        
+        # Parse the impl definition
+        i = 1
+        while i < len(impl_def):
+            if impl_def[i] == ':impl_path' and i + 1 < len(impl_def):
+                raw_path = impl_def[i + 1]
+                if isinstance(raw_path, str):
+                    impl_path = self.clean_path(raw_path)
+                i += 2
+            elif impl_def[i] == ':trait_path' and i + 1 < len(impl_def):
+                raw_path = impl_def[i + 1]
+                if isinstance(raw_path, str):
+                    trait_path = self.clean_path(raw_path)
+                i += 2
+            elif impl_def[i] == ':trait_typ_args' and i + 1 < len(impl_def):
+                # Extract the type from trait_typ_args
+                # Format: ((Typ Datatype (Dt Path "lib!...") ...))
+                typ_args = impl_def[i + 1]
+                if isinstance(typ_args, list) and len(typ_args) > 0:
+                    # Get first type argument (the implementing type)
+                    first_arg = typ_args[0]
+                    impl_type = self._extract_type_path_from_typ(first_arg)
+                i += 2
+            else:
+                i += 1
+        
+        # Store if we have all required info
+        if impl_type and trait_path:
+            if not hasattr(self, 'trait_impls'):
+                self.trait_impls = defaultdict(list)
+            self.trait_impls[impl_type].append({
+                'trait': trait_path,
+                'impl_path': impl_path,
+                'source_loc': source_loc
+            })
+    
+    def _extract_type_path_from_typ(self, typ_expr):
+        """Extract type path from a Typ expression.
+        Handles: (Typ Datatype (Dt Path "lib!...") ...)
+        """
+        if not isinstance(typ_expr, list):
+            return None
+        
+        # Recursively search for (Dt Path "...")
+        for item in typ_expr:
+            if isinstance(item, list) and len(item) >= 3:
+                if item[0] == 'Dt' and item[1] == 'Path':
+                    raw_path = item[2]
+                    if isinstance(raw_path, str):
+                        return self.clean_path(raw_path)
+            # Recurse
+            if isinstance(item, list):
+                result = self._extract_type_path_from_typ(item)
+                if result:
+                    return result
+        return None
+    
+    def get_trait_impls_for_type(self, type_path):
+        """Get all trait implementations for a given type from VIR.
+        Returns: list of (trait_path, source_location)
+        """
+        if not hasattr(self, 'trait_impls'):
+            return []
+        
+        impls = self.trait_impls.get(type_path, [])
+        return [(impl['trait'], impl['source_loc']) for impl in impls]
 
     def extract_dependencies_from_body(self, body_expr, base_module=None):
         """Extract dependencies from function body expression"""
@@ -536,6 +847,9 @@ class VIRAnalyzer:
             for expr in expressions:
                 self.extract_impl_mappings(expr)
                 self.extract_function_definition(expr)
+                self.extract_datatype_definitions(expr)
+                self.extract_trait_definitions(expr)
+                self.extract_trait_impls(expr)
             
             pass  # Analysis complete
             
@@ -868,17 +1182,16 @@ class DependencyExtractor:
         return additional_deps
     
     def _find_trait_constraints(self, impl_path, trait_name):
-        """Find trait definition and extract associated type constraints."""
+        """Find trait definition and extract associated type constraints using VIR."""
         constraints = set()
         
-        # Build possible module paths for the trait
+        # First, try to construct possible trait paths and check VIR
         # Extract module path from impl_path
         parts = impl_path.split('::')
         if len(parts) < 3:
             return constraints
         
         # Try common locations for traits
-        # First, try the same module as the impl
         module_parts_candidates = []
         for i in range(len(parts) - 1, 1, -1):
             module_parts_candidates.append(parts[1:i])
@@ -887,6 +1200,16 @@ class DependencyExtractor:
         module_parts_candidates.append(['vstd_extra', 'ownership'])
         module_parts_candidates.append(['aster_common', 'mm', 'frame'])
         
+        # Try each candidate module path
+        for module_parts in module_parts_candidates:
+            trait_path = f"lib::{'::'.join(module_parts)}::{trait_name}"
+            
+            # Try VIR extraction first (more reliable)
+            vir_constraints = self.analyzer.extract_trait_constraints_from_vir(trait_path)
+            if vir_constraints:
+                return vir_constraints
+        
+        # Fallback to source code parsing if VIR data not available
         for module_parts in module_parts_candidates:
             base_paths = [Path('vostd') / 'src']
             for base_path in base_paths:
@@ -1050,67 +1373,216 @@ class DependencyExtractor:
                 for base_path in base_paths:
                     file_path = base_path / Path(*module_parts).with_suffix('.rs')
                     if file_path.exists():
+                        # Find trait implementations
                         impl_deps = self._find_type_trait_impls(file_path, type_name, module_path)
                         additional_deps.update(impl_deps)
+                        
+                        # Find field type dependencies for structs/enums
+                        field_deps = self._find_field_type_dependencies(file_path, type_name, module_path)
+                        additional_deps.update(field_deps)
                         break
         
         return additional_deps
     
-    def _find_type_trait_impls(self, file_path, type_name, module_path):
-        """Find all trait implementations for a given type."""
-        impl_deps = set()
+    def _find_field_type_dependencies(self, file_path, type_name, module_path):
+        """Find field type dependencies for a struct or enum using VIR file analysis.
+        This is more reliable than regex parsing as it uses Verus compiler output.
+        For example, from MetaSlotStorage's variants in VIR:
+        - FrameLink(StoredLink) → lib::aster_common::mm::frame::linked_list::StoredLink
+        - PTNode(StoredPageTablePageMeta) → lib::aster_common::mm::frame::meta::StoredPageTablePageMeta
+        """
+        field_deps = set()
         
+        # Construct the full type path
+        type_path = f"{module_path}::{type_name}"
+        
+        # Try to extract field dependencies from VIR
+        vir_field_deps = self.analyzer.extract_field_dependencies_from_vir(type_path)
+        if vir_field_deps:
+            # VIR extraction succeeded, use it
+            return vir_field_deps
+        
+        # Fallback to regex-based extraction if VIR data not available
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
             
-            # Find impl blocks for this type
-            # Pattern: impl Trait for TypeName or impl TypeName
+            # Find the type definition
+            in_type_def = False
+            brace_count = 0
+            type_lines = []
+            
             for line_num, line in enumerate(lines, 1):
+                stripped = line.strip()
+                
+                # Find struct or enum definition
+                if not in_type_def:
+                    # Match: pub struct TypeName, pub enum TypeName
+                    if re.match(rf'\b(?:pub\s+)?(?:struct|enum)\s+{re.escape(type_name)}\s*[<{{]', stripped):
+                        in_type_def = True
+                        type_lines.append(line)
+                        for char in line:
+                            if char == '{':
+                                brace_count += 1
+                            elif char == '}':
+                                brace_count -= 1
+                        if brace_count == 0:
+                            break
+                else:
+                    type_lines.append(line)
+                    for char in line:
+                        if char == '{':
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                    if brace_count == 0:
+                        break
+            
+            if not type_lines:
+                return field_deps
+            
+            type_content = ''.join(type_lines)
+            
+            # Extract type names from fields
+            # Pattern 1: field_name: Type or field_name: Generic<Type>
+            # Match field declarations: pub field: Type, or just field: Type
+            field_pattern = r'\w+\s*:\s*([A-Z][A-Za-z0-9_]*)'
+            for match in re.finditer(field_pattern, type_content):
+                field_type = match.group(1)
+                
+                # Skip generic parameters and common stdlib types
+                if field_type in ['PPtr', 'PCell', 'PAtomicU64', 'PAtomicU8', 'PhantomData', 'Option', 'Vec', 'Some', 'None']:
+                    continue
+                
+                # Build full path for the field type
+                # Assume it's in the same module
+                field_path = f"{module_path}::{field_type}"
+                field_deps.add(field_path)
+            
+            # Pattern 2: Enum variant with tuple type: VariantName(Type)
+            # Match: VariantName(Type) or VariantName(Type1, Type2)
+            variant_pattern = r'\w+\s*\(\s*([A-Z][A-Za-z0-9_]*)'
+            for match in re.finditer(variant_pattern, type_content):
+                variant_type = match.group(1)
+                
+                # Skip generic parameters and common stdlib types
+                if variant_type in ['PPtr', 'PCell', 'PAtomicU64', 'PAtomicU8', 'PhantomData', 'Option', 'Vec', 'Some', 'None']:
+                    continue
+                
+                # Build full path
+                variant_path = f"{module_path}::{variant_type}"
+                field_deps.add(variant_path)
+            
+            # Also extract types from generic parameters
+            # Pattern: Generic<Type> or Generic<Type1, Type2>
+            generic_pattern = r'<\s*([A-Z][A-Za-z0-9_]*)\s*[,>]'
+            for match in re.finditer(generic_pattern, type_content):
+                inner_type = match.group(1)
+                
+                # Skip common stdlib types
+                if inner_type in ['PPtr', 'PCell', 'PAtomicU64', 'PAtomicU8', 'PhantomData', 'Option', 'Vec']:
+                    continue
+                
+                # Build full path
+                inner_path = f"{module_path}::{inner_type}"
+                field_deps.add(inner_path)
+        
+        except Exception:
+            pass
+        
+        return field_deps
+    
+    def _find_type_trait_impls(self, file_path, type_name, module_path):
+        """Find all trait implementations for a given type.
+        Uses VIR first (more reliable, excludes comments), falls back to source code parsing.
+        """
+        impl_deps = set()
+        
+        # Construct the full type path
+        type_path = f"{module_path}::{type_name}"
+        
+        # Try VIR first (more reliable)
+        vir_impls = self.analyzer.get_trait_impls_for_type(type_path)
+        
+        if vir_impls:
+            # VIR extraction succeeded
+            for trait_path, source_loc in vir_impls:
+                # Parse source location to get file and line
+                # Format: "D:\path\to\file.rs:line:col: line:col (#num)"
+                if isinstance(source_loc, str):
+                    match = re.match(r'^([^:]+):(\d+):', source_loc)
+                    if match:
+                        impl_file = match.group(1)
+                        line_num = int(match.group(2))
+                        
+                        # Extract trait name from path
+                        trait_parts = trait_path.split('::')
+                        if len(trait_parts) >= 2:
+                            trait_name = trait_parts[-1]
+                            
+                            # Build impl signature
+                            impl_sig = f"impl {trait_name} for {type_name}"
+                            
+                            # Add using @ separator format
+                            impl_path = f"{module_path}@{impl_sig}"
+                            impl_deps.add(impl_path)
+                            
+                            # Extract associated types from the impl block (still needs source code)
+                            try:
+                                assoc_types = self._extract_associated_types_from_impl(
+                                    impl_file, line_num, type_name
+                                )
+                                impl_deps.update(assoc_types)
+                            except Exception:
+                                pass
+            return impl_deps
+        
+        # Fallback to source code parsing if VIR data not available
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # Pre-process to identify comment blocks
+            in_block_comment = False
+            line_is_comment = []
+            
+            for line in lines:
+                stripped = line.strip()
+                
+                # Check for block comment start/end
+                if '/*' in line:
+                    in_block_comment = True
+                if '*/' in line:
+                    in_block_comment = False
+                    line_is_comment.append(True)  # This line is still in comment
+                    continue
+                
+                # Mark if line is in comment
+                is_comment = in_block_comment or stripped.startswith('//') or stripped.startswith('*')
+                line_is_comment.append(is_comment)
+            
+            # Find impl blocks for this type
+            for line_num, line in enumerate(lines, 1):
+                # Skip commented lines
+                if line_num - 1 < len(line_is_comment) and line_is_comment[line_num - 1]:
+                    continue
+                
                 stripped = line.strip()
                 
                 # Match impl Trait for TypeName
                 impl_trait_pattern = rf'impl.*\s+for\s+{re.escape(type_name)}\s*[<{{]'
                 if re.search(impl_trait_pattern, stripped):
-                    # Extract the trait name
-                    # Handle complex generics with nested < > by finding the trait name before 'for'
-                    # Pattern: impl<...> TraitName for TypeName
-                    # or: impl TraitName for TypeName
-                    for_match = re.search(r'\s+for\s+', stripped)
-                    if for_match:
-                        # Get the part before 'for'
-                        before_for = stripped[:for_match.start()]
-                        # Extract the last word (trait name) from before 'for'
-                        trait_match = re.search(r'(\w+)\s*$', before_for)
-                        if trait_match:
-                            trait_name = trait_match.group(1)
-                        
-                        # Add the impl block itself as a dependency
-                        # Use @ as separator between module_path and impl_sig
-                        # Format: lib::module::path@impl Trait for Type
-                        impl_sig = self._extract_impl_signature(stripped)
-                        if impl_sig:
-                            impl_path = f"{module_path}@{impl_sig}"
-                            impl_deps.add(impl_path)
-                        
-                        # Extract associated types
-                        assoc_types = self._extract_associated_types_from_impl(
-                            str(file_path), line_num, type_name
-                        )
-                        # Add both the types themselves and recursively find their impls
-                        for assoc_type_path in assoc_types:
-                            impl_deps.add(assoc_type_path)
-                            # Recursively find trait impls for the associated type
-                            assoc_parts = assoc_type_path.split('::')
-                            if len(assoc_parts) >= 2:
-                                assoc_type_name = assoc_parts[-1]
-                                # Recursively find impls for this associated type
-                                # Avoid infinite recursion by limiting depth
-                                if assoc_type_name != type_name:
-                                    recursive_deps = self._find_type_trait_impls(
-                                        file_path, assoc_type_name, module_path
-                                    )
-                                    impl_deps.update(recursive_deps)
+                    # Extract impl signature directly (handles generics correctly)
+                    impl_sig = self._extract_impl_signature(stripped)
+                    if impl_sig:
+                        impl_path = f"{module_path}@{impl_sig}"
+                        impl_deps.add(impl_path)
+                    
+                    # Extract associated types
+                    assoc_types = self._extract_associated_types_from_impl(
+                        str(file_path), line_num, type_name
+                    )
+                    impl_deps.update(assoc_types)
         
         except Exception:
             pass
