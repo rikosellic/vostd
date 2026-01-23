@@ -1688,9 +1688,27 @@ class DependencyExtractor:
                 for base_path in base_paths:
                     file_path = base_path / Path(*module_parts).with_suffix('.rs')
                     if file_path.exists():
-                        # Find trait implementations
+                        # Find trait implementations for this type in its own file
                         impl_deps = self._find_type_trait_impls(file_path, type_name, module_path)
                         additional_deps.update(impl_deps)
+                        
+                        # Also search for trait impls in related files
+                        # For CursorMut, check linked_list_owners.rs (but only for types NOT defined in owners files)
+                        if 'linked_list' in str(file_path) and not 'owners' in str(file_path):
+                            owners_file = file_path.parent / 'linked_list_owners.rs'
+                            if owners_file.exists():
+                                # Use the correct module path for linked_list_owners
+                                owners_module_parts = list(module_parts)  # Copy the list
+                                if 'linked_list' in owners_module_parts:
+                                    # Replace 'linked_list' with 'linked_list_owners'
+                                    idx = owners_module_parts.index('linked_list')
+                                    owners_module_parts[idx] = 'linked_list_owners'
+                                else:
+                                    # Add 'linked_list_owners' to the end
+                                    owners_module_parts.append('linked_list_owners')
+                                owners_module_path = 'lib::' + '::'.join(owners_module_parts)
+                                impl_deps_owners = self._find_type_trait_impls(owners_file, type_name, owners_module_path)
+                                additional_deps.update(impl_deps_owners)
                         
                         # Find field type dependencies for structs/enums
                         field_deps = self._find_field_type_dependencies(file_path, type_name, module_path)
