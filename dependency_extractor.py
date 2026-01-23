@@ -1178,7 +1178,78 @@ class DependencyExtractor:
             simplified = self._simplify_trait_method(dep)
             simplified_dependencies.add(simplified)
         
-        return sorted(simplified_dependencies)
+        # 11. Remove methods that are already covered by trait implementations
+        filtered_dependencies = self._remove_trait_impl_covered_methods(simplified_dependencies)
+        
+        return sorted(filtered_dependencies)
+    
+    def _remove_trait_impl_covered_methods(self, dependencies):
+        """Remove individual methods that are already covered by trait implementations.
+        For example, if we have both:
+        - impl ModelOf for CursorMut<M>  
+        - lib::ostd::mm::frame::linked_list::CursorMut::model
+        Then remove the individual method since it's covered by the trait impl.
+        """
+        filtered = set()
+        
+        # First, collect all trait impls and their covered methods
+        trait_impls = {}  # type_name -> set of trait_names
+        
+        for dep in dependencies:
+            if '@impl' in dep and ' for ' in dep:
+                parts = dep.split('@impl')
+                if len(parts) == 2:
+                    impl_str = parts[1].strip()
+                    trait_part, type_part = impl_str.split(' for ', 1)
+                    
+                    # Extract trait and type names
+                    trait_words = trait_part.strip().split()
+                    trait_name = None
+                    for word in reversed(trait_words):
+                        if word and not word.startswith('<') and not ':' in word and word[0].isupper():
+                            trait_name = word
+                            break
+                    
+                    type_name = type_part.split('<')[0].strip()
+                    
+                    if trait_name and type_name:
+                        if type_name not in trait_impls:
+                            trait_impls[type_name] = set()
+                        trait_impls[type_name].add(trait_name)
+        
+        # Map trait names to their known methods
+        trait_methods = {
+            'View': ['view'],
+            'ModelOf': ['model'], 
+            'OwnerOf': ['wf'],
+            'Inv': ['inv'],
+            'InvView': ['view_preserves_inv']
+        }
+        
+        # Filter out individual methods that are covered by trait impls
+        for dep in dependencies:
+            should_include = True
+            
+            # Check if this is an individual method (not impl, not trait)
+            if '@' not in dep and '::' in dep:
+                dep_parts = dep.split('::')
+                if len(dep_parts) >= 3:
+                    # Potential format: lib::module::Type::method
+                    method_name = dep_parts[-1]
+                    type_name = dep_parts[-2]
+                    
+                    # Check if this type has trait impls that cover this method
+                    if type_name in trait_impls:
+                        for implemented_trait in trait_impls[type_name]:
+                            if (implemented_trait in trait_methods and 
+                                method_name in trait_methods[implemented_trait]):
+                                should_include = False
+                                break
+            
+            if should_include:
+                filtered.add(dep)
+        
+        return filtered
     
     def _simplify_trait_method(self, dep):
         """Simplify trait method paths to just the trait.
