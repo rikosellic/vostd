@@ -1157,6 +1157,10 @@ class DependencyExtractor:
         type_impl_deps = self.extract_type_implementations(all_dependencies)
         all_dependencies.update(type_impl_deps)
         
+        # 8.5. Extract dependencies from spec functions in trait impls
+        trait_impl_spec_deps = self.extract_trait_impl_spec_dependencies(all_dependencies)
+        all_dependencies.update(trait_impl_spec_deps)
+        
         # 9. Extract spec annotation dependencies from functions
         spec_deps = self.extract_spec_dependencies(all_dependencies)
         all_dependencies.update(spec_deps)
@@ -1796,6 +1800,157 @@ class DependencyExtractor:
                 continue
         
         return spec_deps
+    
+    def extract_trait_impl_spec_dependencies(self, dependencies):
+        """Extract dependencies from spec functions within trait implementations.
+        For trait impls, we need to analyze spec fn bodies to find dependencies like view_helper.
+        We skip proof fn and exec fn as they may have external_body.
+        """
+        spec_deps = set()
+        
+        for dep in dependencies:
+            # Only process impl blocks (containing @)
+            if '@' not in dep:
+                continue
+            
+            # Parse impl block format: lib::module@impl Trait for Type
+            if '@impl' not in dep:
+                continue
+            
+            # Get location of this impl block
+            location = self.find_source_location(dep)
+            if not location or 'file' not in location:
+                continue
+            
+            file_path = location['file']
+            impl_line = location.get('line', 0)
+            
+            if impl_line == 0:
+                continue
+            
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                
+                # Find the impl block boundaries
+                impl_start = impl_line - 1  # Convert to 0-indexed
+                impl_end = self._find_impl_block_end(lines, impl_start)
+                
+                if impl_end is None:
+                    continue
+                
+                # Extract module path from dep
+                module_path_part = dep.split('@')[0]
+                if not module_path_part.startswith('lib::'):
+                    continue
+                module_parts = module_path_part[5:].split('::')
+                
+                # Scan the impl block for spec functions
+                i = impl_start
+                while i < impl_end:
+                    line = lines[i]
+                    
+                    # Check if this is a spec function definition
+                    # Match: "open spec fn", "closed spec fn", "spec fn"
+                    spec_fn_match = re.search(r'\b(?:open\s+)?(?:closed\s+)?spec\s+fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*[<\(]', line)
+                    
+                    if spec_fn_match:
+                        fn_name = spec_fn_match.group(1)
+                        
+                        # Find the function body (between { and matching })
+                        fn_body_start = i
+                        fn_body_end = self._find_function_body_end(lines, i)
+                        
+                        if fn_body_end is not None:
+                            # Extract function body
+                            fn_body_lines = lines[fn_body_start:fn_body_end + 1]
+                            fn_body = ''.join(fn_body_lines)
+                            
+                            # Extract function calls from the body
+                            # Pattern: Type::method, Self::method, module::function
+                            call_pattern = r'\b([A-Z][A-Za-z0-9_]*(?:::[A-Za-z0-9_]+)+)\s*\('
+                            
+                            for match in re.finditer(call_pattern, fn_body):
+                                call_path = match.group(1)
+                                
+                                # Build full path
+                                if call_path.startswith('Self::'):
+                                    # Replace Self with the implementing type
+                                    # Extract type from impl signature
+                                    impl_sig = dep.split('@')[1] if '@' in dep else ''
+                                    if ' for ' in impl_sig:
+                                        # impl Trait for Type<...>
+                                        type_part = impl_sig.split(' for ')[1].strip()
+                                        # Extract type name (before < or end)
+                                        type_name = type_part.split('<')[0].strip()
+                                        # Replace Self with module::Type
+                                        method_name = call_path[6:]  # Remove "Self::"
+                                        full_path = f"{module_path_part}::{type_name}::{method_name}"
+                                    else:
+                                        # impl Type<...>
+                                        # Extract type from impl signature
+                                        continue
+                                else:
+                                    # Try to resolve the type
+                                    parts = call_path.split('::')
+                                    if len(parts) >= 2:
+                                        type_name = parts[0]
+                                        # Search for this type's module
+                                        method_name = parts[-1]
+                                        type_location = self._find_type_module(type_name, method_name)
+                                        if type_location:
+                                            full_path = type_location
+                                        else:
+                                            # Assume same module
+                                            full_path = f"{module_path_part}::{call_path}"
+                                    else:
+                                        continue
+                                
+                                spec_deps.add(full_path)
+                            
+                            # Move to end of function
+                            i = fn_body_end
+                    
+                    i += 1
+            
+            except Exception:
+                continue
+        
+        return spec_deps
+    
+    def _find_impl_block_end(self, lines, start_idx):
+        """Find the end of an impl block starting at start_idx."""
+        brace_count = 0
+        found_opening = False
+        
+        for i in range(start_idx, len(lines)):
+            line = lines[i]
+            for char in line:
+                if char == '{':
+                    brace_count += 1
+                    found_opening = True
+                elif char == '}':
+                    brace_count -= 1
+                    if found_opening and brace_count == 0:
+                        return i
+        return None
+    
+    def _find_function_body_end(self, lines, start_idx):
+        """Find the end of a function body starting at start_idx."""
+        brace_count = 0
+        found_opening = False
+        
+        for i in range(start_idx, len(lines)):
+            line = lines[i]
+            for char in line:
+                if char == '{':
+                    brace_count += 1
+                    found_opening = True
+                elif char == '}':
+                    brace_count -= 1
+                    if found_opening and brace_count == 0:
+                        return i
+        return None
     
     def find_source_location(self, module_path):
         """Find the source file and line number for a given module path"""
