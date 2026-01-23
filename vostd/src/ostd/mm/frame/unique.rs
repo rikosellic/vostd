@@ -68,26 +68,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlot> + OwnerOf> UniqueFrame<M> {
     )]
     #[verifier::external_body]
     pub fn meta_mut(&mut self) -> (res: ReprPtr<MetaSlot, M>)
-        requires
-    //            perm.is_init(),
-    //            perm.pptr() == old(self).ptr,
-    //            perm.value().wf(owner)
-
         ensures
             res.addr() == self.ptr.addr(),
             res.ptr.addr() == self.ptr.addr(),
             self == old(self),
     {
-        // SAFETY: The type is tracked by the type system.
-        // And we have the exclusive access to the metadata.
-        //        let owner = regions.slot_owners.tracked_remove(frame_to_index(meta_to_frame(self.ptr.addr())));
-        //        let perm = owner.cast_perm();
-        //        regions.slot_owners.tracked_insert(frame_to_index(meta_to_frame(self.ptr.addr())), owner);
-        #[verus_spec(with Tracked(perm))]
-        let slot = self.slot();
-
-        #[verus_spec(with Tracked(perm))]
-        slot.as_meta_ptr()
+        unimplemented!()
     }
 }
 

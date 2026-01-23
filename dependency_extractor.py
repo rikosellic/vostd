@@ -1036,6 +1036,169 @@ class VIRAnalyzer:
                 resolved_path = resolved_path[:start] + actual_type + resolved_path[end:]
                 
         return self.clean_verus_artifacts(resolved_path)
+    
+    def extract_requires_ensures_from_vir(self, current_dep):
+        """Extract dependencies from requires/ensures clauses in VIR files."""
+        deps = set()
+        
+        # Convert dependency to VIR function path format
+        # lib::ostd::mm::frame::linked_list::LinkedList::push_front -> lib!ostd.mm.frame.linked_list.impl&%0.push_front
+        dep_parts = current_dep.split('::')
+        if len(dep_parts) >= 4 and dep_parts[0] == 'lib':
+            # Extract components: lib, module_path, type_name, method_name
+            module_path = '.'.join(dep_parts[1:-2])  # ostd.mm.frame.linked_list
+            type_name = dep_parts[-2]  # LinkedList  
+            method_name = dep_parts[-1]  # push_front
+            
+            # VIR format: lib!module.path.impl&%N.method_name.
+            # We need to search for patterns like lib!ostd.mm.frame.linked_list.impl&%.push_front
+            vir_base_path = f"lib!{module_path}"
+            
+            # Look for the function definition in VIR files
+            vir_files = []
+            vir_log_dir = os.path.join(os.getcwd(), '.verus-log')
+            
+            if os.path.exists(vir_log_dir):
+                for root, dirs, files in os.walk(vir_log_dir):
+                    for file in files:
+                        if file.endswith('.vir'):
+                            vir_files.append(os.path.join(root, file))
+            
+            for vir_file in vir_files:
+                try:
+                    with open(vir_file, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        
+                        # Look for function definition with this pattern
+                        # Pattern: lib!ostd.mm.frame.linked_list.impl&%N.push_front.
+                        if f'{vir_base_path}.impl&%' in content and f'.{method_name}.' in content:
+                            # Extract requires and ensures sections
+                            file_deps = self._parse_vir_requires_ensures(content, vir_base_path, method_name)
+                            deps.update(file_deps)
+                            
+                except Exception as e:
+                    continue
+        
+        return deps
+    
+    def _parse_vir_requires_ensures(self, vir_content, vir_base_path, method_name):
+        """Parse VIR content to extract function calls from requires/ensures sections."""
+        deps = set()
+        
+        # Find function definition - prioritize _VERUS_VERIFIED_ version
+        function_match = None
+        
+        # First try _VERUS_VERIFIED_ version
+        function_pattern = rf'\(Function[^)]*:name \(Fun :path "{re.escape(vir_base_path)}\.impl&%\d+\._VERUS_VERIFIED_{re.escape(method_name)}\."'
+        function_match = re.search(function_pattern, vir_content)
+        
+        if not function_match:
+            # Fallback to regular version
+            function_pattern = rf'\(Function[^)]*:name \(Fun :path "{re.escape(vir_base_path)}\.impl&%\d+\.{re.escape(method_name)}\."'
+            function_match = re.search(function_pattern, vir_content)
+            
+        if not function_match:
+            return deps
+        
+        # Find the requires and ensures sections for this function
+        function_start = function_match.start()
+        
+        # Look for the end of this function using :extra_dependencies pattern
+        end_pattern = r':extra_dependencies \(\)\)\)'
+        end_match = re.search(end_pattern, vir_content[function_start:])
+        if end_match:
+            function_end = function_start + end_match.end()
+        else:
+            # Fallback: look for the next function
+            next_function_pattern = r'\(Function'
+            next_function_match = re.search(next_function_pattern, vir_content[function_start + 100:])
+            if next_function_match:
+                function_end = function_start + 100 + next_function_match.start()
+            else:
+                function_end = len(vir_content)
+        
+        function_content = vir_content[function_start:function_end]
+        
+        if ':ensure' not in function_content:
+            return deps
+        
+        # Extract requires section
+        requires_pattern = r':require \((.*?)\) :ensure'
+        requires_match = re.search(requires_pattern, function_content, re.DOTALL)
+        if requires_match:
+            requires_content = requires_match.group(1)
+            deps.update(self._extract_vir_function_calls(requires_content))
+        
+        # Extract ensures section - use proper bracket matching instead of non-greedy
+        ensures_start_pattern = r':ensure \('
+        ensures_start_match = re.search(ensures_start_pattern, function_content)
+        if ensures_start_match:
+            start_pos = ensures_start_match.end() - 1  # Include the opening parenthesis
+            
+            # Find the matching closing parenthesis
+            bracket_count = 0
+            end_pos = start_pos
+            for i, char in enumerate(function_content[start_pos:]):
+                if char == '(':
+                    bracket_count += 1
+                elif char == ')':
+                    bracket_count -= 1
+                    if bracket_count == 0:
+                        end_pos = start_pos + i + 1
+                        break
+            
+            if bracket_count == 0:  # Found matching bracket
+                ensures_content = function_content[start_pos+1:end_pos-1]  # Extract content between parentheses
+                ensures_deps = self._extract_vir_function_calls(ensures_content)
+                deps.update(ensures_deps)
+            else:
+                # Could not find matching bracket
+                pass
+        else:
+            # No ensures section found
+            pass
+        
+        return deps
+    
+    def _extract_vir_function_calls(self, vir_text):
+        """Extract function calls from VIR text."""
+        deps = set()
+        
+        # Pattern for function calls: (Fun :path "path.to.function.")
+        fun_pattern = r'\(Fun :path "([^"]+)"\)'
+        for match in re.finditer(fun_pattern, vir_text):
+            fun_path = match.group(1)
+            
+            # Convert from VIR format to our format
+            # lib!module.type.method -> lib::module::type::method
+            if fun_path.startswith('lib!'):
+                # Remove trailing dots and convert
+                clean_path = fun_path.rstrip('._').replace('!', '::').replace('.', '::')
+                
+                # Handle impl& paths specially - these are method calls
+                if '::impl&' in clean_path:
+                    # Extract the path before impl& and the method after
+                    # lib::ostd::mm::frame::linked_list::impl&%1::method -> lib::ostd::mm::frame::linked_list::Type::method
+                    # For now, keep as-is but clean up the impl& part
+                    # We'll convert this in the main extraction logic
+                    deps.add(clean_path)
+                elif len(clean_path.split('::')) >= 3:
+                    deps.add(clean_path)
+        
+        # Pattern for datatype references: (Dt Path "path.to.type.")
+        dt_pattern = r'\(Dt Path "([^"]+)"\)'
+        for match in re.finditer(dt_pattern, vir_text):
+            type_path = match.group(1)
+            
+            # Convert from VIR format to our format
+            if type_path.startswith('lib!'):
+                clean_path = type_path.rstrip('._').replace('!', '::').replace('.', '::')
+                
+                # Only add types, not individual enum variants
+                if '::impl&' not in clean_path and len(clean_path.split('::')) >= 2:
+                    deps.add(clean_path)
+        
+        return deps
 
 class DependencyExtractor:
     """Main dependency extraction orchestrator"""
@@ -1185,7 +1348,10 @@ class DependencyExtractor:
         spec_exec_deps = self._find_when_used_as_spec_functions(filtered_dependencies)
         filtered_dependencies.update(spec_exec_deps)
         
-        return sorted(filtered_dependencies)
+        # 13. Convert enum variants to enum types
+        normalized_dependencies = self._normalize_enum_variants(filtered_dependencies)
+        
+        return sorted(normalized_dependencies)
     
     def _remove_trait_impl_covered_methods(self, dependencies):
         """Remove individual methods that are already covered by trait implementations.
@@ -1310,6 +1476,51 @@ class DependencyExtractor:
                 continue
         
         return additional_deps
+    
+    def _normalize_enum_variants(self, dependencies):
+        """Convert enum variants (Type::Variant) to enum types (Type).
+        Also fixes malformed paths with missing colons.
+        """
+        normalized = set()
+        
+        for dep in dependencies:
+            # Skip impl blocks
+            if '@' in dep:
+                normalized.add(dep)
+                continue
+            
+            # Fix malformed paths with single colons
+            # Pattern: module:submodule:: -> module::submodule::
+            fixed_dep = dep
+            # Look for pattern like "vstd_extra:cast_ptr::" and fix to "vstd_extra::cast_ptr::"
+            if ':cast_ptr::' in dep and '::cast_ptr::' not in dep:
+                fixed_dep = dep.replace(':cast_ptr::', '::cast_ptr::')
+            
+            # Check if this looks like an enum variant (Type::VARIANT_NAME)
+            parts = fixed_dep.split('::')
+            if len(parts) >= 3:
+                # Check if the last part looks like an enum variant (starts with uppercase, often all caps)
+                last_part = parts[-1]
+                second_last_part = parts[-2] if len(parts) >= 2 else ''
+                
+                # Heuristics for enum variants:
+                # 1. Last part is all uppercase (like Init, Uninit, Some, None)
+                # 2. Second-to-last part looks like a type name (starts with uppercase)
+                # 3. Common enum variant names
+                common_variants = {'Init', 'Uninit', 'Some', 'None', 'Ok', 'Err', 'Left', 'Right'}
+                
+                if (last_part in common_variants or 
+                    (last_part.isupper() and len(last_part) > 1)) and second_last_part and second_last_part[0].isupper():
+                    # This looks like Type::Variant, convert to just Type
+                    enum_type_parts = parts[:-1]
+                    enum_type_dep = '::'.join(enum_type_parts)
+                    normalized.add(enum_type_dep)
+                else:
+                    normalized.add(fixed_dep)
+            else:
+                normalized.add(fixed_dep)
+        
+        return normalized
     
     def _simplify_trait_method(self, dep):
         """Simplify trait method paths to just the trait.
@@ -2122,7 +2333,24 @@ class DependencyExtractor:
         return spec_deps
     
     def _extract_requires_ensures_deps(self, lines, start_line, module_parts, current_dep):
-        """Extract dependencies from requires/ensures clauses of a function definition."""
+        """Extract dependencies from requires/ensures clauses - try VIR first, then source."""
+        deps = set()
+        
+        # Try to extract from VIR file first
+        vir_deps = self.analyzer.extract_requires_ensures_from_vir(current_dep)
+        if vir_deps:
+            # Resolve impl&%N paths in VIR dependencies
+            resolved_vir_deps = set()
+            for dep in vir_deps:
+                resolved = self.analyzer.resolve_impl_path(dep)
+                resolved_vir_deps.add(resolved)
+            return resolved_vir_deps
+        
+        # Fallback to source code analysis
+        return self._extract_requires_ensures_from_source(lines, start_line, module_parts, current_dep)
+    
+    def _extract_requires_ensures_from_source(self, lines, start_line, module_parts, current_dep):
+        """Extract dependencies from requires/ensures clauses from source code (fallback)."""
         deps = set()
         
         # Extract type name from current dependency if it's a method
@@ -2162,7 +2390,7 @@ class DependencyExtractor:
                     
                     # Convert to full module path
                     if not call_path.startswith('lib::'):
-                        full_path = f"lib::{':'.join(module_parts)}::{call_path}"
+                        full_path = f"lib::{'::'.join(module_parts)}::{call_path}"
                     else:
                         full_path = call_path
                     
@@ -2193,7 +2421,7 @@ class DependencyExtractor:
                 i += 1
         
         return deps
-    
+
     def extract_trait_impl_spec_dependencies(self, dependencies):
         """Extract dependencies from all functions within trait implementations.
         For trait impls, we need to analyze all function bodies to find dependencies.
