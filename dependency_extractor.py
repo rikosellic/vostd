@@ -1974,9 +1974,8 @@ class DependencyExtractor:
         return spec_deps
     
     def extract_trait_impl_spec_dependencies(self, dependencies):
-        """Extract dependencies from spec functions within trait implementations.
-        For trait impls, we need to analyze spec fn bodies to find dependencies like view_helper.
-        We skip proof fn and exec fn as they may have external_body.
+        """Extract dependencies from all functions within trait implementations.
+        For trait impls, we need to analyze all function bodies to find dependencies.
         """
         spec_deps = set()
         
@@ -2017,17 +2016,17 @@ class DependencyExtractor:
                     continue
                 module_parts = module_path_part[5:].split('::')
                 
-                # Scan the impl block for spec functions
+                # Scan the impl block for all function definitions
                 i = impl_start
                 while i < impl_end:
                     line = lines[i]
                     
-                    # Check if this is a spec function definition
-                    # Match: "open spec fn", "closed spec fn", "spec fn"
-                    spec_fn_match = re.search(r'\b(?:open\s+)?(?:closed\s+)?spec\s+fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*[<\(]', line)
+                    # Check if this is any function definition
+                    # Match: "open spec fn", "closed spec fn", "spec fn", "exec fn", "proof fn", "fn"
+                    fn_match = re.search(r'\b(?:pub\s+)?(?:open\s+)?(?:closed\s+)?(?:spec\s+|exec\s+|proof\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*[<\(]', line)
                     
-                    if spec_fn_match:
-                        fn_name = spec_fn_match.group(1)
+                    if fn_match:
+                        fn_name = fn_match.group(1)
                         
                         # Find the function body (between { and matching })
                         fn_body_start = i
@@ -2037,6 +2036,11 @@ class DependencyExtractor:
                             # Extract function body
                             fn_body_lines = lines[fn_body_start:fn_body_end + 1]
                             fn_body = ''.join(fn_body_lines)
+                            
+                            # Skip if function has external_body
+                            if 'external_body' in fn_body:
+                                i = fn_body_end
+                                continue
                             
                             # Extract function calls from the body
                             # Pattern: Type::method, Self::method, module::function
