@@ -1939,7 +1939,7 @@ class DependencyExtractor:
         return impl_deps
     
     def extract_spec_dependencies(self, dependencies):
-        """For each function in dependencies, extract dependencies from its #[verus_spec(...)] annotations."""
+        """For each function in dependencies, extract dependencies from its #[verus_spec(...)] annotations and requires/ensures clauses."""
         spec_deps = set()
         
         for dep in dependencies:
@@ -1976,14 +1976,92 @@ class DependencyExtractor:
                     # No type: lib::module::function
                     module_parts = parts[1:-1]
                 
-                # Extract spec annotation deps
+                # Extract spec annotation deps (from #[verus_spec(...)])
                 fn_spec_deps = self._extract_spec_annotation_deps(lines, line_num - 1, module_parts)
+                spec_deps.update(fn_spec_deps)
+                
+                # Also extract dependencies from direct requires/ensures clauses
+                fn_req_ens_deps = self._extract_requires_ensures_deps(lines, line_num - 1, module_parts, dep)
+                spec_deps.update(fn_req_ens_deps)
                 spec_deps.update(fn_spec_deps)
                 
             except Exception:
                 continue
         
         return spec_deps
+    
+    def _extract_requires_ensures_deps(self, lines, start_line, module_parts, current_dep):
+        """Extract dependencies from requires/ensures clauses of a function definition."""
+        deps = set()
+        
+        # Extract type name from current dependency if it's a method
+        current_type = None
+        dep_parts = current_dep.split('::')
+        if len(dep_parts) >= 3 and dep_parts[-2][0].isupper():
+            current_type = dep_parts[-2]
+        
+        # Find the function definition and scan for requires/ensures
+        i = start_line
+        while i < len(lines):
+            line = lines[i].strip()
+            
+            # Look for requires or ensures keywords
+            if line.startswith('requires') or line.startswith('ensures'):
+                # Find the end of this clause (until next keyword or {)
+                clause_end = i
+                for j in range(i + 1, len(lines)):
+                    next_line = lines[j].strip()
+                    if (next_line.startswith('requires') or 
+                        next_line.startswith('ensures') or 
+                        next_line.startswith('recommends') or
+                        '{' in next_line):
+                        clause_end = j - 1
+                        break
+                    clause_end = j
+                
+                # Extract the clause content
+                clause_lines = lines[i:clause_end + 1]
+                clause_text = ' '.join(line.strip() for line in clause_lines)
+                
+                # Extract function calls using pattern matching
+                # Pattern 1: Type::method calls
+                call_pattern1 = r'\b([A-Z][A-Za-z0-9_]*(?:::[A-Za-z0-9_]+)+)\s*\('
+                for match in re.finditer(call_pattern1, clause_text):
+                    call_path = match.group(1)
+                    
+                    # Convert to full module path
+                    if not call_path.startswith('lib::'):
+                        full_path = f"lib::{':'.join(module_parts)}::{call_path}"
+                    else:
+                        full_path = call_path
+                    
+                    # Filter out single-letter generic parameters
+                    path_parts = full_path.split('::')
+                    if len(path_parts) > 0 and len(path_parts[-1]) == 1 and path_parts[-1].isupper():
+                        continue
+                    
+                    deps.add(full_path)
+                
+                # Pattern 2: self.method_name calls - treat as method of current type
+                if current_type:
+                    self_call_pattern = r'\bself\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\('
+                    for match in re.finditer(self_call_pattern, clause_text):
+                        method_name = match.group(1)
+                        
+                        # Build path for method of current type
+                        module_path = '::'.join(module_parts)
+                        full_path = f"lib::{module_path}::{current_type}::{method_name}"
+                        
+                        deps.add(full_path)
+                
+                i = clause_end + 1
+            elif '{' in line:
+                # Reached function body, stop
+                break
+            else:
+                i += 1
+        
+        return deps
     
     def extract_trait_impl_spec_dependencies(self, dependencies):
         """Extract dependencies from all functions within trait implementations.
@@ -2045,20 +2123,20 @@ class DependencyExtractor:
                         fn_body_end = self._find_function_body_end(lines, i)
                         
                         if fn_body_end is not None:
-                            # Extract function body
-                            fn_body_lines = lines[fn_body_start:fn_body_end + 1]
-                            fn_body = ''.join(fn_body_lines)
+                            # Extract complete function definition (signature + body)
+                            fn_lines = lines[fn_body_start:fn_body_end + 1]
+                            fn_text = ''.join(fn_lines)
                             
                             # Skip if function has external_body
-                            if 'external_body' in fn_body:
+                            if 'external_body' in fn_text:
                                 i = fn_body_end
                                 continue
                             
-                            # Extract function calls from the body
+                            # Extract function calls from requires/ensures AND body
                             # Pattern: Type::method, Self::method, module::function
                             call_pattern = r'\b([A-Z][A-Za-z0-9_]*(?:::[A-Za-z0-9_]+)+)\s*\('
                             
-                            for match in re.finditer(call_pattern, fn_body):
+                            for match in re.finditer(call_pattern, fn_text):
                                 call_path = match.group(1)
                                 
                                 # Build full path
