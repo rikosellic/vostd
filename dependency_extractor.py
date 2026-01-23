@@ -1181,6 +1181,10 @@ class DependencyExtractor:
         # 11. Remove methods that are already covered by trait implementations
         filtered_dependencies = self._remove_trait_impl_covered_methods(simplified_dependencies)
         
+        # 12. Find corresponding exec functions for _spec functions
+        spec_exec_deps = self._find_when_used_as_spec_functions(filtered_dependencies)
+        filtered_dependencies.update(spec_exec_deps)
+        
         return sorted(filtered_dependencies)
     
     def _remove_trait_impl_covered_methods(self, dependencies):
@@ -1250,6 +1254,62 @@ class DependencyExtractor:
                 filtered.add(dep)
         
         return filtered
+    
+    def _find_when_used_as_spec_functions(self, dependencies):
+        """For functions ending with _spec, find corresponding exec functions with 
+        #[verifier::when_used_as_spec(spec_function)] annotations.
+        """
+        additional_deps = set()
+        
+        for dep in dependencies:
+            # Skip impl blocks and traits
+            if '@' in dep:
+                continue
+            
+            # Check if this is a _spec function
+            if not dep.endswith('_spec'):
+                continue
+            
+            # Get the location of this function
+            location = self.find_source_location(dep)
+            if not location or 'file' not in location:
+                continue
+            
+            file_path = location['file']
+            
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                
+                # Extract the spec function name
+                spec_func_name = dep.split('::')[-1]  # e.g., 'addr_spec'
+                
+                # Search for when_used_as_spec annotations referencing this function
+                for i, line in enumerate(lines):
+                    if f'when_used_as_spec({spec_func_name})' in line:
+                        # Found annotation, now find the corresponding function
+                        # Look for function definition in next few lines
+                        for j in range(i + 1, min(i + 10, len(lines))):
+                            fn_line = lines[j].strip()
+                            
+                            # Match function definition
+                            fn_match = re.search(r'\b(?:pub\s+)?(?:exec\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*[<\(]', fn_line)
+                            if fn_match:
+                                exec_func_name = fn_match.group(1)
+                                
+                                # Build the full path for the exec function
+                                dep_parts = dep.split('::')
+                                exec_dep_parts = dep_parts[:-1] + [exec_func_name]
+                                exec_dep = '::'.join(exec_dep_parts)
+                                
+                                additional_deps.add(exec_dep)
+                                break
+                        break
+            
+            except Exception:
+                continue
+        
+        return additional_deps
     
     def _simplify_trait_method(self, dep):
         """Simplify trait method paths to just the trait.
