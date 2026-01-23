@@ -1557,7 +1557,19 @@ class DependencyExtractor:
                 continue
             
             trait_part, type_part = impl_str.split(' for ', 1)
-            trait_name = trait_part.split('<')[0].strip()
+            
+            # Extract trait name - handle generics properly
+            # impl_str could be: "InvView for Type" or "<M: Bound> TraitName for Type<M>"
+            trait_words = trait_part.strip().split()
+            trait_name = None
+            for word in reversed(trait_words):  # Start from the end
+                if word and not word.startswith('<') and not ':' in word and word[0].isupper():
+                    trait_name = word
+                    break
+            
+            if not trait_name:
+                continue
+                
             type_name = type_part.split('<')[0].strip()
             
             # Check if this trait has where clause requirements on associated types
