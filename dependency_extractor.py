@@ -15,11 +15,13 @@ import sys
 import os
 import re
 import json
+import pickle
 from collections import defaultdict, deque
 from pathlib import Path
 
 ROOT = os.path.abspath(os.path.dirname(__file__))
 VERUS_LOG_DIR = os.path.join(ROOT, ".verus-log")
+TRAIT_CACHE_FILE = os.path.join(VERUS_LOG_DIR, "trait_cache.pkl")
 
 class SExprParser:
     """Simple S-expression parser for VIR files"""
@@ -271,6 +273,121 @@ class VIRAnalyzer:
         self.source_analyzer = SourceCodeAnalyzer()
         self.vir_impl_mappings = {}  # impl_path -> type_name
         self.spec_analyzer = SpecFunctionAnalyzer(self.source_analyzer)
+        
+        # Load all trait definitions from VIR files at initialization
+        # This allows us to identify trait methods vs struct/enum methods
+        self._load_all_trait_definitions()
+    
+    def _load_all_trait_definitions(self):
+        """Load trait definitions from all VIR files.
+        This is done at initialization to allow accurate identification of trait methods.
+        Uses caching to avoid re-parsing VIR files on every run.
+        """
+        vir_dir = Path(VERUS_LOG_DIR) / 'vostd'
+        if not vir_dir.exists():
+            return
+        
+        cache_file = Path(TRAIT_CACHE_FILE)
+        
+        # Check if cache exists and is up-to-date
+        if cache_file.exists():
+            try:
+                # Get the latest VIR file modification time
+                vir_files = list(vir_dir.glob('*.vir'))
+                if not vir_files:
+                    return
+                
+                latest_vir_time = max(f.stat().st_mtime for f in vir_files)
+                cache_time = cache_file.stat().st_mtime
+                
+                # If cache is newer than all VIR files, use it
+                if cache_time > latest_vir_time:
+                    with open(cache_file, 'rb') as f:
+                        self.trait_defs = pickle.load(f)
+                    return
+            except Exception:
+                # If cache loading fails, fall through to re-parse
+                pass
+        
+        # Cache is missing or outdated, parse all VIR files
+        vir_files = list(vir_dir.glob('*.vir'))
+        
+        for vir_file in vir_files:
+            try:
+                with open(vir_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+                
+                # Parse the VIR file as S-expressions
+                parser = SExprParser(content)
+                
+                # Parse all top-level expressions
+                expressions = []
+                while parser.pos < parser.length:
+                    parser.skip_whitespace()
+                    if parser.pos >= parser.length:
+                        break
+                    expr = parser.parse()
+                    if expr:
+                        expressions.append(expr)
+                
+                # Extract only trait definitions
+                for expr in expressions:
+                    self._extract_trait_definitions_only(expr)
+            except Exception:
+                # Silently skip files that fail to parse
+                pass
+        
+        # Save the parsed traits to cache
+        try:
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(cache_file, 'wb') as f:
+                pickle.dump(self.trait_defs, f)
+        except Exception:
+            # If caching fails, continue without cache
+            pass
+    
+    def _extract_trait_definitions_only(self, expr):
+        """Extract only trait definitions from a VIR expression.
+        Lighter version of extract_trait_definitions for initialization.
+        """
+        if not isinstance(expr, list) or len(expr) < 2:
+            return
+        
+        # Look for (trait (@ ... (Trait :name ...)))
+        if expr[0] == 'trait' and len(expr) >= 2:
+            trait_expr = expr[1]
+            if isinstance(trait_expr, list) and len(trait_expr) >= 2:
+                # Handle (@ location (Trait ...))
+                if trait_expr[0] == '@' and len(trait_expr) >= 3:
+                    trait_def = trait_expr[2]
+                else:
+                    trait_def = trait_expr
+                
+                # Extract trait info
+                if isinstance(trait_def, list) and len(trait_def) > 0 and trait_def[0] == 'Trait':
+                    trait_path = None
+                    
+                    # Find :name
+                    for i in range(1, len(trait_def)):
+                        if trait_def[i] == ':name' and i + 1 < len(trait_def):
+                            raw_path = trait_def[i + 1]
+                            if isinstance(raw_path, str):
+                                trait_path = self.clean_path(raw_path)
+                            break
+                    
+                    # Store minimal trait info
+                    if trait_path:
+                        self.trait_defs[trait_path] = {
+                            'path': trait_path,
+                            'assoc_typs': [],
+                            'assoc_typs_bounds': None,
+                            'definition': trait_def
+                        }
+        
+        # Recursively search in nested expressions
+        for item in expr:
+            if isinstance(item, list):
+                self._extract_trait_definitions_only(item)
     
     def clean_path(self, path):
         """Convert VIR path format to Rust format"""
@@ -1044,7 +1161,43 @@ class DependencyExtractor:
         spec_deps = self.extract_spec_dependencies(all_dependencies)
         all_dependencies.update(spec_deps)
         
-        return sorted(all_dependencies)
+        # 10. Simplify trait method paths to trait paths
+        # For trait methods like lib::vstd_extra::ownership::Inv::inv,
+        # replace with just the trait: lib::vstd_extra::ownership::Inv
+        simplified_dependencies = set()
+        for dep in all_dependencies:
+            simplified = self._simplify_trait_method(dep)
+            simplified_dependencies.add(simplified)
+        
+        return sorted(simplified_dependencies)
+    
+    def _simplify_trait_method(self, dep):
+        """Simplify trait method paths to just the trait.
+        For example: lib::vstd_extra::ownership::Inv::inv -> lib::vstd_extra::ownership::Inv
+        Only simplifies if the parent is actually a trait.
+        """
+        if '@' in dep:  # Skip impl blocks
+            return dep
+        
+        parts = dep.split('::')
+        if len(parts) < 3:  # Need at least lib::module::Trait::method
+            return dep
+        
+        # Check if the second-to-last part might be a trait
+        potential_trait = parts[-2]
+        if not potential_trait or not potential_trait[0].isupper():
+            return dep  # Not a type/trait name
+        
+        # Construct potential trait path
+        trait_path = '::'.join(parts[:-1])
+        
+        # Check if this is a known trait
+        if trait_path in self.analyzer.trait_defs:
+            # Yes, it's a trait method, return just the trait
+            return trait_path
+        
+        # Not a trait, keep the original
+        return dep
     
     def _convert_target_to_vir_format(self, target_function):
         """Convert Rust function path to VIR format"""
@@ -1487,6 +1640,10 @@ class DependencyExtractor:
                 if inner_type in ['PPtr', 'PCell', 'PAtomicU64', 'PAtomicU8', 'PhantomData', 'Option', 'Vec']:
                     continue
                 
+                # Skip single-letter generic parameters (T, R, M, etc.)
+                if len(inner_type) == 1:
+                    continue
+                
                 # Build full path
                 inner_path = f"{module_path}::{inner_type}"
                 field_deps.add(inner_path)
@@ -1700,11 +1857,22 @@ class DependencyExtractor:
                     # Also match Verus-specific modifiers: open spec, closed spec, tracked, etc.
                     func_pattern = rf'\b(?:pub\s+)?(?:const\s+)?(?:open\s+)?(?:closed\s+)?(?:spec\s+)?(?:tracked\s+)?(?:exec\s+)?fn\s+{re.escape(item_name)}\s*[<(]'
                     if re.search(func_pattern, line):
+                        # Check if this function is inside an impl block
+                        impl_info = self._find_impl_block_start(lines, line_num - 1)
+                        
+                        # If we're looking for a method (type_name exists), verify it's in the right impl block
+                        if type_name:
+                            if impl_info is None:
+                                # Looking for a method but this is a standalone function, skip
+                                continue
+                            # Check if the impl block is for the correct type
+                            if not self._impl_is_for_type(impl_info['signature'], type_name):
+                                # This impl is for a different type, skip
+                                continue
+                        
                         # Extract spec annotation dependencies
                         spec_deps = self._extract_spec_annotation_deps(lines, line_num - 1, module_parts)
                         
-                        # Check if this function is inside an impl block
-                        impl_info = self._find_impl_block_start(lines, line_num - 1)
                         if impl_info is not None:
                             # Check if it's a trait impl or inherent impl
                             if impl_info['is_trait_impl']:
@@ -1772,8 +1940,8 @@ class DependencyExtractor:
                         return location_info
                     
                     # 3. Type definitions: "pub struct TypeName", "pub enum TypeName", "pub trait TypeName"
-                    # For traits, allow : for trait bounds
-                    type_pattern = rf'\b(?:pub\s+)?(?:struct|enum|union|trait)\s+{re.escape(item_name)}\s*[<{{(:]'
+                    # For traits, allow : for trait bounds, or 'where' for where clauses
+                    type_pattern = rf'\b(?:pub\s+)?(?:struct|enum|union|trait)\s+{re.escape(item_name)}\s*(?:[<{{(:]|where\s)'
                     if re.search(type_pattern, line):
                         relative_path = str(file_path).replace('\\', '/')
                         location_info = {
@@ -2097,6 +2265,46 @@ class DependencyExtractor:
                 }
         
         return None
+    
+    def _impl_is_for_type(self, impl_signature, type_name):
+        """Check if an impl signature is for a given type.
+        Examples:
+        - impl_signature: 'impl<R, T: Repr<R>> ReprPtr<R, T>', type_name: 'ReprPtr' -> True
+        - impl_signature: 'impl<R, T: Repr<R>> ReprPointsTo<R, T>', type_name: 'ReprPtr' -> False
+        - impl_signature: 'impl<M> OwnerOf for Link<M>', type_name: 'Link' -> True
+        """
+        # For trait impls: "impl<...> Trait for Type<...>"
+        if ' for ' in impl_signature:
+            # Extract type after 'for'
+            parts = impl_signature.split(' for ')
+            if len(parts) == 2:
+                type_part = parts[1].strip()
+                # Match type name at the start (before < or end)
+                return type_part.startswith(type_name + '<') or type_part == type_name
+        else:
+            # For inherent impls: "impl<...> Type<...>"
+            # Remove 'impl' and generic parameters
+            remaining = impl_signature.strip()
+            if remaining.startswith('impl'):
+                remaining = remaining[4:].strip()
+            
+            # Remove leading generic parameters: <...>
+            if remaining.startswith('<'):
+                # Find the matching >
+                depth = 0
+                for i, char in enumerate(remaining):
+                    if char == '<':
+                        depth += 1
+                    elif char == '>':
+                        depth -= 1
+                        if depth == 0:
+                            remaining = remaining[i+1:].strip()
+                            break
+            
+            # Now remaining should be "Type<...>" or just "Type"
+            return remaining.startswith(type_name + '<') or remaining == type_name
+        
+        return False
     
     def _extract_impl_signature(self, impl_line):
         """Extract the complete impl signature from an impl line, preserving generics.
