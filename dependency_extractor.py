@@ -1157,6 +1157,11 @@ class DependencyExtractor:
         type_impl_deps = self.extract_type_implementations(all_dependencies)
         all_dependencies.update(type_impl_deps)
         
+        # 7.5. Extract associated type trait impls based on trait where clauses
+        # Run after extract_type_implementations to catch newly discovered impls
+        assoc_type_trait_deps = self.extract_associated_type_trait_impls(all_dependencies)
+        all_dependencies.update(assoc_type_trait_deps)
+        
         # 8.5. Extract dependencies from spec functions in trait impls
         trait_impl_spec_deps = self.extract_trait_impl_spec_dependencies(all_dependencies)
         all_dependencies.update(trait_impl_spec_deps)
@@ -1322,6 +1327,40 @@ class DependencyExtractor:
                     
                     # Add the associated types themselves
                     additional_deps.update(assoc_types)
+                    
+                    # Check if the trait has constraints on associated types
+                    # For example, InvView requires V: Inv
+                    trait_assoc_constraints = self._find_trait_associated_type_constraints(dep, trait_name)
+                    
+                    # For each constraint, find the impl for the associated type
+                    for assoc_type_name, required_trait in trait_assoc_constraints:
+                        # Find the actual associated type from the impl
+                        for assoc_type_path in assoc_types:
+                            assoc_parts = assoc_type_path.split('::')
+                            if len(assoc_parts) >= 1 and assoc_parts[-1] == assoc_type_name:
+                                # This is the associated type, find its impl of required_trait
+                                module_parts = assoc_parts[:-1]
+                                assoc_concrete_type = assoc_parts[-1]
+                                
+                                # Find impl required_trait for assoc_concrete_type
+                                for base_path in [Path('vostd') / 'src']:
+                                    file_path = base_path / Path(*module_parts[1:]).with_suffix('.rs')
+                                    if file_path.exists():
+                                        impl_path_pattern = f"impl.*{required_trait}.*for.*{assoc_concrete_type}"
+                                        try:
+                                            with open(file_path, 'r', encoding='utf-8') as f:
+                                                lines = f.readlines()
+                                            
+                                            for line_num, line in enumerate(lines, 1):
+                                                if re.search(impl_path_pattern, line):
+                                                    # Build the impl path
+                                                    impl_sig = self._extract_impl_signature(line)
+                                                    module_path = '::'.join(module_parts)
+                                                    impl_dep = f"{module_path}@{impl_sig}"
+                                                    additional_deps.add(impl_dep)
+                                        except Exception:
+                                            pass
+                                        break
                     
                     # For each associated type, find its trait implementations
                     for assoc_type_path in assoc_types:
@@ -1496,6 +1535,121 @@ class DependencyExtractor:
             pass
         
         return assoc_types
+    
+    def extract_associated_type_trait_impls(self, dependencies):
+        """For impl InvView for Type, extract impl Inv for AssociatedType.
+        InvView requires <Self as View>::V: Inv, so we need to find type V = ... and impl Inv for that type.
+        """
+        assoc_deps = set()
+        
+        for dep in dependencies:
+            if '@impl' not in dep:
+                continue
+            
+            parts = dep.split('@impl')
+            if len(parts) != 2:
+                continue
+            
+            module_path = parts[0]
+            impl_str = parts[1].strip()
+            
+            if ' for ' not in impl_str:
+                continue
+            
+            trait_part, type_part = impl_str.split(' for ', 1)
+            trait_name = trait_part.split('<')[0].strip()
+            type_name = type_part.split('<')[0].strip()
+            
+            # Check if this trait has where clause requirements on associated types
+            # Find trait definition
+            trait_path = None
+            for known_trait in self.analyzer.trait_defs.keys():
+                if known_trait.endswith('::' + trait_name):
+                    trait_path = known_trait
+                    break
+            
+            if not trait_path:
+                continue
+            
+            # Get trait location and parse where clause
+            trait_loc = self.find_source_location(trait_path)
+            if not trait_loc or 'file' not in trait_loc:
+                continue
+            
+            try:
+                with open(trait_loc['file'], 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                
+                trait_line = trait_loc.get('line', 1) - 1
+                
+                # Read trait definition (may span multiple lines until {)
+                trait_def = ''
+                for i in range(trait_line, min(trait_line + 10, len(lines))):
+                    trait_def += lines[i]
+                    if '{' in lines[i]:
+                        break
+                
+                # Extract where clause: where <Self as View>::V: Inv
+                where_match = re.search(r'where\s+(.+?)\s*\{', trait_def, re.DOTALL)
+                if not where_match:
+                    continue
+                
+                where_clause = where_match.group(1)
+                
+                # Pattern: <Self as SomeTrait>::AssocType: RequiredTrait
+                pattern = r'<Self\s+as\s+(\w+)>::(\w+)\s*:\s*(\w+)'
+                
+                for match in re.finditer(pattern, where_clause):
+                    parent_trait = match.group(1)  # e.g., View
+                    assoc_type_name = match.group(2)  # e.g., V
+                    required_trait = match.group(3)  # e.g., Inv
+                    
+                    # Now find the associated type value in impl parent_trait for type_name
+                    # We need to search in the same file as the current impl (impl InvView for Type)
+                    impl_loc = self.find_source_location(dep)
+                    if not impl_loc or 'file' not in impl_loc:
+                        continue
+                    
+                    # Search for impl parent_trait for type_name in the same file
+                    with open(impl_loc['file'], 'r', encoding='utf-8') as f:
+                        impl_lines = f.readlines()
+                    
+                    # Find impl parent_trait for type_name
+                    found_assoc_type = False
+                    for i, line in enumerate(impl_lines):
+                        if f'impl' in line and f'{parent_trait}' in line and f'for {type_name}' in line:
+                            # Found impl block, search for type AssocType = Value
+                            impl_end = self._find_impl_block_end(impl_lines, i)
+                            if impl_end is None:
+                                continue
+                            
+                            for j in range(i, impl_end + 1):
+                                type_match = re.search(rf'type\s+{assoc_type_name}\s*=\s*([A-Z]\w*)', impl_lines[j])
+                                if type_match:
+                                    concrete_type = type_match.group(1)
+                                    found_assoc_type = True
+                                    
+                                    # Now find impl required_trait for concrete_type
+                                    # Search in the same file
+                                    for k, impl_line in enumerate(impl_lines):
+                                        if f'impl' in impl_line and f'{required_trait}' in impl_line and f'for {concrete_type}' in impl_line:
+                                            # Extract impl signature and add to dependencies
+                                            impl_end_k = self._find_impl_block_end(impl_lines, k)
+                                            if impl_end_k is not None:
+                                                impl_sig = self._extract_impl_signature(impl_line)
+                                                if impl_sig:
+                                                    assoc_deps.add(f"{module_path}@{impl_sig}")
+                                            break
+                                    break
+                            
+                            if found_assoc_type:
+                                break
+            
+            except Exception as e:
+                # Silently continue on errors
+                pass
+        
+        return assoc_deps
     
     def extract_type_implementations(self, dependencies):
         """For each type in dependencies, find all its trait implementations.
@@ -2460,6 +2614,104 @@ class DependencyExtractor:
             return remaining.startswith(type_name + '<') or remaining == type_name
         
         return False
+    
+    def _find_trait_associated_type_constraints(self, impl_path, trait_name):
+        """Find constraints on associated types from trait definition.
+        For example, for InvView trait, find that V: Inv.
+        Returns: list of (assoc_type_name, required_trait_name) tuples
+        """
+        constraints = []
+        
+        # Try to find the trait in VIR trait_defs and from source code
+        # Build possible trait paths
+        parts = impl_path.split('::')
+        if len(parts) < 3:
+            return constraints
+        
+        # Try common trait module paths
+        possible_trait_paths = []
+        
+        # Strategy 1: Same module as the impl
+        if '@' in impl_path:
+            module_path = impl_path.split('@')[0]
+            possible_trait_paths.append(f"{module_path}::{trait_name}")
+        
+        # Strategy 2: Common trait locations
+        for base_module in ['lib::vstd_extra::ownership', 'lib::aster_common::mm::frame', 
+                            'lib::vstd::view', 'lib::core::ops']:
+            possible_trait_paths.append(f"{base_module}::{trait_name}")
+        
+        # Check each possible path
+        for trait_path in possible_trait_paths:
+            # Try to find the trait definition file
+            location = self.find_source_location(trait_path)
+            if location and 'file' in location:
+                file_path = location['file']
+                line_num = location.get('line', 0)
+                
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                    
+                    if line_num > 0 and line_num <= len(lines):
+                        trait_line = lines[line_num - 1]
+                        
+                        # Parse where clause for associated type constraints
+                        # Pattern: "where <Self as Trait>::AssocType: Constraint"
+                        # Example: "pub trait InvView: Inv + View where <Self as View>::V: Inv {"
+                        
+                        where_match = re.search(r'where\s+<Self\s+as\s+(\w+)>::(\w+):\s*(\w+)', trait_line)
+                        if where_match:
+                            parent_trait = where_match.group(1)  # e.g., View
+                            assoc_type = where_match.group(2)    # e.g., V
+                            constraint = where_match.group(3)     # e.g., Inv
+                            
+                            constraints.append((assoc_type, constraint))
+                            return constraints
+                
+                except Exception:
+                    pass
+        
+        return constraints
+    
+    def _parse_assoc_type_bounds(self, assoc_bounds):
+        """Parse associated type bounds from VIR :assoc_typs_bounds.
+        Extract constraints like V: Inv from the VIR structure.
+        """
+        constraints = []
+        
+        if not isinstance(assoc_bounds, list):
+            return constraints
+        
+        # VIR format example for InvView:
+        # The bounds specify that associated type V must implement certain traits
+        # We need to recursively search for trait requirements
+        
+        def find_trait_bounds_recursive(expr, current_assoc_type=None):
+            if not isinstance(expr, list):
+                return
+            
+            # Look for patterns indicating trait bounds
+            # Example: ((assoc_type V) (trait_bound Inv))
+            for i, item in enumerate(expr):
+                if isinstance(item, str):
+                    # Check if this looks like an associated type name
+                    if item in ['V', 'Owner', 'Model']:  # Common associated type names
+                        current_assoc_type = item
+                    # Check if this is a trait reference
+                    elif item == 'TraitId' and i + 2 < len(expr) and expr[i + 1] == 'Path':
+                        trait_path = expr[i + 2]
+                        if isinstance(trait_path, str):
+                            clean_trait = self.analyzer.clean_path(trait_path)
+                            if clean_trait and current_assoc_type:
+                                # Extract just the trait name
+                                trait_name = clean_trait.split('::')[-1]
+                                constraints.append((current_assoc_type, trait_name))
+                elif isinstance(item, list):
+                    find_trait_bounds_recursive(item, current_assoc_type)
+        
+        find_trait_bounds_recursive(assoc_bounds)
+        return constraints
     
     def _extract_impl_signature(self, impl_line):
         """Extract the complete impl signature from an impl line, preserving generics.
