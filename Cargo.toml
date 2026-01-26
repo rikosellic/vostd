@@ -1,10 +1,6 @@
 [workspace]
 members = [
-    "vostd",
-#    "ostd/libs/align_ext",
-#    "ostd/libs/ostd-macros",
-#    "ostd/libs/ostd-test",
-#    "kernel/libs/int-to-c-enum",
+    "cortenmm",
 ]
 exclude = [
     "scripts",
