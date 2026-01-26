@@ -115,6 +115,75 @@ class SExprParser:
         else:
             return self.parse_symbol()
         
+class SourceCodeAnalyzer:
+    """Analyze source code to map impl&%N to actual types"""
+    
+    def __init__(self):
+        self.impl_mappings = {}  # file_path -> {impl_index -> type_info}
+    
+    def analyze_source_file(self, file_path):
+        """Parse source file and extract impl blocks with their types"""
+        if file_path in self.impl_mappings:
+            return self.impl_mappings[file_path]
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            mappings = {}
+            # Simple pattern - just find lines starting with impl
+            impl_pattern = r'^\s*impl\b'
+            
+            impl_index = 0
+            for line in content.split('\n'):
+                if re.match(impl_pattern, line):
+                    impl_line = line.strip()
+                    
+                    # 两种impl模式:
+                    # 1. impl Trait for Type -> Type是我们要的类型
+                    # 2. impl Type -> Type是我们要的类型
+                    type_name = "Unknown"
+                    
+                    if ' for ' in impl_line:
+                        # Pattern 1: impl ... for TypeName
+                        for_match = re.search(r'\bfor\s+([A-Z][A-Za-z0-9_]*)', impl_line)
+                        if for_match:
+                            type_name = for_match.group(1)
+                    else:
+                        # Pattern 2: impl TypeName (没有for的情况)
+                        # 移除impl和泛型约束，然后提取类型名
+                        impl_part = re.sub(r'^\s*impl\s*', '', impl_line)  # 移除开头的impl
+                        
+                        # 如果有泛型约束<...>，移除它
+                        if impl_part.startswith('<'):
+                            # 找到匹配的>，考虑嵌套
+                            bracket_count = 0
+                            i = 0
+                            for i, char in enumerate(impl_part):
+                                if char == '<':
+                                    bracket_count += 1
+                                elif char == '>':
+                                    bracket_count -= 1
+                                    if bracket_count == 0:
+                                        break
+                            
+                            if bracket_count == 0:
+                                impl_part = impl_part[i+1:].strip()
+                        
+                        # 从剩余部分提取第一个类型名
+                        type_match = re.match(r'\s*([A-Z][A-Za-z0-9_]*)', impl_part)
+                        if type_match:
+                            type_name = type_match.group(1)
+                    
+                    mappings[impl_index] = type_name
+                    impl_index += 1
+            
+            self.impl_mappings[file_path] = mappings
+            return mappings
+            
+        except Exception:
+            return {}
+        
 class DependencyExtractor:
     """Main dependency extraction orchestrator"""
     
@@ -152,6 +221,7 @@ class VIRAnalyzer:
     def __init__(self):
         self.function_info = {}  # vir_path -> {rust_path, vir_location, source_location}
         self.datatype_info = {}  # vir_path -> {rust_path, vir_location, source_location}
+        self.source_analyzer = SourceCodeAnalyzer()
 
     def analyze_vir_file(self, file_path):
         """Analyze a complete VIR file"""
@@ -236,8 +306,11 @@ class VIRAnalyzer:
                 # Extract module name from file name and filter functions
                 module_name = self._extract_rust_module_from_filename(file_path)
                 if module_name and rust_path.startswith(module_name):
+                    # 检查是否是impl方法，如果是则替换为实际类型
+                    resolved_rust_path = self._resolve_impl_path(rust_path, source_location)
+                    
                     function_info = {
-                        'rust_path': rust_path,
+                        'rust_path': resolved_rust_path,
                         'vir_location': self._extract_vir_location(file_path, vir_line),
                         'is_impl': 'impl&%' in func_path,  # Check if it's a trait method
                     }
@@ -348,10 +421,46 @@ class VIRAnalyzer:
         else:
             return file_path
     
+    def _resolve_impl_path(self, rust_path, source_location):
+        """Replace impl&%N with actual type name from source code"""
+        if 'impl&%' not in rust_path or not source_location:
+            return rust_path
+        
+        try:
+            # 从 source_location 中提取文件路径 (处理Windows路径)
+            # 格式: D:\path\file.rs:line
+            import re
+            # 使用正则表达式匹配文件路径，处理Windows驱动器路径
+            path_match = re.match(r'^(.+\.(rs|vir)):\d+$', source_location)
+            if not path_match:
+                return rust_path
+            source_file = path_match.group(1)
+            
+            # 从 rust_path 中提取 impl&%N 部分
+            impl_match = re.search(r'impl&%([0-9]+)', rust_path)
+            if not impl_match:
+                return rust_path
+            
+            impl_index = int(impl_match.group(1))
+            
+            # 使用 SourceCodeAnalyzer 分析源文件
+            mappings = self.source_analyzer.analyze_source_file(source_file)
+            
+            if impl_index in mappings:
+                type_name = mappings[impl_index]
+                # 替换 impl&%N 为实际类型名
+                resolved_path = re.sub(r'impl&%[0-9]+', type_name, rust_path)
+                return resolved_path
+            
+        except (ValueError, IndexError, FileNotFoundError):
+            pass
+        
+        return rust_path
+    
 def test_function_info():
     extractor = DependencyExtractor()
-    #extractor.analyzer.analyze_vir_file("D:\\Projects\\VerusProjects\\vostd\\.verus-log\\cortenmm\\lock_protocol_rcu__spec__utils-poly.vir")
-    extractor.analyzer.analyze_vir_file("D:\\Projects\\VerusProjects\\vostd\\.verus-log\\cortenmm\\lock_protocol_rcu__spec__common-poly.vir")
+    extractor.analyzer.analyze_vir_file("D:\\Projects\\VerusProjects\\vostd\\.verus-log\\cortenmm\\lock_protocol_rcu__spec__utils-poly.vir")
+    #extractor.analyzer.analyze_vir_file("D:\\Projects\\VerusProjects\\vostd\\.verus-log\\cortenmm\\lock_protocol_rcu__spec__common-poly.vir")
     
     print("=== 示例函数信息 ===")
     for i in range(3):
@@ -379,5 +488,5 @@ def test_datatype_info():
     print(f"\n总数: {len(extractor.analyzer.datatype_info)}")
 
 if __name__ == '__main__':
-    test_datatype_info()
-    #test_function_info()
+    #test_datatype_info()
+    test_function_info()
