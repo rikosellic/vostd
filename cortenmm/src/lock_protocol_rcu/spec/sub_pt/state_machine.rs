@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use verus_state_machines_macros::*;
 use vstd::prelude::*;
 
-use crate::mm::{
+use crate::lock_protocol_rcu::mm::{
     frame::allocator::pa_is_valid_kernel_address,
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
     page_size_spec,

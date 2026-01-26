@@ -5,16 +5,16 @@ use vstd::atomic_ghost::*;
 use vstd::invariant::InvariantPredicate;
 use vstd::cell::CellId;
 
-use vstd_extra::array_ptr::*;
+use crate::vstd_extra::array_ptr::*;
 
-use crate::spec::{
+use crate::lock_protocol_rcu::spec::{
     rcu::{NodeToken, PteArrayToken, SpecInstance, PteArrayState},
     lock_protocol::LockProtocolModel,
     utils::NodeHelper,
     common::NodeId,
 };
-use crate::mm::{PagingLevel, Paddr, Vaddr};
-use crate::mm::page_table::{
+use crate::lock_protocol_rcu::mm::{PagingLevel, Paddr, Vaddr};
+use crate::lock_protocol_rcu::mm::page_table::{
     node_concurrent::{paddr_to_vaddr, valid_paddr, PTE_NUM},
     PageTableEntryTrait,
     pte::Pte,

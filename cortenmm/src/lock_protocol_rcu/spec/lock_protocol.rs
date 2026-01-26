@@ -1,11 +1,11 @@
 use vstd::prelude::*;
 
-use crate::spec::{
+use crate::lock_protocol_rcu::spec::{
     rcu::{CursorState, CursorToken, SpecInstance},
     utils::NodeHelper,
     common::{CpuId, NodeId, valid_cpu},
 };
-use crate::configs::GLOBAL_CPU_NUM;
+use crate::lock_protocol_rcu::configs::GLOBAL_CPU_NUM;
 
 verus! {
 

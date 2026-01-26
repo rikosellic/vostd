@@ -18,12 +18,12 @@ use vstd::simple_pptr::MemContents;
 use vstd::simple_pptr::PPtr;
 use vstd::simple_pptr;
 
-use vstd_extra::{manually_drop::*, array_ptr::*};
+use crate::vstd_extra::{manually_drop::*, array_ptr::*};
 
 use entry_local::EntryLocal;
 use entry::Entry;
 use stray::{StrayFlag, StrayPerm};
-use crate::{
+use crate::lock_protocol_rcu::{
     mm::{
         NR_ENTRIES,
         frame::{
@@ -42,16 +42,16 @@ use crate::{
     task::DisabledPreemptGuard,
     x86_64::kspace::paddr_to_vaddr,
 };
-use crate::mm::frame_concurrent::meta::{MetaSlot, meta_to_frame, MetaSlotPerm};
-use crate::mm::page_table::{pte::Pte, GLOBAL_CPU_NUM};
+use crate::lock_protocol_rcu::mm::frame_concurrent::meta::{MetaSlot, meta_to_frame, MetaSlotPerm};
+use crate::lock_protocol_rcu::mm::page_table::{pte::Pte, GLOBAL_CPU_NUM};
 
-use crate::exec::{
+use crate::lock_protocol_rcu::exec::{
     self, MAX_FRAME_NUM, get_pte_from_addr_spec, SIZEOF_PAGETABLEENTRY, frame_addr_to_index,
     frame_addr_to_index_spec, MockPageTableEntry, MockPageTablePage,
 };
-use crate::configs::PTE_NUM;
-use crate::spec::sub_pt::{pa_is_valid_pt_address, SubPageTable, level_is_in_range, index_pte_paddr};
-use crate::spec::{
+use crate::lock_protocol_rcu::configs::PTE_NUM;
+use crate::lock_protocol_rcu::spec::sub_pt::{pa_is_valid_pt_address, SubPageTable, level_is_in_range, index_pte_paddr};
+use crate::lock_protocol_rcu::spec::{
     lock_protocol::LockProtocolModel,
     common::NodeId,
     utils::NodeHelper,
@@ -182,7 +182,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
     /// data structures need to hold the frame handle such as the page table.
     /// TODO: Implement Frame::into_raw
     #[verifier::external_body]
-    pub(in crate::mm) fn into_raw_local(self) -> (res: Paddr)
+    pub(in crate::lock_protocol_rcu::mm) fn into_raw_local(self) -> (res: Paddr)
         ensures
             res == self.start_paddr_local(),
     {
@@ -273,7 +273,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
     ) -> (res: (Self, Tracked<simple_pptr::PointsTo<MockPageTablePage>>))
         requires
             old(model).invariants(),
-            crate::spec::sub_pt::level_is_in_range::<C>(level as int),
+            crate::lock_protocol_rcu::spec::sub_pt::level_is_in_range::<C>(level as int),
         ensures
             res.1@.pptr() == res.0.ptr_l,
             res.1@.mem_contents().is_init(),
@@ -306,7 +306,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
                     &&& model.meta_map[pa as int] == old(model).meta_map[pa as int]
                 },
     {
-        // crate::exec::alloc_page_table(level, Tracked(model))
+        // crate::lock_protocol_rcu::exec::alloc_page_table(level, Tracked(model))
         unimplemented!()
     }
 }

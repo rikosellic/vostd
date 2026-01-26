@@ -3,12 +3,12 @@ use vstd::prelude::*;
 use vstd::multiset::*;
 
 use vstd::{set::*, set_lib::*, map_lib::*};
-use vstd_extra::{seq_extra::*, set_extra::*, map_extra::*};
+use crate::vstd_extra::{seq_extra::*, set_extra::*, map_extra::*};
 
-use crate::mm::Paddr;
-use crate::spec::common::{CpuId, NodeId, valid_cpu};
-use crate::spec::rcu::types::{CursorState, NodeState, PteState, PteArrayState};
-use crate::spec::utils::{NodeHelper, group_node_helper_lemmas};
+use crate::lock_protocol_rcu::mm::Paddr;
+use crate::lock_protocol_rcu::spec::common::{CpuId, NodeId, valid_cpu};
+use crate::lock_protocol_rcu::spec::rcu::types::{CursorState, NodeState, PteState, PteArrayState};
+use crate::lock_protocol_rcu::spec::utils::{NodeHelper, group_node_helper_lemmas};
 
 tokenized_state_machine! {
 

@@ -2,9 +2,9 @@ use verus_state_machines_macros::tokenized_state_machine;
 use vstd::prelude::*;
 
 use vstd::{set::*, seq::*, set_lib::*, map_lib::*};
-use vstd_extra::{seq_extra::*, set_extra::*, map_extra::*};
+use crate::vstd_extra::{seq_extra::*, set_extra::*, map_extra::*};
 
-use crate::spec::{
+use crate::lock_protocol_rcu::spec::{
     common::{CpuId, NodeId, valid_cpu},
     utils::{NodeHelper, group_node_helper_lemmas},
     rw::{
@@ -421,7 +421,7 @@ transition!{
 
 #[inductive(initialize)]
 fn initialize_inductive(post: Self, cpu_num: CpuId) {
-    broadcast use crate::spec::utils::group_node_helper_lemmas;
+    broadcast use crate::lock_protocol_rcu::spec::utils::group_node_helper_lemmas;
     assert(post.inv_nodes()) by {
         assert(post.nodes.dom() == Set::empty().insert(NodeHelper::root_id()));
         assert(NodeHelper::valid_nid(NodeHelper::root_id())) by {
@@ -482,7 +482,7 @@ fn unlocking_end_inductive(pre: Self, post: Self, cpu: CpuId) {
 
 #[inductive(read_lock)]
 fn read_lock_inductive(pre: Self, post: Self, cpu: CpuId, nid: NodeId) {
-    broadcast use {crate::spec::utils::group_node_helper_lemmas,
+    broadcast use {crate::lock_protocol_rcu::spec::utils::group_node_helper_lemmas,
         vstd_extra::seq_extra::group_forall_seq_lemmas,
     };
     let path = pre.cursors[cpu].get_read_lock_path();
@@ -569,14 +569,14 @@ fn read_unlock_inductive(pre: Self, post: Self, cpu: CpuId, nid: NodeId) {
         };
     };
     assert(pre.reader_counts[nid] > 0) by {
-        broadcast use vstd_extra::seq_extra::group_forall_seq_lemmas;
+        broadcast use crate::vstd_extra::seq_extra::group_forall_seq_lemmas;
         pre.lemma_inv_implies_inv_rc_positive()
     };
 }
 
 #[inductive(write_lock)]
 fn write_lock_inductive(pre: Self, post: Self, cpu: CpuId, nid: NodeId) {
-    broadcast use {crate::spec::utils::group_node_helper_lemmas,
+    broadcast use {crate::lock_protocol_rcu::spec::utils::group_node_helper_lemmas,
         vstd_extra::seq_extra::group_forall_seq_lemmas,
     };
     let path = pre.cursors[cpu].get_read_lock_path();
@@ -1032,7 +1032,7 @@ ensures
 {
     broadcast use {
                 vstd_extra::seq_extra::group_forall_seq_lemmas,
-                crate::spec::utils::group_node_helper_lemmas,
+                crate::lock_protocol_rcu::spec::utils::group_node_helper_lemmas,
                 vstd_extra::map_extra::group_value_filter_lemmas,
             };
     let f = |cursor: CursorState| cursor.hold_read_lock(child);
@@ -1099,7 +1099,7 @@ requires
 ensures
     self.subtree_locked(child),
 {
-    broadcast use crate::spec::utils::group_node_helper_lemmas;
+    broadcast use crate::lock_protocol_rcu::spec::utils::group_node_helper_lemmas;
     assert forall |id: NodeId|
         #[trigger] self.nodes.contains_key(id) &&
         #[trigger] NodeHelper::in_subtree_range(child, id) && id != child

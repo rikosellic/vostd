@@ -43,11 +43,11 @@ pub enum GetFrameError {
     macro_rules! impl_frame_meta_for {
         // Implement without specifying the drop behavior.
         ($t:ty) => {
-            // const_assert!(size_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_SIZE);
-            // const_assert!(align_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_ALIGN);
+            // const_assert!(size_of::<$t>() <= $crate::lock_protocol_rcu::mm::frame::meta::FRAME_METADATA_MAX_SIZE);
+            // const_assert!(align_of::<$t>() <= $crate::lock_protocol_rcu::mm::frame::meta::FRAME_METADATA_MAX_ALIGN);
             // TODO: Fix assertions
             // SAFETY: The size and alignment of the structure are checked.
-            impl $crate::mm::frame::meta::AnyFrameMeta for $t {}
+            impl $crate::lock_protocol_rcu::mm::frame::meta::AnyFrameMeta for $t {}
         };
     }
 

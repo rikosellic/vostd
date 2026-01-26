@@ -3,10 +3,10 @@ pub mod mapping;
 use vstd::prelude::*;
 use vstd::raw_ptr::{PointsTo};
 
-use crate::spec::{common::*, utils::*};
+use crate::lock_protocol_rcu::spec::{common::*, utils::*};
 use super::super::{common::*, types::*};
 use super::super::node::PageTablePageMeta;
-use crate::mm::page_table::PageTableConfig;
+use crate::lock_protocol_rcu::mm::page_table::PageTableConfig;
 
 pub use mapping::*;
 

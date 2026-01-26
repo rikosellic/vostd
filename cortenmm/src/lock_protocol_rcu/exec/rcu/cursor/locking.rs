@@ -4,10 +4,10 @@ use std::ops::Range;
 
 use vstd::prelude::*;
 
-use vstd_extra::ghost_tree::Node;
-use vstd_extra::manually_drop::*;
+use crate::vstd_extra::ghost_tree::Node;
+use crate::vstd_extra::manually_drop::*;
 
-use crate::spec::{common::*, utils::*, rcu::*};
+use crate::lock_protocol_rcu::spec::{common::*, utils::*, rcu::*};
 use super::super::{common::*, cpu::*};
 use super::super::{frame::meta::*, page_table::*};
 use super::super::node::{
@@ -21,10 +21,10 @@ use super::super::node::{
 use super::super::pte::Pte;
 use super::super::trust_rcu::*;
 use super::Cursor;
-use crate::mm::page_table::PageTableConfig;
-use crate::mm::page_table::PageTableEntryTrait;
-use crate::mm::page_table::cursor::MAX_NR_LEVELS;
-use crate::task::DisabledPreemptGuard;
+use crate::lock_protocol_rcu::mm::page_table::PageTableConfig;
+use crate::lock_protocol_rcu::mm::page_table::PageTableEntryTrait;
+use crate::lock_protocol_rcu::mm::page_table::cursor::MAX_NR_LEVELS;
+use crate::lock_protocol_rcu::task::DisabledPreemptGuard;
 
 verus! {
 
@@ -607,7 +607,7 @@ fn dfs_acquire_lock<C: PageTableConfig>(
         ),
     decreases cur_node.deref().deref().level_spec(),
 {
-    broadcast use crate::spec::utils::group_node_helper_lemmas;
+    broadcast use crate::lock_protocol_rcu::spec::utils::group_node_helper_lemmas;
 
     let tracked mut forgot_guards = SubTreeForgotGuard::empty();
 
@@ -859,7 +859,7 @@ fn dfs_release_lock<'rcu, C: PageTableConfig>(
         res@.cur_node() == cur_node.nid(),
     decreases cur_node.deref().deref().level_spec(),
 {
-    broadcast use crate::spec::utils::group_node_helper_lemmas;
+    broadcast use crate::lock_protocol_rcu::spec::utils::group_node_helper_lemmas;
 
     let tracked mut forgot_guards = forgot_guards.get();
 

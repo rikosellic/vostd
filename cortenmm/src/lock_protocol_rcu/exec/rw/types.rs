@@ -1,5 +1,5 @@
 use vstd::prelude::*;
-use crate::spec::rw::*;
+use crate::lock_protocol_rcu::spec::rw::*;
 
 verus! {
 

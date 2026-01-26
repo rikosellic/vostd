@@ -3,9 +3,9 @@ pub mod mapping;
 use vstd::prelude::*;
 use vstd::raw_ptr::PointsTo;
 
-use crate::mm::{Paddr, Vaddr};
-use crate::mm::page_table::node::PageTablePageMeta;
-use crate::mm::page_table::PageTableConfig;
+use crate::lock_protocol_rcu::mm::{Paddr, Vaddr};
+use crate::lock_protocol_rcu::mm::page_table::node::PageTablePageMeta;
+use crate::lock_protocol_rcu::mm::page_table::PageTableConfig;
 
 pub use mapping::{frame_to_meta, meta_to_frame};
 

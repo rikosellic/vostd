@@ -3,7 +3,7 @@ use core::mem::ManuallyDrop;
 
 use vstd::prelude::*;
 
-use crate::mm::{
+use crate::lock_protocol_rcu::mm::{
     page_table::{node::PageTableNode, pte::Pte, PageTableConfig},
     Vaddr,
 };

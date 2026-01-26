@@ -1,7 +1,7 @@
 use std::ops::Range;
 use vstd::prelude::*;
 
-use crate::spec::{common::*, utils::*};
+use crate::lock_protocol_rcu::spec::{common::*, utils::*};
 use super::super::common::*;
 
 verus! {

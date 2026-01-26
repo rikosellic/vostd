@@ -9,7 +9,7 @@ use node::*;
 use core::fmt::Debug;
 use std::{marker::PhantomData, ops::Range};
 
-use crate::{
+use crate::lock_protocol_rcu::{
     helpers::{align_ext::align_down, math::lemma_u64_and_less_than},
     mm::{frame::allocator::AllocatorModel, BASE_PAGE_SIZE, PTE_SIZE},
 };
@@ -22,7 +22,7 @@ use vstd::{
     layout::is_power_2,
     seq::{Seq},
 };
-use vstd_extra::extra_num::{
+use crate::vstd_extra::extra_num::{
     lemma_log2_to64, lemma_pow2_is_power2_to64, lemma_usize_ilog2_ordered, lemma_usize_ilog2_to32,
     lemma_usize_is_power_2_is_ilog2_pow2, lemma_usize_pow2_ilog2, lemma_usize_shl_is_mul,
 };
@@ -33,11 +33,11 @@ use super::{
     lemma_page_size_spec_properties, Paddr, PagingLevel, Vaddr, NR_ENTRIES,
 };
 
-use crate::exec;
-use crate::spec::sub_pt::SubPageTable;
-use crate::spec::rcu::SpecInstance;
-use crate::spec::common::{va_level_to_offset};
-use crate::configs::GLOBAL_CPU_NUM;
+use crate::lock_protocol_rcu::exec;
+use crate::lock_protocol_rcu::spec::sub_pt::SubPageTable;
+use crate::lock_protocol_rcu::spec::rcu::SpecInstance;
+use crate::lock_protocol_rcu::spec::common::{va_level_to_offset};
+use crate::lock_protocol_rcu::configs::GLOBAL_CPU_NUM;
 
 verus! {
 
@@ -100,7 +100,7 @@ pub  /*(crate)*/
     /// The item that can be mapped into the virtual memory space using the
     /// page table.
     ///
-    /// Usually, this item is a [`crate::mm::Frame`], which we call a "tracked"
+    /// Usually, this item is a [`crate::lock_protocol_rcu::mm::Frame`], which we call a "tracked"
     /// frame. The page table can also do "untracked" mappings that only maps
     /// to certain physical addresses without tracking the ownership of the
     /// mapped physical frame. The user of the page table APIs can choose by
@@ -152,7 +152,7 @@ pub  /*(crate)*/
         paddr: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        Tracked(alloc_model): Tracked<&AllocatorModel<crate::mm::vm_space::UntypedFrameMeta>>,
+        Tracked(alloc_model): Tracked<&AllocatorModel<crate::lock_protocol_rcu::mm::vm_space::UntypedFrameMeta>>,
     ) -> Self::Item
         requires
             alloc_model.invariants(),

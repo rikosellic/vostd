@@ -4,8 +4,8 @@ use std::mem::ManuallyDrop;
 
 use vstd::prelude::*;
 
-use crate::mm::frame::meta::AnyFrameMeta;
-use crate::mm::{
+use crate::lock_protocol_rcu::mm::frame::meta::AnyFrameMeta;
+use crate::lock_protocol_rcu::mm::{
     frame::Frame,
     page_prop::PageProperty,
     page_table::{
@@ -15,22 +15,22 @@ use crate::mm::{
     Paddr, PagingConsts, PagingConstsTrait, PagingLevel,
 };
 
-use crate::spec::sub_pt::state_machine::IntermediatePageTableEntryView;
+use crate::lock_protocol_rcu::spec::sub_pt::state_machine::IntermediatePageTableEntryView;
 
 use std::ops::Deref;
 
-use crate::sync::rcu::RcuDrop;
+use crate::lock_protocol_rcu::sync::rcu::RcuDrop;
 
 use super::{PageTableNode, PageTableNodeRef};
 
-use crate::exec;
-use crate::spec::sub_pt::SubPageTable;
-use crate::spec::sub_pt::level_is_in_range;
+use crate::lock_protocol_rcu::exec;
+use crate::lock_protocol_rcu::spec::sub_pt::SubPageTable;
+use crate::lock_protocol_rcu::spec::sub_pt::level_is_in_range;
 
 verus! {
 
 /// A page table entry that owns the child of a page table node if present.
-pub(in crate::mm) enum ChildLocal<C: PageTableConfig> {
+pub(in crate::lock_protocol_rcu::mm) enum ChildLocal<C: PageTableConfig> {
     /// A child page table node.
     PageTable(RcuDrop<PageTableNode<C>>),
     /// Physical address of a mapped physical frame.
@@ -44,7 +44,7 @@ pub(in crate::mm) enum ChildLocal<C: PageTableConfig> {
 impl<C: PageTableConfig> ChildLocal<C> {
     /// Returns whether the child is not present.
     #[verifier::allow_in_spec]
-    pub(in crate::mm) fn is_none(&self) -> bool
+    pub(in crate::lock_protocol_rcu::mm) fn is_none(&self) -> bool
         returns
             self is None,
     {
@@ -98,7 +98,7 @@ impl<C: PageTableConfig> ChildLocal<C> {
 }
 
 /// A reference to the child of a page table node.
-pub(in crate::mm) enum ChildRefLocal<'a, C: PageTableConfig> {
+pub(in crate::lock_protocol_rcu::mm) enum ChildRefLocal<'a, C: PageTableConfig> {
     /// A child page table node.
     PageTable(PageTableNodeRef<'a, C>),
     /// Physical address of a mapped physical frame.
@@ -148,7 +148,7 @@ impl<'a, C: PageTableConfig> ChildRefLocal<'a, C> {
     }
 
     #[verifier::inline]
-    pub(in crate::mm) open spec fn child_entry_spt_wf(
+    pub(in crate::lock_protocol_rcu::mm) open spec fn child_entry_spt_wf(
         &self,
         entry: &EntryLocal<C>,
         spt: &SubPageTable<C>,

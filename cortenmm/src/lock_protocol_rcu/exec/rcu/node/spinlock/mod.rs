@@ -7,14 +7,14 @@ use vstd::atomic_ghost::*;
 use vstd::invariant::InvariantPredicate;
 use vstd::cell::CellId;
 
-use vstd_extra::array_ptr::*;
+use crate::vstd_extra::array_ptr::*;
 
-use crate::spec::{common::*, utils::*, rcu::*};
+use crate::lock_protocol_rcu::spec::{common::*, utils::*, rcu::*};
 use super::super::{common::*, cpu::*};
 use super::super::pte::*;
 use super::PageTableGuard;
 use super::stray::*;
-use crate::mm::page_table::PageTableConfig;
+use crate::lock_protocol_rcu::mm::page_table::PageTableConfig;
 
 tokenized_state_machine! {
 

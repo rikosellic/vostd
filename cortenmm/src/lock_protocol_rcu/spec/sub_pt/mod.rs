@@ -8,7 +8,7 @@ use state_machine::{frames_valid, FrameView, SubPageTableStateMachine};
 use vstd::prelude::*;
 use vstd::simple_pptr::{PPtr, PointsTo};
 
-use crate::{
+use crate::lock_protocol_rcu::{
     exec::{SIZEOF_FRAME, SIZEOF_PAGETABLEENTRY},
     mm::{
         frame::allocator::{pa_is_valid_kernel_address, AllocatorModel},
@@ -22,7 +22,7 @@ use crate::{
     sync::spinlock::guard_forget::SubTreeForgotGuard,
 };
 
-use crate::spec::{
+use crate::lock_protocol_rcu::spec::{
     common::NodeId, sub_pt::state_machine::ptes_frames_matches, lock_protocol::LockProtocolModel,
 };
 
@@ -52,7 +52,7 @@ pub tracked struct SubPageTable<C: PageTableConfig> {
     // allocations in the entire page table.
     pub alloc_model: AllocatorModel<PageTablePageMeta<C>>,
     /// Permissions of frames in the sub-page-table are stored in this map.
-    pub perms: Map<Paddr, PointsTo<crate::exec::MockPageTablePage>>,
+    pub perms: Map<Paddr, PointsTo<crate::lock_protocol_rcu::exec::MockPageTablePage>>,
     // State machine.
     pub root: Ghost<FrameView<C>>,
     pub instance: SubPageTableStateMachine::Instance<C>,

@@ -4,7 +4,7 @@ use vstd::arithmetic::{
     power2::pow2,
     logarithm::{log, lemma_log_pow},
 };
-use vstd_extra::extra_num::*;
+use crate::vstd_extra::extra_num::*;
 
 verus! {
 

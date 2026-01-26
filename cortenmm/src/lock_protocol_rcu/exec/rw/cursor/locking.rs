@@ -11,10 +11,10 @@ use vstd::vpanic;
 use vstd::pervasive::allow_panic;
 use vstd::pervasive::unreached;
 
-use vstd_extra::manually_drop::*;
+use crate::vstd_extra::manually_drop::*;
 
-use crate::spec::{common::*, utils::*, rw::*};
-use crate::task::guard;
+use crate::lock_protocol_rcu::spec::{common::*, utils::*, rw::*};
+use crate::lock_protocol_rcu::task::guard;
 use super::{GuardInPath, Cursor};
 use super::va_range::*;
 use super::super::{common::*, types::*, cpu::*, frame::*, page_table::*};
@@ -22,7 +22,7 @@ use super::super::node::*;
 use super::super::node::child::{Child, ChildRef};
 use super::super::node::entry::Entry;
 use super::super::node::rwlock::*;
-use crate::mm::page_table::cursor::MAX_NR_LEVELS;
+use crate::lock_protocol_rcu::mm::page_table::cursor::MAX_NR_LEVELS;
 
 verus! {
 

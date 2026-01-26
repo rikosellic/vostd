@@ -1,7 +1,7 @@
 use vstd::prelude::*;
 
-use crate::spec::{common::*, utils::*, rcu::*};
-use crate::mm::lock_protocol_utils::*;
+use crate::lock_protocol_rcu::spec::{common::*, utils::*, rcu::*};
+use crate::lock_protocol_rcu::mm::lock_protocol_utils::*;
 use super::SpinGuardGhostInner;
 
 verus! {

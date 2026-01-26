@@ -1,9 +1,9 @@
 use vstd::prelude::*;
 
-use crate::spec::{common::*, utils::*, rcu::*};
+use crate::lock_protocol_rcu::spec::{common::*, utils::*, rcu::*};
 use super::super::super::{common::*, cpu::*};
 use super::{PageTablePageSpinLock, SpinGuardGhostInner};
-use crate::mm::page_table::PageTableConfig;
+use crate::lock_protocol_rcu::mm::page_table::PageTableConfig;
 
 verus! {
 

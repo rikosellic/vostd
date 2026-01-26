@@ -5,7 +5,7 @@ use vstd::prelude::*;
 use vstd::bits::*;
 use vstd::arithmetic::div_mod::*;
 use vstd::arithmetic::power2::*;
-use vstd_extra::extra_num::lemma_is_power2_exists_pow2;
+use crate::vstd_extra::extra_num::lemma_is_power2_exists_pow2;
 use vstd::arithmetic::power::lemma_pow_strictly_increases;
 use vstd::arithmetic::mul::lemma_mul_is_commutative;
 

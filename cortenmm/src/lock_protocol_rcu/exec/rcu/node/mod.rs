@@ -12,18 +12,18 @@ use vstd::prelude::*;
 use vstd::raw_ptr::{PointsTo, ptr_ref};
 use vstd::cell::{PCell, PointsTo as CellPointsTo};
 
-use vstd_extra::{manually_drop::*, array_ptr::*};
+use crate::vstd_extra::{manually_drop::*, array_ptr::*};
 
-use crate::spec::{common::*, utils::*, rcu::*};
+use crate::lock_protocol_rcu::spec::{common::*, utils::*, rcu::*};
 use super::{common::*, cpu::*, frame::meta::*};
 use super::pte::Pte;
 use spinlock::{PageTablePageSpinLock, SpinGuard, SpinGuardGhostInner};
 use child::Child;
 use entry::Entry;
 use stray::{StrayFlag, StrayPerm};
-use crate::mm::page_table::PageTableConfig;
-use crate::mm::page_table::PageTableEntryTrait;
-use crate::task::DisabledPreemptGuard;
+use crate::lock_protocol_rcu::mm::page_table::PageTableConfig;
+use crate::lock_protocol_rcu::mm::page_table::PageTableEntryTrait;
+use crate::lock_protocol_rcu::task::DisabledPreemptGuard;
 
 verus! {
 

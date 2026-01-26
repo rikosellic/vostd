@@ -3,19 +3,19 @@ use std::marker::PhantomData;
 
 use vstd::prelude::*;
 
-use crate::spec::{
+use crate::lock_protocol_rcu::spec::{
     utils::{NodeHelper, group_node_helper_lemmas},
     common::NodeId,
 };
 use super::{PageTableNode, PageTableNodeRef, PageTableGuard};
-use crate::mm::page_table::{
+use crate::lock_protocol_rcu::mm::page_table::{
     PageTableEntryTrait,
     pte::Pte,
     PageTableConfig,
     node::child::{Child, ChildRef},
 };
-use crate::sync::rcu::RcuDrop;
-use crate::task::DisabledPreemptGuard;
+use crate::lock_protocol_rcu::sync::rcu::RcuDrop;
+use crate::lock_protocol_rcu::task::DisabledPreemptGuard;
 
 verus! {
 

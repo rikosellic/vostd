@@ -1,7 +1,7 @@
 use vstd::prelude::*;
 use vstd::cell::{CellId, PCell, PointsTo};
 
-use crate::spec::{common::*, utils::*, rcu::*};
+use crate::lock_protocol_rcu::spec::{common::*, utils::*, rcu::*};
 use super::super::{common::*, cpu::*};
 use super::PageTableGuard;
 

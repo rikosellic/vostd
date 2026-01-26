@@ -2,7 +2,7 @@ use core::ops::Deref;
 
 use vstd::prelude::*;
 
-use crate::spec::{common::*, utils::*};
+use crate::lock_protocol_rcu::spec::{common::*, utils::*};
 use super::super::{types::*, frame::*, cpu::*};
 use super::{PageTableNode, PageTableNodeRef, PageTableReadLock, PageTableWriteLock};
 use super::child::*;

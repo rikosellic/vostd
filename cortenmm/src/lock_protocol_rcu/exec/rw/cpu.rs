@@ -1,6 +1,6 @@
 use vstd::prelude::*;
 
-use crate::spec::{common::*, utils::*, rw::*};
+use crate::lock_protocol_rcu::spec::{common::*, utils::*, rw::*};
 use super::{common::*, types::*};
 
 verus! {

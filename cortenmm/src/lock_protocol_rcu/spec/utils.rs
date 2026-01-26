@@ -8,14 +8,14 @@ use vstd::arithmetic::div_mod::*;
 use vstd::arithmetic::mul::*;
 use vstd::set::*;
 use vstd::relations::injective_on;
-use vstd_extra::prelude::*;
+use crate::vstd_extra::prelude::*;
 
-use crate::spec::common::NodeId;
-use crate::mm::page_table::node::child;
+use crate::lock_protocol_rcu::spec::common::NodeId;
+use crate::lock_protocol_rcu::mm::page_table::node::child;
 
 verus! {
 
-broadcast use vstd_extra::seq_extra::group_forall_seq_lemmas;
+broadcast use crate::vstd_extra::seq_extra::group_forall_seq_lemmas;
 
 pub struct NodeHelper;
 

@@ -1,8 +1,8 @@
 use vstd::prelude::*;
 use vstd::cell::{CellId, PCell, PointsTo};
 
-use crate::spec::{common::NodeId, rcu::StrayToken};
-use crate::mm::{page_table::node_concurrent::PageTableGuard, Paddr};
+use crate::lock_protocol_rcu::spec::{common::NodeId, rcu::StrayToken};
+use crate::lock_protocol_rcu::mm::{page_table::node_concurrent::PageTableGuard, Paddr};
 
 verus! {
 

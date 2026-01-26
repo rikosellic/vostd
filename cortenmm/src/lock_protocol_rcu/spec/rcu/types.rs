@@ -1,8 +1,8 @@
 use vstd::{prelude::*, seq::*};
-use vstd_extra::{ghost_tree::Node, seq_extra::*};
+use crate::vstd_extra::{ghost_tree::Node, seq_extra::*};
 
-use crate::mm::Paddr;
-use crate::spec::{common::NodeId, utils::NodeHelper};
+use crate::lock_protocol_rcu::mm::Paddr;
+use crate::lock_protocol_rcu::spec::{common::NodeId, utils::NodeHelper};
 
 verus! {
 

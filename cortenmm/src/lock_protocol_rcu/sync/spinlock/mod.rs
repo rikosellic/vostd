@@ -7,20 +7,20 @@ use vstd::atomic_ghost::*;
 use vstd::invariant::InvariantPredicate;
 use vstd::cell::CellId;
 
-use vstd_extra::array_ptr::*;
+use crate::vstd_extra::array_ptr::*;
 
-use crate::spec::{
+use crate::lock_protocol_rcu::spec::{
     rcu::{NodeToken, PteArrayToken, SpecInstance, PteArrayState},
     lock_protocol::LockProtocolModel,
     utils::NodeHelper,
     common::NodeId,
 };
-use crate::mm::{PagingLevel, Paddr, Vaddr};
-use crate::mm::page_table::{PageTableEntryTrait, pte::Pte, PageTableConfig};
-use crate::mm::page_table::node::stray::{StrayFlag, StrayPerm};
-use crate::mm::page_table::node::PageTableGuard;
-use crate::x86_64::kspace::paddr_to_vaddr;
-use crate::configs::{PTE_NUM, GLOBAL_CPU_NUM};
+use crate::lock_protocol_rcu::mm::{PagingLevel, Paddr, Vaddr};
+use crate::lock_protocol_rcu::mm::page_table::{PageTableEntryTrait, pte::Pte, PageTableConfig};
+use crate::lock_protocol_rcu::mm::page_table::node::stray::{StrayFlag, StrayPerm};
+use crate::lock_protocol_rcu::mm::page_table::node::PageTableGuard;
+use crate::lock_protocol_rcu::x86_64::kspace::paddr_to_vaddr;
+use crate::lock_protocol_rcu::configs::{PTE_NUM, GLOBAL_CPU_NUM};
 
 tokenized_state_machine! {
 

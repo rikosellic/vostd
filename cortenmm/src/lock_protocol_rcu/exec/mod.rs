@@ -9,7 +9,7 @@ use std::sync::{Mutex, OnceLock};
 
 use vstd::tokens::*;
 
-use crate::{
+use crate::lock_protocol_rcu::{
     mm::{
         frame::{
             allocator::{self, pa_is_valid_kernel_address, AllocatorModel},
@@ -30,8 +30,8 @@ use crate::{
 
 use vstd::simple_pptr::*;
 
-use crate::exec;
-use crate::spec::sub_pt::{pa_is_valid_pt_address, SubPageTable};
+use crate::lock_protocol_rcu::exec;
+use crate::lock_protocol_rcu::spec::sub_pt::{pa_is_valid_pt_address, SubPageTable};
 
 verus! {
 
@@ -43,7 +43,7 @@ pub const SIZEOF_FRAME: usize = SIZEOF_PAGETABLEENTRY * 512;
 
 global layout MockPageTablePage is size == 12288, align == 8;
 
-pub use crate::mm::frame::allocator::MAX_FRAME_NUM;
+pub use crate::lock_protocol_rcu::mm::frame::allocator::MAX_FRAME_NUM;
 
 // TODO: This is a mock implementation of the page table entry.
 // Maybe it should be replaced with the actual implementation, e.g., x86_64.
@@ -67,7 +67,7 @@ pub fn alloc_page_table<C: PageTableConfig>(
 ) -> (res: (Frame<PageTablePageMeta<C>>, Tracked<PointsTo<MockPageTablePage>>))
     requires
         old(model).invariants(),
-        crate::spec::sub_pt::level_is_in_range::<C>(level as int),
+        crate::lock_protocol_rcu::spec::sub_pt::level_is_in_range::<C>(level as int),
     ensures
         res.1@.pptr() == res.0.ptr,
         res.1@.mem_contents().is_init(),
@@ -153,9 +153,9 @@ pub fn alloc_page_table<C: PageTableConfig>(
 ///        level == 1
 ///    }
 //     fn new_page(
-//         paddr: crate::mm::Paddr,
-//         level: crate::mm::PagingLevel,
-//         prop: crate::mm::page_prop::PageProperty,
+//         paddr: crate::lock_protocol_rcu::mm::Paddr,
+//         level: crate::lock_protocol_rcu::mm::PagingLevel,
+//         prop: crate::lock_protocol_rcu::mm::page_prop::PageProperty,
 //     ) -> Self {
 //         // NOTE: this function currently does not create a actual page table entry
 //         MockPageTableEntry {
@@ -166,7 +166,7 @@ pub fn alloc_page_table<C: PageTableConfig>(
 //         }
 //     }
 //     #[verifier::external_body]
-//     fn new_pt(paddr: crate::mm::Paddr) -> Self {
+//     fn new_pt(paddr: crate::lock_protocol_rcu::mm::Paddr) -> Self {
 //         MockPageTableEntry {
 //             pte_addr: 0,  // invalid
 //             frame_pa: paddr as u64,
@@ -180,22 +180,22 @@ pub fn alloc_page_table<C: PageTableConfig>(
 //         }
 //     }
 //     #[verifier::external_body]
-//     fn new_token(token: crate::mm::vm_space::Token) -> Self {
+//     fn new_token(token: crate::lock_protocol_rcu::mm::vm_space::Token) -> Self {
 //         todo!()
 //     }
 //     #[verifier::external_body]
-//     fn prop(&self) -> crate::mm::page_prop::PageProperty {
+//     fn prop(&self) -> crate::lock_protocol_rcu::mm::page_prop::PageProperty {
 //         self.prop.clone()
 //     }
 //     open spec fn prop_spec(&self) -> PageProperty {
 //         self.prop
 //     }
 //     #[verifier::external_body]
-//     fn set_prop(&mut self, prop: crate::mm::page_prop::PageProperty) {
+//     fn set_prop(&mut self, prop: crate::lock_protocol_rcu::mm::page_prop::PageProperty) {
 //         todo!()
 //     }
 //     #[verifier::external_body]
-//     fn set_paddr(&mut self, paddr: crate::mm::Paddr) {
+//     fn set_paddr(&mut self, paddr: crate::lock_protocol_rcu::mm::Paddr) {
 //         todo!()
 //     }
 //     #[verifier::external_body]

@@ -1,10 +1,10 @@
 use vstd::prelude::*;
 
-use crate::spec::{common::*, utils::*, rcu::*};
+use crate::lock_protocol_rcu::spec::{common::*, utils::*, rcu::*};
 use super::{common::*, types::*};
 use super::pte::Pte;
 use super::node::PageTableNode;
-use crate::mm::page_table::PageTableConfig;
+use crate::lock_protocol_rcu::mm::page_table::PageTableConfig;
 
 verus! {
 

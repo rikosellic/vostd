@@ -5,7 +5,7 @@ pub mod page_table_flags;
 
 use vstd::prelude::*;
 
-use crate::spec::{common::*, utils::*};
+use crate::lock_protocol_rcu::spec::{common::*, utils::*};
 use super::{common::*, types::*};
 use super::node::PageTableNode;
 

@@ -1,9 +1,9 @@
 use std::{io::Write, path, result};
 
 use vstd::{prelude::*, seq::*};
-use vstd_extra::{ghost_tree::Node, seq_extra::*};
+use crate::vstd_extra::{ghost_tree::Node, seq_extra::*};
 
-use crate::spec::{common::NodeId, utils::NodeHelper};
+use crate::lock_protocol_rcu::spec::{common::NodeId, utils::NodeHelper};
 
 verus! {
 
@@ -34,7 +34,7 @@ verus! {
 
 broadcast use {
     vstd_extra::seq_extra::group_forall_seq_lemmas,
-    crate::spec::utils::group_node_helper_lemmas,
+    crate::lock_protocol_rcu::spec::utils::group_node_helper_lemmas,
 };
 
 pub proof fn lemma_wf_tree_path_nid_increasing(path: Seq<NodeId>)

@@ -6,8 +6,8 @@ use vstd::{
     cell::{self, PCell},
 };
 
-use crate::spec::{common::*, utils::*};
-use crate::exec::PageTableConfig;
+use crate::lock_protocol_rcu::spec::{common::*, utils::*};
+use crate::lock_protocol_rcu::exec::PageTableConfig;
 use super::super::{common::*, types::*};
 use super::super::node::rwlock::PageTablePageRwLock;
 

@@ -6,12 +6,12 @@ use std::marker::PhantomData;
 
 use vstd::prelude::*;
 
-use crate::spec::{common::*, utils::*};
+use crate::lock_protocol_rcu::spec::{common::*, utils::*};
 use super::{common::*, types::*};
 use super::node::PageTableNode;
-use crate::mm::page_prop::PageProperty;
-pub use crate::mm::page_table::PageTableEntryTrait;
-use crate::mm::page_table::PageTableConfig;
+use crate::lock_protocol_rcu::mm::page_prop::PageProperty;
+pub use crate::lock_protocol_rcu::mm::page_table::PageTableEntryTrait;
+use crate::lock_protocol_rcu::mm::page_table::PageTableConfig;
 
 verus! {
 

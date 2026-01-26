@@ -12,23 +12,23 @@ use vstd::prelude::*;
 use vstd::raw_ptr::{PointsTo, ptr_ref};
 use vstd::cell::{PCell, PointsTo as CellPointsTo};
 
-use vstd_extra::{manually_drop::*, array_ptr::*};
+use crate::vstd_extra::{manually_drop::*, array_ptr::*};
 
-use crate::spec::{
+use crate::lock_protocol_rcu::spec::{
     lock_protocol::LockProtocolModel,
     common::NodeId,
     utils::NodeHelper,
     rcu::{SpecInstance, NodeToken, PteArrayToken, PteState, FreePaddrToken},
 };
-use crate::mm::lock_protocol_utils::{Paddr, PagingLevel, valid_paddr, paddr_to_vaddr, PTE_NUM};
-use crate::mm::frame_concurrent::meta::{MetaSlot, meta_to_frame, MetaSlotPerm};
-use crate::mm::page_table::{pte::Pte, GLOBAL_CPU_NUM};
+use crate::lock_protocol_rcu::mm::lock_protocol_utils::{Paddr, PagingLevel, valid_paddr, paddr_to_vaddr, PTE_NUM};
+use crate::lock_protocol_rcu::mm::frame_concurrent::meta::{MetaSlot, meta_to_frame, MetaSlotPerm};
+use crate::lock_protocol_rcu::mm::page_table::{pte::Pte, GLOBAL_CPU_NUM};
 use spinlock::{PageTablePageSpinLock, SpinGuard};
 use child::Child;
 use entry::Entry;
 use stray::{StrayFlag, StrayPerm};
-use crate::mm::page_table::PageTableConfig;
-use crate::mm::page_table::PageTableEntryTrait;
+use crate::lock_protocol_rcu::mm::page_table::PageTableConfig;
+use crate::lock_protocol_rcu::mm::page_table::PageTableEntryTrait;
 
 verus! {
 

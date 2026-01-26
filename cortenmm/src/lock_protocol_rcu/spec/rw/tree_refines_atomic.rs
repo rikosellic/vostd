@@ -4,7 +4,7 @@ use vstd::map::*;
 use verus_state_machines_macros::case_on_init;
 use verus_state_machines_macros::case_on_next;
 
-use crate::spec::{
+use crate::lock_protocol_rcu::spec::{
     common::{valid_cpu, CpuId},
     utils::{NodeHelper, group_node_helper_lemmas},
 };

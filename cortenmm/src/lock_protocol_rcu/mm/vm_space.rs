@@ -13,7 +13,7 @@ use vstd::arithmetic::power2::pow2;
 use vstd::prelude::*;
 use vstd::bits::*;
 
-use crate::{
+use crate::lock_protocol_rcu::{
     exec::MockPageTableEntry,
     mm::{
         frame::{allocator::AllocatorModel, meta::AnyFrameMeta, Frame},
@@ -235,7 +235,7 @@ pub(crate) struct UserPtConfig {}
 //         paddr: Paddr,
 //         level: PagingLevel,
 //         prop: PageProperty,
-//         Tracked(alloc_model): Tracked<&AllocatorModel<crate::mm::vm_space::UntypedFrameMeta>>,
+//         Tracked(alloc_model): Tracked<&AllocatorModel<crate::lock_protocol_rcu::mm::vm_space::UntypedFrameMeta>>,
 //     ) -> Self::Item {
 //         if prop.has_map {
 //             // debug_assert_eq!(level, 1);

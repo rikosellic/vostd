@@ -1,8 +1,8 @@
 use vstd::{prelude::*, seq::*};
 
-use vstd_extra::{ghost_tree::Node, seq_extra::*};
+use crate::vstd_extra::{ghost_tree::Node, seq_extra::*};
 
-use crate::spec::{common::NodeId, utils::NodeHelper};
+use crate::lock_protocol_rcu::spec::{common::NodeId, utils::NodeHelper};
 use super::wf_tree_path;
 
 verus! {

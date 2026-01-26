@@ -1,5 +1,5 @@
 use vstd::prelude::*;
-use vstd_extra::extra_num::*;
+use crate::vstd_extra::extra_num::*;
 
 verus! {
 

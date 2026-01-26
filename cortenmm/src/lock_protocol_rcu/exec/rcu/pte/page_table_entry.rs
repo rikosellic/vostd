@@ -3,7 +3,7 @@ use core::fmt::Debug;
 use vstd::prelude::*;
 use vstd::raw_ptr::*;
 
-use vstd_extra::prelude::*;
+use crate::vstd_extra::prelude::*;
 
 use super::super::common::*;
 use super::page_prop::*;

@@ -4,29 +4,29 @@ use std::ops::Range;
 
 use vstd::prelude::*;
 
-use vstd_extra::ghost_tree::Node;
-use vstd_extra::manually_drop::*;
+use crate::vstd_extra::ghost_tree::Node;
+use crate::vstd_extra::manually_drop::*;
 
-use crate::mm::frame_concurrent::meta::*;
-use crate::mm::page_table::{
+use crate::lock_protocol_rcu::mm::frame_concurrent::meta::*;
+use crate::lock_protocol_rcu::mm::page_table::{
     PageTable, PageTableConfig, PageTableEntryTrait, Paddr, Vaddr, PagingLevel, pte_index,
 };
-use crate::mm::page_table::cursor::MAX_NR_LEVELS;
-use crate::mm::page_table::node::{
+use crate::lock_protocol_rcu::mm::page_table::cursor::MAX_NR_LEVELS;
+use crate::lock_protocol_rcu::mm::page_table::node::{
     PageTableNode, PageTableNodeRef, PageTableGuard,
     child::{Child, ChildRef},
     entry::Entry,
     stray::{StrayFlag, StrayPerm},
 };
-use crate::mm::page_table::pte::Pte;
-use crate::sync::rcu::rcu_load_pte;
-use crate::sync::spinlock::{PageTablePageSpinLock, SpinGuard};
-use crate::sync::spinlock::guard_forget::SubTreeForgotGuard;
-use crate::task::DisabledPreemptGuard;
-use crate::x86_64::kspace::paddr_to_vaddr;
+use crate::lock_protocol_rcu::mm::page_table::pte::Pte;
+use crate::lock_protocol_rcu::sync::rcu::rcu_load_pte;
+use crate::lock_protocol_rcu::sync::spinlock::{PageTablePageSpinLock, SpinGuard};
+use crate::lock_protocol_rcu::sync::spinlock::guard_forget::SubTreeForgotGuard;
+use crate::lock_protocol_rcu::task::DisabledPreemptGuard;
+use crate::lock_protocol_rcu::x86_64::kspace::paddr_to_vaddr;
 
-use crate::configs::{PTE_NUM, GLOBAL_CPU_NUM};
-use crate::spec::{
+use crate::lock_protocol_rcu::configs::{PTE_NUM, GLOBAL_CPU_NUM};
+use crate::lock_protocol_rcu::spec::{
     lock_protocol::LockProtocolModel,
     common::{
         NodeId, valid_va_range, vaddr_is_aligned, va_level_to_trace, va_level_to_offset,
@@ -514,7 +514,7 @@ fn dfs_acquire_lock<C: PageTableConfig>(
         ),
     decreases cur_node.deref().deref().level_spec(),
 {
-    broadcast use crate::spec::utils::group_node_helper_lemmas;
+    broadcast use crate::lock_protocol_rcu::spec::utils::group_node_helper_lemmas;
 
     let tracked mut forgot_guards = SubTreeForgotGuard::empty();
 
@@ -766,7 +766,7 @@ fn dfs_release_lock<'rcu, C: PageTableConfig>(
         res@.cur_node() == cur_node.nid(),
     decreases cur_node.deref().deref().level_spec(),
 {
-    broadcast use crate::spec::utils::group_node_helper_lemmas;
+    broadcast use crate::lock_protocol_rcu::spec::utils::group_node_helper_lemmas;
 
     let tracked mut forgot_guards = forgot_guards.get();
 

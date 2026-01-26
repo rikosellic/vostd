@@ -9,9 +9,9 @@ use core::marker::PhantomData;
 use vstd::prelude::*;
 use vstd::raw_ptr::{PointsTo, ptr_ref};
 
-use vstd_extra::{manually_drop::*, array_ptr::*};
+use crate::vstd_extra::{manually_drop::*, array_ptr::*};
 
-use crate::spec::{common::*, utils::*, rw::*};
+use crate::lock_protocol_rcu::spec::{common::*, utils::*, rw::*};
 use super::{common::*, types::*, frame::*, cpu::*};
 use super::pte::Pte;
 use rwlock::{PageTablePageRwLock, RwReadGuard, RwWriteGuard};

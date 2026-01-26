@@ -5,14 +5,14 @@ use std::marker::PhantomData;
 use vstd::prelude::*;
 use vstd::vpanic;
 
-use crate::spec::{common::*, utils::*};
+use crate::lock_protocol_rcu::spec::{common::*, utils::*};
 use super::super::{common::*, types::*};
 use super::super::pte::Pte;
-use crate::mm::page_prop::PageProperty;
-use crate::mm::page_table::PageTableEntryTrait;
+use crate::lock_protocol_rcu::mm::page_prop::PageProperty;
+use crate::lock_protocol_rcu::mm::page_table::PageTableEntryTrait;
 use super::{PageTableNode, PageTableNodeRef, PageTableGuard};
-use crate::sync::rcu::RcuDrop;
-use crate::mm::page_table::PageTableConfig;
+use crate::lock_protocol_rcu::sync::rcu::RcuDrop;
+use crate::lock_protocol_rcu::mm::page_table::PageTableConfig;
 
 verus! {
 

@@ -8,9 +8,9 @@ use vstd::multiset::*;
 use vstd::set::*;
 use vstd::rwlock::RwLockPredicate;
 
-use vstd_extra::array_ptr::*;
+use crate::vstd_extra::array_ptr::*;
 
-use crate::spec::{common::*, utils::*, rw::*};
+use crate::lock_protocol_rcu::spec::{common::*, utils::*, rw::*};
 use super::super::{common::*, types::*, cpu::*};
 use super::super::pte::Pte;
 

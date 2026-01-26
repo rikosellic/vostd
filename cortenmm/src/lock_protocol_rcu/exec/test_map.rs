@@ -4,14 +4,14 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Mutex, OnceLock};
 
-use crate::mm::entry::Entry;
-use crate::mm::page_prop::{PageFlags, PageProperty, PrivilegedPageFlags};
-use crate::mm::page_table::PageTableNode;
+use crate::lock_protocol_rcu::mm::entry::Entry;
+use crate::lock_protocol_rcu::mm::page_prop::{PageFlags, PageProperty, PrivilegedPageFlags};
+use crate::lock_protocol_rcu::mm::page_table::PageTableNode;
 
-use crate::mm::vm_space::UntypedFrameMeta;
-use crate::mm::{page_size, page_size_spec, pte_index, Paddr, PageTableGuard, NR_ENTRIES};
-use crate::task::preempt;
-use crate::{
+use crate::lock_protocol_rcu::mm::vm_space::UntypedFrameMeta;
+use crate::lock_protocol_rcu::mm::{page_size, page_size_spec, pte_index, Paddr, PageTableGuard, NR_ENTRIES};
+use crate::lock_protocol_rcu::task::preempt;
+use crate::lock_protocol_rcu::{
     mm::{
         cursor::{Cursor, CursorMut},
         meta::{AnyFrameMeta, MetaSlot},
@@ -27,7 +27,7 @@ use crate::{
 };
 use vstd::simple_pptr::*;
 
-use crate::exec::*;
+use crate::lock_protocol_rcu::exec::*;
 
 verus! {
 
@@ -66,7 +66,7 @@ unsafe impl PageTableConfig for TestPtConfig {
         (item.paddr, item.level, item.prop)
     }
 
-    unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel, prop: PageProperty, Tracked(alloc_model): Tracked<&AllocatorModel<crate::mm::vm_space::UntypedFrameMeta>>) -> (res: Self::Item)
+    unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel, prop: PageProperty, Tracked(alloc_model): Tracked<&AllocatorModel<crate::lock_protocol_rcu::mm::vm_space::UntypedFrameMeta>>) -> (res: Self::Item)
         ensures
             Self::item_into_raw_spec(res) == (paddr, level, prop),
     {

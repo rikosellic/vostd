@@ -4,13 +4,13 @@ use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
 
-use crate::mm::{
+use crate::lock_protocol_rcu::mm::{
     page_table::{cursor::MAX_NR_LEVELS, PageTableConfig, node::PageTableNode},
     Paddr, PagingConsts,
 };
 
 use super::{allocator::AllocatorModel, meta::AnyFrameMeta, Frame};
-use crate::mm::page_table::PagingConstsTrait;
+use crate::lock_protocol_rcu::mm::page_table::PagingConstsTrait;
 
 verus! {
 
@@ -30,7 +30,7 @@ impl<'a, M: AnyFrameMeta> FrameRef<'a, M> {
     ///  - the frame outlives the created reference, so that the reference can
     ///    be seen as borrowed from that frame.
     ///  - the type of the [`FrameRef`] (`M`) matches the borrowed frame.
-    pub(in crate::mm) fn borrow_paddr(
+    pub(in crate::lock_protocol_rcu::mm) fn borrow_paddr(
         raw: Paddr,
         Tracked(alloc_model): Tracked<&AllocatorModel<M>>,
     ) -> (res: Self)

@@ -23,7 +23,7 @@ use vstd::{
 use vstd::bits::*;
 use vstd::tokens::SetToken;
 
-use crate::{
+use crate::lock_protocol_rcu::{
     helpers::{align_ext::*, math::lemma_usize_mod_0_maintain_after_add},
     mm::{
         page_table::GLOBAL_CPU_NUM,
@@ -42,7 +42,7 @@ use crate::{
     sync::spinlock::guard_forget::SubTreeForgotGuard,
 };
 
-use crate::spec::{
+use crate::lock_protocol_rcu::spec::{
     sub_pt::{SubPageTable, index_pte_paddr, level_is_in_range},
     lock_protocol::LockProtocolModel,
     common::{
@@ -60,8 +60,8 @@ use super::{
     PageTableEntryTrait, PageTableError, PagingConsts, PagingConstsTrait, PagingLevel,
 };
 
-use crate::exec;
-use crate::mm::NR_ENTRIES;
+use crate::lock_protocol_rcu::exec;
+use crate::lock_protocol_rcu::mm::NR_ENTRIES;
 
 /// A handy ghost mode macro to get the guard at a certain level in the path.
 macro_rules! path_index {
@@ -794,7 +794,7 @@ impl<'a, C: PageTableConfig> Cursor<'a, C> {
     ///
     /// If reached the end of a page table node, it leads itself up to the next page of the parent
     /// page if possible.
-    pub(in crate::mm) fn move_forward(&mut self, Tracked(spt): Tracked<&SubPageTable<C>>)
+    pub(in crate::lock_protocol_rcu::mm) fn move_forward(&mut self, Tracked(spt): Tracked<&SubPageTable<C>>)
         requires
             old(self).wf_local(spt),
             old(self).va + page_size::<C>(old(self).level) <= old(self).barrier_va.end,
@@ -1620,7 +1620,7 @@ impl<'a, C: PageTableConfig> CursorMut<'a, C> {
                     // let unlocked_pt = locking::dfs_mark_astray(locked_pt);
                     // See `locking.rs` for why we need this. // TODO
                     // let drop_after_grace = unlocked_pt.clone();
-                    // crate::sync::after_grace_period(|| {
+                    // crate::lock_protocol_rcu::sync::after_grace_period(|| {
                     //     drop(drop_after_grace);
                     // });
                     PageTableItem::StrayPageTable {

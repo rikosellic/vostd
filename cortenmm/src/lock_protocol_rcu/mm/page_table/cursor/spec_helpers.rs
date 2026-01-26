@@ -12,7 +12,7 @@ use vstd::{invariant, layout::is_power_2, pervasive::VecAdditionalExecFns, prelu
 use vstd::bits::*;
 use vstd::tokens::SetToken;
 
-use crate::{
+use crate::lock_protocol_rcu::{
     helpers::align_ext::align_down,
     mm::{
         page_table::{
@@ -34,8 +34,8 @@ use super::{
     PagingLevel,
 };
 
-use crate::spec::sub_pt::SubPageTable;
-use crate::exec;
+use crate::lock_protocol_rcu::spec::sub_pt::SubPageTable;
+use crate::lock_protocol_rcu::exec;
 
 verus! {
 

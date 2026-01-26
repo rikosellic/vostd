@@ -6,12 +6,12 @@ use vstd::arithmetic::div_mod::*;
 use vstd::arithmetic::power2::*;
 use vstd::bits::*;
 
-use crate::helpers::bits::*;
-use crate::helpers::extern_const::*;
-use crate::spec::{common::*, utils::*};
+use crate::lock_protocol_rcu::helpers::bits::*;
+use crate::lock_protocol_rcu::helpers::extern_const::*;
+use crate::lock_protocol_rcu::spec::{common::*, utils::*};
 
 pub use super::configs::*;
-pub use crate::mm::{Paddr, Vaddr, PagingLevel};
+pub use crate::lock_protocol_rcu::mm::{Paddr, Vaddr, PagingLevel};
 
 verus! {
 

@@ -3,10 +3,10 @@ use std::ops::Range;
 
 use vstd::{prelude::*, seq::*};
 use vstd::bits::{low_bits_mask, lemma_low_bits_mask_values};
-use vstd_extra::{ghost_tree::Node, seq_extra::*};
+use crate::vstd_extra::{ghost_tree::Node, seq_extra::*};
 
-use crate::mm::{PagingLevel, Vaddr};
-use crate::spec::utils::{NodeHelper, group_node_helper_lemmas};
+use crate::lock_protocol_rcu::mm::{PagingLevel, Vaddr};
+use crate::lock_protocol_rcu::spec::utils::{NodeHelper, group_node_helper_lemmas};
 
 verus! {
 

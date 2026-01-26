@@ -2,7 +2,7 @@ use verus_state_machines_macros::state_machine;
 use vstd::prelude::*;
 use vstd::map::*;
 
-use crate::spec::{
+use crate::lock_protocol_rcu::spec::{
     utils::NodeHelper,
     rcu::AtomicCursorState,
     common::{CpuId, NodeId, valid_cpu},

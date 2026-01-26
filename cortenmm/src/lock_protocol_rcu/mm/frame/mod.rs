@@ -15,10 +15,10 @@ use meta::MetaSlot;
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
-use crate::mm::Paddr;
-use crate::mm::PagingLevel;
-use crate::mm::PAGE_SIZE;
-use crate::exec::MockPageTablePage;
+use crate::lock_protocol_rcu::mm::Paddr;
+use crate::lock_protocol_rcu::mm::PagingLevel;
+use crate::lock_protocol_rcu::mm::PAGE_SIZE;
+use crate::lock_protocol_rcu::exec::MockPageTablePage;
 
 use super::page_table::PageTableConfig;
 
@@ -112,7 +112,7 @@ impl<M: AnyFrameMeta> Frame<M> {
     /// data structures need to hold the frame handle such as the page table.
     /// TODO: Implement Frame::into_raw
     #[verifier::external_body]
-    pub(in crate::mm) fn into_raw(self) -> (res: Paddr)
+    pub(in crate::lock_protocol_rcu::mm) fn into_raw(self) -> (res: Paddr)
         ensures
             res == self.start_paddr(),
     {

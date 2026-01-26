@@ -3,8 +3,8 @@ use std::marker::PhantomData;
 
 use vstd::prelude::*;
 
-use crate::helpers::conversion::usize_mod_is_int_mod;
-use crate::mm::{
+use crate::lock_protocol_rcu::helpers::conversion::usize_mod_is_int_mod;
+use crate::lock_protocol_rcu::mm::{
     frame::{allocator::AllocatorModel, meta::AnyFrameMeta},
     nr_subpage_per_huge,
     page_prop::PageProperty,
@@ -19,21 +19,21 @@ use crate::mm::{
     vm_space::Token,
     Paddr, PagingConstsTrait, PagingLevel, Vaddr, NR_ENTRIES,
 };
-use crate::sync::rcu::RcuDrop;
-use crate::sync::spinlock::guard_forget::SubTreeForgotGuard;
-use crate::task::DisabledPreemptGuard;
-use crate::spec::sub_pt::{
+use crate::lock_protocol_rcu::sync::rcu::RcuDrop;
+use crate::lock_protocol_rcu::sync::spinlock::guard_forget::SubTreeForgotGuard;
+use crate::lock_protocol_rcu::task::DisabledPreemptGuard;
+use crate::lock_protocol_rcu::spec::sub_pt::{
     SubPageTable, index_pte_paddr, state_machine::IntermediatePageTableEntryView,
 };
-use crate::spec::sub_pt::level_is_in_range;
-use crate::spec::utils::NodeHelper;
+use crate::lock_protocol_rcu::spec::sub_pt::level_is_in_range;
+use crate::lock_protocol_rcu::spec::utils::NodeHelper;
 
 use super::{
     child_local::{ChildLocal, ChildRefLocal},
     PageTableGuard, PageTableNode, PageTableNodeRef,
 };
 
-use crate::exec;
+use crate::lock_protocol_rcu::exec;
 
 verus! {
 
@@ -132,7 +132,7 @@ impl<'a, 'rcu, C: PageTableConfig> EntryLocal<'a, 'rcu, C> {
         }
     }
 
-    pub(in crate::mm) fn is_none_local(&self, Tracked(spt): Tracked<&SubPageTable<C>>) -> (res:
+    pub(in crate::lock_protocol_rcu::mm) fn is_none_local(&self, Tracked(spt): Tracked<&SubPageTable<C>>) -> (res:
         bool)
         requires
             spt.wf(),
@@ -144,13 +144,13 @@ impl<'a, 'rcu, C: PageTableConfig> EntryLocal<'a, 'rcu, C> {
         !self.pte.is_present()
     }
 
-    pub(in crate::mm) open spec fn is_none_local_spec(&self, spt: &SubPageTable<C>) -> bool {
+    pub(in crate::lock_protocol_rcu::mm) open spec fn is_none_local_spec(&self, spt: &SubPageTable<C>) -> bool {
         &&& !spt.i_ptes.value().contains_key(self.pte.pte_paddr() as int)
         &&& !spt.ptes.value().contains_key(self.pte.pte_paddr() as int)
     }
 
     /// Gets a reference to the child.
-    pub(in crate::mm) fn to_ref_local(&self, Tracked(spt): Tracked<&SubPageTable<C>>) -> (res:
+    pub(in crate::lock_protocol_rcu::mm) fn to_ref_local(&self, Tracked(spt): Tracked<&SubPageTable<C>>) -> (res:
         ChildRefLocal<'rcu, C>)
         requires
             spt.wf(),
@@ -174,7 +174,7 @@ impl<'a, 'rcu, C: PageTableConfig> EntryLocal<'a, 'rcu, C> {
     /// It only modifies the properties if the entry is present.
     // TODO: Implement protect
     #[verifier::external_body]
-    pub(in crate::mm) fn protect_local(
+    pub(in crate::lock_protocol_rcu::mm) fn protect_local(
         &mut self,
         prot_op: &mut impl FnMut(&mut PageProperty),
         token_op: &mut impl FnMut(&mut Token),
@@ -190,7 +190,7 @@ impl<'a, 'rcu, C: PageTableConfig> EntryLocal<'a, 'rcu, C> {
     ///
     /// The method panics if the given child is not compatible with the self.node.
     /// The compatibility is specified by the [`ChildLocal::is_compatible`].
-    pub(in crate::mm) fn replace_local(
+    pub(in crate::lock_protocol_rcu::mm) fn replace_local(
         &mut self,
         new_child: ChildLocal<C>,
         Tracked(spt): Tracked<&mut SubPageTable<C>>,
@@ -252,7 +252,7 @@ impl<'a, 'rcu, C: PageTableConfig> EntryLocal<'a, 'rcu, C> {
         old_child
     }
 
-    pub(in crate::mm) fn replace_with_none_local(
+    pub(in crate::lock_protocol_rcu::mm) fn replace_with_none_local(
         &mut self,
         new_child: ChildLocal<C>,
         Tracked(spt): Tracked<&mut SubPageTable<C>>,
@@ -346,7 +346,7 @@ impl<'a, 'rcu, C: PageTableConfig> EntryLocal<'a, 'rcu, C> {
     }
 
     #[verifier::inline]
-    pub(in crate::mm) open spec fn remove_old_child(
+    pub(in crate::lock_protocol_rcu::mm) open spec fn remove_old_child(
         &self,
         old_child: ChildLocal<C>,
         old_pte: C::E,
@@ -379,7 +379,7 @@ impl<'a, 'rcu, C: PageTableConfig> EntryLocal<'a, 'rcu, C> {
         }
     }
 
-    pub(in crate::mm) open spec fn add_new_child(
+    pub(in crate::lock_protocol_rcu::mm) open spec fn add_new_child(
         &self,
         new_child: ChildLocal<C>,
         spt: &SubPageTable<C>,
@@ -403,7 +403,7 @@ impl<'a, 'rcu, C: PageTableConfig> EntryLocal<'a, 'rcu, C> {
         }
     }
 
-    pub(in crate::mm) fn alloc_if_none_local(
+    pub(in crate::lock_protocol_rcu::mm) fn alloc_if_none_local(
         &mut self,
         guard: &'rcu DisabledPreemptGuard,
         Tracked(spt): Tracked<&mut SubPageTable<C>>,

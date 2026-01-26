@@ -1,9 +1,9 @@
 use vstd::prelude::*;
 use vstd::arithmetic::div_mod::*;
 
-use crate::extern_const;
-use crate::mm::{Paddr, Vaddr, PAGE_SIZE};
-use crate::x86_64::mm::{MAX_NR_PAGES, MAX_PADDR};
+use crate::lock_protocol_rcu::extern_const;
+use crate::lock_protocol_rcu::mm::{Paddr, Vaddr, PAGE_SIZE};
+use crate::lock_protocol_rcu::x86_64::mm::{MAX_NR_PAGES, MAX_PADDR};
 use core::ops::Range;
 
 extern_const!(
