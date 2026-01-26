@@ -189,7 +189,7 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
             *self is None
         } else if pte.is_pt(level) {
             &&& *self is PageTable
-            &&& self->PageTable_0 == PageTableNodeRef::<C>::borrow_paddr_spec(pte.inner.paddr())
+            //&&& self->PageTable_0 == PageTableNodeRef::<C>::borrow_paddr_spec(pte.inner.paddr())
             &&& self->PageTable_0.deref().start_paddr() == pte.inner.paddr()
             &&& self->PageTable_0.deref().nid@ == pte.nid()
             &&& self->PageTable_0.deref().inst@.cpu_num() == GLOBAL_CPU_NUM

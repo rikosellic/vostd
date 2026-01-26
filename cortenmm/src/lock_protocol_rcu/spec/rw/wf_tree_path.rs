@@ -33,7 +33,7 @@ pub proof fn lemma_wf_tree_path_inc(path: Seq<NodeId>, nid: NodeId)
 verus! {
 
 broadcast use {
-    vstd_extra::seq_extra::group_forall_seq_lemmas,
+    crate::vstd_extra::seq_extra::group_forall_seq_lemmas,
     crate::lock_protocol_rcu::spec::utils::group_node_helper_lemmas,
 };
 

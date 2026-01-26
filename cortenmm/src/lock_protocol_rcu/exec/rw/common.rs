@@ -8,7 +8,7 @@ use vstd::bits::*;
 use vstd::seq::*;
 
 use crate::lock_protocol_rcu::helpers::bits::*;
-use crate::lock_protocol_rcu::helpers::extern_const::*;
+use crate::extern_const::*;
 use crate::lock_protocol_rcu::spec::{common::*, utils::*};
 
 pub use super::configs::*;

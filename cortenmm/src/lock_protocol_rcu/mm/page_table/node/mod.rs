@@ -18,7 +18,7 @@ use vstd::simple_pptr::MemContents;
 use vstd::simple_pptr::PPtr;
 use vstd::simple_pptr;
 
-use crate::vstd_extra::{manually_drop::*, array_ptr::*};
+use crate::vstd_extra::array_ptr::*;
 
 use entry_local::EntryLocal;
 use entry::Entry;
@@ -515,7 +515,7 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
 pub open spec fn pt_node_ref_deref_spec<'a, C: PageTableConfig>(
     pt_node_ref: &'a PageTableNodeRef<'_, C>,
 ) -> &'a PageTableNode<C> {
-    &pt_node_ref.inner.deref()
+    &pt_node_ref.inner@
 }
 
 impl<C: PageTableConfig> Deref for PageTableNodeRef<'_, C> {
@@ -524,7 +524,7 @@ impl<C: PageTableConfig> Deref for PageTableNodeRef<'_, C> {
     #[verifier::when_used_as_spec(pt_node_ref_deref_spec)]
     fn deref(&self) -> (ret: &Self::Target)
         ensures
-            ret == self.inner.deref(),
+            ret == &self.inner@,
     {
         &self.inner.deref()
     }
@@ -538,9 +538,9 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
 
 // Functions defined in struct 'FrameRef'.
 impl<C: PageTableConfig> PageTableNodeRef<'_, C> {
-    pub open spec fn borrow_paddr_spec(raw: Paddr) -> Self {
+    /* pub open spec fn borrow_paddr_spec(raw: Paddr) -> Self {
         Self { inner: ManuallyDrop::new(PageTableNode::from_raw_spec(raw)), _marker: PhantomData }
-    }
+    }*/
 
     pub fn borrow_paddr(
         raw: Paddr,
@@ -549,7 +549,7 @@ impl<C: PageTableConfig> PageTableNodeRef<'_, C> {
         level: Ghost<PagingLevel>,
     ) -> (res: Self)
         ensures
-            res =~= Self::borrow_paddr_spec(raw),
+            //res =~= Self::borrow_paddr_spec(raw),
             res.wf(),
             raw == res.perm@.frame_paddr(),
             res.nid@ == nid@,

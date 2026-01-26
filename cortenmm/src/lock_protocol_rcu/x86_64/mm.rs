@@ -2,7 +2,7 @@ use vstd::prelude::*;
 use crate::lock_protocol_rcu::mm::{page_prop::CachePolicy, Paddr, Vaddr};
 use core::ops::Range;
 
-use crate::lock_protocol_rcu::extern_const;
+use crate::extern_const;
 
 extern_const!(
 /// Page size.

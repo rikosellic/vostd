@@ -64,7 +64,7 @@ impl<'a, M: AnyFrameMeta> Deref for FrameRef<'a, M> {
 pub open spec fn frame_ref_deref<'s, 'a, M: AnyFrameMeta>(self_: &'s FrameRef<'a, M>) -> &'s Frame<
     M,
 > {
-    &self_.inner
+    &self_.inner@
 }
 
 } // verus!

@@ -5,7 +5,6 @@ use std::ops::Range;
 use vstd::prelude::*;
 
 use crate::vstd_extra::ghost_tree::Node;
-use crate::vstd_extra::manually_drop::*;
 
 use crate::lock_protocol_rcu::mm::frame_concurrent::meta::*;
 use crate::lock_protocol_rcu::mm::page_table::{

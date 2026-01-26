@@ -483,7 +483,7 @@ fn unlocking_end_inductive(pre: Self, post: Self, cpu: CpuId) {
 #[inductive(read_lock)]
 fn read_lock_inductive(pre: Self, post: Self, cpu: CpuId, nid: NodeId) {
     broadcast use {crate::lock_protocol_rcu::spec::utils::group_node_helper_lemmas,
-        vstd_extra::seq_extra::group_forall_seq_lemmas,
+        crate::vstd_extra::seq_extra::group_forall_seq_lemmas,
     };
     let path = pre.cursors[cpu].get_read_lock_path();
     lemma_wf_tree_path_push_inversion(path, nid);
@@ -577,7 +577,7 @@ fn read_unlock_inductive(pre: Self, post: Self, cpu: CpuId, nid: NodeId) {
 #[inductive(write_lock)]
 fn write_lock_inductive(pre: Self, post: Self, cpu: CpuId, nid: NodeId) {
     broadcast use {crate::lock_protocol_rcu::spec::utils::group_node_helper_lemmas,
-        vstd_extra::seq_extra::group_forall_seq_lemmas,
+        crate::vstd_extra::seq_extra::group_forall_seq_lemmas,
     };
     let path = pre.cursors[cpu].get_read_lock_path();
     let read_node = path.last();
@@ -910,7 +910,7 @@ ensures
     self.inv_rc_positive(),
 {
     broadcast use {
-        vstd_extra::seq_extra::group_forall_seq_lemmas,
+        crate::vstd_extra::seq_extra::group_forall_seq_lemmas,
     };
     assert forall |cpu: CpuId| #![trigger] self.cursors.contains_key(cpu) implies
         #[trigger]self.rc_positive(self.cursors[cpu].get_read_lock_path()) by {
@@ -999,7 +999,7 @@ ensures
     self.reader_counts[NodeHelper::root_id()] > 0,
 {
     broadcast use {
-        vstd_extra::seq_extra::group_forall_seq_lemmas,
+        crate::vstd_extra::seq_extra::group_forall_seq_lemmas,
     };
     assert(self.cursors.contains_key(cpu));
     let path = self.cursors[cpu].get_path();
@@ -1031,9 +1031,9 @@ ensures
     nid != child ==> self.nodes[child] !is WriteLocked,
 {
     broadcast use {
-                vstd_extra::seq_extra::group_forall_seq_lemmas,
+                crate::vstd_extra::seq_extra::group_forall_seq_lemmas,
                 crate::lock_protocol_rcu::spec::utils::group_node_helper_lemmas,
-                vstd_extra::map_extra::group_value_filter_lemmas,
+                crate::vstd_extra::map_extra::group_value_filter_lemmas,
             };
     let f = |cursor: CursorState| cursor.hold_read_lock(child);
     if nid == child {}

@@ -17,7 +17,7 @@ pub struct RcuDrop<T> {
 impl<T> RcuDrop<T> {
     pub fn new(inner: T) -> (res: Self)
         ensures
-            *res.inner.deref() =~= inner,
+            res.inner@ =~= inner,
     {
         RcuDrop { inner: ManuallyDrop::new(inner) }
     }
@@ -36,7 +36,7 @@ impl<T> Deref for RcuDrop<T> {
 }
 
 pub open spec fn rcu_drop_deref<T>(x: &RcuDrop<T>) -> &T {
-    &x.inner
+    &x.inner@
 }
 
 #[verifier::external_body]
