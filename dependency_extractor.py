@@ -16,12 +16,36 @@ import os
 import re
 import json
 import pickle
+try:
+    import tomllib  # Python 3.11+
+except ImportError:
+    try:
+        import toml as tomllib  # fallback
+    except ImportError:
+        tomllib = None
 from collections import defaultdict, deque
 from pathlib import Path
 
 ROOT = os.path.abspath(os.path.dirname(__file__))
 VERUS_LOG_DIR = os.path.join(ROOT, ".verus-log")
 TRAIT_CACHE_FILE = os.path.join(VERUS_LOG_DIR, "trait_cache.pkl")
+
+def get_project_name():
+    """Get the first member from workspace Cargo.toml as project name."""
+    if tomllib is None:
+        return 'vostd'  # fallback if no toml library
+    try:
+        with open('Cargo.toml', 'rb' if hasattr(tomllib, 'load') and 'b' in tomllib.load.__doc__ else 'r') as f:
+            if hasattr(tomllib, 'load'):
+                cargo_config = tomllib.load(f)
+            else:
+                cargo_config = tomllib.loads(f.read())
+        members = cargo_config.get('workspace', {}).get('members', [])
+        if members:
+            return members[0]
+    except (FileNotFoundError, Exception):
+        pass
+    return 'vostd'  # fallback to default
 
 class SExprParser:
     """Simple S-expression parser for VIR files"""
@@ -163,12 +187,13 @@ class SourceCodeAnalyzer:
     def get_impl_type(self, module_path, impl_num):
         """Get the actual type for impl&%N in a given module"""
         # Convert module path to source file path
-        # lib::aster_common::mm::frame::unique -> vostd/src/aster_common/mm/frame/unique.rs
+        # lib::aster_common::mm::frame::unique -> project/src/aster_common/mm/frame/unique.rs
         if not module_path.startswith('lib::'):
             return None
         
         path_parts = module_path[5:].split('::')  # Remove 'lib::'
-        source_file = Path('vostd/src') / Path(*path_parts).with_suffix('.rs')
+        project_name = get_project_name()
+        source_file = Path(f'{project_name}/src') / Path(*path_parts).with_suffix('.rs')
         
         if not source_file.exists():
             # Try other possible locations
@@ -198,7 +223,8 @@ class SpecFunctionAnalyzer:
             return {}
             
         path_parts = module_path[5:].split('::')  # Remove 'lib::'
-        source_file = Path('vostd/src') / Path(*path_parts).with_suffix('.rs')
+        project_name = get_project_name()
+        source_file = Path(f'{project_name}/src') / Path(*path_parts).with_suffix('.rs')
         
         if not source_file.exists():
             # Try other possible locations
@@ -283,7 +309,8 @@ class VIRAnalyzer:
         This is done at initialization to allow accurate identification of trait methods.
         Uses caching to avoid re-parsing VIR files on every run.
         """
-        vir_dir = Path(VERUS_LOG_DIR) / 'vostd'
+        project_name = get_project_name()
+        vir_dir = Path(VERUS_LOG_DIR) / project_name
         if not vir_dir.exists():
             return
         
@@ -1215,22 +1242,23 @@ class DependencyExtractor:
             return []
         
         vir_files = []
-        vostd_dir = os.path.join(VERUS_LOG_DIR, 'vostd')
+        project_name = get_project_name()
+        project_dir = os.path.join(VERUS_LOG_DIR, project_name)
         
-        if not os.path.exists(vostd_dir):
-            print(f"Error: {vostd_dir} does not exist")
+        if not os.path.exists(project_dir):
+            print(f"Error: {project_dir} does not exist")
             return []
         
         # Primary target file
         module_file = '__'.join(target_parts[1:-2]) + '-poly.vir'
-        primary_file = os.path.join(vostd_dir, module_file)
+        primary_file = os.path.join(project_dir, module_file)
         if os.path.exists(primary_file):
             vir_files.append(primary_file)
         
         # Find related files (same parent modules)
-        for file_name in os.listdir(vostd_dir):
+        for file_name in os.listdir(project_dir):
             if file_name.endswith('-poly.vir'):
-                file_path = os.path.join(vostd_dir, file_name)
+                file_path = os.path.join(project_dir, file_name)
                 # Include files from related modules
                 module_parts = file_name[:-9].split('__')  # remove -poly.vir
                 if any(part in target_parts for part in module_parts):
@@ -1245,12 +1273,13 @@ class DependencyExtractor:
         target_parts = target_function.split('::')
         
         # Look for corresponding AIR/SMT2 files
-        vostd_dir = os.path.join(VERUS_LOG_DIR, 'vostd')
-        if os.path.exists(vostd_dir):
+        project_name = get_project_name()
+        project_dir = os.path.join(VERUS_LOG_DIR, project_name)
+        if os.path.exists(project_dir):
             module_base = '__'.join(target_parts[1:-2])
             for ext in ['.air', '.smt2']:
                 for suffix in ['', '-poly']:
-                    air_file = os.path.join(vostd_dir, f"{module_base}{suffix}{ext}")
+                    air_file = os.path.join(project_dir, f"{module_base}{suffix}{ext}")
                     if os.path.exists(air_file):
                         try:
                             with open(air_file, 'r', encoding='utf-8', errors='ignore') as f:
@@ -1685,7 +1714,8 @@ class DependencyExtractor:
                                 assoc_concrete_type = assoc_parts[-1]
                                 
                                 # Find impl required_trait for assoc_concrete_type
-                                for base_path in [Path('vostd') / 'src']:
+                                project_name = get_project_name()
+                                for base_path in [Path(project_name) / 'src']:
                                     file_path = base_path / Path(*module_parts[1:]).with_suffix('.rs')
                                     if file_path.exists():
                                         impl_path_pattern = f"impl.*{required_trait}.*for.*{assoc_concrete_type}"
@@ -1711,7 +1741,8 @@ class DependencyExtractor:
                             assoc_type_name = assoc_parts[-1]
                             # Find the file where this type is defined
                             module_parts = assoc_parts[1:-1]
-                            for base_path in [Path('vostd') / 'src']:
+                            project_name = get_project_name()
+                            for base_path in [Path(project_name) / 'src']:
                                 file_path = base_path / Path(*module_parts).with_suffix('.rs')
                                 if file_path.exists():
                                     # Find all trait implementations for this associated type
@@ -1753,7 +1784,8 @@ class DependencyExtractor:
         
         # Fallback to source code parsing if VIR data not available
         for module_parts in module_parts_candidates:
-            base_paths = [Path('vostd') / 'src']
+            project_name = get_project_name()
+            base_paths = [Path(project_name) / 'src']
             for base_path in base_paths:
                 file_path = base_path / Path(*module_parts).with_suffix('.rs')
                 if file_path.exists():
@@ -1855,15 +1887,16 @@ class DependencyExtractor:
                 # Try to construct full path
                 # First, extract the module path from the file path
                 file_path_obj = Path(file_path)
-                # Get the relative path from vostd/src
+                # Get the relative path from project/src
                 try:
-                    vostd_src = Path('vostd') / 'src'
+                    project_name = get_project_name()
+                    project_src = Path(project_name) / 'src'
                     if file_path_obj.is_absolute():
                         # Try to make it relative to current working directory
                         rel_to_cwd = file_path_obj.relative_to(Path.cwd())
-                        rel_path = str(rel_to_cwd.relative_to(vostd_src)).replace('.rs', '')
+                        rel_path = str(rel_to_cwd.relative_to(project_src)).replace('.rs', '')
                     else:
-                        rel_path = str(file_path_obj.relative_to(vostd_src)).replace('.rs', '')
+                        rel_path = str(file_path_obj.relative_to(project_src)).replace('.rs', '')
                     
                     # Convert path separators to ::
                     module_parts = rel_path.replace(os.sep, '::')
@@ -2037,7 +2070,8 @@ class DependencyExtractor:
                     continue
                 
                 module_parts = parts[1:-1]
-                base_paths = [Path('vostd') / 'src']
+                project_name = get_project_name()
+                base_paths = [Path(project_name) / 'src']
                 
                 for base_path in base_paths:
                     file_path = base_path / Path(*module_parts).with_suffix('.rs')
@@ -2618,7 +2652,8 @@ class DependencyExtractor:
             type_name = None
         
         # Build file paths to search
-        base_paths = [Path('vostd') / 'src']
+        project_name = get_project_name()
+        base_paths = [Path(project_name) / 'src']
         for base_path in base_paths:
             file_path = base_path / Path(*module_parts).with_suffix('.rs')
             if file_path.exists():
@@ -2841,8 +2876,9 @@ class DependencyExtractor:
         """Find the module containing a type by searching for its definition.
         Returns the full path like lib::aster_common::mm::frame::linked_list_owners::TypeName::method
         """
-        # Search in vostd/src for the type definition
-        base_path = Path('vostd') / 'src'
+        # Search in project/src for the type definition
+        project_name = get_project_name()
+        base_path = Path(project_name) / 'src'
         if not base_path.exists():
             return None
         
@@ -2902,7 +2938,8 @@ class DependencyExtractor:
         module_parts = module_part[5:].split('::')  # Remove 'lib::' and split
         
         # Build file path
-        base_paths = [Path('vostd') / 'src']
+        project_name = get_project_name()
+        base_paths = [Path(project_name) / 'src']
         for base_path in base_paths:
             file_path = base_path / Path(*module_parts).with_suffix('.rs')
             if file_path.exists():
@@ -2969,7 +3006,8 @@ class DependencyExtractor:
         type_name = type_match.group(1).split('<')[0]  # Remove generics
         
         # Build file path
-        base_paths = [Path('vostd') / 'src']
+        project_name = get_project_name()
+        base_paths = [Path(project_name) / 'src']
         for base_path in base_paths:
             file_path = base_path / Path(*module_parts).with_suffix('.rs')
             if file_path.exists():
