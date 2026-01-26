@@ -16,13 +16,7 @@ import os
 import re
 import json
 import pickle
-try:
-    import tomllib  # Python 3.11+
-except ImportError:
-    try:
-        import toml as tomllib  # fallback
-    except ImportError:
-        tomllib = None
+import tomllib
 from collections import defaultdict, deque
 from pathlib import Path
 
@@ -219,8 +213,13 @@ class VIRAnalyzer:
     """Analyzer for VIR file structure"""
     
     def __init__(self):
-        self.function_info = {}  # vir_path -> {rust_path, vir_location, source_location}
-        self.datatype_info = {}  # vir_path -> {rust_path, vir_location, source_location}
+        self.vir_path_to_function_info = {}  # vir_path -> {rust_path, vir_location, source_location}
+        self.vir_path_to_datatype_info = {}  # vir_path -> {rust_path, vir_location, source_location}
+        
+        # 反向映射用于call graph分析
+        self.function_rust_path_to_info = {}  # rust_path -> {vir_path, call_graph_node_name, ...}
+        self.function_call_graph_name_to_vir_path = {}  # call_graph_node_name -> vir_path
+        
         self.source_analyzer = SourceCodeAnalyzer()
 
     def analyze_vir_file(self, file_path):
@@ -319,7 +318,10 @@ class VIRAnalyzer:
                     if source_location:
                         function_info['source_location'] = source_location
                     
-                    self.function_info[func_path] = function_info
+                    self.vir_path_to_function_info[func_path] = function_info
+                    
+                    # 构建反向映射
+                    self._build_reverse_mappings(func_path, resolved_rust_path)
 
     def preprocess_datatype_info(self, expr, file_path, vir_line=None):
         """Extract datatype definition from VIR expression - only top-level datatypes from current module"""
@@ -373,7 +375,7 @@ class VIRAnalyzer:
                     if source_location:
                         datatype_info['source_location'] = source_location
                     
-                    self.datatype_info[datatype_path] = datatype_info
+                    self.vir_path_to_datatype_info[datatype_path] = datatype_info
 
     def _extract_rust_path_from_vir_path(self, path):
         """Convert VIR path format to Rust format"""
@@ -457,6 +459,45 @@ class VIRAnalyzer:
         
         return rust_path
     
+    def _build_reverse_mappings(self, vir_path, rust_path):
+        """构建反向映射：rust_path -> info 和 call_graph_node_name -> vir_path"""
+        # 生成 call graph 节点名称格式（使用::分隔符，基于vir_path保留impl&%形式）
+        vir_rust_path = self._extract_rust_path_from_vir_path(vir_path)
+        call_graph_node_name = self._rust_path_to_call_graph_name(vir_rust_path)
+        
+        # 构建 rust_path -> info 映射
+        self.function_rust_path_to_info[rust_path] = {
+            'vir_path': vir_path,
+            'call_graph_node_name': call_graph_node_name,
+        }
+        
+        # 构建 call_graph_node_name -> vir_path 映射
+        self.function_call_graph_name_to_vir_path[call_graph_node_name] = vir_path
+    
+    def _rust_path_to_call_graph_name(self, rust_path):
+        """将rust_path格式转换为call graph中使用的::格式
+        例如: lib.lock_protocol_rcu.spec.utils.get_child -> lib::lock_protocol_rcu::spec::utils::get_child
+        """
+        if rust_path:
+            return rust_path.replace('.', '::')
+        return rust_path
+    
+    def get_function_by_rust_path(self, rust_path):
+        """根据rust_path获取函数信息"""
+        return self.function_rust_path_to_info.get(rust_path)
+    
+    def get_function_by_call_graph_name(self, call_graph_name):
+        """根据call_graph节点名称获取vir_path"""
+        return self.function_call_graph_name_to_vir_path.get(call_graph_name)
+    
+    def get_all_reverse_mappings_info(self):
+        """获取反向映射的统计信息"""
+        return {
+            'rust_path_mappings': len(self.function_rust_path_to_info),
+            'call_graph_mappings': len(self.function_call_graph_name_to_vir_path),
+            'total_functions': len(self.vir_path_to_function_info)
+        }
+    
 def test_function_info():
     extractor = DependencyExtractor()
     extractor.analyzer.analyze_vir_file("D:\\Projects\\VerusProjects\\vostd\\.verus-log\\cortenmm\\lock_protocol_rcu__spec__utils-poly.vir")
@@ -464,13 +505,31 @@ def test_function_info():
     
     print("=== 示例函数信息 ===")
     for i in range(3):
-        if extractor.analyzer.function_info:
-            example_key = list(extractor.analyzer.function_info.keys())[i]
+        if extractor.analyzer.vir_path_to_function_info:
+            example_key = list(extractor.analyzer.vir_path_to_function_info.keys())[i]
             print(f"VIR名称: {example_key}")
-            print(f"详细信息: {extractor.analyzer.function_info[example_key]}")
+            print(f"详细信息: {extractor.analyzer.vir_path_to_function_info[example_key]}")
             print()
     
-    print(f"\n总数: {len(extractor.analyzer.function_info)}")
+    print(f"\n总数: {len(extractor.analyzer.vir_path_to_function_info)}")
+    
+    print("\n=== 反向映射信息 ===")
+    mapping_info = extractor.analyzer.get_all_reverse_mappings_info()
+    print(f"反向映射统计: {mapping_info}")
+    
+    print("\n=== 反向映射示例 ===")
+    # 测试按rust_path查找
+    if extractor.analyzer.function_rust_path_to_info:
+        example_rust_path = list(extractor.analyzer.function_rust_path_to_info.keys())[0]
+        print(f"Rust路径: {example_rust_path}")
+        print(f"映射信息: {extractor.analyzer.get_function_by_rust_path(example_rust_path)}")
+        
+        # 测试按call_graph_name查找
+        call_graph_name = extractor.analyzer.function_rust_path_to_info[example_rust_path]['call_graph_node_name']
+        vir_path = extractor.analyzer.get_function_by_call_graph_name(call_graph_name)
+        print(f"Call Graph名称: {call_graph_name}")
+        print(f"对应VIR路径: {vir_path}")
+        print()
 
 def test_datatype_info():
     extractor = DependencyExtractor()
@@ -479,13 +538,17 @@ def test_datatype_info():
     
     print("=== 示例数据类型信息 ===")
     for i in range(3):
-        if extractor.analyzer.datatype_info:
-            example_key = list(extractor.analyzer.datatype_info.keys())[i]
+        if extractor.analyzer.vir_path_to_datatype_info:
+            example_key = list(extractor.analyzer.vir_path_to_datatype_info.keys())[i]
             print(f"VIR名称: {example_key}")
-            print(f"详细信息: {extractor.analyzer.datatype_info[example_key]}")
+            print(f"详细信息: {extractor.analyzer.vir_path_to_datatype_info[example_key]}")
             print()
     
-    print(f"\n总数: {len(extractor.analyzer.datatype_info)}")
+    print(f"\n总数: {len(extractor.analyzer.vir_path_to_datatype_info)}")
+
+def main():
+    """Main entry point for the dependency extractor"""
+    pass
 
 if __name__ == '__main__':
     #test_datatype_info()
