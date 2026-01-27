@@ -429,9 +429,18 @@ class DependencyExtractor:
             formatted = f"[{func_info.get('source_location')}] {func_info.get('rust_path')}"
             output_dependencies.append(formatted)
 
-        # Find datatype dependencies from source-found and no-source-location functions
+        # Add no-source-location functions and unknown functions in output
+        for func_info in no_source_location_func_info:
+            formatted = self._format_unknown_source_dependencies([func_info.get('rust_path')])
+            output_dependencies.append(formatted)
+        for unknown_path in unknown_func_rust_paths:
+            formatted = self._format_unknown_source_dependencies(unknown_path)
+            output_dependencies.append(formatted)
 
         return output_dependencies
+    
+    def _format_unknown_source_dependencies(self, path):
+        return f"[unknown:0] {path}"
     
     def print_dependencies(self, dependencies):
         for dep in dependencies:
@@ -583,10 +592,10 @@ class VIRAnalyzer:
         """Extract function definition from VIR expression - only top-level functions from current module"""
         if not isinstance(expr, list) or len(expr) < 2:
             return
-        
+
         # Extract source location from @ wrapper
         source_location = self._extract_source_location(expr)
-        
+
         # Handle @ location wrappers: ['@', 'location', ['Function', ...]]
         if expr[0] == '@' and len(expr) >= 3 and isinstance(expr[2], list) and expr[2][0] == 'Function':
             func_expr = expr[2]
@@ -594,34 +603,42 @@ class VIRAnalyzer:
             func_expr = expr
         else:
             return
-        
+
         func_path = None
         func_body = None
-        
+        mode_value = None
+
         for i in range(1, len(func_expr)):
             if func_expr[i] == ':name' and i + 1 < len(func_expr):
                 if isinstance(func_expr[i + 1], list) and func_expr[i + 1][0] == 'Fun':
                     func_path = self._extract_vir_path_from_expr(func_expr[i + 1])
             elif func_expr[i] == ':body' and i + 1 < len(func_expr):
                 func_body = func_expr[i + 1]
-        
+            elif func_expr[i] == ':mode' and i + 1 < len(func_expr):
+                mode_expr = func_expr[i + 1]
+                if isinstance(mode_expr, str):
+                    mode_value = mode_expr.lower()
+                elif isinstance(mode_expr, list) and len(mode_expr) > 0 and isinstance(mode_expr[0], str):
+                    mode_value = mode_expr[0].lower()
+
         if func_path and not func_path.startswith('vstd!'):
             rust_path = self._extract_rust_path_from_vir_path(func_path)
             # 检查是否是impl方法，如果是则替换为实际类型
             resolved_rust_path = self._resolve_impl_path(rust_path, source_location)
-            
+
             function_info = {
                 'rust_path': resolved_rust_path,
                 'vir_location': self._extract_vir_location(file_path, vir_line),
                 'is_impl': 'impl&%' in func_path,  # Check if it's a trait method
+                'mode': mode_value,  # 'spec', 'proof', 'exec' 或 None
             }
-            
+
             # Add source location if available
             if source_location:
                 function_info['source_location'] = source_location
-            
+
             self.vir_path_to_function_info[func_path] = function_info
-            
+
             # 构建反向映射
             self._build_reverse_mappings(func_path, resolved_rust_path)
 
@@ -911,9 +928,31 @@ def test_extract_dependencies():
     
     extractor.print_dependencies(dependencies)
 
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Extract dependencies for a given Rust path, or list all exec/proof functions.")
+    parser.add_argument("rust_path", nargs="?", type=str, help="Rust path, e.g. vostd::ostd::mm::frame::linked_list::LinkedList::push_front")
+    parser.add_argument("--list", action="store_true", help="List all exec and proof functions' rust_path after preprocess.")
+    args = parser.parse_args()
+
+    extractor = DependencyExtractor()
+    extractor.preprocess()
+
+    if args.list:
+        for func_info in extractor.analyzer.vir_path_to_function_info.values():
+            mode = func_info.get('mode')
+            if mode in ("exec", "proof"):
+                print(func_info.get('rust_path'))
+    elif args.rust_path:
+        deps = extractor.extract_dependencies(args.rust_path)
+        extractor.print_dependencies(deps)
+    else:
+        parser.print_help()
+
 if __name__ == '__main__':
     #test_datatype_info()
     #test_function_info()
     #test_full()
     #test_call_graph()
-    test_extract_dependencies()
+    #test_extract_dependencies()
+    main()
