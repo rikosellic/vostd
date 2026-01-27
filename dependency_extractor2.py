@@ -391,50 +391,71 @@ class DependencyExtractor:
         # Get all dependencies from call graph
         call_graph_dependencies = self.call_graph.get_all_dependencies_recursive(call_graph_node_name)
         
-        # Filter out ModuleReveal results and format output
-        formatted_call_graph_dependencies = []
+        # Categorize dependencies by type
+        categorized_dependencies = {
+            'fun_dependencies_with_source': [],
+            'fun_dependencies_without_source': [],
+            'trait_dependencies': [],
+            'traitimplpath_dependencies': [],
+            'reqens_traitimplpath_dependencies': [],
+            'other_dependencies': []
+        }
+        
         for dep in call_graph_dependencies:
             # Skip dependencies that contain "ModuleReveal" or "Crate" in their label
             if "ModuleReveal" not in dep and "Crate" not in dep:
-                formatted_dep = self._format_call_graph_dependency_output(dep)
-                formatted_call_graph_dependencies.append(formatted_dep)
+                
+                # Categorize based on dependency type
+                if dep.startswith("Fun\n"):
+                    # Format fun dependencies and categorize by source location availability
+                    formatted_result = self._format_fun_dependency(dep)
+                    if formatted_result['has_source']:
+                        categorized_dependencies['fun_dependencies_with_source'].append(formatted_result['formatted'])
+                    else:
+                        categorized_dependencies['fun_dependencies_without_source'].append(formatted_result['formatted'])
+                elif dep.startswith("Trait\n"):
+                    categorized_dependencies['trait_dependencies'].append(dep)
+                elif dep.startswith("TraitImplPath\n"):
+                    categorized_dependencies['traitimplpath_dependencies'].append(dep)
+                elif dep.startswith("ReqEns!TraitImplPath\n"):
+                    categorized_dependencies['reqens_traitimplpath_dependencies'].append(dep)
+                else:
+                    categorized_dependencies['other_dependencies'].append(dep)
         
-        #TODO: Trait dependencies
-        #TODO: TraitImpl dependencies
-        #TODO: Datatype dependencies
-        #TODO: Filter out broadcast proofs
-        
-        return formatted_call_graph_dependencies
+        return categorized_dependencies
     
-    def _format_call_graph_dependency_output(self, dependency_label):
-        """Format dependency label to `[source_location]rust_path` format
+    def _format_fun_dependency(self, dependency_label):
+        """Format Fun dependency and determine if source location is available
         
         Args:
-            dependency_label: Original call graph label
+            dependency_label: Original call graph label starting with "Fun\n"
             
         Returns:
-            Formatted string in [source_location]rust_path format
+            Dict with 'formatted' (formatted string) and 'has_source' (bool)
         """
-        # Check if this is a Fun type that we can map
-        if dependency_label.startswith("Fun\n"):
-            # Try to find corresponding function info
-            vir_path = self.analyzer.function_call_graph_name_to_vir_path.get(dependency_label)
-            if vir_path and vir_path in self.analyzer.vir_path_to_function_info:
-                func_info = self.analyzer.vir_path_to_function_info[vir_path]
-                rust_path = func_info.get('rust_path', 'unknown')
-                source_location = func_info.get('source_location', 'unknown:0')
-                return f"[{source_location}]{rust_path}"
+        # Try to find corresponding function info
+        vir_path = self.analyzer.function_call_graph_name_to_vir_path.get(dependency_label)
+        if vir_path and vir_path in self.analyzer.vir_path_to_function_info:
+            func_info = self.analyzer.vir_path_to_function_info[vir_path]
+            rust_path = func_info.get('rust_path', 'unknown')
+            source_location = func_info.get('source_location')
+            
+            if source_location:
+                formatted = f"[{source_location}]{rust_path}"
+                return {'formatted': formatted, 'has_source': True}
             else:
-                # Fallback: extract rust path from label
-                lines = dependency_label.split('\n')
-                if len(lines) >= 2:
-                    rust_path = lines[1]  # Second line is the rust path
-                    return f"[unknown:0]{rust_path}"
-                else:
-                    return dependency_label
+                formatted = f"[unknown:0]{rust_path}"
+                return {'formatted': formatted, 'has_source': False}
         else:
-            # For non-Fun types, keep original format
-            return dependency_label
+            # Fallback: extract rust path from label
+            lines = dependency_label.split('\n')
+            if len(lines) >= 2:
+                rust_path = lines[1]  # Second line is the rust path
+                formatted = f"[unknown:0]{rust_path}"
+                return {'formatted': formatted, 'has_source': False}
+            else:
+                return {'formatted': dependency_label, 'has_source': False}
+    
 
 class VIRAnalyzer:
     """Analyzer for VIR file structure"""
@@ -880,15 +901,24 @@ def test_extract_dependencies():
     
     print("=== 测试 extract_dependencies 方法 ===")
     
-    rust_path = "lib::lock_protocol_rcu::spec::utils::NodeHelper::get_child"
+    # rust_path = "lib::lock_protocol_rcu::spec::utils::NodeHelper::get_child"
+    rust_path = "lib::lock_protocol_rcu::mm::page_table::cursor::Cursor::lemma_guard_in_path_relation_implies_in_subtree_range"
     print(f"\n分析函数: {rust_path}")
     
     # Extract dependencies using the new method
     dependencies = extractor.extract_dependencies(rust_path)
-    print(f"依赖数量: {len(dependencies)}")
-    print("依赖列表:")
-    for dep in dependencies:
-        print(dep)
+    
+    # Show categorized dependencies
+    total_count = sum(len(deps) for deps in dependencies.values())
+    print(f"总依赖数量: {total_count}")
+    
+    for category, deps in dependencies.items():
+        if deps:  # Only show categories that have dependencies
+            print(f"\n{category} ({len(deps)}个):")
+            for dep in deps[:10]:  # Show first 10 for each category
+                print(f"  {dep}")
+            if len(deps) > 10:
+                print(f"  ... 还有 {len(deps) - 10} 个依赖")
 
 if __name__ == '__main__':
     #test_datatype_info()
