@@ -16,19 +16,15 @@ import os
 import re
 import json
 import pickle
-try:
-    import tomllib  # Python 3.11+
-except ImportError:
-    try:
-        import toml as tomllib  # fallback
-    except ImportError:
-        tomllib = None
+import tomllib
+import networkx as nx
 from collections import defaultdict, deque
 from pathlib import Path
 
 ROOT = os.path.abspath(os.path.dirname(__file__))
 VERUS_LOG_DIR = os.path.join(ROOT, ".verus-log")
-TRAIT_CACHE_FILE = os.path.join(VERUS_LOG_DIR, "trait_cache.pkl")
+MAPPING_CACHE_FILE = os.path.join(VERUS_LOG_DIR, "mappings_cache.pkl")
+CALL_GRAPH_CACHE_FILE = os.path.join(VERUS_LOG_DIR, "call_graph_cache.pkl")
 
 def get_project_name():
     """Get the first member from workspace Cargo.toml as project name."""
@@ -114,7 +110,7 @@ class SExprParser:
             return self.parse_string()
         else:
             return self.parse_symbol()
-
+        
 class SourceCodeAnalyzer:
     """Analyze source code to map impl&%N to actual types"""
     
@@ -125,15 +121,15 @@ class SourceCodeAnalyzer:
         """Parse source file and extract impl blocks with their types"""
         if file_path in self.impl_mappings:
             return self.impl_mappings[file_path]
-        
+
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
+
             mappings = {}
             # Simple pattern - just find lines starting with impl
             impl_pattern = r'^\s*impl\b'
-            
+
             impl_index = 0
             for line in content.split('\n'):
                 if re.match(impl_pattern, line):
@@ -183,793 +179,367 @@ class SourceCodeAnalyzer:
             
         except Exception:
             return {}
+        
+class CallGraphAnalyzer:
+    """Analyzer for call graph DOT files"""
     
-    def get_impl_type(self, module_path, impl_num):
-        """Get the actual type for impl&%N in a given module"""
-        # Convert module path to source file path
-        # lib::aster_common::mm::frame::unique -> project/src/aster_common/mm/frame/unique.rs
-        if not module_path.startswith('lib::'):
-            return None
+    def __init__(self):
+        self.graph = None
+        self.label_to_node_id = {}  # label -> node_id mapping
+        self.node_id_to_label = {}  # node_id -> label mapping
         
-        path_parts = module_path[5:].split('::')  # Remove 'lib::'
-        project_name = get_project_name()
-        source_file = Path(f'{project_name}/src') / Path(*path_parts).with_suffix('.rs')
-        
-        if not source_file.exists():
-            # Try other possible locations
-            for base_path in ['kernel/src', 'osdk/src']:
-                alt_file = Path(base_path) / Path(*path_parts).with_suffix('.rs')
-                if alt_file.exists():
-                    source_file = alt_file
-                    break
-        
-        if not source_file.exists():
-            return None
-        
-        mappings = self.analyze_source_file(source_file)
-        return mappings.get(impl_num)
-
-class SpecFunctionAnalyzer:
-    """Analyzer for when_used_as_spec annotations"""
-    
-    def __init__(self, source_analyzer):
-        self.source_analyzer = source_analyzer
-        self.spec_to_exec_mappings = {}  # spec_function_name -> exec_function_name
-    
-    def find_when_used_as_spec_mappings(self, module_path):
-        """Find all when_used_as_spec mappings in a source file"""
-        # Convert module path to source file path
-        if not module_path.startswith('lib::'):
-            return {}
-            
-        path_parts = module_path[5:].split('::')  # Remove 'lib::'
-        project_name = get_project_name()
-        source_file = Path(f'{project_name}/src') / Path(*path_parts).with_suffix('.rs')
-        
-        if not source_file.exists():
-            # Try other possible locations
-            for base_path in ['kernel/src', 'osdk/src']:
-                alt_file = Path(base_path) / Path(*path_parts).with_suffix('.rs')
-                if alt_file.exists():
-                    source_file = alt_file
-                    break
-        
-        if not source_file.exists():
-            return {}
-            
+    def save_call_graph_cache(self, dot_file_path):
+        """Save call graph data to cache file"""
         try:
-            with open(source_file, 'r', encoding='utf-8') as f:
-                content = f.read()
+            cache_data = {
+                'graph': self.graph,
+                'label_to_node_id': self.label_to_node_id,
+                'node_id_to_label': self.node_id_to_label,
+                'dot_file_path': dot_file_path
+            }
             
-            mappings = {}
-            lines = content.split('\n')
-            
-            for i, line in enumerate(lines):
-                # Look for #[verifier::when_used_as_spec(...)]
-                when_used_match = re.search(r'#\[verifier::when_used_as_spec\(([^)]+)\)\]', line)
-                if when_used_match:
-                    spec_func_name = when_used_match.group(1)
-                    
-                    # Look for the next function definition
-                    for j in range(i + 1, min(i + 10, len(lines))):  # Look ahead up to 10 lines
-                        next_line = lines[j]
-                        # Match function definitions: "pub fn function_name(" or "fn function_name("
-                        func_match = re.search(r'(?:pub\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(', next_line)
-                        if func_match:
-                            exec_func_name = func_match.group(1)
-                            mappings[spec_func_name] = exec_func_name
-                            break
-                        # Skip empty lines and lines with only attributes
-                        if next_line.strip() and not next_line.strip().startswith('#['):
-                            break
-            
-            return mappings
-            
-        except Exception:
-            return {}
+            os.makedirs(os.path.dirname(CALL_GRAPH_CACHE_FILE), exist_ok=True)
+            with open(CALL_GRAPH_CACHE_FILE, 'wb') as f:
+                pickle.dump(cache_data, f)
+        except Exception as e:
+            print(f"ERROR: Failed to save call graph cache: {e}")
     
-    def get_exec_function_for_spec(self, spec_function_path):
-        """Get the execution function path for a given spec function path"""
-        # Extract function name and module from the path
-        path_parts = spec_function_path.split('::')
-        if len(path_parts) < 2:
+    def load_call_graph_cache(self, dot_file_path):
+        """Load call graph data from cache file. Returns True if successful, False otherwise"""
+        try:
+            if not os.path.exists(CALL_GRAPH_CACHE_FILE):
+                return False
+            
+            with open(CALL_GRAPH_CACHE_FILE, 'rb') as f:
+                cache_data = pickle.load(f)
+            
+            # Verify cache is for the same DOT file
+            if cache_data.get('dot_file_path') != dot_file_path:
+                return False
+            
+            # Load all data
+            self.graph = cache_data['graph']
+            self.label_to_node_id = cache_data['label_to_node_id']
+            self.node_id_to_label = cache_data['node_id_to_label']
+            
+            if self.graph:
+                return True
+            else:
+                return False
+            
+        except Exception as e:
+            print(f"ERROR: Failed to load call graph cache: {e}")
+            return False
+    
+    def _is_call_graph_cache_valid(self, dot_file_path):
+        """Check if cache is newer than the DOT file"""
+        try:
+            if not os.path.exists(CALL_GRAPH_CACHE_FILE) or not os.path.exists(dot_file_path):
+                return False
+            
+            cache_mtime = os.path.getmtime(CALL_GRAPH_CACHE_FILE)
+            dot_mtime = os.path.getmtime(dot_file_path)
+            
+            return cache_mtime >= dot_mtime
+        except Exception:
+            return False
+        
+    def load_dot_file(self, dot_file_path):
+        """Load and parse DOT file using NetworkX with caching"""
+        # Try to load from cache first if cache is valid
+        if self._is_call_graph_cache_valid(dot_file_path) and self.load_call_graph_cache(dot_file_path):
+            return True
+        
+        try:
+            from networkx.drawing.nx_pydot import read_dot
+            
+            # Read DOT file
+            self.graph = read_dot(dot_file_path)
+            
+            # Build label mappings
+            self.label_to_node_id = {}
+            self.node_id_to_label = {}
+            
+            for node_id, attrs in self.graph.nodes(data=True):
+                if 'label' in attrs:
+                    label = attrs['label']
+                    # Clean the label - remove quotes and escape sequences
+                    clean_label = label.strip('"')
+                    
+                    self.label_to_node_id[clean_label] = node_id
+                    self.node_id_to_label[node_id] = clean_label
+            
+            print(f"Loaded call graph with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges")
+            
+            # Save to cache after successful loading
+            self.save_call_graph_cache(dot_file_path)
+
+            return True
+            
+        except Exception as e:
+            print(f"ERROR: Failed to load DOT file {dot_file_path}: {e}")
+            return False
+    
+    def get_all_dependencies_recursive(self, target_label):
+        """Get all dependencies recursively (transitive closure)"""
+        if not self.graph:
+            print("ERROR: No call graph loaded")
+            return []
+            
+        if target_label not in self.label_to_node_id:
+            print(f"ERROR: Label not found: {target_label}")
+            return []
+        
+        node_id = self.label_to_node_id[target_label]
+        
+        # Use NetworkX's built-in descendants method for efficient dependency analysis
+        try:
+            descendant_node_ids = nx.descendants(self.graph, node_id)
+            dependencies = []
+            
+            for desc_node_id in descendant_node_ids:
+                if desc_node_id in self.node_id_to_label:
+                    dep_label = self.node_id_to_label[desc_node_id]
+                    dependencies.append(dep_label)
+            
+            return dependencies
+            
+        except nx.NetworkXError as e:
+            print(f"Error analyzing dependencies: {e}")
+            return []
+    
+    def get_statistics(self):
+        """Get basic statistics about the call graph"""
+        if not self.graph:
             return None
             
-        spec_func_name = path_parts[-1]
-        module_path = '::'.join(path_parts[:-1])
+        return {
+            'total_nodes': len(self.graph.nodes),
+            'total_edges': len(self.graph.edges),
+            'labels_mapped': len(self.label_to_node_id)
+        }
         
-        # Get mappings for this module
-        mappings = self.find_when_used_as_spec_mappings(module_path)
+class DependencyExtractor:
+    """Main dependency extraction orchestrator"""
+    
+    def __init__(self):
+        self.analyzer = VIRAnalyzer()
+        self.call_graph = CallGraphAnalyzer()
+
+    def preprocess(self):
+        """Preprocess VIR files in the project to build complete type mappings, trait definitions, and function definitions"""     
+        # The `crate.vir` file contains all definitions
+        project_name = get_project_name()
+        project_dir = os.path.join(VERUS_LOG_DIR, project_name)
         
-        if spec_func_name in mappings:
-            exec_func_name = mappings[spec_func_name]
-            return f"{module_path}::{exec_func_name}"
+        if not os.path.exists(project_dir):
+            print(f"ERROR: VIR directory {project_dir} does not exist")
+            return
         
-        return None
+        # Check for the consolidated crate.vir file
+        crate_vir_path = os.path.join(project_dir, "crate.vir")
+        if not os.path.exists(crate_vir_path):
+            print(f"ERROR: crate.vir not found at {crate_vir_path}")
+            return
+        
+        # Try to load from cache first if cache is valid
+        if self.analyzer._is_cache_valid(crate_vir_path) and self.analyzer.load_mappings_cache():
+            pass
+        else:    
+            # Analyze the consolidated crate.vir file
+            self.analyzer.analyze_vir_file(crate_vir_path)
+            
+            # Save mappings to cache after analysis
+            self.analyzer.save_mappings_cache()
+
+        call_graph_path = os.path.join(project_dir, "crate-call-graph-nostd-initial.dot")
+
+        if not os.path.exists(call_graph_path):
+            print(f"ERROR: Call graph DOT file not found: {call_graph_path}")
+            return
+        
+        # Try to load call graph from cache if valid
+        if self.call_graph._is_call_graph_cache_valid(call_graph_path) and self.call_graph.load_call_graph_cache(call_graph_path):
+            pass
+        else:
+            # Load call graph
+            self.call_graph.load_dot_file(call_graph_path)
+            
+            # Save call graph to cache
+            self.call_graph.save_call_graph_cache(call_graph_path)
+    
+    def extract_dependencies(self, rust_path):
+        """Extract all dependencies for a given rust_path
+        
+        Args:
+            rust_path: Function path in Rust format (e.g., 'lib::module::function')
+            
+        Returns:
+            List of dependency rust paths (filtered to exclude ModuleReveal and Crate)
+        """
+        # Convert rust_path to call_graph_node_name
+        function_info = self.analyzer.function_rust_path_to_info.get(rust_path)
+        if not function_info:
+            print(f"ERROR：Function not found: {rust_path}")
+            return []
+        
+        call_graph_node_name = function_info.get('call_graph_node_name')
+        if not call_graph_node_name:
+            print(f"ERROR：No call graph node name for: {rust_path}")
+            return []
+        
+        # Get all dependencies from call graph
+        call_graph_dependencies = self.call_graph.get_all_dependencies_recursive(call_graph_node_name)
+        
+        # Categorize dependencies by type
+        categorized_dependencies = {
+            'fun_dependencies': [],
+            'trait_dependencies': [],
+            'traitimplpath_dependencies': [],
+            'reqens_traitimplpath_dependencies': [],
+            'other_dependencies': []
+        }
+        
+        for dep in call_graph_dependencies:
+            # Skip dependencies that contain "ModuleReveal" or "Crate" in their label
+            if "ModuleReveal" not in dep and "Crate" not in dep:
+                
+                # Categorize based on dependency type
+                if dep.startswith("Fun\n"):
+                    categorized_dependencies['fun_dependencies'].append(dep)
+                elif dep.startswith("Trait\n"):
+                    categorized_dependencies['trait_dependencies'].append(dep)
+                elif dep.startswith("TraitImplPath\n"):
+                    categorized_dependencies['traitimplpath_dependencies'].append(dep)
+                elif dep.startswith("ReqEns!TraitImplPath\n"):
+                    categorized_dependencies['reqens_traitimplpath_dependencies'].append(dep)
+                else:
+                    categorized_dependencies['other_dependencies'].append(dep)
+        
+        output_dependencies = []
+        
+        # Process Fun dependencies to separate vir-preprocessed and unknown ones
+        fun_deps_processed = self._process_fun_dependencies(categorized_dependencies['fun_dependencies'])
+        source_found_func_info = fun_deps_processed['source-found']
+        no_source_location_func_info = fun_deps_processed['no-source-location']
+        unknown_func_rust_paths = fun_deps_processed['unknown']
+
+        # Add source-found functions to output
+        for func_info in source_found_func_info:
+            formatted = f"[{func_info.get('source_location')}] {func_info.get('rust_path')}"
+            output_dependencies.append(formatted)
+
+        # Add no-source-location functions and unknown functions in output
+        for func_info in no_source_location_func_info:
+            formatted = self._format_unknown_source_dependencies([func_info.get('rust_path')])
+            output_dependencies.append(formatted)
+        for unknown_path in unknown_func_rust_paths:
+            formatted = self._format_unknown_source_dependencies(unknown_path)
+            output_dependencies.append(formatted)
+
+        return output_dependencies
+    
+    def _format_unknown_source_dependencies(self, path):
+        return f"[unknown:0] {path}"
+    
+    def print_dependencies(self, dependencies):
+        for dep in dependencies:
+            print(dep)
+    
+    def _process_fun_dependencies(self, fun_dependencies):
+        """Split Fun dependencies into source-found, no-source-location, and unknown ones"""
+        res = {"source-found": [], "no-source-location": [], "unknown": []}
+
+        for dep in fun_dependencies:
+            vir_path = self.analyzer.function_call_graph_name_to_vir_path.get(dep)
+            if vir_path and vir_path in self.analyzer.vir_path_to_function_info:
+                func_info = self.analyzer.vir_path_to_function_info[vir_path]
+                source_location = func_info.get('source_location')
+                if source_location:
+                    res['source-found'].append(func_info)
+                else:
+                    res['no-source-location'].append(func_info)
+            else:
+                lines = dep.split('\n')
+                if len(lines) >= 2:
+                    rust_path = lines[1]
+                    res['unknown'].append(rust_path)
+        return res
+    
 
 class VIRAnalyzer:
     """Analyzer for VIR file structure"""
     
     def __init__(self):
-        self.function_defs = {}  # function path -> definition
-        self.datatype_defs = {}  # type path -> definition
-        self.trait_defs = {}     # trait path -> definition
-        self.trait_impls = defaultdict(list)  # type path -> list of trait impls
-        self.dependencies = defaultdict(set)  # function -> set of dependencies
+        self.vir_path_to_function_info = {}  # vir_path -> {rust_path, vir_location, source_location}
+        self.vir_path_to_datatype_info = {}  # vir_path -> {rust_path, vir_location, source_location}
+        
+        # 反向映射用于call graph分析
+        self.function_rust_path_to_info = {}  # rust_path -> {vir_path, call_graph_node_name, ...}
+        self.function_call_graph_name_to_vir_path = {}  # call_graph_node_name -> vir_path
+        
         self.source_analyzer = SourceCodeAnalyzer()
-        self.vir_impl_mappings = {}  # impl_path -> type_name
-        self.spec_analyzer = SpecFunctionAnalyzer(self.source_analyzer)
-        
-        # Load all trait definitions from VIR files at initialization
-        # This allows us to identify trait methods vs struct/enum methods
-        self._load_all_trait_definitions()
-    
-    def _load_all_trait_definitions(self):
-        """Load trait definitions from all VIR files.
-        This is done at initialization to allow accurate identification of trait methods.
-        Uses caching to avoid re-parsing VIR files on every run.
-        """
-        project_name = get_project_name()
-        vir_dir = Path(VERUS_LOG_DIR) / project_name
-        if not vir_dir.exists():
-            return
-        
-        cache_file = Path(TRAIT_CACHE_FILE)
-        
-        # Check if cache exists and is up-to-date
-        if cache_file.exists():
-            try:
-                # Get the latest VIR file modification time
-                vir_files = list(vir_dir.glob('*.vir'))
-                if not vir_files:
-                    return
-                
-                latest_vir_time = max(f.stat().st_mtime for f in vir_files)
-                cache_time = cache_file.stat().st_mtime
-                
-                # If cache is newer than all VIR files, use it
-                if cache_time > latest_vir_time:
-                    with open(cache_file, 'rb') as f:
-                        self.trait_defs = pickle.load(f)
-                    return
-            except Exception:
-                # If cache loading fails, fall through to re-parse
-                pass
-        
-        # Cache is missing or outdated, parse all VIR files
-        vir_files = list(vir_dir.glob('*.vir'))
-        
-        for vir_file in vir_files:
-            try:
-                with open(vir_file, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read()
-                
-                # Parse the VIR file as S-expressions
-                parser = SExprParser(content)
-                
-                # Parse all top-level expressions
-                expressions = []
-                while parser.pos < parser.length:
-                    parser.skip_whitespace()
-                    if parser.pos >= parser.length:
-                        break
-                    expr = parser.parse()
-                    if expr:
-                        expressions.append(expr)
-                
-                # Extract only trait definitions
-                for expr in expressions:
-                    self._extract_trait_definitions_only(expr)
-            except Exception:
-                # Silently skip files that fail to parse
-                pass
-        
-        # Save the parsed traits to cache
+
+    def save_mappings_cache(self):
+        """Save all mappings to cache file"""
         try:
-            cache_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(cache_file, 'wb') as f:
-                pickle.dump(self.trait_defs, f)
-        except Exception:
-            # If caching fails, continue without cache
-            pass
-    
-    def _extract_trait_definitions_only(self, expr):
-        """Extract only trait definitions from a VIR expression.
-        Lighter version of extract_trait_definitions for initialization.
-        """
-        if not isinstance(expr, list) or len(expr) < 2:
-            return
-        
-        # Look for (trait (@ ... (Trait :name ...)))
-        if expr[0] == 'trait' and len(expr) >= 2:
-            trait_expr = expr[1]
-            if isinstance(trait_expr, list) and len(trait_expr) >= 2:
-                # Handle (@ location (Trait ...))
-                if trait_expr[0] == '@' and len(trait_expr) >= 3:
-                    trait_def = trait_expr[2]
-                else:
-                    trait_def = trait_expr
-                
-                # Extract trait info
-                if isinstance(trait_def, list) and len(trait_def) > 0 and trait_def[0] == 'Trait':
-                    trait_path = None
-                    
-                    # Find :name
-                    for i in range(1, len(trait_def)):
-                        if trait_def[i] == ':name' and i + 1 < len(trait_def):
-                            raw_path = trait_def[i + 1]
-                            if isinstance(raw_path, str):
-                                trait_path = self.clean_path(raw_path)
-                            break
-                    
-                    # Store minimal trait info
-                    if trait_path:
-                        self.trait_defs[trait_path] = {
-                            'path': trait_path,
-                            'assoc_typs': [],
-                            'assoc_typs_bounds': None,
-                            'definition': trait_def
-                        }
-        
-        # Recursively search in nested expressions
-        for item in expr:
-            if isinstance(item, list):
-                self._extract_trait_definitions_only(item)
-    
-    def clean_path(self, path):
-        """Convert VIR path format to Rust format"""
-        if not path or not path.startswith('lib!'):
-            return None
-        clean = path[4:].replace('.', '::').rstrip(':').rstrip('::')
-        return f"lib::{clean}" if clean else None
-    
-    def extract_impl_mappings(self, expr):
-        """Extract impl&%N to type mappings from VIR expression"""
-        if not isinstance(expr, list) or len(expr) < 2:
-            return
-            
-        # 1. Processing Function definitions to find impl context
-        if expr[0] == 'Function':
-            func_path = None
-            trait_typ_args = None
-            first_param_type = None
-            
-            # Iterate through key-value pairs in the function expression
-            for i in range(1, len(expr)):
-                key = expr[i]
-                if key == ':name' and i + 1 < len(expr):
-                    # Extract function path
-                    name_expr = expr[i+1]
-                    if isinstance(name_expr, list) and len(name_expr) >= 2 and name_expr[0] == 'Fun':
-                         # Search for :path key inside Fun
-                        for j in range(1, len(name_expr)):
-                            if name_expr[j] == ':path' and j+1 < len(name_expr):
-                                func_path = name_expr[j+1]
-                                break
-
-                elif key == ':trait_typ_args' and i + 1 < len(expr):
-                    # Extract trait type arguments (usually [SelfType, ...])
-                    type_args = expr[i+1]
-                    if isinstance(type_args, list) and len(type_args) > 0:
-                        first_arg = type_args[0]
-                        # Try to extract type name from (Typ Datatype (Dt Path "lib!..."))
-                        trait_typ_args = self._extract_type_name_from_vir_type(first_arg)
-
-                elif key == ':kind' and i + 1 < len(expr):
-                    # Look inside :kind for :trait_typ_args
-                    kind_expr = expr[i+1]
-                    if isinstance(kind_expr, list):
-                        for k in range(len(kind_expr)):
-                            if kind_expr[k] == ':trait_typ_args' and k+1 < len(kind_expr):
-                                type_args = kind_expr[k+1]
-                                if isinstance(type_args, list) and len(type_args) > 0:
-                                    first_arg = type_args[0]
-                                    trait_typ_args = self._extract_type_name_from_vir_type(first_arg)
-                                break
-
-                elif key == ':params' and i + 1 < len(expr):
-                    # Extract first parameter type (usually 'self')
-                    params = expr[i+1]
-                    if isinstance(params, list) and len(params) > 0:
-                        first_param = params[0]
-                        # (Param :name ... :typ (Typ ...) ...)
-                        if isinstance(first_param, list):
-                            for j in range(len(first_param)):
-                                if first_param[j] == ':typ' and j+1 < len(first_param):
-                                     first_param_type = self._extract_type_name_from_vir_type(first_param[j+1])
-                                     break
-            
-            # If we found a path containing impl&%, try to map it
-            if func_path and 'impl&%' in func_path:
-                # Extract the impl prefix: lib!module.impl&%N
-                impl_match = re.search(r'(lib!.*\.impl&%\d+)', func_path)
-                if impl_match:
-                    impl_key = impl_match.group(1)
-                    impl_key_clean = self.clean_path(impl_key + '.') # clean_path expects trailing dot or colon usually
-                    if impl_key_clean and impl_key_clean.endswith('::'): 
-                        impl_key_clean = impl_key_clean[:-2]
-                    elif not impl_key_clean:
-                         # Manual clean if clean_path fails/is strict
-                         impl_key_clean = impl_key.replace('lib!', 'lib::').replace('.', '::')
-
-                    # Priority 1: Trait Type Args (Function implements Trait for Type)
-                    if trait_typ_args:
-                        # print(f"DEBUG: Found implicit mapping via trait_typ_args: {impl_key_clean} -> {trait_typ_args}")
-                        self.vir_impl_mappings[impl_key_clean] = trait_typ_args
-                    # Priority 2: First parameter type (Inherent impl or method)
-                    elif first_param_type:
-                        # print(f"DEBUG: Found implicit mapping via first_param_type: {impl_key_clean} -> {first_param_type}")
-                        self.vir_impl_mappings[impl_key_clean] = first_param_type
-        
-        # Recursively process nested expressions
-        for item in expr:
-            if isinstance(item, list):
-                self.extract_impl_mappings(item)
-
-    def _extract_type_name_from_vir_type(self, type_expr):
-        """Helper to extract simple type name from VIR type expression"""
-        # Matches (Typ Datatype (Dt Path "lib!path.TypeName.") ...)
-        if isinstance(type_expr, list) and len(type_expr) > 1:
-            if type_expr[0] == 'Typ' or type_expr[0] == 'Datatype': # Handle unwrapped Datatype too if needed
-                 # Search recursively or specifically
-                 pass
-            
-            # Recursive search for (Dt Path "...")
-            return self._find_dt_path_recursive(type_expr)
-        return None
-
-    def _find_dt_path_recursive(self, expr):
-        if not isinstance(expr, list):
-            return None
-        if len(expr) >= 3 and expr[0] == 'Dt' and expr[1] == 'Path':
-            # Found path: "lib!crate.mod.Type."
-            raw_path = expr[2]
-            clean = self.clean_path(raw_path)
-            if clean:
-                return clean.split('::')[-1] # Return just TypeName
-        
-        for item in expr:
-            res = self._find_dt_path_recursive(item)
-            if res: return res
-        return None
-
-    def _infer_type_from_context(self, func_path, params):
-        """Infer the type that an impl&%N refers to from function context"""
-        # This is a fallback method when source code analysis fails
-        # Try to extract basic type info from the module path
-        parts = func_path.split('.')
-        if len(parts) >= 3:
-            module_part = parts[-3]  # Get the part before impl&%N
-            
-            # Generic fallback: convert snake_case to PascalCase
-            if '_' in module_part:
-                type_name = ''.join(word.capitalize() for word in module_part.split('_'))
-                return type_name
-            else:
-                return module_part.capitalize()
-        
-        return None
-    
-    def _extract_type_from_param(self, param):
-        """Extract type information from a parameter definition"""
-        if isinstance(param, list):
-            for item in param:
-                if isinstance(item, list) and len(item) >= 3:
-                    if item[0] == 'Dt' and item[1] == 'Path':
-                        path = item[2]
-                        if 'lib!' in path:
-                            clean_path = self.clean_path(path)
-                            if clean_path:
-                                parts = clean_path.split('::')
-                                return parts[-1] if parts else None
-        return None
-    
-    def _extract_path_from_expr(self, expr):
-        """Extract path string from VIR path expression"""
-        if isinstance(expr, list):
-            for item in expr:
-                if isinstance(item, str) and 'lib!' in item:
-                    return item
-        return None
-    
-    def _extract_type_info(self, expr):
-        """Extract type information from VIR type expression"""
-        if isinstance(expr, list):
-            if len(expr) >= 2 and expr[0] == 'Datatype':
-                # Look for (Dt Path "lib!...")
-                for item in expr:
-                    if isinstance(item, list) and len(item) >= 3 and item[0] == 'Dt' and item[1] == 'Path':
-                        path = self.clean_path(item[2])
-                        if path:
-                            # Extract just the type name
-                            parts = path.split('::')
-                            return parts[-1] if parts else None
-        return None
-    
-    def extract_function_definition(self, expr):
-        """Extract function definition from VIR expression"""
-        if not isinstance(expr, list) or len(expr) < 2:
-            return
-        
-        if expr[0] == 'Function':
-            func_path = None
-            func_body = None
-            
-            for i in range(1, len(expr)):
-                if expr[i] == ':name' and i + 1 < len(expr):
-                    if isinstance(expr[i + 1], list) and expr[i + 1][0] == 'Fun':
-                        func_path = self._extract_path_from_expr(expr[i + 1])
-                elif expr[i] == ':body' and i + 1 < len(expr):
-                    func_body = expr[i + 1]
-            
-            if func_path:
-                clean_path = self.clean_path(func_path)
-                if clean_path:
-                    self.function_defs[clean_path] = {
-                        'raw_path': func_path,
-                        'body': func_body,
-                        'definition': expr
-                    }
-        
-        # Recursively process nested expressions
-        if isinstance(expr, list):
-            for item in expr:
-                self.extract_function_definition(item)
-    
-    def extract_datatype_definitions(self, expr):
-        """Extract Datatype definitions from VIR expression to get field dependencies.
-        Parses: (Datatype :name (Dt Path "lib!...") ... :variants (...))
-        """
-        if not isinstance(expr, list) or len(expr) < 2:
-            return
-        
-        if expr[0] == 'Datatype':
-            datatype_path = None
-            variants = None
-            
-            # Extract the datatype path and variants
-            i = 1
-            while i < len(expr):
-                if expr[i] == ':name' and i + 1 < len(expr):
-                    # Extract path from (Dt Path "lib!...")
-                    name_expr = expr[i + 1]
-                    if isinstance(name_expr, list) and len(name_expr) >= 3:
-                        if name_expr[0] == 'Dt' and name_expr[1] == 'Path':
-                            raw_path = name_expr[2]
-                            datatype_path = self.clean_path(raw_path)
-                    i += 2
-                elif expr[i] == ':variants' and i + 1 < len(expr):
-                    variants = expr[i + 1]
-                    i += 2
-                else:
-                    i += 1
-            
-            # Store the datatype definition if we found both path and variants
-            if datatype_path and variants:
-                self.datatype_defs[datatype_path] = {
-                    'path': datatype_path,
-                    'variants': variants,
-                    'definition': expr
-                }
-        
-        # Recursively process nested expressions
-        if isinstance(expr, list):
-            for item in expr:
-                self.extract_datatype_definitions(item)
-    
-    def extract_field_dependencies_from_vir(self, type_path):
-        """Extract field type dependencies from a Datatype definition in VIR.
-        For example, from MetaSlotStorage's variants:
-        - FrameLink(StoredLink) → StoredLink
-        - PTNode(StoredPageTablePageMeta) → StoredPageTablePageMeta
-        """
-        field_deps = set()
-        
-        # Find the datatype definition
-        if type_path not in self.datatype_defs:
-            return field_deps
-        
-        datatype_def = self.datatype_defs[type_path]
-        variants = datatype_def.get('variants')
-        
-        if not isinstance(variants, list):
-            return field_deps
-        
-        # Parse each variant
-        for variant in variants:
-            if not isinstance(variant, list) or len(variant) < 2:
-                continue
-            
-            if variant[0] == 'Variant':
-                # Look for :fields in the variant
-                i = 1
-                while i < len(variant):
-                    if variant[i] == ':fields' and i + 1 < len(variant):
-                        fields = variant[i + 1]
-                        # Extract type paths from fields
-                        field_types = self._extract_types_from_fields(fields)
-                        field_deps.update(field_types)
-                        break
-                    i += 1
-        
-        return field_deps
-    
-    def _extract_types_from_fields(self, fields):
-        """Extract type paths from variant fields.
-        Fields format: ((-> 0 (tuple (Typ Datatype (Dt Path "lib!...") ...) ...)))
-        """
-        type_paths = set()
-        
-        if not isinstance(fields, list):
-            return type_paths
-        
-        # Recursively search for (Dt Path "lib!...") patterns
-        self._find_dt_paths_recursive(fields, type_paths)
-        
-        return type_paths
-    
-    def _find_dt_paths_recursive(self, expr, type_paths):
-        """Recursively find all (Dt Path "lib!...") patterns and extract clean paths."""
-        if not isinstance(expr, list):
-            return
-        
-        # Check if this is a Dt Path pattern
-        if len(expr) >= 3 and expr[0] == 'Dt' and expr[1] == 'Path':
-            raw_path = expr[2]
-            clean = self.clean_path(raw_path)
-            if clean:
-                # Skip stdlib types
-                if not any(clean.startswith(prefix) for prefix in ['vstd::', 'core::', 'std::']):
-                    type_paths.add(clean)
-            return  # Don't recurse into Dt Path children
-        
-        # Recurse into all sub-expressions
-        for item in expr:
-            if isinstance(item, list):
-                self._find_dt_paths_recursive(item, type_paths)
-    
-    def extract_trait_definitions(self, expr):
-        """Extract Trait definitions from VIR expression to get associated type constraints.
-        Parses: (Trait :name "lib!..." :assoc_typs (...) :assoc_typs_bounds (...))
-        """
-        if not isinstance(expr, list) or len(expr) < 2:
-            return
-        
-        # Look for (trait (@ ... (Trait :name ...)))
-        if expr[0] == 'trait' and len(expr) >= 2:
-            trait_expr = expr[1]
-            if isinstance(trait_expr, list) and len(trait_expr) >= 2:
-                # Handle (@ location (Trait ...))
-                if trait_expr[0] == '@' and len(trait_expr) >= 3:
-                    trait_def = trait_expr[2]
-                    self._parse_trait_definition(trait_def)
-                elif trait_expr[0] == 'Trait':
-                    self._parse_trait_definition(trait_expr)
-        
-        # Recursively process nested expressions
-        if isinstance(expr, list):
-            for item in expr:
-                self.extract_trait_definitions(item)
-    
-    def _parse_trait_definition(self, trait_def):
-        """Parse a Trait definition and extract associated type constraints."""
-        if not isinstance(trait_def, list) or trait_def[0] != 'Trait':
-            return
-        
-        trait_path = None
-        assoc_typs = []
-        assoc_typs_bounds = []
-        
-        # Parse the trait definition
-        i = 1
-        while i < len(trait_def):
-            if trait_def[i] == ':name' and i + 1 < len(trait_def):
-                raw_path = trait_def[i + 1]
-                if isinstance(raw_path, str):
-                    trait_path = self.clean_path(raw_path)
-                i += 2
-            elif trait_def[i] == ':assoc_typs' and i + 1 < len(trait_def):
-                assoc_typs_list = trait_def[i + 1]
-                if isinstance(assoc_typs_list, list):
-                    assoc_typs = [t for t in assoc_typs_list if isinstance(t, str)]
-                i += 2
-            elif trait_def[i] == ':assoc_typs_bounds' and i + 1 < len(trait_def):
-                assoc_typs_bounds = trait_def[i + 1]
-                i += 2
-            else:
-                i += 1
-        
-        # Store the trait definition
-        if trait_path:
-            self.trait_defs[trait_path] = {
-                'path': trait_path,
-                'assoc_typs': assoc_typs,
-                'assoc_typs_bounds': assoc_typs_bounds,
-                'definition': trait_def
+            cache_data = {
+                'vir_path_to_function_info': self.vir_path_to_function_info,
+                'vir_path_to_datatype_info': self.vir_path_to_datatype_info,
+                'function_rust_path_to_info': self.function_rust_path_to_info,
+                'function_call_graph_name_to_vir_path': self.function_call_graph_name_to_vir_path
             }
-    
-    def extract_trait_constraints_from_vir(self, trait_path):
-        """Extract trait constraints from a Trait definition in VIR.
-        For example, from OwnerOf's :assoc_typs_bounds, extract:
-        - InvView (Owner must implement InvView)
-        - View (Owner must implement View)
-        - Inv (Owner must implement Inv)
-        """
-        constraints = set()
-        
-        if trait_path not in self.trait_defs:
-            return constraints
-        
-        trait_def = self.trait_defs[trait_path]
-        assoc_typs_bounds = trait_def.get('assoc_typs_bounds')
-        
-        if not isinstance(assoc_typs_bounds, list):
-            return constraints
-        
-        # Parse each GenericBound to extract trait paths
-        for bound in assoc_typs_bounds:
-            if not isinstance(bound, list) or len(bound) < 2:
-                continue
             
-            if bound[0] == 'GenericBound' and bound[1] == 'Trait':
-                # Look for (TraitId Path "lib!...")
-                trait_id = None
-                if len(bound) >= 3 and isinstance(bound[2], list):
-                    trait_id = bound[2]
-                
-                if isinstance(trait_id, list) and len(trait_id) >= 3:
-                    if trait_id[0] == 'TraitId' and trait_id[1] == 'Path':
-                        raw_trait_path = trait_id[2]
-                        if isinstance(raw_trait_path, str):
-                            clean_trait = self.clean_path(raw_trait_path)
-                            if clean_trait:
-                                constraints.add(clean_trait)
-        
-        return constraints
+            os.makedirs(os.path.dirname(MAPPING_CACHE_FILE), exist_ok=True)
+            with open(MAPPING_CACHE_FILE, 'wb') as f:
+                pickle.dump(cache_data, f)
+        except Exception as e:
+            print(f"ERROR：Failed to save mappings cache: {e}")
     
-    def extract_trait_impls(self, expr):
-        """Extract trait implementations from VIR.
-        Parses: (trait_impl (@ ... (TraitImpl :impl_path ... :trait_path ... :trait_typ_args ...)))
-        Stores: type_path -> list of (trait_path, impl_path, source_location)
-        """
-        if not isinstance(expr, list) or len(expr) < 2:
-            return
+    def load_mappings_cache(self):
+        """Load all mappings from cache file. Returns True if successful, False otherwise"""
+        try:
+            if not os.path.exists(MAPPING_CACHE_FILE):
+                return False
+            
+            with open(MAPPING_CACHE_FILE, 'rb') as f:
+                cache_data = pickle.load(f)
+            
+            # Verify all required mappings are present
+            required_keys = ['vir_path_to_function_info', 'vir_path_to_datatype_info', 
+                           'function_rust_path_to_info', 'function_call_graph_name_to_vir_path']
+            
+            for key in required_keys:
+                if key not in cache_data:
+                    return False
+            
+            # Load all mappings
+            self.vir_path_to_function_info = cache_data['vir_path_to_function_info']
+            self.vir_path_to_datatype_info = cache_data['vir_path_to_datatype_info']
+            self.function_rust_path_to_info = cache_data['function_rust_path_to_info']
+            self.function_call_graph_name_to_vir_path = cache_data['function_call_graph_name_to_vir_path']
         
-        # Look for (trait_impl (@ location (TraitImpl ...)))
-        if expr[0] == 'trait_impl' and len(expr) >= 2:
-            trait_impl_expr = expr[1]
-            if isinstance(trait_impl_expr, list) and len(trait_impl_expr) >= 3:
-                # Handle (@ location (TraitImpl ...))
-                if trait_impl_expr[0] == '@':
-                    source_loc = trait_impl_expr[1] if len(trait_impl_expr) > 1 else None
-                    impl_def = trait_impl_expr[2] if len(trait_impl_expr) > 2 else None
-                    if impl_def:
-                        self._parse_trait_impl(impl_def, source_loc)
-        
-        # Recursively process nested expressions
-        if isinstance(expr, list):
-            for item in expr:
-                self.extract_trait_impls(item)
+            return True
+            
+        except Exception as e:
+            return False
     
-    def _parse_trait_impl(self, impl_def, source_loc):
-        """Parse a TraitImpl definition and store the mapping."""
-        if not isinstance(impl_def, list) or impl_def[0] != 'TraitImpl':
-            return
-        
-        impl_path = None
-        trait_path = None
-        impl_type = None  # The type implementing the trait
-        
-        # Parse the impl definition
-        i = 1
-        while i < len(impl_def):
-            if impl_def[i] == ':impl_path' and i + 1 < len(impl_def):
-                raw_path = impl_def[i + 1]
-                if isinstance(raw_path, str):
-                    impl_path = self.clean_path(raw_path)
-                i += 2
-            elif impl_def[i] == ':trait_path' and i + 1 < len(impl_def):
-                raw_path = impl_def[i + 1]
-                if isinstance(raw_path, str):
-                    trait_path = self.clean_path(raw_path)
-                i += 2
-            elif impl_def[i] == ':trait_typ_args' and i + 1 < len(impl_def):
-                # Extract the type from trait_typ_args
-                # Format: ((Typ Datatype (Dt Path "lib!...") ...))
-                typ_args = impl_def[i + 1]
-                if isinstance(typ_args, list) and len(typ_args) > 0:
-                    # Get first type argument (the implementing type)
-                    first_arg = typ_args[0]
-                    impl_type = self._extract_type_path_from_typ(first_arg)
-                i += 2
-            else:
-                i += 1
-        
-        # Store if we have all required info
-        if impl_type and trait_path:
-            if not hasattr(self, 'trait_impls'):
-                self.trait_impls = defaultdict(list)
-            self.trait_impls[impl_type].append({
-                'trait': trait_path,
-                'impl_path': impl_path,
-                'source_loc': source_loc
-            })
-    
-    def _extract_type_path_from_typ(self, typ_expr):
-        """Extract type path from a Typ expression.
-        Handles: (Typ Datatype (Dt Path "lib!...") ...)
-        """
-        if not isinstance(typ_expr, list):
-            return None
-        
-        # Recursively search for (Dt Path "...")
-        for item in typ_expr:
-            if isinstance(item, list) and len(item) >= 3:
-                if item[0] == 'Dt' and item[1] == 'Path':
-                    raw_path = item[2]
-                    if isinstance(raw_path, str):
-                        return self.clean_path(raw_path)
-            # Recurse
-            if isinstance(item, list):
-                result = self._extract_type_path_from_typ(item)
-                if result:
-                    return result
-        return None
-    
-    def get_trait_impls_for_type(self, type_path):
-        """Get all trait implementations for a given type from VIR.
-        Returns: list of (trait_path, source_location)
-        """
-        if not hasattr(self, 'trait_impls'):
-            return []
-        
-        impls = self.trait_impls.get(type_path, [])
-        return [(impl['trait'], impl['source_loc']) for impl in impls]
+    def _is_cache_valid(self, vir_file_path):
+        """Check if cache is newer than the VIR file"""
+        try:
+            if not os.path.exists(MAPPING_CACHE_FILE) or not os.path.exists(vir_file_path):
+                return False
+            
+            cache_mtime = os.path.getmtime(MAPPING_CACHE_FILE)
+            vir_mtime = os.path.getmtime(vir_file_path)
+            
+            return cache_mtime >= vir_mtime
+        except Exception:
+            return False
 
-    def extract_dependencies_from_body(self, body_expr, base_module=None):
-        """Extract dependencies from function body expression"""
-        dependencies = set()
-        
-        if not isinstance(body_expr, list):
-            return dependencies
-        
-        # Look for function calls, type references, etc.
-        self._collect_dependencies_recursive(body_expr, dependencies)
-        
-        return dependencies
-    
-    def _collect_dependencies_recursive(self, expr, dependencies):
-        """Recursively collect dependencies from expression"""
-        if not isinstance(expr, list):
-            return
-        
-        # Look for various dependency patterns
-        if len(expr) >= 3:
-            # Function calls: (Fun :path "lib!...")
-            if expr[0] == 'Fun' and expr[1] == ':path':
-                path = self.clean_path(expr[2])
-                if path:
-                    dependencies.add(path)
-            
-            # Datatype references: (Dt Path "lib!...")
-            elif expr[0] == 'Dt' and expr[1] == 'Path':
-                path = self.clean_path(expr[2])
-                if path:
-                    dependencies.add(path)
-            
-            # Trait references: (TraitId Path "lib!...")
-            elif expr[0] == 'TraitId' and expr[1] == 'Path':
-                path = self.clean_path(expr[2])
-                if path:
-                    dependencies.add(path)
-        
-        # Recursively process all sub-expressions
-        for item in expr:
-            if isinstance(item, list):
-                self._collect_dependencies_recursive(item, dependencies)
-    
     def analyze_vir_file(self, file_path):
         """Analyze a complete VIR file"""
+            
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
@@ -979,2323 +549,410 @@ class VIRAnalyzer:
             
             # VIR files can contain multiple top-level expressions
             expressions = []
+            expr_count = 0
+            current_line = 1
+            
             while parser.pos < parser.length:
                 parser.skip_whitespace()
                 if parser.pos >= parser.length:
                     break
+                    
+                # Count lines up to current position
+                lines_before = content[:parser.pos].count('\n')
+                current_line = lines_before + 1
+                
                 expr = parser.parse()
                 if expr:
-                    expressions.append(expr)
+                    expressions.append((expr, current_line))
+                    expr_count += 1
             
             # Extract information from all expressions
-            for expr in expressions:
-                self.extract_impl_mappings(expr)
-                self.extract_function_definition(expr)
-                self.extract_datatype_definitions(expr)
-                self.extract_trait_definitions(expr)
-                self.extract_trait_impls(expr)
+            for i, (expr, line_num) in enumerate(expressions):
+                self.preprocess_function_info(expr, file_path, line_num)
+                self.preprocess_datatype_info(expr, file_path, line_num)
             
             pass  # Analysis complete
             
         except Exception as e:
             print(f"Error analyzing {file_path}: {e}")
-    
-    def clean_verus_artifacts(self, path):
-        """Remove Verus internal artifacts from function/type names"""
-        if not path:
-            return path
-        
-        # Remove _VERUS_VERIFIED_ prefix
-        path = re.sub(r'_VERUS_VERIFIED_', '', path)
-        
-        # Replace %default% with :: for trait method calls
-        # impl&%20%default%model -> impl&%20::model
-        path = re.sub(r'%default%', '::', path)
-        
-        # Remove other Verus internal artifacts if needed
-        # path = re.sub(r'_VERUS_[A-Z_]+_', '', path)
-        
-        return path
-    
-    def resolve_impl_path(self, path):
-        """Resolve impl&%N paths to actual types using source code analysis"""
-        if 'impl&%' not in path:
-            return self.clean_verus_artifacts(path)
-        
-        # Make a copy to work with
-        resolved_path = path
 
-        # Find and replace all impl&%N patterns
-        impl_pattern = r'impl&%(\d+)'
-        matches = list(re.finditer(impl_pattern, path))
-        
-        # Process matches in reverse order to avoid position shifting
-        for match in reversed(matches):
-            impl_key = match.group(0)  # e.g., "impl&%13"
-            impl_num = int(match.group(1))  # e.g., 13
-            
-            # Construct the full impl path key (e.g., lib::aster_common::...::impl&%13)
-            # We need to extract the prefix before "impl&%13"
-            prefix_end = match.start()
-            # Extract everything before the match, assuming it ends with ::
-            prefix = path[:prefix_end]
-            if prefix.endswith('::'):
-                prefix = prefix[:-2] # remove trailing ::
-            
-            # Try 1: Check VIR mappings first (Robust)
-            path_key = f"{prefix}::{impl_key}"
-            actual_type = self.vir_impl_mappings.get(path_key)
+    def _extract_rust_module_from_filename(self, file_path):
+        """Extract module path from VIR filename.
+        Example: lock_protocol_rcu__spec__common-poly.vir -> lib::lock_protocol_rcu::spec::common
+        """
+        import os
+        filename = os.path.basename(file_path)
+        if filename.endswith('-poly.vir'):
+            module_part = filename[:-9]  # Remove '-poly.vir'
+            module_path = module_part.replace('__', '::')
+            return f"lib::{module_path}"
+        return None
 
-            if not actual_type:
-                # Try 2: Source code analysis (Fallback)
-                # Extract module path for source code analysis
-                # Remove function name AND impl&%N part
-                # Reconstruct module path from prefix
-                module_str = prefix
-                
-                # If prefix contains other impl&%, this might fail, so we rely on VIR mappings primarily
-                actual_type = self.source_analyzer.get_impl_type(module_str, impl_num)
-            
-            # Apply the replacement if we found a mapping
-            if actual_type and actual_type != impl_key and not actual_type.startswith('impl&%'):
-                # Replace the impl&%N with the actual type
-                start, end = match.span()
-                resolved_path = resolved_path[:start] + actual_type + resolved_path[end:]
-                
-        return self.clean_verus_artifacts(resolved_path)
-    
-    def extract_requires_ensures_from_vir(self, current_dep):
-        """Extract dependencies from requires/ensures clauses in VIR files."""
-        deps = set()
-        
-        # Convert dependency to VIR function path format
-        # lib::ostd::mm::frame::linked_list::LinkedList::push_front -> lib!ostd.mm.frame.linked_list.impl&%0.push_front
-        dep_parts = current_dep.split('::')
-        if len(dep_parts) >= 4 and dep_parts[0] == 'lib':
-            # Extract components: lib, module_path, type_name, method_name
-            module_path = '.'.join(dep_parts[1:-2])  # ostd.mm.frame.linked_list
-            type_name = dep_parts[-2]  # LinkedList  
-            method_name = dep_parts[-1]  # push_front
-            
-            # VIR format: lib!module.path.impl&%N.method_name.
-            # We need to search for patterns like lib!ostd.mm.frame.linked_list.impl&%.push_front
-            vir_base_path = f"lib!{module_path}"
-            
-            # Look for the function definition in VIR files
-            vir_files = []
-            vir_log_dir = os.path.join(os.getcwd(), '.verus-log')
-            
-            if os.path.exists(vir_log_dir):
-                for root, dirs, files in os.walk(vir_log_dir):
-                    for file in files:
-                        if file.endswith('.vir'):
-                            vir_files.append(os.path.join(root, file))
-            
-            for vir_file in vir_files:
-                try:
-                    with open(vir_file, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                        
-                        # Look for function definition with this pattern
-                        # Pattern: lib!ostd.mm.frame.linked_list.impl&%N.push_front.
-                        if f'{vir_base_path}.impl&%' in content and f'.{method_name}.' in content:
-                            # Extract requires and ensures sections
-                            file_deps = self._parse_vir_requires_ensures(content, vir_base_path, method_name)
-                            deps.update(file_deps)
-                            
-                except Exception as e:
-                    continue
-        
-        return deps
-    
-    def _parse_vir_requires_ensures(self, vir_content, vir_base_path, method_name):
-        """Parse VIR content to extract function calls from requires/ensures sections."""
-        deps = set()
-        
-        # Find function definition - prioritize _VERUS_VERIFIED_ version
-        function_match = None
-        
-        # First try _VERUS_VERIFIED_ version
-        function_pattern = rf'\(Function[^)]*:name \(Fun :path "{re.escape(vir_base_path)}\.impl&%\d+\._VERUS_VERIFIED_{re.escape(method_name)}\."'
-        function_match = re.search(function_pattern, vir_content)
-        
-        if not function_match:
-            # Fallback to regular version
-            function_pattern = rf'\(Function[^)]*:name \(Fun :path "{re.escape(vir_base_path)}\.impl&%\d+\.{re.escape(method_name)}\."'
-            function_match = re.search(function_pattern, vir_content)
-            
-        if not function_match:
-            return deps
-        
-        # Find the requires and ensures sections for this function
-        function_start = function_match.start()
-        
-        # Look for the end of this function using :extra_dependencies pattern
-        end_pattern = r':extra_dependencies \(\)\)\)'
-        end_match = re.search(end_pattern, vir_content[function_start:])
-        if end_match:
-            function_end = function_start + end_match.end()
+    def preprocess_function_info(self, expr, file_path, vir_line=None):
+        """Extract function definition from VIR expression - only top-level functions from current module"""
+        if not isinstance(expr, list) or len(expr) < 2:
+            return
+
+        # Extract source location from @ wrapper
+        source_location = self._extract_source_location(expr)
+
+        # Handle @ location wrappers: ['@', 'location', ['Function', ...]]
+        if expr[0] == '@' and len(expr) >= 3 and isinstance(expr[2], list) and expr[2][0] == 'Function':
+            func_expr = expr[2]
+        elif expr[0] == 'Function':
+            func_expr = expr
         else:
-            # Fallback: look for the next function
-            next_function_pattern = r'\(Function'
-            next_function_match = re.search(next_function_pattern, vir_content[function_start + 100:])
-            if next_function_match:
-                function_end = function_start + 100 + next_function_match.start()
-            else:
-                function_end = len(vir_content)
+            return
+
+        func_path = None
+        func_body = None
+        mode_value = None
+
+        for i in range(1, len(func_expr)):
+            if func_expr[i] == ':name' and i + 1 < len(func_expr):
+                if isinstance(func_expr[i + 1], list) and func_expr[i + 1][0] == 'Fun':
+                    func_path = self._extract_vir_path_from_expr(func_expr[i + 1])
+            elif func_expr[i] == ':body' and i + 1 < len(func_expr):
+                func_body = func_expr[i + 1]
+            elif func_expr[i] == ':mode' and i + 1 < len(func_expr):
+                mode_expr = func_expr[i + 1]
+                if isinstance(mode_expr, str):
+                    mode_value = mode_expr.lower()
+                elif isinstance(mode_expr, list) and len(mode_expr) > 0 and isinstance(mode_expr[0], str):
+                    mode_value = mode_expr[0].lower()
+
+        if func_path and not func_path.startswith('vstd!'):
+            rust_path = self._extract_rust_path_from_vir_path(func_path)
+            # 检查是否是impl方法，如果是则替换为实际类型
+            resolved_rust_path = self._resolve_impl_path(rust_path, source_location)
+
+            function_info = {
+                'rust_path': resolved_rust_path,
+                'vir_location': self._extract_vir_location(file_path, vir_line),
+                'is_impl': 'impl&%' in func_path,  # Check if it's a trait method
+                'mode': mode_value,  # 'spec', 'proof', 'exec' 或 None
+            }
+
+            # Add source location if available
+            if source_location:
+                function_info['source_location'] = source_location
+
+            self.vir_path_to_function_info[func_path] = function_info
+
+            # 构建反向映射
+            self._build_reverse_mappings(func_path, resolved_rust_path)
+
+    def preprocess_datatype_info(self, expr, file_path, vir_line=None):
+        """Extract datatype definition from VIR expression - only top-level datatypes from current module"""
+        """Type Alias is not handled"""
+        if not isinstance(expr, list) or len(expr) < 2:
+            return
         
-        function_content = vir_content[function_start:function_end]
+        # Extract source location from @ wrapper
+        source_location = self._extract_source_location(expr)
         
-        if ':ensure' not in function_content:
-            return deps
-        
-        # Extract requires section
-        requires_pattern = r':require \((.*?)\) :ensure'
-        requires_match = re.search(requires_pattern, function_content, re.DOTALL)
-        if requires_match:
-            requires_content = requires_match.group(1)
-            deps.update(self._extract_vir_function_calls(requires_content))
-        
-        # Extract ensures section - use proper bracket matching instead of non-greedy
-        ensures_start_pattern = r':ensure \('
-        ensures_start_match = re.search(ensures_start_pattern, function_content)
-        if ensures_start_match:
-            start_pos = ensures_start_match.end() - 1  # Include the opening parenthesis
-            
-            # Find the matching closing parenthesis
-            bracket_count = 0
-            end_pos = start_pos
-            for i, char in enumerate(function_content[start_pos:]):
-                if char == '(':
-                    bracket_count += 1
-                elif char == ')':
-                    bracket_count -= 1
-                    if bracket_count == 0:
-                        end_pos = start_pos + i + 1
-                        break
-            
-            if bracket_count == 0:  # Found matching bracket
-                ensures_content = function_content[start_pos+1:end_pos-1]  # Extract content between parentheses
-                ensures_deps = self._extract_vir_function_calls(ensures_content)
-                deps.update(ensures_deps)
-            else:
-                # Could not find matching bracket
-                pass
+        # Handle @ location wrappers: ['@', 'location', ['Datatype', ...]]
+        if expr[0] == '@' and len(expr) >= 3 and isinstance(expr[2], list) and expr[2][0] == 'Datatype':
+            datatype_expr = expr[2]
+        elif expr[0] == 'Datatype':
+            datatype_expr = expr
         else:
-            # No ensures section found
-            pass
-        
-        return deps
-    
-    def _extract_vir_function_calls(self, vir_text):
-        """Extract function calls from VIR text."""
-        deps = set()
-        
-        # Pattern for function calls: (Fun :path "path.to.function.")
-        fun_pattern = r'\(Fun :path "([^"]+)"\)'
-        for match in re.finditer(fun_pattern, vir_text):
-            fun_path = match.group(1)
-            
-            # Convert from VIR format to our format
-            # lib!module.type.method -> lib::module::type::method
-            if fun_path.startswith('lib!'):
-                # Remove trailing dots and convert
-                clean_path = fun_path.rstrip('._').replace('!', '::').replace('.', '::')
-                
-                # Handle impl& paths specially - these are method calls
-                if '::impl&' in clean_path:
-                    # Extract the path before impl& and the method after
-                    # lib::ostd::mm::frame::linked_list::impl&%1::method -> lib::ostd::mm::frame::linked_list::Type::method
-                    # For now, keep as-is but clean up the impl& part
-                    # We'll convert this in the main extraction logic
-                    deps.add(clean_path)
-                elif len(clean_path.split('::')) >= 3:
-                    deps.add(clean_path)
-        
-        # Pattern for datatype references: (Dt Path "path.to.type.")
-        dt_pattern = r'\(Dt Path "([^"]+)"\)'
-        for match in re.finditer(dt_pattern, vir_text):
-            type_path = match.group(1)
-            
-            # Convert from VIR format to our format
-            if type_path.startswith('lib!'):
-                clean_path = type_path.rstrip('._').replace('!', '::').replace('.', '::')
-                
-                # Only add types, not individual enum variants
-                if '::impl&' not in clean_path and len(clean_path.split('::')) >= 2:
-                    deps.add(clean_path)
-        
-        return deps
-
-class DependencyExtractor:
-    """Main dependency extraction orchestrator"""
-    
-    def __init__(self):
-        self.analyzer = VIRAnalyzer()
-        self.vir_files_cache = {}
-        self.source_locations_cache = {}  # Cache for source file locations
-    
-    def find_relevant_vir_files(self, target_function):
-        """Find all VIR files that might contain relevant dependencies"""
-        target_parts = target_function.split('::')
-        if len(target_parts) < 4:
-            return []
-        
-        vir_files = []
-        project_name = get_project_name()
-        project_dir = os.path.join(VERUS_LOG_DIR, project_name)
-        
-        if not os.path.exists(project_dir):
-            print(f"Error: {project_dir} does not exist")
-            return []
-        
-        # Primary target file
-        module_file = '__'.join(target_parts[1:-2]) + '-poly.vir'
-        primary_file = os.path.join(project_dir, module_file)
-        if os.path.exists(primary_file):
-            vir_files.append(primary_file)
-        
-        # Find related files (same parent modules)
-        for file_name in os.listdir(project_dir):
-            if file_name.endswith('-poly.vir'):
-                file_path = os.path.join(project_dir, file_name)
-                # Include files from related modules
-                module_parts = file_name[:-9].split('__')  # remove -poly.vir
-                if any(part in target_parts for part in module_parts):
-                    if file_path not in vir_files:
-                        vir_files.append(file_path)
-        
-        return vir_files
-    
-    def check_air_smt_files(self, target_function):
-        """Check if AIR/SMT2 files provide additional useful information"""
-        air_info = {}
-        target_parts = target_function.split('::')
-        
-        # Look for corresponding AIR/SMT2 files
-        project_name = get_project_name()
-        project_dir = os.path.join(VERUS_LOG_DIR, project_name)
-        if os.path.exists(project_dir):
-            module_base = '__'.join(target_parts[1:-2])
-            for ext in ['.air', '.smt2']:
-                for suffix in ['', '-poly']:
-                    air_file = os.path.join(project_dir, f"{module_base}{suffix}{ext}")
-                    if os.path.exists(air_file):
-                        try:
-                            with open(air_file, 'r', encoding='utf-8', errors='ignore') as f:
-                                content = f.read()
-                            # Basic analysis of AIR/SMT content
-                            air_info[air_file] = {
-                                'functions': len(re.findall(r'declare-fun', content)),
-                                'calls': len(re.findall(r'\([a-zA-Z_]', content)),
-                                'size': len(content)
-                            }
-                        except Exception as e:
-                            air_info[air_file] = {'error': str(e)}
-        
-        return air_info
-
-    def extract_dependencies(self, target_function):
-        """Extract complete dependency graph for target function"""
-        print(f"Analyzing dependencies for: {target_function}")
-        
-        # 1. Find all relevant VIR files
-        vir_files = self.find_relevant_vir_files(target_function)
-        
-        # 2. Analyze all VIR files to build type mappings and function definitions
-        for vir_file in vir_files:
-            self.analyzer.analyze_vir_file(vir_file)
-        
-        # 3. Check AIR/SMT2 files for additional info
-        air_info = self.check_air_smt_files(target_function)
-        
-        # 4. Find the target function and extract its dependencies
-        dependencies = set()
-        target_clean = self._convert_target_to_vir_format(target_function)
-        
-        # Look for exact matches and VERUS_VERIFIED versions
-        for func_path, func_info in self.analyzer.function_defs.items():
-            if self._matches_target(func_path, func_info['raw_path'], target_function):
-                
-                # Extract dependencies from function body
-                body_deps = self.analyzer.extract_dependencies_from_body(func_info['body'])
-                dependencies.update(body_deps)
-                
-                # Also analyze the complete function definition
-                def_deps = set()
-                self.analyzer._collect_dependencies_recursive(func_info['definition'], def_deps)
-                dependencies.update(def_deps)
-        
-        if not dependencies:
-            print(f"Target function {target_function} not found in VIR files")
-            return set()
-        
-        # 5. Resolve impl&%N paths to actual types
-        resolved_dependencies = set()
-        # Resolve impl&%N mappings
-        for dep in dependencies:
-            resolved = self.analyzer.resolve_impl_path(dep)
-            resolved_dependencies.add(resolved)
-        
-        # 6. Resolve transitive dependencies
-        all_dependencies_list = self._resolve_transitive_dependencies(resolved_dependencies)
-        all_dependencies = set(all_dependencies_list)
-        
-        # 7. Extract trait constraints from trait implementations
-        trait_constraint_deps = self.extract_trait_constraints(all_dependencies)
-        all_dependencies.update(trait_constraint_deps)
-        
-        # 8. For each type, find its trait implementations and extract associated types
-        type_impl_deps = self.extract_type_implementations(all_dependencies)
-        all_dependencies.update(type_impl_deps)
-        
-        # 7.5. Extract associated type trait impls based on trait where clauses
-        # Run after extract_type_implementations to catch newly discovered impls
-        assoc_type_trait_deps = self.extract_associated_type_trait_impls(all_dependencies)
-        all_dependencies.update(assoc_type_trait_deps)
-        
-        # 8.5. Extract dependencies from spec functions in trait impls
-        trait_impl_spec_deps = self.extract_trait_impl_spec_dependencies(all_dependencies)
-        all_dependencies.update(trait_impl_spec_deps)
-        
-        # 9. Extract spec annotation dependencies from functions
-        spec_deps = self.extract_spec_dependencies(all_dependencies)
-        all_dependencies.update(spec_deps)
-        
-        # 10. Simplify trait method paths to trait paths
-        # For trait methods like lib::vstd_extra::ownership::Inv::inv,
-        # replace with just the trait: lib::vstd_extra::ownership::Inv
-        simplified_dependencies = set()
-        for dep in all_dependencies:
-            simplified = self._simplify_trait_method(dep)
-            simplified_dependencies.add(simplified)
-        
-        # 11. Remove methods that are already covered by trait implementations
-        filtered_dependencies = self._remove_trait_impl_covered_methods(simplified_dependencies)
-        
-        # 12. Find corresponding exec functions for _spec functions
-        spec_exec_deps = self._find_when_used_as_spec_functions(filtered_dependencies)
-        filtered_dependencies.update(spec_exec_deps)
-        
-        # 13. Convert enum variants to enum types
-        normalized_dependencies = self._normalize_enum_variants(filtered_dependencies)
-        
-        return sorted(normalized_dependencies)
-    
-    def _remove_trait_impl_covered_methods(self, dependencies):
-        """Remove individual methods that are already covered by trait implementations.
-        For example, if we have both:
-        - impl ModelOf for CursorMut<M>  
-        - lib::ostd::mm::frame::linked_list::CursorMut::model
-        Then remove the individual method since it's covered by the trait impl.
-        """
-        filtered = set()
-        
-        # First, collect all trait impls and their covered methods
-        trait_impls = {}  # type_name -> set of trait_names
-        
-        for dep in dependencies:
-            if '@impl' in dep and ' for ' in dep:
-                parts = dep.split('@impl')
-                if len(parts) == 2:
-                    impl_str = parts[1].strip()
-                    trait_part, type_part = impl_str.split(' for ', 1)
-                    
-                    # Extract trait and type names
-                    trait_words = trait_part.strip().split()
-                    trait_name = None
-                    for word in reversed(trait_words):
-                        if word and not word.startswith('<') and not ':' in word and word[0].isupper():
-                            trait_name = word
-                            break
-                    
-                    type_name = type_part.split('<')[0].strip()
-                    
-                    if trait_name and type_name:
-                        if type_name not in trait_impls:
-                            trait_impls[type_name] = set()
-                        trait_impls[type_name].add(trait_name)
-        
-        # Map trait names to their known methods
-        trait_methods = {
-            'View': ['view'],
-            'ModelOf': ['model'], 
-            'OwnerOf': ['wf'],
-            'Inv': ['inv'],
-            'InvView': ['view_preserves_inv']
-        }
-        
-        # Filter out individual methods that are covered by trait impls
-        for dep in dependencies:
-            should_include = True
-            
-            # Check if this is an individual method (not impl, not trait)
-            if '@' not in dep and '::' in dep:
-                dep_parts = dep.split('::')
-                if len(dep_parts) >= 3:
-                    # Potential format: lib::module::Type::method
-                    method_name = dep_parts[-1]
-                    type_name = dep_parts[-2]
-                    
-                    # Check if this type has trait impls that cover this method
-                    if type_name in trait_impls:
-                        for implemented_trait in trait_impls[type_name]:
-                            if (implemented_trait in trait_methods and 
-                                method_name in trait_methods[implemented_trait]):
-                                should_include = False
-                                break
-            
-            if should_include:
-                filtered.add(dep)
-        
-        return filtered
-    
-    def _find_when_used_as_spec_functions(self, dependencies):
-        """For functions ending with _spec, find corresponding exec functions with 
-        #[verifier::when_used_as_spec(spec_function)] annotations.
-        """
-        additional_deps = set()
-        
-        for dep in dependencies:
-            # Skip impl blocks and traits
-            if '@' in dep:
-                continue
-            
-            # Check if this is a _spec function
-            if not dep.endswith('_spec'):
-                continue
-            
-            # Get the location of this function
-            location = self.find_source_location(dep)
-            if not location or 'file' not in location:
-                continue
-            
-            file_path = location['file']
-            
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-                
-                # Extract the spec function name
-                spec_func_name = dep.split('::')[-1]  # e.g., 'addr_spec'
-                
-                # Search for when_used_as_spec annotations referencing this function
-                for i, line in enumerate(lines):
-                    if f'when_used_as_spec({spec_func_name})' in line:
-                        # Found annotation, now find the corresponding function
-                        # Look for function definition in next few lines
-                        for j in range(i + 1, min(i + 10, len(lines))):
-                            fn_line = lines[j].strip()
-                            
-                            # Match function definition
-                            fn_match = re.search(r'\b(?:pub\s+)?(?:exec\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*[<\(]', fn_line)
-                            if fn_match:
-                                exec_func_name = fn_match.group(1)
-                                
-                                # Build the full path for the exec function
-                                dep_parts = dep.split('::')
-                                exec_dep_parts = dep_parts[:-1] + [exec_func_name]
-                                exec_dep = '::'.join(exec_dep_parts)
-                                
-                                additional_deps.add(exec_dep)
-                                break
-                        break
-            
-            except Exception:
-                continue
-        
-        return additional_deps
-    
-    def _normalize_enum_variants(self, dependencies):
-        """Convert enum variants (Type::Variant) to enum types (Type).
-        Also fixes malformed paths with missing colons.
-        """
-        normalized = set()
-        
-        for dep in dependencies:
-            # Skip impl blocks
-            if '@' in dep:
-                normalized.add(dep)
-                continue
-            
-            # Fix malformed paths with single colons
-            # Pattern: module:submodule:: -> module::submodule::
-            fixed_dep = dep
-            # Look for pattern like "vstd_extra:cast_ptr::" and fix to "vstd_extra::cast_ptr::"
-            if ':cast_ptr::' in dep and '::cast_ptr::' not in dep:
-                fixed_dep = dep.replace(':cast_ptr::', '::cast_ptr::')
-            
-            # Check if this looks like an enum variant (Type::VARIANT_NAME)
-            parts = fixed_dep.split('::')
-            if len(parts) >= 3:
-                # Check if the last part looks like an enum variant (starts with uppercase, often all caps)
-                last_part = parts[-1]
-                second_last_part = parts[-2] if len(parts) >= 2 else ''
-                
-                # Heuristics for enum variants:
-                # 1. Last part is all uppercase (like Init, Uninit, Some, None)
-                # 2. Second-to-last part looks like a type name (starts with uppercase)
-                # 3. Common enum variant names
-                common_variants = {'Init', 'Uninit', 'Some', 'None', 'Ok', 'Err', 'Left', 'Right'}
-                
-                if (last_part in common_variants or 
-                    (last_part.isupper() and len(last_part) > 1)) and second_last_part and second_last_part[0].isupper():
-                    # This looks like Type::Variant, convert to just Type
-                    enum_type_parts = parts[:-1]
-                    enum_type_dep = '::'.join(enum_type_parts)
-                    normalized.add(enum_type_dep)
-                else:
-                    normalized.add(fixed_dep)
-            else:
-                normalized.add(fixed_dep)
-        
-        return normalized
-    
-    def _simplify_trait_method(self, dep):
-        """Simplify trait method paths to just the trait.
-        For example: lib::vstd_extra::ownership::Inv::inv -> lib::vstd_extra::ownership::Inv
-        Only simplifies if the parent is actually a trait.
-        """
-        if '@' in dep:  # Skip impl blocks
-            return dep
-        
-        parts = dep.split('::')
-        if len(parts) < 3:  # Need at least lib::module::Trait::method
-            return dep
-        
-        # Check if the second-to-last part might be a trait
-        potential_trait = parts[-2]
-        if not potential_trait or not potential_trait[0].isupper():
-            return dep  # Not a type/trait name
-        
-        # Construct potential trait path
-        trait_path = '::'.join(parts[:-1])
-        
-        # Check if this is a known trait
-        if trait_path in self.analyzer.trait_defs:
-            # Yes, it's a trait method, return just the trait
-            return trait_path
-        
-        # Not a trait, keep the original
-        return dep
-    
-    def _convert_target_to_vir_format(self, target_function):
-        """Convert Rust function path to VIR format"""
-        parts = target_function.split('::')
-        if len(parts) >= 4:
-            # vostd::ostd::mm::frame::LinkedList::push_front
-            # -> lib!ostd.mm.frame.impl&%0.push_front.
-            func_name = parts[-1]
-            module_parts = parts[1:-2]  # skip vostd and function name
-            return f"lib!{'.'.join(module_parts)}.impl&%0.{func_name}."
-        return target_function
-    
-    def _matches_target(self, func_path, raw_vir_path, target_function):
-        """Check if function path matches target"""
-        target_parts = target_function.split('::')
-        func_name = target_parts[-1]
-        
-        # Check if this function matches our target
-        if func_name in raw_vir_path:
-            # Check for exact match or _VERUS_VERIFIED_ version
-            if (f".{func_name}." in raw_vir_path or 
-                f"._VERUS_VERIFIED_{func_name}." in raw_vir_path):
-                # Also check module path
-                module_parts = target_parts[1:-2]
-                module_pattern = '.'.join(module_parts)
-                if module_pattern in raw_vir_path:
-                    return True
-        return False
-    
-    def _resolve_transitive_dependencies(self, direct_deps):
-        """Resolve transitive dependencies by following the dependency graph"""
-        all_deps = set(direct_deps)
-        queue = deque(direct_deps)
-        seen = set()
-        
-        # Build a lookup map of resolved path -> function info
-        # This allows us to find the function definition for a resolved dependency
-        resolved_func_defs = {}
-        for func_path, func_info in self.analyzer.function_defs.items():
-            resolved_path = self.analyzer.resolve_impl_path(func_path)
-            if resolved_path:
-                resolved_func_defs[resolved_path] = func_info
-        
-        while queue:
-            current = queue.popleft()
-            if current in seen:
-                continue
-            seen.add(current)
-            
-            # Check if this is a spec function and find its exec counterpart
-            if current.endswith('_spec'):
-                exec_func_path = self.analyzer.spec_analyzer.get_exec_function_for_spec(current)
-                if exec_func_path and exec_func_path not in all_deps:
-                    all_deps.add(exec_func_path)
-                    queue.append(exec_func_path)
-            
-            # Find this dependency in our resolved function definitions
-            if current in resolved_func_defs:
-                func_info = resolved_func_defs[current]
-                
-                # Extract dependencies from this function
-                new_deps = self.analyzer.extract_dependencies_from_body(func_info['body'])
-                for dep in new_deps:
-                    resolved_dep = self.analyzer.resolve_impl_path(dep)
-                    if resolved_dep not in all_deps:
-                        all_deps.add(resolved_dep)
-                        queue.append(resolved_dep)
-            
-            # Fallback: Try to match by substring if exact match failed
-            # This helps with some partial path matches if resolution wasn't perfect
-            else:
-                for func_path, func_info in self.analyzer.function_defs.items():
-                    if current in func_path:
-                        new_deps = self.analyzer.extract_dependencies_from_body(func_info['body'])
-                        for dep in new_deps:
-                            resolved_dep = self.analyzer.resolve_impl_path(dep)
-                            if resolved_dep not in all_deps:
-                                all_deps.add(resolved_dep)
-                                queue.append(resolved_dep)
-        
-        return sorted(all_deps)
-    
-    def extract_trait_constraints(self, dependencies):
-        """Extract additional dependencies from trait constraints.
-        For example, if we have 'impl OwnerOf for Type', we need to find:
-        1. The OwnerOf trait definition
-        2. Its associated type constraints (e.g., type Owner: InvView)
-        3. Add those constrained traits to dependencies
-        4. For types implementing InvView/View, extract their associated types
-        """
-        additional_deps = set()
-        
-        for dep in dependencies:
-            # Check if this is a trait implementation
-            location = self.find_source_location(dep)
-            if location and location.get('in_impl') and location.get('impl_signature'):
-                sig = location['impl_signature']
-                # Extract trait name from "impl Trait for Type" or "impl<...> Trait for Type"
-                if ' for ' in sig:
-                    # Parse the trait name and type name
-                    parts = sig.split(' for ')
-                    trait_part = parts[0].strip()
-                    type_part = parts[1].strip() if len(parts) > 1 else ''
-                    
-                    # Remove 'impl' and generics from trait part
-                    trait_part = re.sub(r'^impl\s*(<[^>]+>)?\s*', '', trait_part)
-                    trait_name = trait_part.split('<')[0].strip()
-                    
-                    # Extract the implementing type name (without generics)
-                    type_name = type_part.split('<')[0].strip()
-                    
-                    # Try to find the trait definition and extract its constraints
-                    trait_constraints = self._find_trait_constraints(dep, trait_name)
-                    additional_deps.update(trait_constraints)
-                    
-                    # For any trait implementation, extract associated types
-                    assoc_types = self._extract_associated_types_from_impl(location['file'], location['line'], type_name)
-                    
-                    # Add the associated types themselves
-                    additional_deps.update(assoc_types)
-                    
-                    # Check if the trait has constraints on associated types
-                    # For example, InvView requires V: Inv
-                    trait_assoc_constraints = self._find_trait_associated_type_constraints(dep, trait_name)
-                    
-                    # For each constraint, find the impl for the associated type
-                    for assoc_type_name, required_trait in trait_assoc_constraints:
-                        # Find the actual associated type from the impl
-                        for assoc_type_path in assoc_types:
-                            assoc_parts = assoc_type_path.split('::')
-                            if len(assoc_parts) >= 1 and assoc_parts[-1] == assoc_type_name:
-                                # This is the associated type, find its impl of required_trait
-                                module_parts = assoc_parts[:-1]
-                                assoc_concrete_type = assoc_parts[-1]
-                                
-                                # Find impl required_trait for assoc_concrete_type
-                                project_name = get_project_name()
-                                for base_path in [Path(project_name) / 'src']:
-                                    file_path = base_path / Path(*module_parts[1:]).with_suffix('.rs')
-                                    if file_path.exists():
-                                        impl_path_pattern = f"impl.*{required_trait}.*for.*{assoc_concrete_type}"
-                                        try:
-                                            with open(file_path, 'r', encoding='utf-8') as f:
-                                                lines = f.readlines()
-                                            
-                                            for line_num, line in enumerate(lines, 1):
-                                                if re.search(impl_path_pattern, line):
-                                                    # Build the impl path
-                                                    impl_sig = self._extract_impl_signature(line)
-                                                    module_path = '::'.join(module_parts)
-                                                    impl_dep = f"{module_path}@{impl_sig}"
-                                                    additional_deps.add(impl_dep)
-                                        except Exception:
-                                            pass
-                                        break
-                    
-                    # For each associated type, find its trait implementations
-                    for assoc_type_path in assoc_types:
-                        assoc_parts = assoc_type_path.split('::')
-                        if len(assoc_parts) >= 2:
-                            assoc_type_name = assoc_parts[-1]
-                            # Find the file where this type is defined
-                            module_parts = assoc_parts[1:-1]
-                            project_name = get_project_name()
-                            for base_path in [Path(project_name) / 'src']:
-                                file_path = base_path / Path(*module_parts).with_suffix('.rs')
-                                if file_path.exists():
-                                    # Find all trait implementations for this associated type
-                                    type_impls = self._find_type_trait_impls(
-                                        file_path, assoc_type_name, '::'.join(assoc_parts[:-1])
-                                    )
-                                    additional_deps.update(type_impls)
-                                    break
-        
-        return additional_deps
-    
-    def _find_trait_constraints(self, impl_path, trait_name):
-        """Find trait definition and extract associated type constraints using VIR."""
-        constraints = set()
-        
-        # First, try to construct possible trait paths and check VIR
-        # Extract module path from impl_path
-        parts = impl_path.split('::')
-        if len(parts) < 3:
-            return constraints
-        
-        # Try common locations for traits
-        module_parts_candidates = []
-        for i in range(len(parts) - 1, 1, -1):
-            module_parts_candidates.append(parts[1:i])
-        
-        # Also check common trait locations
-        module_parts_candidates.append(['vstd_extra', 'ownership'])
-        module_parts_candidates.append(['aster_common', 'mm', 'frame'])
-        
-        # Try each candidate module path
-        for module_parts in module_parts_candidates:
-            trait_path = f"lib::{'::'.join(module_parts)}::{trait_name}"
-            
-            # Try VIR extraction first (more reliable)
-            vir_constraints = self.analyzer.extract_trait_constraints_from_vir(trait_path)
-            if vir_constraints:
-                return vir_constraints
-        
-        # Fallback to source code parsing if VIR data not available
-        for module_parts in module_parts_candidates:
-            project_name = get_project_name()
-            base_paths = [Path(project_name) / 'src']
-            for base_path in base_paths:
-                file_path = base_path / Path(*module_parts).with_suffix('.rs')
-                if file_path.exists():
-                    try:
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            content = f.read()
-                        
-                        # Find the trait definition
-                        # Pattern: pub trait TraitName ... { ... }
-                        trait_pattern = rf'\bpub\s+trait\s+{re.escape(trait_name)}\b'
-                        match = re.search(trait_pattern, content)
-                        if match:
-                            # Found the trait, now extract associated type constraints
-                            # Find the trait block
-                            start_pos = match.start()
-                            brace_count = 0
-                            in_trait = False
-                            trait_content = []
-                            
-                            for i in range(start_pos, len(content)):
-                                char = content[i]
-                                if char == '{':
-                                    brace_count += 1
-                                    in_trait = True
-                                elif char == '}':
-                                    brace_count -= 1
-                                    if brace_count == 0 and in_trait:
-                                        break
-                                if in_trait:
-                                    trait_content.append(char)
-                            
-                            trait_block = ''.join(trait_content)
-                            
-                            # Extract associated types with constraints
-                            # Pattern: type TypeName: Constraint1 + Constraint2;
-                            assoc_type_pattern = r'type\s+\w+\s*:\s*([^;]+);'
-                            for assoc_match in re.finditer(assoc_type_pattern, trait_block):
-                                constraint_str = assoc_match.group(1)
-                                # Parse traits from constraint (e.g., "InvView + Sized")
-                                trait_constraints = re.findall(r'\b([A-Z][A-Za-z0-9_]*)\b', constraint_str)
-                                for constraint_trait in trait_constraints:
-                                    if constraint_trait not in ['Self', 'Sized']:  # Skip special types
-                                        # Try to construct full path
-                                        # First try same module
-                                        constraint_path = f"lib::{'::'.join(module_parts)}::{constraint_trait}"
-                                        constraints.add(constraint_path)
-                            
-                            return constraints  # Found the trait, stop searching
-                    except Exception:
-                        continue
-        
-        return constraints
-    
-    def _extract_associated_types_from_impl(self, file_path, line_num, type_name):
-        """Extract associated types defined in an impl block.
-        For example, from 'impl View for CursorOwner', extract 'type V = CursorModel'.
-        """
-        assoc_types = set()
-        
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            
-            # Find the impl block starting at line_num (1-based)
-            if line_num < 1 or line_num > len(lines):
-                return assoc_types
-            
-            # Read the impl block
-            start_idx = line_num - 1  # Convert to 0-based
-            brace_count = 0
-            impl_lines = []
-            
-            for i in range(start_idx, len(lines)):
-                line = lines[i]
-                impl_lines.append(line)
-                
-                for char in line:
-                    if char == '{':
-                        brace_count += 1
-                    elif char == '}':
-                        brace_count -= 1
-                        if brace_count == 0:
-                            # End of impl block
-                            break
-                
-                if brace_count == 0 and '{' in ''.join(impl_lines):
-                    break
-            
-            impl_content = ''.join(impl_lines)
-            
-            # Extract associated type definitions
-            # Pattern: type TypeName = SomeType;
-            assoc_type_pattern = r'type\s+\w+\s*=\s*([A-Z][A-Za-z0-9_<>]*)'
-            for match in re.finditer(assoc_type_pattern, impl_content):
-                assoc_type_name = match.group(1)
-                # Remove generics for simple matching
-                base_type = assoc_type_name.split('<')[0]
-                
-                # Try to construct full path
-                # First, extract the module path from the file path
-                file_path_obj = Path(file_path)
-                # Get the relative path from project/src
-                try:
-                    project_name = get_project_name()
-                    project_src = Path(project_name) / 'src'
-                    if file_path_obj.is_absolute():
-                        # Try to make it relative to current working directory
-                        rel_to_cwd = file_path_obj.relative_to(Path.cwd())
-                        rel_path = str(rel_to_cwd.relative_to(project_src)).replace('.rs', '')
-                    else:
-                        rel_path = str(file_path_obj.relative_to(project_src)).replace('.rs', '')
-                    
-                    # Convert path separators to ::
-                    module_parts = rel_path.replace(os.sep, '::')
-                    full_path = f"lib::{module_parts}::{base_type}"
-                    assoc_types.add(full_path)
-                except ValueError:
-                    # If can't make relative, skip
-                    pass
-        
-        except Exception:
-            pass
-        
-        return assoc_types
-    
-    def extract_associated_type_trait_impls(self, dependencies):
-        """For impl InvView for Type, extract impl Inv for AssociatedType.
-        InvView requires <Self as View>::V: Inv, so we need to find type V = ... and impl Inv for that type.
-        """
-        assoc_deps = set()
-        
-        for dep in dependencies:
-            if '@impl' not in dep:
-                continue
-            
-            parts = dep.split('@impl')
-            if len(parts) != 2:
-                continue
-            
-            module_path = parts[0]
-            impl_str = parts[1].strip()
-            
-            if ' for ' not in impl_str:
-                continue
-            
-            trait_part, type_part = impl_str.split(' for ', 1)
-            
-            # Extract trait name - handle generics properly
-            # impl_str could be: "InvView for Type" or "<M: Bound> TraitName for Type<M>"
-            trait_words = trait_part.strip().split()
-            trait_name = None
-            for word in reversed(trait_words):  # Start from the end
-                if word and not word.startswith('<') and not ':' in word and word[0].isupper():
-                    trait_name = word
-                    break
-            
-            if not trait_name:
-                continue
-                
-            type_name = type_part.split('<')[0].strip()
-            
-            # Check if this trait has where clause requirements on associated types
-            # Find trait definition
-            trait_path = None
-            for known_trait in self.analyzer.trait_defs.keys():
-                if known_trait.endswith('::' + trait_name):
-                    trait_path = known_trait
-                    break
-            
-            if not trait_path:
-                continue
-            
-            # Get trait location and parse where clause
-            trait_loc = self.find_source_location(trait_path)
-            if not trait_loc or 'file' not in trait_loc:
-                continue
-            
-            try:
-                with open(trait_loc['file'], 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-                
-                trait_line = trait_loc.get('line', 1) - 1
-                
-                # Read trait definition (may span multiple lines until {)
-                trait_def = ''
-                for i in range(trait_line, min(trait_line + 10, len(lines))):
-                    trait_def += lines[i]
-                    if '{' in lines[i]:
-                        break
-                
-                # Extract where clause: where <Self as View>::V: Inv
-                where_match = re.search(r'where\s+(.+?)\s*\{', trait_def, re.DOTALL)
-                if not where_match:
-                    continue
-                
-                where_clause = where_match.group(1)
-                
-                # Pattern: <Self as SomeTrait>::AssocType: RequiredTrait
-                pattern = r'<Self\s+as\s+(\w+)>::(\w+)\s*:\s*(\w+)'
-                
-                for match in re.finditer(pattern, where_clause):
-                    parent_trait = match.group(1)  # e.g., View
-                    assoc_type_name = match.group(2)  # e.g., V
-                    required_trait = match.group(3)  # e.g., Inv
-                    
-                    # Now find the associated type value in impl parent_trait for type_name
-                    # We need to search in the same file as the current impl (impl InvView for Type)
-                    impl_loc = self.find_source_location(dep)
-                    if not impl_loc or 'file' not in impl_loc:
-                        continue
-                    
-                    # Search for impl parent_trait for type_name in the same file
-                    with open(impl_loc['file'], 'r', encoding='utf-8') as f:
-                        impl_lines = f.readlines()
-                    
-                    # Find impl parent_trait for type_name
-                    found_assoc_type = False
-                    for i, line in enumerate(impl_lines):
-                        if f'impl' in line and f'{parent_trait}' in line and f'for {type_name}' in line:
-                            # Found impl block, search for type AssocType = Value
-                            impl_end = self._find_impl_block_end(impl_lines, i)
-                            if impl_end is None:
-                                continue
-                            
-                            for j in range(i, impl_end + 1):
-                                type_match = re.search(rf'type\s+{assoc_type_name}\s*=\s*([A-Z]\w*)', impl_lines[j])
-                                if type_match:
-                                    concrete_type = type_match.group(1)
-                                    found_assoc_type = True
-                                    
-                                    # Now find impl required_trait for concrete_type
-                                    # Search in the same file
-                                    for k, impl_line in enumerate(impl_lines):
-                                        if f'impl' in impl_line and f'{required_trait}' in impl_line and f'for {concrete_type}' in impl_line:
-                                            # Extract impl signature and add to dependencies
-                                            impl_end_k = self._find_impl_block_end(impl_lines, k)
-                                            if impl_end_k is not None:
-                                                impl_sig = self._extract_impl_signature(impl_line)
-                                                if impl_sig:
-                                                    assoc_deps.add(f"{module_path}@{impl_sig}")
-                                            break
-                                    break
-                            
-                            if found_assoc_type:
-                                break
-            
-            except Exception as e:
-                # Silently continue on errors
-                pass
-        
-        return assoc_deps
-    
-    def extract_type_implementations(self, dependencies):
-        """For each type in dependencies, find all its trait implementations.
-        This helps discover impl View, impl InvView, etc., and their associated types.
-        """
-        additional_deps = set()
-        
-        for dep in dependencies:
-            # Extract type names from the dependency
-            # Skip if it's already an impl
-            location = self.find_source_location(dep)
-            if location and location.get('in_impl'):
-                continue
-            
-            # Extract potential type names
-            parts = dep.split('::')
-            if len(parts) < 2:
-                continue
-            
-            # Check if this looks like a type (PascalCase)
-            last_part = parts[-1]
-            # Type names start with uppercase and typically don't contain all uppercase (constants)
-            # Also skip if it looks like a function (lowercase or mixed case with method calls)
-            if last_part and last_part[0].isupper() and last_part != last_part.upper():
-                # This might be a type, find its implementations
-                module_path = '::'.join(parts[:-1])
-                type_name = last_part
-                
-                # Find the file
-                if not dep.startswith('lib::'):
-                    continue
-                
-                module_parts = parts[1:-1]
-                project_name = get_project_name()
-                base_paths = [Path(project_name) / 'src']
-                
-                for base_path in base_paths:
-                    file_path = base_path / Path(*module_parts).with_suffix('.rs')
-                    if file_path.exists():
-                        # Find trait implementations for this type in its own file
-                        impl_deps = self._find_type_trait_impls(file_path, type_name, module_path)
-                        additional_deps.update(impl_deps)
-                        
-                        # Also search for trait impls in related files
-                        # For CursorMut, check linked_list_owners.rs (but only for types NOT defined in owners files)
-                        if 'linked_list' in str(file_path) and not 'owners' in str(file_path):
-                            owners_file = file_path.parent / 'linked_list_owners.rs'
-                            if owners_file.exists():
-                                # Use the correct module path for linked_list_owners
-                                owners_module_parts = list(module_parts)  # Copy the list
-                                if 'linked_list' in owners_module_parts:
-                                    # Replace 'linked_list' with 'linked_list_owners'
-                                    idx = owners_module_parts.index('linked_list')
-                                    owners_module_parts[idx] = 'linked_list_owners'
-                                else:
-                                    # Add 'linked_list_owners' to the end
-                                    owners_module_parts.append('linked_list_owners')
-                                owners_module_path = 'lib::' + '::'.join(owners_module_parts)
-                                impl_deps_owners = self._find_type_trait_impls(owners_file, type_name, owners_module_path)
-                                additional_deps.update(impl_deps_owners)
-                        
-                        # Find field type dependencies for structs/enums
-                        field_deps = self._find_field_type_dependencies(file_path, type_name, module_path)
-                        additional_deps.update(field_deps)
-                        break
-        
-        return additional_deps
-    
-    def _find_field_type_dependencies(self, file_path, type_name, module_path):
-        """Find field type dependencies for a struct or enum using VIR file analysis.
-        This is more reliable than regex parsing as it uses Verus compiler output.
-        For example, from MetaSlotStorage's variants in VIR:
-        - FrameLink(StoredLink) → lib::aster_common::mm::frame::linked_list::StoredLink
-        - PTNode(StoredPageTablePageMeta) → lib::aster_common::mm::frame::meta::StoredPageTablePageMeta
-        """
-        field_deps = set()
-        
-        # Construct the full type path
-        type_path = f"{module_path}::{type_name}"
-        
-        # Try to extract field dependencies from VIR
-        vir_field_deps = self.analyzer.extract_field_dependencies_from_vir(type_path)
-        if vir_field_deps:
-            # VIR extraction succeeded, use it
-            return vir_field_deps
-        
-        # Fallback to regex-based extraction if VIR data not available
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            
-            # Find the type definition
-            in_type_def = False
-            brace_count = 0
-            type_lines = []
-            
-            for line_num, line in enumerate(lines, 1):
-                stripped = line.strip()
-                
-                # Find struct or enum definition
-                if not in_type_def:
-                    # Match: pub struct TypeName, pub enum TypeName
-                    if re.match(rf'\b(?:pub\s+)?(?:struct|enum)\s+{re.escape(type_name)}\s*[<{{]', stripped):
-                        in_type_def = True
-                        type_lines.append(line)
-                        for char in line:
-                            if char == '{':
-                                brace_count += 1
-                            elif char == '}':
-                                brace_count -= 1
-                        if brace_count == 0:
-                            break
-                else:
-                    type_lines.append(line)
-                    for char in line:
-                        if char == '{':
-                            brace_count += 1
-                        elif char == '}':
-                            brace_count -= 1
-                    if brace_count == 0:
-                        break
-            
-            if not type_lines:
-                return field_deps
-            
-            type_content = ''.join(type_lines)
-            
-            # Extract type names from fields
-            # Pattern 1: field_name: Type or field_name: Generic<Type>
-            # Match field declarations: pub field: Type, or just field: Type
-            field_pattern = r'\w+\s*:\s*([A-Z][A-Za-z0-9_]*)'
-            for match in re.finditer(field_pattern, type_content):
-                field_type = match.group(1)
-                
-                # Skip generic parameters and common stdlib types
-                if field_type in ['PPtr', 'PCell', 'PAtomicU64', 'PAtomicU8', 'PhantomData', 'Option', 'Vec', 'Some', 'None']:
-                    continue
-                
-                # Build full path for the field type
-                # Assume it's in the same module
-                field_path = f"{module_path}::{field_type}"
-                field_deps.add(field_path)
-            
-            # Pattern 2: Enum variant with tuple type: VariantName(Type)
-            # Match: VariantName(Type) or VariantName(Type1, Type2)
-            variant_pattern = r'\w+\s*\(\s*([A-Z][A-Za-z0-9_]*)'
-            for match in re.finditer(variant_pattern, type_content):
-                variant_type = match.group(1)
-                
-                # Skip generic parameters and common stdlib types
-                if variant_type in ['PPtr', 'PCell', 'PAtomicU64', 'PAtomicU8', 'PhantomData', 'Option', 'Vec', 'Some', 'None']:
-                    continue
-                
-                # Build full path
-                variant_path = f"{module_path}::{variant_type}"
-                field_deps.add(variant_path)
-            
-            # Also extract types from generic parameters
-            # Pattern: Generic<Type> or Generic<Type1, Type2>
-            generic_pattern = r'<\s*([A-Z][A-Za-z0-9_]*)\s*[,>]'
-            for match in re.finditer(generic_pattern, type_content):
-                inner_type = match.group(1)
-                
-                # Skip common stdlib types
-                if inner_type in ['PPtr', 'PCell', 'PAtomicU64', 'PAtomicU8', 'PhantomData', 'Option', 'Vec']:
-                    continue
-                
-                # Skip single-letter generic parameters (T, R, M, etc.)
-                if len(inner_type) == 1:
-                    continue
-                
-                # Build full path
-                inner_path = f"{module_path}::{inner_type}"
-                field_deps.add(inner_path)
-        
-        except Exception:
-            pass
-        
-        return field_deps
-    
-    def _find_type_trait_impls(self, file_path, type_name, module_path):
-        """Find all trait implementations for a given type.
-        Uses VIR first (more reliable, excludes comments), falls back to source code parsing.
-        """
-        impl_deps = set()
-        
-        # Construct the full type path
-        type_path = f"{module_path}::{type_name}"
-        
-        # Try VIR first (more reliable)
-        vir_impls = self.analyzer.get_trait_impls_for_type(type_path)
-        
-        if vir_impls:
-            # VIR extraction succeeded
-            for trait_path, source_loc in vir_impls:
-                # Parse source location to get file and line
-                # Format: "D:\path\to\file.rs:line:col: line:col (#num)"
-                if isinstance(source_loc, str):
-                    match = re.match(r'^([^:]+):(\d+):', source_loc)
-                    if match:
-                        impl_file = match.group(1)
-                        line_num = int(match.group(2))
-                        
-                        # Extract trait name from path
-                        trait_parts = trait_path.split('::')
-                        if len(trait_parts) >= 2:
-                            trait_name = trait_parts[-1]
-                            
-                            # Build impl signature
-                            impl_sig = f"impl {trait_name} for {type_name}"
-                            
-                            # Add using @ separator format
-                            impl_path = f"{module_path}@{impl_sig}"
-                            impl_deps.add(impl_path)
-                            
-                            # Extract associated types from the impl block (still needs source code)
-                            try:
-                                assoc_types = self._extract_associated_types_from_impl(
-                                    impl_file, line_num, type_name
-                                )
-                                impl_deps.update(assoc_types)
-                            except Exception:
-                                pass
-            return impl_deps
-        
-        # Fallback to source code parsing if VIR data not available
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            
-            # Pre-process to identify comment blocks
-            in_block_comment = False
-            line_is_comment = []
-            
-            for line in lines:
-                stripped = line.strip()
-                
-                # Check for block comment start/end
-                if '/*' in line:
-                    in_block_comment = True
-                if '*/' in line:
-                    in_block_comment = False
-                    line_is_comment.append(True)  # This line is still in comment
-                    continue
-                
-                # Mark if line is in comment
-                is_comment = in_block_comment or stripped.startswith('//') or stripped.startswith('*')
-                line_is_comment.append(is_comment)
-            
-            # Find impl blocks for this type
-            for line_num, line in enumerate(lines, 1):
-                # Skip commented lines
-                if line_num - 1 < len(line_is_comment) and line_is_comment[line_num - 1]:
-                    continue
-                
-                stripped = line.strip()
-                
-                # Match impl Trait for TypeName
-                impl_trait_pattern = rf'impl.*\s+for\s+{re.escape(type_name)}\s*[<{{]'
-                if re.search(impl_trait_pattern, stripped):
-                    # Extract impl signature directly (handles generics correctly)
-                    impl_sig = self._extract_impl_signature(stripped)
-                    if impl_sig:
-                        impl_path = f"{module_path}@{impl_sig}"
-                        impl_deps.add(impl_path)
-                    
-                    # Extract associated types
-                    assoc_types = self._extract_associated_types_from_impl(
-                        str(file_path), line_num, type_name
-                    )
-                    impl_deps.update(assoc_types)
-        
-        except Exception:
-            pass
-        
-        return impl_deps
-    
-    def extract_spec_dependencies(self, dependencies):
-        """For each function in dependencies, extract dependencies from its #[verus_spec(...)] annotations and requires/ensures clauses."""
-        spec_deps = set()
-        
-        for dep in dependencies:
-            # Only process function paths (not types or impls)
-            if '@' in dep:  # impl blocks
-                continue
-            
-            # Get the location to find the source file
-            location = self.find_source_location(dep)
-            if not location or 'file' not in location:
-                continue
-            
-            file_path = location['file']
-            line_num = location.get('line', 0)
-            
-            if line_num == 0:
-                continue
-            
-            # Extract spec dependencies from this function
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-                
-                # Extract module parts from dep
-                parts = dep.split('::')
-                if len(parts) < 2 or not dep.startswith('lib::'):
-                    continue
-                
-                # Determine module path
-                if len(parts) >= 2 and parts[-2][0].isupper():
-                    # Has a type: lib::module::Type::function
-                    module_parts = parts[1:-2]
-                else:
-                    # No type: lib::module::function
-                    module_parts = parts[1:-1]
-                
-                # Extract spec annotation deps (from #[verus_spec(...)])
-                fn_spec_deps = self._extract_spec_annotation_deps(lines, line_num - 1, module_parts)
-                spec_deps.update(fn_spec_deps)
-                
-                # Also extract dependencies from direct requires/ensures clauses
-                fn_req_ens_deps = self._extract_requires_ensures_deps(lines, line_num - 1, module_parts, dep)
-                spec_deps.update(fn_req_ens_deps)
-                spec_deps.update(fn_spec_deps)
-                
-            except Exception:
-                continue
-        
-        return spec_deps
-    
-    def _extract_requires_ensures_deps(self, lines, start_line, module_parts, current_dep):
-        """Extract dependencies from requires/ensures clauses - try VIR first, then source."""
-        deps = set()
-        
-        # Try to extract from VIR file first
-        vir_deps = self.analyzer.extract_requires_ensures_from_vir(current_dep)
-        if vir_deps:
-            # Resolve impl&%N paths in VIR dependencies
-            resolved_vir_deps = set()
-            for dep in vir_deps:
-                resolved = self.analyzer.resolve_impl_path(dep)
-                resolved_vir_deps.add(resolved)
-            return resolved_vir_deps
-        
-        # Fallback to source code analysis
-        return self._extract_requires_ensures_from_source(lines, start_line, module_parts, current_dep)
-    
-    def _extract_requires_ensures_from_source(self, lines, start_line, module_parts, current_dep):
-        """Extract dependencies from requires/ensures clauses from source code (fallback)."""
-        deps = set()
-        
-        # Extract type name from current dependency if it's a method
-        current_type = None
-        dep_parts = current_dep.split('::')
-        if len(dep_parts) >= 3 and dep_parts[-2][0].isupper():
-            current_type = dep_parts[-2]
-        
-        # Find the function definition and scan for requires/ensures
-        i = start_line
-        while i < len(lines):
-            line = lines[i].strip()
-            
-            # Look for requires or ensures keywords
-            if line.startswith('requires') or line.startswith('ensures'):
-                # Find the end of this clause (until next keyword or {)
-                clause_end = i
-                for j in range(i + 1, len(lines)):
-                    next_line = lines[j].strip()
-                    if (next_line.startswith('requires') or 
-                        next_line.startswith('ensures') or 
-                        next_line.startswith('recommends') or
-                        '{' in next_line):
-                        clause_end = j - 1
-                        break
-                    clause_end = j
-                
-                # Extract the clause content
-                clause_lines = lines[i:clause_end + 1]
-                clause_text = ' '.join(line.strip() for line in clause_lines)
-                
-                # Extract function calls using pattern matching
-                # Pattern 1: Type::method calls
-                call_pattern1 = r'\b([A-Z][A-Za-z0-9_]*(?:::[A-Za-z0-9_]+)+)\s*\('
-                for match in re.finditer(call_pattern1, clause_text):
-                    call_path = match.group(1)
-                    
-                    # Convert to full module path
-                    if not call_path.startswith('lib::'):
-                        full_path = f"lib::{'::'.join(module_parts)}::{call_path}"
-                    else:
-                        full_path = call_path
-                    
-                    # Filter out single-letter generic parameters
-                    path_parts = full_path.split('::')
-                    if len(path_parts) > 0 and len(path_parts[-1]) == 1 and path_parts[-1].isupper():
-                        continue
-                    
-                    deps.add(full_path)
-                
-                # Pattern 2: self.method_name calls - treat as method of current type
-                if current_type:
-                    self_call_pattern = r'\bself\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\('
-                    for match in re.finditer(self_call_pattern, clause_text):
-                        method_name = match.group(1)
-                        
-                        # Build path for method of current type
-                        module_path = '::'.join(module_parts)
-                        full_path = f"lib::{module_path}::{current_type}::{method_name}"
-                        
-                        deps.add(full_path)
-                
-                i = clause_end + 1
-            elif '{' in line:
-                # Reached function body, stop
-                break
+            return
+        
+        datatype_path = None
+        variants = None
+        
+        # Extract the datatype path and variants
+        i = 1
+        while i < len(datatype_expr):
+            if datatype_expr[i] == ':name' and i + 1 < len(datatype_expr):
+                # Extract path from (Dt Path "lib!...")
+                name_expr = datatype_expr[i + 1]
+                if isinstance(name_expr, list) and len(name_expr) >= 3:
+                    if name_expr[0] == 'Dt' and name_expr[1] == 'Path':
+                        raw_path = name_expr[2]
+                        datatype_path = raw_path
+                i += 2
+            elif datatype_expr[i] == ':variants' and i + 1 < len(datatype_expr):
+                variants = datatype_expr[i + 1]
+                i += 2
             else:
                 i += 1
         
-        return deps
+        if datatype_path and not datatype_path.startswith('vstd!'):
+            rust_path = self._extract_rust_path_from_vir_path(datatype_path)
+            datatype_info = {
+                'rust_path': rust_path,
+                'vir_location': self._extract_vir_location(file_path, vir_line),
+            }
+            
+            # Add source location if available
+            if source_location:
+                datatype_info['source_location'] = source_location
+            
+            self.vir_path_to_datatype_info[datatype_path] = datatype_info
 
-    def extract_trait_impl_spec_dependencies(self, dependencies):
-        """Extract dependencies from all functions within trait implementations.
-        For trait impls, we need to analyze all function bodies to find dependencies.
-        """
-        spec_deps = set()
-        
-        for dep in dependencies:
-            # Only process impl blocks (containing @)
-            if '@' not in dep:
-                continue
-            
-            # Parse impl block format: lib::module@impl Trait for Type
-            if '@impl' not in dep:
-                continue
-            
-            # Get location of this impl block
-            location = self.find_source_location(dep)
-            if not location or 'file' not in location:
-                continue
-            
-            file_path = location['file']
-            impl_line = location.get('line', 0)
-            
-            if impl_line == 0:
-                continue
-            
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-                
-                # Find the impl block boundaries
-                impl_start = impl_line - 1  # Convert to 0-indexed
-                impl_end = self._find_impl_block_end(lines, impl_start)
-                
-                if impl_end is None:
-                    continue
-                
-                # Extract module path from dep
-                module_path_part = dep.split('@')[0]
-                if not module_path_part.startswith('lib::'):
-                    continue
-                module_parts = module_path_part[5:].split('::')
-                
-                # Scan the impl block for all function definitions
-                i = impl_start
-                while i < impl_end:
-                    line = lines[i]
-                    
-                    # Check if this is any function definition
-                    # Match: "open spec fn", "closed spec fn", "spec fn", "exec fn", "proof fn", "fn"
-                    fn_match = re.search(r'\b(?:pub\s+)?(?:open\s+)?(?:closed\s+)?(?:spec\s+|exec\s+|proof\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*[<\(]', line)
-                    
-                    if fn_match:
-                        fn_name = fn_match.group(1)
-                        
-                        # Find the function body (between { and matching })
-                        fn_body_start = i
-                        fn_body_end = self._find_function_body_end(lines, i)
-                        
-                        if fn_body_end is not None:
-                            # Extract complete function definition (signature + body)
-                            fn_lines = lines[fn_body_start:fn_body_end + 1]
-                            fn_text = ''.join(fn_lines)
-                            
-                            # Skip if function has external_body
-                            if 'external_body' in fn_text:
-                                i = fn_body_end
-                                continue
-                            
-                            # Extract function calls from requires/ensures AND body
-                            # Pattern: Type::method, Self::method, module::function
-                            call_pattern = r'\b([A-Z][A-Za-z0-9_]*(?:::[A-Za-z0-9_]+)+)\s*\('
-                            
-                            for match in re.finditer(call_pattern, fn_text):
-                                call_path = match.group(1)
-                                
-                                # Build full path
-                                if call_path.startswith('Self::'):
-                                    # Replace Self with the implementing type
-                                    # Extract type from impl signature
-                                    impl_sig = dep.split('@')[1] if '@' in dep else ''
-                                    if ' for ' in impl_sig:
-                                        # impl Trait for Type<...>
-                                        type_part = impl_sig.split(' for ')[1].strip()
-                                        # Extract type name (before < or end)
-                                        type_name = type_part.split('<')[0].strip()
-                                        # Replace Self with module::Type
-                                        method_name = call_path[6:]  # Remove "Self::"
-                                        full_path = f"{module_path_part}::{type_name}::{method_name}"
-                                    else:
-                                        # impl Type<...>
-                                        # Extract type from impl signature
-                                        continue
-                                else:
-                                    # Try to resolve the type
-                                    parts = call_path.split('::')
-                                    if len(parts) >= 2:
-                                        type_name = parts[0]
-                                        # Search for this type's module
-                                        method_name = parts[-1]
-                                        type_location = self._find_type_module(type_name, method_name)
-                                        if type_location:
-                                            full_path = type_location
-                                        else:
-                                            # Assume same module
-                                            full_path = f"{module_path_part}::{call_path}"
-                                    else:
-                                        continue
-                                
-                                spec_deps.add(full_path)
-                            
-                            # Move to end of function
-                            i = fn_body_end
-                    
-                    i += 1
-            
-            except Exception:
-                continue
-        
-        return spec_deps
+    def _extract_rust_path_from_vir_path(self, path):
+        """Convert VIR path format to Rust format"""
+        if not path or not path.startswith('lib!'):
+            return None
+        clean = path[4:].replace('.', '::').rstrip(':').rstrip('::')
+        return f"lib::{clean}" if clean else None
     
-    def _find_impl_block_end(self, lines, start_idx):
-        """Find the end of an impl block starting at start_idx."""
-        brace_count = 0
-        found_opening = False
-        
-        for i in range(start_idx, len(lines)):
-            line = lines[i]
-            for char in line:
-                if char == '{':
-                    brace_count += 1
-                    found_opening = True
-                elif char == '}':
-                    brace_count -= 1
-                    if found_opening and brace_count == 0:
-                        return i
+    def _extract_vir_path_from_expr(self, expr):
+        """Extract path string from VIR path expression"""
+        if isinstance(expr, list):
+            for item in expr:
+                if isinstance(item, str) and 'lib!' in item:
+                    return item
         return None
     
-    def _find_function_body_end(self, lines, start_idx):
-        """Find the end of a function body starting at start_idx."""
-        brace_count = 0
-        found_opening = False
-        
-        for i in range(start_idx, len(lines)):
-            line = lines[i]
-            for char in line:
-                if char == '{':
-                    brace_count += 1
-                    found_opening = True
-                elif char == '}':
-                    brace_count -= 1
-                    if found_opening and brace_count == 0:
-                        return i
-        return None
-    
-    def find_source_location(self, module_path):
-        """Find the source file and line number for a given module path"""
-        if module_path in self.source_locations_cache:
-            return self.source_locations_cache[module_path]
-        
-        # Check if this is an impl block path with @ separator
-        if '@' in module_path:
-            return self._find_impl_block_location_with_separator(module_path)
-        
-        # Extract parts from module path
-        # Format: lib::module::path::Type::function or lib::module::path::function
-        # Or: lib::module::path::impl Trait for Type (old format, kept for compatibility)
-        if not module_path.startswith('lib::'):
-            return None
-        
-        parts = module_path[5:].split('::')
-        if len(parts) < 2:
-            return None
-        
-        # Determine function/item name (last part) and potential type name
-        item_name = parts[-1]
-        
-        # Check if this is an impl block path (old format)
-        if item_name.startswith('impl '):
-            return self._find_impl_block_location(module_path, parts)
-        
-        # Try to determine the file path
-        # Heuristic: find the module path before the Type/function
-        possible_module_paths = []
-        
-        # Strategy 1: Check if second-to-last part is a type (PascalCase)
-        if len(parts) >= 2 and parts[-2][0].isupper():
-            # Has a type: lib::module::Type::function
-            module_parts = parts[:-2]
-            type_name = parts[-2]
-        else:
-            # No type: lib::module::function or lib::module::CONST
-            module_parts = parts[:-1]
-            type_name = None
-        
-        # Build file paths to search
-        project_name = get_project_name()
-        base_paths = [Path(project_name) / 'src']
-        for base_path in base_paths:
-            file_path = base_path / Path(*module_parts).with_suffix('.rs')
-            if file_path.exists():
-                possible_module_paths.append(file_path)
-        
-        # Search in each possible file for the item definition
-        for file_path in possible_module_paths:
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-                
-                for line_num, line in enumerate(lines, 1):
-                    # Look for various definition patterns
-                    
-                    # 1. Function definitions: "fn function_name", "pub fn function_name"
-                    # Also match Verus-specific modifiers: open spec, closed spec, tracked, etc.
-                    func_pattern = rf'\b(?:pub\s+)?(?:const\s+)?(?:open\s+)?(?:closed\s+)?(?:spec\s+)?(?:tracked\s+)?(?:exec\s+)?fn\s+{re.escape(item_name)}\s*[<(]'
-                    if re.search(func_pattern, line):
-                        # Check if this function is inside an impl block
-                        impl_info = self._find_impl_block_start(lines, line_num - 1)
-                        
-                        # If we're looking for a method (type_name exists), verify it's in the right impl block
-                        if type_name:
-                            if impl_info is None:
-                                # Looking for a method but this is a standalone function, skip
-                                continue
-                            # Check if the impl block is for the correct type
-                            if not self._impl_is_for_type(impl_info['signature'], type_name):
-                                # This impl is for a different type, skip
-                                continue
-                        
-                        # Extract spec annotation dependencies
-                        spec_deps = self._extract_spec_annotation_deps(lines, line_num - 1, module_parts)
-                        
-                        if impl_info is not None:
-                            # Check if it's a trait impl or inherent impl
-                            if impl_info['is_trait_impl']:
-                                # Trait impl: show impl block location and signature
-                                relative_path = str(file_path).replace('\\', '/')
-                                location_info = {
-                                    'file': relative_path,
-                                    'line': impl_info['line'] + 1,  # Convert to 1-based
-                                    'in_impl': True,
-                                    'impl_signature': impl_info['signature']
-                                }
-                            else:
-                                # Inherent impl: show function's actual location
-                                relative_path = str(file_path).replace('\\', '/')
-                                location_info = {
-                                    'file': relative_path,
-                                    'line': line_num,
-                                    'in_impl': False
-                                }
-                        else:
-                            # Standalone function
-                            relative_path = str(file_path).replace('\\', '/')
-                            location_info = {
-                                'file': relative_path,
-                                'line': line_num,
-                                'in_impl': False
-                            }
-                        self.source_locations_cache[module_path] = location_info
-                        return location_info
-                    
-                    # 2. Constant definitions: "pub const CONST_NAME", "const CONST_NAME"
-                    const_pattern = rf'\b(?:pub\s+)?const\s+{re.escape(item_name)}\s*:'
-                    if re.search(const_pattern, line):
-                        relative_path = str(file_path).replace('\\', '/')
-                        location_info = {
-                            'file': relative_path,
-                            'line': line_num
-                        }
-                        self.source_locations_cache[module_path] = location_info
-                        return location_info
-                    
-                    # 2b. extern_const! macro - matches constants within brackets
-                    # Matches: pub PAGE_SIZE [PAGE_SIZE_SPEC, CONST_PAGE_SIZE]: usize
-                    # Can match either the first name, or names in brackets
-                    extern_const_pattern = rf'\b(?:pub\s+)?{re.escape(item_name)}\s*\[[^]]*\]\s*:'
-                    if re.search(extern_const_pattern, line):
-                        relative_path = str(file_path).replace('\\', '/')
-                        location_info = {
-                            'file': relative_path,
-                            'line': line_num
-                        }
-                        self.source_locations_cache[module_path] = location_info
-                        return location_info
-                    
-                    # 2c. extern_const! macro - match items inside brackets
-                    # Matches: pub NAME [SPEC, CONST_NAME]: where CONST_NAME or SPEC is what we're looking for
-                    extern_const_bracket_pattern = rf'\b(?:pub\s+)?[A-Z_]+\s*\[[^]]*{re.escape(item_name)}[^]]*\]\s*:'
-                    if re.search(extern_const_bracket_pattern, line):
-                        relative_path = str(file_path).replace('\\', '/')
-                        location_info = {
-                            'file': relative_path,
-                            'line': line_num
-                        }
-                        self.source_locations_cache[module_path] = location_info
-                        return location_info
-                    
-                    # 3. Type definitions: "pub struct TypeName", "pub enum TypeName", "pub trait TypeName"
-                    # For traits, allow : for trait bounds, or 'where' for where clauses
-                    type_pattern = rf'\b(?:pub\s+)?(?:struct|enum|union|trait)\s+{re.escape(item_name)}\s*(?:[<{{(:]|where\s)'
-                    if re.search(type_pattern, line):
-                        relative_path = str(file_path).replace('\\', '/')
-                        location_info = {
-                            'file': relative_path,
-                            'line': line_num
-                        }
-                        self.source_locations_cache[module_path] = location_info
-                        return location_info
-                    
-                    # 4. Type alias: "pub type TypeName"
-                    alias_pattern = rf'\b(?:pub\s+)?type\s+{re.escape(item_name)}\s*[=<]'
-                    if re.search(alias_pattern, line):
-                        relative_path = str(file_path).replace('\\', '/')
-                        location_info = {
-                            'file': relative_path,
-                            'line': line_num
-                        }
-                        self.source_locations_cache[module_path] = location_info
-                        return location_info
-                
-            except Exception:
-                continue
-        
-        # If not found, return None
-        self.source_locations_cache[module_path] = None
-        return None
-    
-    def _extract_spec_annotation_deps(self, lines, fn_line_idx, module_parts):
-        """Extract dependencies from #[verus_spec(...)] annotations above a function.
-        Returns a set of function paths called in the spec.
+    def _extract_source_location(self, expr):
+        """Extract source file and line number in VSCode format: file.rs:123
+        Format: "file_path:start_line:start_col: end_line:end_col (#0)"
         """
-        spec_deps = set()
-        
-        # Look backwards from function definition to find #[verus_spec(...)]
-        # We need to find the complete spec annotation, which spans from #[verus_spec( to the matching )]
-        i = fn_line_idx - 1
-        spec_lines = []
-        spec_start = None
-        
-        # First pass: collect lines until we find #[verus_spec or hit another definition
-        while i >= 0:
-            line = lines[i]
-            
-            # Check if this line starts a verus_spec annotation
-            if '#[verus_spec' in line:
-                spec_start = i
-                break
-            
-            # Stop if we hit another function/type definition
-            if re.match(r'^\s*(?:pub\s+)?(?:fn|struct|enum|trait|impl)\s+', line):
-                break
-            
-            # Stop if we hit another attribute that's not verus_spec related
-            if line.strip().startswith('#[') and not any(x in line for x in ['rustc_', 'verifier::', 'verus_']):
-                break
-            
-            i -= 1
-        
-        if spec_start is None:
-            return spec_deps
-        
-        # Second pass: from spec_start, collect all lines until brackets are balanced
-        spec_content = []
-        bracket_count = 0
-        i = spec_start
-        
-        while i < fn_line_idx:
-            line = lines[i]
-            spec_content.append(line)
-            
-            # Count brackets
-            bracket_count += line.count('(') - line.count(')')
-            
-            # If brackets are balanced and we've started, we're done
-            if i > spec_start and bracket_count == 0:
-                break
-            
-            i += 1
-        
-        if not spec_content:
-            return spec_deps
-        
-        # Parse spec content for function calls
-        spec_text = ''.join(spec_content)
-        
-        # Pattern: Type::function_name or module::Type::function_name
-        # Match: CursorOwner::front_owner_spec, Self::some_method, etc.
-        call_pattern = r'\b([A-Z][A-Za-z0-9_]*(?:::[A-Za-z0-9_]+)+)\s*\('
-        
-        for match in re.finditer(call_pattern, spec_text):
-            call_path = match.group(1)
-            
-            # Build full path
-            parts = call_path.split('::')
-            if len(parts) >= 2:
-                type_name = parts[0]
-                func_name = parts[-1]
-                
-                # Special case: Self references
-                if type_name == 'Self':
-                    full_path = f"lib::{'::'.join(module_parts)}::{call_path}"
-                    spec_deps.add(full_path)
-                else:
-                    # For non-Self types, search for the type definition across all files
-                    # This is more reliable than guessing the module path
-                    type_location = self._find_type_module(type_name, func_name)
-                    if type_location:
-                        spec_deps.add(type_location)
-                    else:
-                        # Fallback: try same module
-                        full_path = f"lib::{'::'.join(module_parts)}::{call_path}"
-                        spec_deps.add(full_path)
-        
-        return spec_deps
-    
-    def _find_type_module(self, type_name, method_name):
-        """Find the module containing a type by searching for its definition.
-        Returns the full path like lib::aster_common::mm::frame::linked_list_owners::TypeName::method
-        """
-        # Search in project/src for the type definition
-        project_name = get_project_name()
-        base_path = Path(project_name) / 'src'
-        if not base_path.exists():
-            return None
-        
-        # Pattern to match: "pub struct TypeName" or "pub enum TypeName" or "impl TypeName"
-        type_pattern = re.compile(rf'\b(?:struct|enum|impl(?:<[^>]+>)?)\s+{re.escape(type_name)}\b')
-        method_pattern = re.compile(rf'^\s*pub\s+(?:open\s+)?(?:closed\s+)?(?:spec\s+)?(?:proof\s+)?fn\s+{re.escape(method_name)}\s*[<\(]', re.MULTILINE)
-        
-        # Search all .rs files
-        for rs_file in base_path.rglob('*.rs'):
-            try:
-                with open(rs_file, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                
-                # Check if this file contains the type definition
-                if type_pattern.search(content):
-                    # Also check if it has the method
-                    if method_pattern.search(content):
-                        # Build module path from file path
-                        rel_path = rs_file.relative_to(base_path)
-                        parts = list(rel_path.parts[:-1])  # Remove file name
-                        
-                        # Handle mod.rs - use parent directory name
-                        if rs_file.name == 'mod.rs':
-                            pass  # parts already correct
-                        else:
-                            # Add file name without .rs
-                            parts.append(rs_file.stem)
-                        
-                        # Build full path
-                        module_path = '::'.join(parts)
-                        full_path = f"lib::{module_path}::{type_name}::{method_name}"
-                        return full_path
-            except Exception:
-                continue
-        
-        return None
-    
-    def _find_impl_block_location_with_separator(self, module_path):
-        """Find the source location of an impl block using @ separator.
-        Format: lib::module::path@impl Trait for Type
-        """
-        if '@' not in module_path:
-            return None
-        
-        # Split by @ to separate module path from impl signature
-        parts = module_path.split('@')
-        if len(parts) != 2:
-            return None
-        
-        module_part = parts[0]  # e.g., "lib::aster_common::mm::frame::unique"
-        impl_signature = parts[1]  # e.g., "impl<M: ...> View for UniqueFrameOwner<M>"
-        
-        # Extract module parts
-        if not module_part.startswith('lib::'):
-            return None
-        
-        module_parts = module_part[5:].split('::')  # Remove 'lib::' and split
-        
-        # Build file path
-        project_name = get_project_name()
-        base_paths = [Path(project_name) / 'src']
-        for base_path in base_paths:
-            file_path = base_path / Path(*module_parts).with_suffix('.rs')
-            if file_path.exists():
+        if isinstance(expr, list) and len(expr) >= 2 and expr[0] == '@':
+            location_str = expr[1]
+            if isinstance(location_str, str):
+                # Parse format: "D:\path\file.rs:291:5: 291:67 (#0)"
                 try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        lines = f.readlines()
-                    
-                    # Search for the impl block
-                    for line_num, line in enumerate(lines, 1):
-                        stripped = line.strip()
+                    # Find the last occurrence of '.rs:' to handle Windows paths with colons
+                    rs_idx = location_str.rfind('.rs:')
+                    if rs_idx != -1:
+                        file_path = location_str[:rs_idx + 3]  # Include '.rs'
+                        rest = location_str[rs_idx + 4:]  # After '.rs:'
                         
-                        # Match impl blocks
-                        if stripped.startswith('impl'):
-                            # Extract the impl signature from this line
-                            current_sig = self._extract_impl_signature(stripped)
-                            if current_sig:
-                                # Normalize both signatures for comparison (remove extra spaces)
-                                normalized_current = ' '.join(current_sig.split())
-                                normalized_target = ' '.join(impl_signature.split())
-                                
-                                if normalized_current == normalized_target:
-                                    # Found it!
-                                    relative_path = str(file_path).replace('\\', '/')
-                                    location_info = {
-                                        'file': relative_path,
-                                        'line': line_num,
-                                        'in_impl': True,
-                                        'impl_signature': impl_signature
-                                    }
-                                    self.source_locations_cache[module_path] = location_info
-                                    return location_info
-                except Exception:
-                    continue
-        
-        return None
-    
-    def _find_impl_block_location(self, module_path, parts):
-        """Find the source location of an impl block.
-        Format: lib::module::path::impl Trait for Type
-        or: lib::module::path::impl<...> Trait for Type
-        """
-        impl_signature = parts[-1]  # e.g., "impl AnyFrameMeta for MetaSlotStorage"
-        module_parts = parts[:-1]   # Module path
-        
-        # Debug: log what we're searching for
-        debug = False  # Set to True for debugging
-        
-        # Extract type name from impl signature
-        # Pattern: impl [<generics>] [Trait] for TypeName
-        # or: impl [<generics>] TypeName  (inherent impl)
-        type_match = None
-        if ' for ' in impl_signature:
-            # Trait impl: impl Trait for TypeName
-            type_match = re.search(r'\s+for\s+([A-Za-z_][A-Za-z0-9_<>]*)', impl_signature)
-        else:
-            # Inherent impl: impl TypeName
-            type_match = re.search(r'impl(?:<[^>]+>)?\s+([A-Za-z_][A-Za-z0-9_<>]*)', impl_signature)
-        
-        if not type_match:
-            if debug:
-                print(f"DEBUG: Could not extract type name from impl signature: {impl_signature}")
-            return None
-        
-        type_name = type_match.group(1).split('<')[0]  # Remove generics
-        
-        # Build file path
-        project_name = get_project_name()
-        base_paths = [Path(project_name) / 'src']
-        for base_path in base_paths:
-            file_path = base_path / Path(*module_parts).with_suffix('.rs')
-            if file_path.exists():
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        lines = f.readlines()
-                    
-                    # Search for the impl block
-                    for line_num, line in enumerate(lines, 1):
-                        stripped = line.strip()
+                        # Get the first line number
+                        start_line = int(rest.split(':')[0])
                         
-                        # Match impl blocks
-                        if stripped.startswith('impl'):
-                            # Extract the impl signature from this line
-                            current_sig = self._extract_impl_signature(stripped)
-                            if current_sig:
-                                # Normalize both signatures for comparison (remove extra spaces)
-                                normalized_current = ' '.join(current_sig.split())
-                                normalized_target = ' '.join(impl_signature.split())
-                                
-                                if normalized_current == normalized_target:
-                                    # Found it!
-                                    relative_path = str(file_path).replace('\\', '/')
-                                    location_info = {
-                                        'file': relative_path,
-                                        'line': line_num,
-                                        'in_impl': True,
-                                        'impl_signature': impl_signature
-                                    }
-                                    self.source_locations_cache[module_path] = location_info
-                                    return location_info
-                except Exception as e:
-                    if debug:
-                        print(f"DEBUG: Exception reading {file_path}: {e}")
-                    continue
-        
-        if debug:
-            print(f"DEBUG: Could not find impl block for: {impl_signature} in module {module_parts}")
-        return None
-    
-    def _find_impl_block_start(self, lines, current_line_idx):
-        """Find the start line of an impl block that contains the given line.
-        Returns dict with 'line' (0-based index), 'signature', and 'is_trait_impl', or None if not in an impl block."""
-        # Simple approach: search backwards for an 'impl' line
-        # Stop when we find a closing brace at the same or lower indentation level
-        
-        current_indent = len(lines[current_line_idx]) - len(lines[current_line_idx].lstrip())
-        
-        for i in range(current_line_idx - 1, -1, -1):
-            line = lines[i]
-            stripped = line.strip()
-            
-            # Skip empty lines and comments
-            if not stripped or stripped.startswith('//'):
-                continue
-            
-            line_indent = len(line) - len(line.lstrip())
-            
-            # If we find a closing brace at same or lower indentation, we've left the block
-            if stripped.startswith('}') and line_indent <= current_indent - 4:  # assuming 4-space indent
-                return None
-            
-            # If we find an impl line
-            if stripped.startswith('impl'):
-                # Extract the impl signature
-                signature = self._extract_impl_signature(stripped)
-                # Check if it's a trait impl (contains ' for ')
-                is_trait_impl = ' for ' in stripped
-                return {
-                    'line': i,
-                    'signature': signature,
-                    'is_trait_impl': is_trait_impl
-                }
-        
-        return None
-    
-    def _impl_is_for_type(self, impl_signature, type_name):
-        """Check if an impl signature is for a given type.
-        Examples:
-        - impl_signature: 'impl<R, T: Repr<R>> ReprPtr<R, T>', type_name: 'ReprPtr' -> True
-        - impl_signature: 'impl<R, T: Repr<R>> ReprPointsTo<R, T>', type_name: 'ReprPtr' -> False
-        - impl_signature: 'impl<M> OwnerOf for Link<M>', type_name: 'Link' -> True
-        """
-        # For trait impls: "impl<...> Trait for Type<...>"
-        if ' for ' in impl_signature:
-            # Extract type after 'for'
-            parts = impl_signature.split(' for ')
-            if len(parts) == 2:
-                type_part = parts[1].strip()
-                # Match type name at the start (before < or end)
-                return type_part.startswith(type_name + '<') or type_part == type_name
-        else:
-            # For inherent impls: "impl<...> Type<...>"
-            # Remove 'impl' and generic parameters
-            remaining = impl_signature.strip()
-            if remaining.startswith('impl'):
-                remaining = remaining[4:].strip()
-            
-            # Remove leading generic parameters: <...>
-            if remaining.startswith('<'):
-                # Find the matching >
-                depth = 0
-                for i, char in enumerate(remaining):
-                    if char == '<':
-                        depth += 1
-                    elif char == '>':
-                        depth -= 1
-                        if depth == 0:
-                            remaining = remaining[i+1:].strip()
-                            break
-            
-            # Now remaining should be "Type<...>" or just "Type"
-            return remaining.startswith(type_name + '<') or remaining == type_name
-        
-        return False
-    
-    def _find_trait_associated_type_constraints(self, impl_path, trait_name):
-        """Find constraints on associated types from trait definition.
-        For example, for InvView trait, find that V: Inv.
-        Returns: list of (assoc_type_name, required_trait_name) tuples
-        """
-        constraints = []
-        
-        # Try to find the trait in VIR trait_defs and from source code
-        # Build possible trait paths
-        parts = impl_path.split('::')
-        if len(parts) < 3:
-            return constraints
-        
-        # Try common trait module paths
-        possible_trait_paths = []
-        
-        # Strategy 1: Same module as the impl
-        if '@' in impl_path:
-            module_path = impl_path.split('@')[0]
-            possible_trait_paths.append(f"{module_path}::{trait_name}")
-        
-        # Strategy 2: Common trait locations
-        for base_module in ['lib::vstd_extra::ownership', 'lib::aster_common::mm::frame', 
-                            'lib::vstd::view', 'lib::core::ops']:
-            possible_trait_paths.append(f"{base_module}::{trait_name}")
-        
-        # Check each possible path
-        for trait_path in possible_trait_paths:
-            # Try to find the trait definition file
-            location = self.find_source_location(trait_path)
-            if location and 'file' in location:
-                file_path = location['file']
-                line_num = location.get('line', 0)
-                
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        lines = f.readlines()
-                    
-                    if line_num > 0 and line_num <= len(lines):
-                        trait_line = lines[line_num - 1]
-                        
-                        # Parse where clause for associated type constraints
-                        # Pattern: "where <Self as Trait>::AssocType: Constraint"
-                        # Example: "pub trait InvView: Inv + View where <Self as View>::V: Inv {"
-                        
-                        where_match = re.search(r'where\s+<Self\s+as\s+(\w+)>::(\w+):\s*(\w+)', trait_line)
-                        if where_match:
-                            parent_trait = where_match.group(1)  # e.g., View
-                            assoc_type = where_match.group(2)    # e.g., V
-                            constraint = where_match.group(3)     # e.g., Inv
-                            
-                            constraints.append((assoc_type, constraint))
-                            return constraints
-                
-                except Exception:
+                        return f"{file_path}:{start_line}"
+                except (ValueError, IndexError):
                     pass
-        
-        return constraints
+        return None
     
-    def _parse_assoc_type_bounds(self, assoc_bounds):
-        """Parse associated type bounds from VIR :assoc_typs_bounds.
-        Extract constraints like V: Inv from the VIR structure.
+    def _extract_vir_location(self, file_path, current_line=None):
+        """Extract VIR file location in VSCode format: file.vir:line
         """
-        constraints = []
+        if current_line is not None:
+            return f"{file_path}:{current_line}"
+        else:
+            return file_path
+    
+    def _resolve_impl_path(self, rust_path, source_location):
+        """Replace impl&%N with actual type name from source code"""
+        if 'impl&%' not in rust_path or not source_location:
+            return rust_path
         
-        if not isinstance(assoc_bounds, list):
-            return constraints
-        
-        # VIR format example for InvView:
-        # The bounds specify that associated type V must implement certain traits
-        # We need to recursively search for trait requirements
-        
-        def find_trait_bounds_recursive(expr, current_assoc_type=None):
-            if not isinstance(expr, list):
-                return
+        try:
+            # 从 source_location 中提取文件路径 (处理Windows路径)
+            # 格式: D:\path\file.rs:line
+            import re
+            # 使用正则表达式匹配文件路径，处理Windows驱动器路径
+            path_match = re.match(r'^(.+\.(rs|vir)):\d+$', source_location)
+            if not path_match:
+                return rust_path
+            source_file = path_match.group(1)
             
-            # Look for patterns indicating trait bounds
-            # Example: ((assoc_type V) (trait_bound Inv))
-            for i, item in enumerate(expr):
-                if isinstance(item, str):
-                    # Check if this looks like an associated type name
-                    if item in ['V', 'Owner', 'Model']:  # Common associated type names
-                        current_assoc_type = item
-                    # Check if this is a trait reference
-                    elif item == 'TraitId' and i + 2 < len(expr) and expr[i + 1] == 'Path':
-                        trait_path = expr[i + 2]
-                        if isinstance(trait_path, str):
-                            clean_trait = self.analyzer.clean_path(trait_path)
-                            if clean_trait and current_assoc_type:
-                                # Extract just the trait name
-                                trait_name = clean_trait.split('::')[-1]
-                                constraints.append((current_assoc_type, trait_name))
-                elif isinstance(item, list):
-                    find_trait_bounds_recursive(item, current_assoc_type)
+            # 从 rust_path 中提取 impl&%N 部分
+            impl_match = re.search(r'impl&%([0-9]+)', rust_path)
+            if not impl_match:
+                return rust_path
+            
+            impl_index = int(impl_match.group(1))
+            
+            # 使用 SourceCodeAnalyzer 分析源文件
+            mappings = self.source_analyzer.analyze_source_file(source_file)
+            
+            if impl_index in mappings:
+                type_name = mappings[impl_index]
+                # 替换 impl&%N 为实际类型名
+                resolved_path = re.sub(r'impl&%[0-9]+', type_name, rust_path)
+                return resolved_path
+            
+        except (ValueError, IndexError, FileNotFoundError):
+            pass
         
-        find_trait_bounds_recursive(assoc_bounds)
-        return constraints
+        return rust_path
     
-    def _extract_impl_signature(self, impl_line):
-        """Extract the complete impl signature from an impl line, preserving generics.
-        Examples:
-        - 'impl<M: AnyFrameMeta + Repr<MetaSlot>> OwnerOf for Link<M> {' 
-          -> 'impl<M: AnyFrameMeta + Repr<MetaSlot>> OwnerOf for Link<M>'
-        - 'impl<T> MyType<T> {' -> 'impl<T> MyType<T>'
-        """
-        # Simply remove the trailing '{' and any whitespace
-        impl_line = impl_line.strip()
-        if impl_line.endswith('{'):
-            impl_line = impl_line[:-1].strip()
+    def _build_reverse_mappings(self, vir_path, rust_path):
+        """构建反向映射：rust_path -> info 和 call_graph_node_name -> vir_path"""
+        # 生成 call graph 节点名称格式（使用::分隔符，基于vir_path保留impl&%形式）
+        vir_rust_path = self._extract_rust_path_from_vir_path(vir_path)
+        call_graph_node_name = self._rust_path_to_call_graph_name(vir_rust_path)
+        call_graph_node_name = f"Fun\n{call_graph_node_name}"
         
-        return impl_line
+        # 构建 rust_path -> info 映射
+        self.function_rust_path_to_info[rust_path] = {
+            'vir_path': vir_path,
+            'call_graph_node_name': call_graph_node_name,
+        }
+        
+        # 构建 call_graph_node_name -> vir_path 映射
+        self.function_call_graph_name_to_vir_path[call_graph_node_name] = vir_path
+    
+    def _rust_path_to_call_graph_name(self, rust_path):
+        """将rust_path格式转换为call graph中使用的::格式
+        例如: lib.lock_protocol_rcu.spec.utils.get_child -> lib::lock_protocol_rcu::spec::utils::get_child
+        """
+        if rust_path:
+            return rust_path.replace('.', '::')
+        return rust_path
+    
+    def get_function_by_rust_path(self, rust_path):
+        """根据rust_path获取函数信息"""
+        return self.function_rust_path_to_info.get(rust_path)
+    
+    def get_function_by_call_graph_name(self, call_graph_name):
+        """根据call_graph节点名称获取vir_path"""
+        return self.function_call_graph_name_to_vir_path.get(call_graph_name)
+    
+    def get_all_reverse_mappings_info(self):
+        """获取反向映射的统计信息"""
+        return {
+            'rust_path_mappings': len(self.function_rust_path_to_info),
+            'call_graph_mappings': len(self.function_call_graph_name_to_vir_path),
+            'total_functions': len(self.vir_path_to_function_info)
+        }
+    
+def test_function_info():
+    extractor = DependencyExtractor()
+    extractor.analyzer.analyze_vir_file("D:\\Projects\\VerusProjects\\vostd\\.verus-log\\cortenmm\\lock_protocol_rcu__spec__utils-poly.vir")
+    #extractor.analyzer.analyze_vir_file("D:\\Projects\\VerusProjects\\vostd\\.verus-log\\cortenmm\\lock_protocol_rcu__spec__common-poly.vir")
+    
+    print("=== 示例函数信息 ===")
+    for i in range(3):
+        if extractor.analyzer.vir_path_to_function_info:
+            example_key = list(extractor.analyzer.vir_path_to_function_info.keys())[i]
+            print(f"VIR名称: {example_key}")
+            print(f"详细信息: {extractor.analyzer.vir_path_to_function_info[example_key]}")
+            print()
+    
+    print(f"\n总数: {len(extractor.analyzer.vir_path_to_function_info)}")
+    
+    print("\n=== 反向映射信息 ===")
+    mapping_info = extractor.analyzer.get_all_reverse_mappings_info()
+    print(f"反向映射统计: {mapping_info}")
+    
+    print("\n=== 反向映射示例 ===")
+    # 测试按rust_path查找
+    if extractor.analyzer.function_rust_path_to_info:
+        example_rust_path = list(extractor.analyzer.function_rust_path_to_info.keys())[0]
+        print(f"Rust路径: {example_rust_path}")
+        print(f"映射信息: {extractor.analyzer.get_function_by_rust_path(example_rust_path)}")
+        
+        # 测试按call_graph_name查找
+        call_graph_name = extractor.analyzer.function_rust_path_to_info[example_rust_path]['call_graph_node_name']
+        vir_path = extractor.analyzer.get_function_by_call_graph_name(call_graph_name)
+        print(f"Call Graph名称: {call_graph_name}")
+        print(f"对应VIR路径: {vir_path}")
+        print()
+
+def test_datatype_info():
+    extractor = DependencyExtractor()
+    extractor.analyzer.analyze_vir_file("D:\\Projects\\VerusProjects\\vostd\\.verus-log\\cortenmm\\lock_protocol_rcu__mm__page_table__cursor-poly.vir")
+    # extractor.analyzer.analyze_vir_file("D:\\Projects\\VerusProjects\\vostd\\.verus-log\\cortenmm\\lock_protocol_rcu__spec__common-poly.vir")
+    # extractor.preprocess()
+
+    print("=== 示例数据类型信息 ===")
+    for i in range(3):
+        if extractor.analyzer.vir_path_to_datatype_info:
+            example_key = list(extractor.analyzer.vir_path_to_datatype_info.keys())[i]
+            print(f"VIR名称: {example_key}")
+            print(f"详细信息: {extractor.analyzer.vir_path_to_datatype_info[example_key]}")
+            print()
+    
+    print(f"\n总数: {len(extractor.analyzer.vir_path_to_datatype_info)}")
+
+def test_full():
+    extractor = DependencyExtractor()
+    extractor.preprocess()
+    
+    print("=== 示例函数信息 ===")
+    for i in range(3):
+        if extractor.analyzer.vir_path_to_function_info:
+            example_key = list(extractor.analyzer.vir_path_to_function_info.keys())[i]
+            print(f"VIR名称: {example_key}")
+            print(f"详细信息: {extractor.analyzer.vir_path_to_function_info[example_key]}")
+            print()
+    
+    print(f"\n总数: {len(extractor.analyzer.vir_path_to_function_info)}")
+    
+    print("\n=== 反向映射信息 ===")
+    mapping_info = extractor.analyzer.get_all_reverse_mappings_info()
+    print(f"反向映射统计: {mapping_info}")
+    
+    print("\n=== 反向映射示例 ===")
+    # 测试按rust_path查找
+    if extractor.analyzer.function_rust_path_to_info:
+        example_rust_path = list(extractor.analyzer.function_rust_path_to_info.keys())[0]
+        print(f"Rust路径: {example_rust_path}")
+        print(f"映射信息: {extractor.analyzer.get_function_by_rust_path(example_rust_path)}")
+        
+        # 测试按call_graph_name查找
+        call_graph_name = extractor.analyzer.function_rust_path_to_info[example_rust_path]['call_graph_node_name']
+        vir_path = extractor.analyzer.get_function_by_call_graph_name(call_graph_name)
+        print(f"Call Graph名称: {call_graph_name}")
+        print(f"对应VIR路径: {vir_path}")
+        print()
+
+def test_call_graph():
+    """Test call graph analysis functionality"""
+    extractor = DependencyExtractor()
+    extractor.preprocess()
+    
+    # Test dependency analysis
+    print("=== 依赖分析测试 ===")
+
+    test_function = "Fun\nlib::lock_protocol_rcu::spec::utils::impl&%0::get_child"
+    print(f"分析函数: {test_function}")
+    
+    # Get all dependencies (recursive)
+    all_deps = extractor.call_graph.get_all_dependencies_recursive(test_function)
+    print(f"所有依赖 ({len(all_deps)} 个):")
+    for i, dep in enumerate(all_deps[:]): 
+        print(f"  {i+1}. {dep}")
+
+def test_extract_dependencies():
+    """Test the extract_dependencies method"""
+    extractor = DependencyExtractor()
+    extractor.preprocess()
+    
+    print("=== 测试 extract_dependencies 方法 ===")
+    
+    # rust_path = "lib::lock_protocol_rcu::spec::utils::NodeHelper::get_child"
+    rust_path = "lib::lock_protocol_rcu::mm::page_table::cursor::Cursor::lemma_guard_in_path_relation_implies_in_subtree_range"
+    print(f"\n分析函数: {rust_path}")
+    
+    # Extract dependencies using the new method
+    dependencies = extractor.extract_dependencies(rust_path)
+    
+    extractor.print_dependencies(dependencies)
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python dependency_extractor.py <fully::qualified::path>")
-        print("Example: python dependency_extractor.py vostd::ostd::mm::frame::linked_list::LinkedList::push_front")
-        sys.exit(2)
-    
-    target = sys.argv[1]
+    import argparse
+    parser = argparse.ArgumentParser(description="Extract dependencies for a given Rust path, or list all exec/proof functions.")
+    parser.add_argument("rust_path", nargs="?", type=str, help="Rust path, e.g. vostd::ostd::mm::frame::linked_list::LinkedList::push_front")
+    parser.add_argument("--list", action="store_true", help="List all exec and proof functions' rust_path after preprocess.")
+    args = parser.parse_args()
 
-    if not os.path.isdir(VERUS_LOG_DIR):
-        print(f"Error: {VERUS_LOG_DIR} does not exist. Run Verus verification first.")
-        sys.exit(1)
-
-    # Create dependency extractor and analyze
     extractor = DependencyExtractor()
-    
-    print(f"Analyzing dependencies for: {target}")
-    print("=" * 60)
-    
-    dependencies = extractor.extract_dependencies(target)
-    
-    print(f"\n=== Dependencies for {target} ===")
-    
-    # Deduplicate based on file location and display text
-    seen = set()
-    unique_deps = []
-    
-    for dep in dependencies:
-        # Check if this is an impl block with @ separator
-        if '@' in dep:
-            # Extract impl signature for display
-            impl_sig = dep.split('@')[1]
-            display_text = impl_sig
-        else:
-            display_text = dep
-        
-        # Find source location
-        location = extractor.find_source_location(dep)
-        
-        if location:
-            if location.get('in_impl'):
-                # Use impl signature from location
-                key = (location['file'], location['line'], location['impl_signature'])
-                display_text = location['impl_signature']
-            else:
-                key = (location['file'], location['line'], dep)
-        else:
-            key = ('not_found', 0, display_text)
-        
-        if key not in seen:
-            seen.add(key)
-            unique_deps.append((location, display_text))
-    
-    # Output unique dependencies
-    for location, display_text in unique_deps:
-        if location:
-            print(f"[{location['file']}:{location['line']}]  {display_text}")
-        else:
-            print(f"[location not found]  {display_text}")
-    
-    print(f"\nTotal: {len(unique_deps)} unique dependencies found (from {len(dependencies)} total)")
+    extractor.preprocess()
+
+    if args.list:
+        for func_info in extractor.analyzer.vir_path_to_function_info.values():
+            mode = func_info.get('mode')
+            if mode in ("exec", "proof"):
+                print(func_info.get('rust_path'))
+    elif args.rust_path:
+        deps = extractor.extract_dependencies(args.rust_path)
+        extractor.print_dependencies(deps)
+    else:
+        parser.print_help()
 
 if __name__ == '__main__':
+    #test_datatype_info()
+    #test_function_info()
+    #test_full()
+    #test_call_graph()
+    #test_extract_dependencies()
     main()
