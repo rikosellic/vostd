@@ -264,7 +264,7 @@ class CallGraphAnalyzer:
                 if 'label' in attrs:
                     label = attrs['label']
                     # Clean the label - remove quotes and escape sequences
-                    clean_label = label.strip('"').replace('\\n', '\n')
+                    clean_label = label.strip('"')
                     
                     self.label_to_node_id[clean_label] = node_id
                     self.node_id_to_label[node_id] = clean_label
@@ -277,17 +277,17 @@ class CallGraphAnalyzer:
             return True
             
         except Exception as e:
-            print(f"Error loading DOT file {dot_file_path}: {e}")
+            print(f"ERROR: Failed to load DOT file {dot_file_path}: {e}")
             return False
     
     def get_all_dependencies_recursive(self, target_label):
         """Get all dependencies recursively (transitive closure)"""
         if not self.graph:
-            print("No call graph loaded")
+            print("ERROR: No call graph loaded")
             return []
             
         if target_label not in self.label_to_node_id:
-            print(f"Label not found: {target_label}")
+            print(f"ERROR: Label not found: {target_label}")
             return []
         
         node_id = self.label_to_node_id[target_label]
@@ -367,6 +367,74 @@ class DependencyExtractor:
             
             # Save call graph to cache
             self.call_graph.save_call_graph_cache(call_graph_path)
+    
+    def extract_dependencies(self, rust_path):
+        """Extract all dependencies for a given rust_path
+        
+        Args:
+            rust_path: Function path in Rust format (e.g., 'lib::module::function')
+            
+        Returns:
+            List of dependency rust paths (filtered to exclude ModuleReveal and Crate)
+        """
+        # Convert rust_path to call_graph_node_name
+        function_info = self.analyzer.function_rust_path_to_info.get(rust_path)
+        if not function_info:
+            print(f"ERROR：Function not found: {rust_path}")
+            return []
+        
+        call_graph_node_name = function_info.get('call_graph_node_name')
+        if not call_graph_node_name:
+            print(f"ERROR：No call graph node name for: {rust_path}")
+            return []
+        
+        # Get all dependencies from call graph
+        call_graph_dependencies = self.call_graph.get_all_dependencies_recursive(call_graph_node_name)
+        
+        # Filter out ModuleReveal results and format output
+        formatted_call_graph_dependencies = []
+        for dep in call_graph_dependencies:
+            # Skip dependencies that contain "ModuleReveal" or "Crate" in their label
+            if "ModuleReveal" not in dep and "Crate" not in dep:
+                formatted_dep = self._format_call_graph_dependency_output(dep)
+                formatted_call_graph_dependencies.append(formatted_dep)
+        
+        #TODO: Trait dependencies
+        #TODO: TraitImpl dependencies
+        #TODO: Datatype dependencies
+        #TODO: Filter out broadcast proofs
+        
+        return formatted_call_graph_dependencies
+    
+    def _format_call_graph_dependency_output(self, dependency_label):
+        """Format dependency label to `[source_location]rust_path` format
+        
+        Args:
+            dependency_label: Original call graph label
+            
+        Returns:
+            Formatted string in [source_location]rust_path format
+        """
+        # Check if this is a Fun type that we can map
+        if dependency_label.startswith("Fun\n"):
+            # Try to find corresponding function info
+            vir_path = self.analyzer.function_call_graph_name_to_vir_path.get(dependency_label)
+            if vir_path and vir_path in self.analyzer.vir_path_to_function_info:
+                func_info = self.analyzer.vir_path_to_function_info[vir_path]
+                rust_path = func_info.get('rust_path', 'unknown')
+                source_location = func_info.get('source_location', 'unknown:0')
+                return f"[{source_location}]{rust_path}"
+            else:
+                # Fallback: extract rust path from label
+                lines = dependency_label.split('\n')
+                if len(lines) >= 2:
+                    rust_path = lines[1]  # Second line is the rust path
+                    return f"[unknown:0]{rust_path}"
+                else:
+                    return dependency_label
+        else:
+            # For non-Fun types, keep original format
+            return dependency_label
 
 class VIRAnalyzer:
     """Analyzer for VIR file structure"""
@@ -672,6 +740,7 @@ class VIRAnalyzer:
         # 生成 call graph 节点名称格式（使用::分隔符，基于vir_path保留impl&%形式）
         vir_rust_path = self._extract_rust_path_from_vir_path(vir_path)
         call_graph_node_name = self._rust_path_to_call_graph_name(vir_rust_path)
+        call_graph_node_name = f"Fun\n{call_graph_node_name}"
         
         # 构建 rust_path -> info 映射
         self.function_rust_path_to_info[rust_path] = {
@@ -804,12 +873,26 @@ def test_call_graph():
     for i, dep in enumerate(all_deps[:]): 
         print(f"  {i+1}. {dep}")
 
-def main():
-    """Main entry point for the dependency extractor"""
-    pass
+def test_extract_dependencies():
+    """Test the extract_dependencies method"""
+    extractor = DependencyExtractor()
+    extractor.preprocess()
+    
+    print("=== 测试 extract_dependencies 方法 ===")
+    
+    rust_path = "lib::lock_protocol_rcu::spec::utils::NodeHelper::get_child"
+    print(f"\n分析函数: {rust_path}")
+    
+    # Extract dependencies using the new method
+    dependencies = extractor.extract_dependencies(rust_path)
+    print(f"依赖数量: {len(dependencies)}")
+    print("依赖列表:")
+    for dep in dependencies:
+        print(dep)
 
 if __name__ == '__main__':
     #test_datatype_info()
     #test_function_info()
     #test_full()
-    test_call_graph()
+    #test_call_graph()
+    test_extract_dependencies()
