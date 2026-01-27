@@ -264,12 +264,10 @@ class CallGraphAnalyzer:
                 if 'label' in attrs:
                     label = attrs['label']
                     # Clean the label - remove quotes and escape sequences
-                    clean_label = label.strip('"')
+                    clean_label = label.strip('"').replace('\\n', '\n')
                     
                     self.label_to_node_id[clean_label] = node_id
                     self.node_id_to_label[node_id] = clean_label
-            
-            print(f"Loaded call graph with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges")
             
             # Save to cache after successful loading
             self.save_call_graph_cache(dot_file_path)
