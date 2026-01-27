@@ -23,7 +23,7 @@ from pathlib import Path
 
 ROOT = os.path.abspath(os.path.dirname(__file__))
 VERUS_LOG_DIR = os.path.join(ROOT, ".verus-log")
-TRAIT_CACHE_FILE = os.path.join(VERUS_LOG_DIR, "trait_cache.pkl")
+MAPPING_CACHE_FILE = os.path.join(VERUS_LOG_DIR, "mappings_cache.pkl")
 
 def get_project_name():
     """Get the first member from workspace Cargo.toml as project name."""
@@ -195,12 +195,21 @@ class DependencyExtractor:
             print(f"ERROR: VIR directory {project_dir} does not exist")
             return
         
-        # Analyze the consolidated crate.vir file
+        # Check for the consolidated crate.vir file
         crate_vir_path = os.path.join(project_dir, "crate.vir")
-        if os.path.exists(crate_vir_path):
-            self.analyzer.analyze_vir_file(crate_vir_path)
-        else:
+        if not os.path.exists(crate_vir_path):
             print(f"ERROR: crate.vir not found at {crate_vir_path}")
+            return
+        
+        # Try to load from cache first if cache is valid
+        if self.analyzer._is_cache_valid(crate_vir_path) and self.analyzer.load_mappings_cache():
+            return
+               
+        # Analyze the consolidated crate.vir file
+        self.analyzer.analyze_vir_file(crate_vir_path)
+        
+        # Save mappings to cache after analysis
+        self.analyzer.save_mappings_cache()
 
 class VIRAnalyzer:
     """Analyzer for VIR file structure"""
@@ -214,6 +223,63 @@ class VIRAnalyzer:
         self.function_call_graph_name_to_vir_path = {}  # call_graph_node_name -> vir_path
         
         self.source_analyzer = SourceCodeAnalyzer()
+
+    def save_mappings_cache(self):
+        """Save all mappings to cache file"""
+        try:
+            cache_data = {
+                'vir_path_to_function_info': self.vir_path_to_function_info,
+                'vir_path_to_datatype_info': self.vir_path_to_datatype_info,
+                'function_rust_path_to_info': self.function_rust_path_to_info,
+                'function_call_graph_name_to_vir_path': self.function_call_graph_name_to_vir_path
+            }
+            
+            os.makedirs(os.path.dirname(MAPPING_CACHE_FILE), exist_ok=True)
+            with open(MAPPING_CACHE_FILE, 'wb') as f:
+                pickle.dump(cache_data, f)
+        except Exception as e:
+            print(f"ERROR：Failed to save mappings cache: {e}")
+    
+    def load_mappings_cache(self):
+        """Load all mappings from cache file. Returns True if successful, False otherwise"""
+        try:
+            if not os.path.exists(MAPPING_CACHE_FILE):
+                return False
+            
+            with open(MAPPING_CACHE_FILE, 'rb') as f:
+                cache_data = pickle.load(f)
+            
+            # Verify all required mappings are present
+            required_keys = ['vir_path_to_function_info', 'vir_path_to_datatype_info', 
+                           'function_rust_path_to_info', 'function_call_graph_name_to_vir_path']
+            
+            for key in required_keys:
+                if key not in cache_data:
+                    return False
+            
+            # Load all mappings
+            self.vir_path_to_function_info = cache_data['vir_path_to_function_info']
+            self.vir_path_to_datatype_info = cache_data['vir_path_to_datatype_info']
+            self.function_rust_path_to_info = cache_data['function_rust_path_to_info']
+            self.function_call_graph_name_to_vir_path = cache_data['function_call_graph_name_to_vir_path']
+        
+            return True
+            
+        except Exception as e:
+            return False
+    
+    def _is_cache_valid(self, vir_file_path):
+        """Check if cache is newer than the VIR file"""
+        try:
+            if not os.path.exists(MAPPING_CACHE_FILE) or not os.path.exists(vir_file_path):
+                return False
+            
+            cache_mtime = os.path.getmtime(MAPPING_CACHE_FILE)
+            vir_mtime = os.path.getmtime(vir_file_path)
+            
+            return cache_mtime >= vir_mtime
+        except Exception:
+            return False
 
     def analyze_vir_file(self, file_path):
         """Analyze a complete VIR file"""
@@ -292,7 +358,7 @@ class VIRAnalyzer:
             elif func_expr[i] == ':body' and i + 1 < len(func_expr):
                 func_body = func_expr[i + 1]
         
-        if func_path:
+        if func_path and not func_path.startswith('vstd!'):
             rust_path = self._extract_rust_path_from_vir_path(func_path)
             # 检查是否是impl方法，如果是则替换为实际类型
             resolved_rust_path = self._resolve_impl_path(rust_path, source_location)
@@ -349,7 +415,7 @@ class VIRAnalyzer:
             else:
                 i += 1
         
-        if datatype_path:
+        if datatype_path and not datatype_path.startswith('vstd!'):
             rust_path = self._extract_rust_path_from_vir_path(datatype_path)
             datatype_info = {
                 'rust_path': rust_path,
@@ -519,8 +585,8 @@ def test_function_info():
 def test_datatype_info():
     extractor = DependencyExtractor()
     extractor.analyzer.analyze_vir_file("D:\\Projects\\VerusProjects\\vostd\\.verus-log\\cortenmm\\lock_protocol_rcu__mm__page_table__cursor-poly.vir")
-    extractor.analyzer.analyze_vir_file("D:\\Projects\\VerusProjects\\vostd\\.verus-log\\cortenmm\\lock_protocol_rcu__spec__common-poly.vir")
-    extractor.preprocess()
+    # extractor.analyzer.analyze_vir_file("D:\\Projects\\VerusProjects\\vostd\\.verus-log\\cortenmm\\lock_protocol_rcu__spec__common-poly.vir")
+    # extractor.preprocess()
 
     print("=== 示例数据类型信息 ===")
     for i in range(3):
