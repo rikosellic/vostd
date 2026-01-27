@@ -393,8 +393,7 @@ class DependencyExtractor:
         
         # Categorize dependencies by type
         categorized_dependencies = {
-            'fun_dependencies_with_source': [],
-            'fun_dependencies_without_source': [],
+            'fun_dependencies': [],
             'trait_dependencies': [],
             'traitimplpath_dependencies': [],
             'reqens_traitimplpath_dependencies': [],
@@ -407,12 +406,7 @@ class DependencyExtractor:
                 
                 # Categorize based on dependency type
                 if dep.startswith("Fun\n"):
-                    # Format fun dependencies and categorize by source location availability
-                    formatted_result = self._format_fun_dependency(dep)
-                    if formatted_result['has_source']:
-                        categorized_dependencies['fun_dependencies_with_source'].append(formatted_result['formatted'])
-                    else:
-                        categorized_dependencies['fun_dependencies_without_source'].append(formatted_result['formatted'])
+                    categorized_dependencies['fun_dependencies'].append(dep)
                 elif dep.startswith("Trait\n"):
                     categorized_dependencies['trait_dependencies'].append(dep)
                 elif dep.startswith("TraitImplPath\n"):
@@ -422,39 +416,46 @@ class DependencyExtractor:
                 else:
                     categorized_dependencies['other_dependencies'].append(dep)
         
-        return categorized_dependencies
-    
-    def _format_fun_dependency(self, dependency_label):
-        """Format Fun dependency and determine if source location is available
+        output_dependencies = []
         
-        Args:
-            dependency_label: Original call graph label starting with "Fun\n"
-            
-        Returns:
-            Dict with 'formatted' (formatted string) and 'has_source' (bool)
-        """
-        # Try to find corresponding function info
-        vir_path = self.analyzer.function_call_graph_name_to_vir_path.get(dependency_label)
-        if vir_path and vir_path in self.analyzer.vir_path_to_function_info:
-            func_info = self.analyzer.vir_path_to_function_info[vir_path]
-            rust_path = func_info.get('rust_path', 'unknown')
-            source_location = func_info.get('source_location')
-            
-            if source_location:
-                formatted = f"[{source_location}]{rust_path}"
-                return {'formatted': formatted, 'has_source': True}
+        # Process Fun dependencies to separate vir-preprocessed and unknown ones
+        fun_deps_processed = self._process_fun_dependencies(categorized_dependencies['fun_dependencies'])
+        source_found_func_info = fun_deps_processed['source-found']
+        no_source_location_func_info = fun_deps_processed['no-source-location']
+        unknown_func_rust_paths = fun_deps_processed['unknown']
+
+        # Add source-found functions to output
+        for func_info in source_found_func_info:
+            formatted = f"[{func_info.get('source_location')}] {func_info.get('rust_path')}"
+            output_dependencies.append(formatted)
+
+        # Find datatype dependencies from source-found and no-source-location functions
+
+        return output_dependencies
+    
+    def print_dependencies(self, dependencies):
+        for dep in dependencies:
+            print(dep)
+    
+    def _process_fun_dependencies(self, fun_dependencies):
+        """Split Fun dependencies into source-found, no-source-location, and unknown ones"""
+        res = {"source-found": [], "no-source-location": [], "unknown": []}
+
+        for dep in fun_dependencies:
+            vir_path = self.analyzer.function_call_graph_name_to_vir_path.get(dep)
+            if vir_path and vir_path in self.analyzer.vir_path_to_function_info:
+                func_info = self.analyzer.vir_path_to_function_info[vir_path]
+                source_location = func_info.get('source_location')
+                if source_location:
+                    res['source-found'].append(func_info)
+                else:
+                    res['no-source-location'].append(func_info)
             else:
-                formatted = f"[unknown:0]{rust_path}"
-                return {'formatted': formatted, 'has_source': False}
-        else:
-            # Fallback: extract rust path from label
-            lines = dependency_label.split('\n')
-            if len(lines) >= 2:
-                rust_path = lines[1]  # Second line is the rust path
-                formatted = f"[unknown:0]{rust_path}"
-                return {'formatted': formatted, 'has_source': False}
-            else:
-                return {'formatted': dependency_label, 'has_source': False}
+                lines = dep.split('\n')
+                if len(lines) >= 2:
+                    rust_path = lines[1]
+                    res['unknown'].append(rust_path)
+        return res
     
 
 class VIRAnalyzer:
@@ -908,17 +909,7 @@ def test_extract_dependencies():
     # Extract dependencies using the new method
     dependencies = extractor.extract_dependencies(rust_path)
     
-    # Show categorized dependencies
-    total_count = sum(len(deps) for deps in dependencies.values())
-    print(f"总依赖数量: {total_count}")
-    
-    for category, deps in dependencies.items():
-        if deps:  # Only show categories that have dependencies
-            print(f"\n{category} ({len(deps)}个):")
-            for dep in deps[:10]:  # Show first 10 for each category
-                print(f"  {dep}")
-            if len(deps) > 10:
-                print(f"  ... 还有 {len(deps) - 10} 个依赖")
+    extractor.print_dependencies(dependencies)
 
 if __name__ == '__main__':
     #test_datatype_info()
