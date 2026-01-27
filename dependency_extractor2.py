@@ -24,6 +24,7 @@ from pathlib import Path
 ROOT = os.path.abspath(os.path.dirname(__file__))
 VERUS_LOG_DIR = os.path.join(ROOT, ".verus-log")
 MAPPING_CACHE_FILE = os.path.join(VERUS_LOG_DIR, "mappings_cache.pkl")
+CALL_GRAPH_CACHE_FILE = os.path.join(VERUS_LOG_DIR, "call_graph_cache.pkl")
 
 def get_project_name():
     """Get the first member from workspace Cargo.toml as project name."""
@@ -179,11 +180,164 @@ class SourceCodeAnalyzer:
         except Exception:
             return {}
         
+class CallGraphAnalyzer:
+    """Analyzer for call graph DOT files"""
+    
+    def __init__(self):
+        self.graph = None
+        self.label_to_node_id = {}  # label -> node_id mapping
+        self.node_id_to_label = {}  # node_id -> label mapping
+        
+    def save_call_graph_cache(self, dot_file_path):
+        """Save call graph data to cache file"""
+        try:
+            cache_data = {
+                'graph': self.graph,
+                'label_to_node_id': self.label_to_node_id,
+                'node_id_to_label': self.node_id_to_label,
+                'dot_file_path': dot_file_path
+            }
+            
+            os.makedirs(os.path.dirname(CALL_GRAPH_CACHE_FILE), exist_ok=True)
+            with open(CALL_GRAPH_CACHE_FILE, 'wb') as f:
+                pickle.dump(cache_data, f)
+        except Exception as e:
+            print(f"ERROR: ailed to save call graph cache: {e}")
+    
+    def load_call_graph_cache(self, dot_file_path):
+        """Load call graph data from cache file. Returns True if successful, False otherwise"""
+        try:
+            if not os.path.exists(CALL_GRAPH_CACHE_FILE):
+                return False
+            
+            with open(CALL_GRAPH_CACHE_FILE, 'rb') as f:
+                cache_data = pickle.load(f)
+            
+            # Verify cache is for the same DOT file
+            if cache_data.get('dot_file_path') != dot_file_path:
+                return False
+            
+            # Load all data
+            self.graph = cache_data['graph']
+            self.label_to_node_id = cache_data['label_to_node_id']
+            self.node_id_to_label = cache_data['node_id_to_label']
+            
+            if self.graph:
+                return True
+            else:
+                return False
+            
+        except Exception as e:
+            print(f"ERROR: Failed to load call graph cache: {e}")
+            return False
+    
+    def _is_call_graph_cache_valid(self, dot_file_path):
+        """Check if cache is newer than the DOT file"""
+        try:
+            if not os.path.exists(CALL_GRAPH_CACHE_FILE) or not os.path.exists(dot_file_path):
+                return False
+            
+            cache_mtime = os.path.getmtime(CALL_GRAPH_CACHE_FILE)
+            dot_mtime = os.path.getmtime(dot_file_path)
+            
+            return cache_mtime >= dot_mtime
+        except Exception:
+            return False
+        
+    def load_dot_file(self, dot_file_path):
+        """Load and parse DOT file using NetworkX with caching"""
+        # Try to load from cache first if cache is valid
+        if self._is_call_graph_cache_valid(dot_file_path) and self.load_call_graph_cache(dot_file_path):
+            return True
+        
+        try:
+            from networkx.drawing.nx_pydot import read_dot
+            
+            # Read DOT file
+            self.graph = read_dot(dot_file_path)
+            
+            # Build label mappings
+            self.label_to_node_id = {}
+            self.node_id_to_label = {}
+            
+            for node_id, attrs in self.graph.nodes(data=True):
+                if 'label' in attrs:
+                    label = attrs['label']
+                    # Clean the label - remove quotes and escape sequences
+                    clean_label = label.strip('"').replace('\\n', '\n')
+                    
+                    self.label_to_node_id[clean_label] = node_id
+                    self.node_id_to_label[node_id] = clean_label
+            
+            print(f"Loaded call graph with {len(self.graph.nodes)} nodes and {len(self.graph.edges)} edges")
+            
+            # Save to cache after successful loading
+            self.save_call_graph_cache(dot_file_path)
+
+            return True
+            
+        except Exception as e:
+            print(f"Error loading DOT file {dot_file_path}: {e}")
+            return False
+    
+    def get_all_dependencies_recursive(self, target_label):
+        """Get all dependencies recursively (transitive closure)"""
+        if not self.graph:
+            print("No call graph loaded")
+            return []
+            
+        if target_label not in self.label_to_node_id:
+            print(f"Label not found: {target_label}")
+            return []
+        
+        node_id = self.label_to_node_id[target_label]
+        
+        # Use NetworkX's built-in descendants method for efficient dependency analysis
+        try:
+            descendant_node_ids = nx.descendants(self.graph, node_id)
+            dependencies = []
+            
+            for desc_node_id in descendant_node_ids:
+                if desc_node_id in self.node_id_to_label:
+                    dep_label = self.node_id_to_label[desc_node_id]
+                    dependencies.append(dep_label)
+            
+            return dependencies
+            
+        except nx.NetworkXError as e:
+            print(f"Error analyzing dependencies: {e}")
+            return []
+    
+    def get_statistics(self):
+        """Get basic statistics about the call graph"""
+        if not self.graph:
+            return None
+            
+        return {
+            'total_nodes': len(self.graph.nodes),
+            'total_edges': len(self.graph.edges),
+            'labels_mapped': len(self.label_to_node_id)
+        }
+        
 class DependencyExtractor:
     """Main dependency extraction orchestrator"""
     
     def __init__(self):
         self.analyzer = VIRAnalyzer()
+        self.call_graph = CallGraphAnalyzer()
+        
+    def load_call_graph(self, dot_file_path=None):
+        """Load call graph from DOT file"""
+        if dot_file_path is None:
+            project_name = get_project_name()
+            project_dir = os.path.join(VERUS_LOG_DIR, project_name)
+            dot_file_path = os.path.join(project_dir, "crate-call-graph-nostd-initial.dot")
+        
+        if not os.path.exists(dot_file_path):
+            print(f"ERROR: DOT file not found: {dot_file_path}")
+            return False
+            
+        return self.call_graph.load_dot_file(dot_file_path)
 
     def preprocess(self):
         """Preprocess VIR files in the project to build complete type mappings, trait definitions, and function definitions"""     
@@ -630,6 +784,32 @@ def test_full():
         print(f"对应VIR路径: {vir_path}")
         print()
 
+def test_call_graph():
+    """Test call graph analysis functionality"""
+    extractor = DependencyExtractor()
+    
+    # Load call graph
+    print("=== 加载调用图 ===")
+    if extractor.load_call_graph():
+        stats = extractor.call_graph.get_statistics()
+        print(f"调用图统计: {stats}")
+    else:
+        print("无法加载调用图")
+        return
+    
+    
+    # Test dependency analysis
+    print("=== 依赖分析测试 ===")
+
+    test_function = "Fun\nlib::lock_protocol_rcu::spec::utils::impl&%0::get_child"
+    print(f"分析函数: {test_function}")
+    
+    # Get all dependencies (recursive)
+    all_deps = extractor.call_graph.get_all_dependencies_recursive(test_function)
+    print(f"所有依赖 ({len(all_deps)} 个):")
+    for i, dep in enumerate(all_deps[:]): 
+        print(f"  {i+1}. {dep}")
+
 def main():
     """Main entry point for the dependency extractor"""
     pass
@@ -637,4 +817,5 @@ def main():
 if __name__ == '__main__':
     #test_datatype_info()
     #test_function_info()
-    test_full()
+    #test_full()
+    test_call_graph()
