@@ -202,7 +202,7 @@ class CallGraphAnalyzer:
             with open(CALL_GRAPH_CACHE_FILE, 'wb') as f:
                 pickle.dump(cache_data, f)
         except Exception as e:
-            print(f"ERROR: ailed to save call graph cache: {e}")
+            print(f"ERROR: Failed to save call graph cache: {e}")
     
     def load_call_graph_cache(self, dot_file_path):
         """Load call graph data from cache file. Returns True if successful, False otherwise"""
@@ -325,19 +325,6 @@ class DependencyExtractor:
     def __init__(self):
         self.analyzer = VIRAnalyzer()
         self.call_graph = CallGraphAnalyzer()
-        
-    def load_call_graph(self, dot_file_path=None):
-        """Load call graph from DOT file"""
-        if dot_file_path is None:
-            project_name = get_project_name()
-            project_dir = os.path.join(VERUS_LOG_DIR, project_name)
-            dot_file_path = os.path.join(project_dir, "crate-call-graph-nostd-initial.dot")
-        
-        if not os.path.exists(dot_file_path):
-            print(f"ERROR: DOT file not found: {dot_file_path}")
-            return False
-            
-        return self.call_graph.load_dot_file(dot_file_path)
 
     def preprocess(self):
         """Preprocess VIR files in the project to build complete type mappings, trait definitions, and function definitions"""     
@@ -357,13 +344,29 @@ class DependencyExtractor:
         
         # Try to load from cache first if cache is valid
         if self.analyzer._is_cache_valid(crate_vir_path) and self.analyzer.load_mappings_cache():
+            pass
+        else:    
+            # Analyze the consolidated crate.vir file
+            self.analyzer.analyze_vir_file(crate_vir_path)
+            
+            # Save mappings to cache after analysis
+            self.analyzer.save_mappings_cache()
+
+        call_graph_path = os.path.join(project_dir, "crate-call-graph-nostd-initial.dot")
+
+        if not os.path.exists(call_graph_path):
+            print(f"ERROR: Call graph DOT file not found: {call_graph_path}")
             return
-               
-        # Analyze the consolidated crate.vir file
-        self.analyzer.analyze_vir_file(crate_vir_path)
         
-        # Save mappings to cache after analysis
-        self.analyzer.save_mappings_cache()
+        # Try to load call graph from cache if valid
+        if self.call_graph._is_call_graph_cache_valid(call_graph_path) and self.call_graph.load_call_graph_cache(call_graph_path):
+            pass
+        else:
+            # Load call graph
+            self.call_graph.load_dot_file(call_graph_path)
+            
+            # Save call graph to cache
+            self.call_graph.save_call_graph_cache(call_graph_path)
 
 class VIRAnalyzer:
     """Analyzer for VIR file structure"""
@@ -787,16 +790,7 @@ def test_full():
 def test_call_graph():
     """Test call graph analysis functionality"""
     extractor = DependencyExtractor()
-    
-    # Load call graph
-    print("=== 加载调用图 ===")
-    if extractor.load_call_graph():
-        stats = extractor.call_graph.get_statistics()
-        print(f"调用图统计: {stats}")
-    else:
-        print("无法加载调用图")
-        return
-    
+    extractor.preprocess()
     
     # Test dependency analysis
     print("=== 依赖分析测试 ===")
