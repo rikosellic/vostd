@@ -12,7 +12,11 @@ authors = [
 #readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "networkx>=3.0",
+    "pydot>=3.0",
+    "matplotlib>=3.8",  # for visualization
+]
 keywords = ["rust", "verification", "verus", "dependencies", "analysis"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -32,10 +36,6 @@ dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
 ]
-
-[project.scripts]
-dependency-extractor = "dependency_extractor2:main"
-vir-analyzer = "dependency_extractor2:test_function_info"
 
 [tool.black]
 line-length = 100
