@@ -505,10 +505,8 @@ class DependencyExtractor:
             if exec_function_name:
                 # Reconstruct full rust path for exec function
                 exec_rust_path = '::'.join(rust_path.split('::')[:-1] + [exec_function_name])
-                print(f"[INFO] Found exec function for spec {rust_path}: {exec_rust_path}")
                 exec_info = self.analyzer.get_function_info_by_rust_path(exec_rust_path)
                 if exec_info:
-                    print(f"[INFO] Found exec function info, the location is {exec_info.get('source_location')}")
                     new_dependencies[exec_rust_path] = exec_info
                     # Recursively resolve dependencies for the new exec function
                     resolved_dependencies = self.extract_dependencies(exec_rust_path, known_dependencies | new_dependencies)
@@ -569,7 +567,7 @@ class DependencyExtractor:
     def _format_unknown_source_dependencies(self, path):
         return f"[unknown:0] {path}"
     
-    def __format_source_dependencies(self, path, source_location):
+    def _format_source_dependencies(self, path, source_location):
         return f"[{source_location}] {path}"
     
     def print_dependencies(self, dependencies):
@@ -577,7 +575,7 @@ class DependencyExtractor:
             if info == None or info.get('source_location') == None:
                 print(self._format_unknown_source_dependencies(path))
             else:
-                print(self.__format_source_dependencies(path, info.get('source_location')))
+                print(self._format_source_dependencies(path, info.get('source_location')))
             
     
     def _process_fun_dependencies(self, fun_dependencies):
