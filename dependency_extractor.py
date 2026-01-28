@@ -180,6 +180,47 @@ class SourceCodeAnalyzer:
         except Exception:
             return {}
         
+    def find_when_used_as_spec(self, rust_path, file_path):
+        """Find a function in the source file that uses #[when_used_as_spec(rust_path)].
+
+        Args:
+            rust_path (str): The Rust path of the spec function.
+            file_path (str): The path to the Rust source file.
+
+        Returns:
+            str: The Rust path of the exec function if found, otherwise None.
+        """
+        import re
+
+        function_name = rust_path.split("::")[-1]    
+
+        try: 
+            with open(file_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+            for i, line in enumerate(lines):
+                # Look for the #[when_used_as_spec(...)] attribute
+                match = re.search(r"#\[verifier::when_used_as_spec\((.*?)\)\]", line)
+                if match:
+                    spec_function = match.group(1)
+                    if spec_function == function_name:
+                        # Find the next line with the function definition
+                        for next_line in lines[i + 1:]:
+                            # Debugging: Print the line being checked
+                            #print(f"[DEBUG] Checking line: {next_line.strip()}")
+                            # Skip blank lines and comments
+                            if next_line.strip() == "" or next_line.strip().startswith("//"):
+                                continue
+                            func_match = re.search(r"(?:pub\s+)?(?:exec\s+)?fn\s+([a-zA-Z0-9_]+)(?:<.*?>)?\(", next_line)
+                            if func_match:
+                                exec_function = func_match.group(1)
+                                #print(f"[DEBUG] Found exec function: {exec_function} for spec function: {function_name}")
+                                return exec_function
+            return None
+        except Exception as e:
+            print(f"[ERROR] Failed to read source file {file_path}: {e}")
+            return None
+
 class CallGraphAnalyzer:
     """Analyzer for call graph DOT files"""
     
@@ -366,14 +407,18 @@ class DependencyExtractor:
             # Save call graph to cache
             self.call_graph.save_call_graph_cache(call_graph_path)
     
-    def extract_dependencies(self, rust_path):
+    def get_function_info(self, rust_path):
+        """Get function info for a given rust_path"""
+        return self.analyzer.get_function_info_by_rust_path(rust_path)
+    
+    def extract_dependencies(self, rust_path, known_dependencies=None):
         """Extract all dependencies for a given rust_path
         
         Args:
             rust_path: Function path in Rust format (e.g., 'lib::module::function')
             
         Returns:
-            List of dependency rust paths (filtered to exclude ModuleReveal and Crate)
+            Dict from rust path to info (filtered to exclude ModuleReveal and Crate)
         """
         # Convert rust_path to call_graph_node_name
         function_info = self.analyzer.function_rust_path_to_info.get(rust_path)
@@ -421,7 +466,7 @@ class DependencyExtractor:
         # Add self in the last
         categorized_dependencies['fun_dependencies'].append(call_graph_node_name)
 
-        output_dependencies = []
+        output_dependencies = {}
         
         # Process Fun dependencies to separate vir-preprocessed and unknown ones
         fun_deps_processed = self._process_fun_dependencies(categorized_dependencies['fun_dependencies'])
@@ -431,19 +476,57 @@ class DependencyExtractor:
 
         # Add source-found functions to output
         for func_info in source_found_func_info:
-            formatted = f"[{func_info.get('source_location')}] {func_info.get('rust_path')}"
-            output_dependencies.append(formatted)
+            if known_dependencies is None or func_info.get('rust_path') not in known_dependencies:
+                output_dependencies[func_info.get('rust_path')] = func_info
 
         # Add no-source-location functions and unknown functions in output
         for func_info in no_source_location_func_info:
-            formatted = self._format_unknown_source_dependencies([func_info.get('rust_path')])
-            output_dependencies.append(formatted)
+            if known_dependencies is None or func_info.get('rust_path') not in known_dependencies:
+                output_dependencies[func_info.get('rust_path')] = func_info
         for unknown_path in unknown_func_rust_paths:
-            formatted = self._format_unknown_source_dependencies(unknown_path)
-            output_dependencies.append(formatted)
+            if known_dependencies is None or unknown_path not in known_dependencies:
+                output_dependencies[unknown_path] = None
 
+        when_used_as_spec_dependencies = self._resolve_when_used_as_spec(output_dependencies)
+        output_dependencies.update(when_used_as_spec_dependencies)
         return output_dependencies
 
+    def _resolve_when_used_as_spec(self, known_dependencies):
+        """ Recursively find exec functions marked with #[verifier::when_used_as_spec] for spec functions in dependencies """
+        new_dependencies = {}
+        def resolve_recursive(rust_path, info):
+            if rust_path in new_dependencies:
+                return 
+            if info is None or info.get('source_location') is None or info.get('mode') != 'spec':
+                return
+
+            source_file, _ = info.get('source_location').rsplit(':', 1)
+            exec_function_name = self.analyzer.source_analyzer.find_when_used_as_spec(rust_path, source_file)
+            if exec_function_name:
+                # Reconstruct full rust path for exec function
+                exec_rust_path = '::'.join(rust_path.split('::')[:-1] + [exec_function_name])
+                print(f"[INFO] Found exec function for spec {rust_path}: {exec_rust_path}")
+                exec_info = self.analyzer.get_function_info_by_rust_path(exec_rust_path)
+                if exec_info:
+                    print(f"[INFO] Found exec function info, the location is {exec_info.get('source_location')}")
+                    new_dependencies[exec_rust_path] = exec_info
+                    # Recursively resolve dependencies for the new exec function
+                    resolved_dependencies = self.extract_dependencies(exec_rust_path, known_dependencies | new_dependencies)
+                    for new_rust_path, new_info in resolved_dependencies.items():
+                        if new_rust_path not in new_dependencies:
+                            new_dependencies[new_rust_path] = new_info
+                    for new_rust_path, new_info in resolved_dependencies.items():
+                        resolve_recursive(new_rust_path, new_info)
+                else:
+                    new_dependencies[exec_rust_path] = None
+            else:
+                return
+
+        for rust_path, info in known_dependencies.items():
+            resolve_recursive(rust_path, info)
+
+        return new_dependencies 
+    
     def _fuzzy_match_function(self, rust_path):
         """Attempt to find a function in function_rust_path_to_info with similar structure to the given rust_path.
         Matching logic:
@@ -486,9 +569,16 @@ class DependencyExtractor:
     def _format_unknown_source_dependencies(self, path):
         return f"[unknown:0] {path}"
     
+    def __format_source_dependencies(self, path, source_location):
+        return f"[{source_location}] {path}"
+    
     def print_dependencies(self, dependencies):
-        for dep in dependencies:
-            print(dep)
+        for path, info in dependencies.items():
+            if info == None or info.get('source_location') == None:
+                print(self._format_unknown_source_dependencies(path))
+            else:
+                print(self.__format_source_dependencies(path, info.get('source_location')))
+            
     
     def _process_fun_dependencies(self, fun_dependencies):
         """Split Fun dependencies into source-found, no-source-location, and unknown ones"""
@@ -842,14 +932,16 @@ class VIRAnalyzer:
             return rust_path.replace('.', '::')
         return rust_path
     
-    def get_function_by_rust_path(self, rust_path):
-        """根据rust_path获取函数信息"""
-        return self.function_rust_path_to_info.get(rust_path)
-    
     def get_function_by_call_graph_name(self, call_graph_name):
         """根据call_graph节点名称获取vir_path"""
         return self.function_call_graph_name_to_vir_path.get(call_graph_name)
     
+    def get_function_info_by_rust_path(self, rust_path):
+        vir_path = self.function_rust_path_to_info.get(rust_path, {}).get('vir_path')
+        if vir_path:
+            return self.vir_path_to_function_info.get(vir_path)
+        return None
+
     def get_all_reverse_mappings_info(self):
         """获取反向映射的统计信息"""
         return {
@@ -857,7 +949,8 @@ class VIRAnalyzer:
             'call_graph_mappings': len(self.function_call_graph_name_to_vir_path),
             'total_functions': len(self.vir_path_to_function_info)
         }
-    
+
+
 def test_function_info():
     extractor = DependencyExtractor()
     extractor.analyzer.analyze_vir_file("D:\\Projects\\VerusProjects\\vostd\\.verus-log\\cortenmm\\lock_protocol_rcu__spec__utils-poly.vir")
@@ -882,7 +975,6 @@ def test_function_info():
     if extractor.analyzer.function_rust_path_to_info:
         example_rust_path = list(extractor.analyzer.function_rust_path_to_info.keys())[0]
         print(f"Rust路径: {example_rust_path}")
-        print(f"映射信息: {extractor.analyzer.get_function_by_rust_path(example_rust_path)}")
         
         # 测试按call_graph_name查找
         call_graph_name = extractor.analyzer.function_rust_path_to_info[example_rust_path]['call_graph_node_name']
@@ -930,7 +1022,6 @@ def test_full():
     if extractor.analyzer.function_rust_path_to_info:
         example_rust_path = list(extractor.analyzer.function_rust_path_to_info.keys())[0]
         print(f"Rust路径: {example_rust_path}")
-        print(f"映射信息: {extractor.analyzer.get_function_by_rust_path(example_rust_path)}")
         
         # 测试按call_graph_name查找
         call_graph_name = extractor.analyzer.function_rust_path_to_info[example_rust_path]['call_graph_node_name']
@@ -972,6 +1063,21 @@ def test_extract_dependencies():
     
     extractor.print_dependencies(dependencies)
 
+def test_find_when_used_as_spec():
+    extractor = DependencyExtractor()
+    extractor.preprocess()
+    
+    file_path = "D://Projects//VerusProjects//vostd//cortenmm//src//lock_protocol_rcu//mm//mod.rs"
+    rust_path = "lib::lock_protocol_rcu::mm::page_size_spec"
+    print(extractor.analyzer.source_analyzer.find_when_used_as_spec(rust_path, file_path))
+
+def test_preprocess():
+    extractor = DependencyExtractor()
+    extractor.preprocess()
+    rust_path = "lib::lock_protocol_rcu::mm::lib::lock_protocol_rcu::mm::page_size_spec"
+    func_info = extractor.get_function_info(rust_path)
+    print(func_info)
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Extract dependencies for a given Rust path, or list all exec/proof functions.")
@@ -999,4 +1105,6 @@ if __name__ == '__main__':
     #test_full()
     #test_call_graph()
     #test_extract_dependencies()
+    #test_find_when_used_as_spec()
+    #test_preprocess()
     main()
