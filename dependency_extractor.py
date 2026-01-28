@@ -378,8 +378,13 @@ class DependencyExtractor:
         # Convert rust_path to call_graph_node_name
         function_info = self.analyzer.function_rust_path_to_info.get(rust_path)
         if not function_info:
-            print(f"ERROR：Function not found: {rust_path}")
-            return []
+            # Attempt fuzzy matching
+            fuzzy_match = self._fuzzy_match_function(rust_path)
+            if fuzzy_match:
+                function_info = self.analyzer.function_rust_path_to_info.get(fuzzy_match)
+            else:
+                print(f"ERROR：Function not found: {rust_path}")
+                return []
 
         call_graph_node_name = function_info.get('call_graph_node_name')
         if not call_graph_node_name:
@@ -438,7 +443,46 @@ class DependencyExtractor:
             output_dependencies.append(formatted)
 
         return output_dependencies
-    
+
+    def _fuzzy_match_function(self, rust_path):
+        """Attempt to find a function in function_rust_path_to_info with similar structure to the given rust_path.
+        Matching logic:
+        1. Paths must have the same length.
+        2. Compare each segment of the path:
+           - If one segment is 'impl&%', consider it a match.
+           - Otherwise, the segments must be identical.
+        3. The last segment (function name) must match exactly.
+        """
+        parts = rust_path.split("::")
+        if len(parts) < 2:
+            return None
+        candidates = []
+        for key in self.analyzer.function_rust_path_to_info.keys():
+            key_parts = key.split("::")
+            if len(key_parts) != len(parts):
+                continue  # Skip if path lengths are not the same
+
+            match = True
+            for i in range(len(parts)):
+                if i == len(parts) - 1:  # Last segment (function name) must match exactly
+                    if parts[i] != key_parts[i]:
+                        match = False
+                        break
+                elif parts[i].startswith("impl") or key_parts[i].startswith("impl"):
+                    continue  # Allow 'impl&%' to match any segment
+                elif parts[i] != key_parts[i]:
+                    match = False
+                    break
+
+            if match:
+                candidates.append(key)
+        if len(candidates) == 1:
+            return candidates[0]
+        elif len(candidates) > 1:
+            print(f"[ERROR] Multiple fuzzy matches found for {rust_path}: {candidates}")
+
+        return None
+
     def _format_unknown_source_dependencies(self, path):
         return f"[unknown:0] {path}"
     
