@@ -380,7 +380,7 @@ class DependencyExtractor:
         if not function_info:
             print(f"ERROR：Function not found: {rust_path}")
             return []
-        
+
         call_graph_node_name = function_info.get('call_graph_node_name')
         if not call_graph_node_name:
             print(f"ERROR：No call graph node name for: {rust_path}")
@@ -413,7 +413,9 @@ class DependencyExtractor:
                     categorized_dependencies['reqens_traitimplpath_dependencies'].append(dep)
                 else:
                     categorized_dependencies['other_dependencies'].append(dep)
-        
+        # Add self in the last
+        categorized_dependencies['fun_dependencies'].append(call_graph_node_name)
+
         output_dependencies = []
         
         # Process Fun dependencies to separate vir-preprocessed and unknown ones
