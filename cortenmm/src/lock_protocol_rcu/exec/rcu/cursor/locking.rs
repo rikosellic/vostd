@@ -102,11 +102,7 @@ pub proof fn lemma_va_range_get_tree_path(va: Range<Vaddr>)
     requires
         va_range_wf(va),
     ensures
-        forall|i|
-            #![auto]
-            0 <= i < va_range_get_tree_path(va).len() ==> NodeHelper::valid_nid(
-                va_range_get_tree_path(va)[i],
-            ),
+        va_range_get_tree_path(va).all(|id| NodeHelper::valid_nid(id)),
         va_range_get_tree_path(va).len() == 5 - va_range_get_guard_level(va),
 {
     broadcast use group_node_helper_lemmas;
