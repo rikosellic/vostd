@@ -3,12 +3,13 @@
 use vstd::prelude::*;
 use vstd_extra::prelude::*;
 
-use aster_common::prelude::*;
-use ostd_specs::{MemRegionModel, MemoryRegionArrayModel};
+use crate::mm::{Paddr, Vaddr};
+use crate::specs::arch::mm::{CONST_MAX_PADDR, MAX_PADDR, PAGE_SIZE};
+use crate::specs::mm::frame::memory_region_specs::{MemRegionModel, MemoryRegionArrayModel};
 
 use core::ops::Deref;
 
-use align_ext::AlignExt;
+// use align_ext::AlignExt;
 
 //use crate::mm::{kspace::kernel_loaded_offset, Paddr, Vaddr, PAGE_SIZE};
 

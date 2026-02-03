@@ -17,6 +17,7 @@ pub mod external;
 pub mod function_properties;
 pub mod ghost_tree;
 pub mod ownership;
+pub mod undroppable;
 pub mod resource;
 
 #[macro_use]
@@ -28,4 +29,5 @@ pub mod raw_ptr_extra;
 pub mod seq_extra;
 pub mod set_extra;
 pub mod state_machine;
+pub mod std_extra;
 pub mod temporal_logic;

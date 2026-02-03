@@ -5,20 +5,17 @@ use core::{marker::PhantomData, mem::ManuallyDrop, ops::Range, sync::atomic::Ord
 use vstd::prelude::*;
 
 use vstd::simple_pptr::*;
+use vstd_extra::ownership::*;
 
 use crate::mm::{
-    nr_subpage_per_huge, paddr_to_vaddr,
-    page_table::{
-        load_pte, pte_index, ChildRef, PageTable, PageTableConfig, PageTableEntryTrait,
-        PageTableGuard, PageTableNodeRef, PagingConstsTrait, PagingLevel,
-    },
-    Vaddr,
+    nr_subpage_per_huge, paddr_to_vaddr, page_table::*, Paddr, PagingConsts, PagingConstsTrait,
+    PagingLevel, Vaddr, NR_ENTRIES, NR_LEVELS, PAGE_SIZE,
 };
 
 use vstd_extra::array_ptr::*;
 
-use aster_common::prelude::page_table::*;
-use aster_common::prelude::*;
+use crate::mm::page_table::*;
+use crate::specs::task::InAtomicMode;
 
 use core::ops::IndexMut;
 
@@ -30,7 +27,7 @@ pub assume_specification<Idx: Clone>[ Range::<Idx>::clone ](range: &Range<Idx>) 
 ;
 
 #[verus_spec(
-    with Tracked(pt_own): Tracked<&mut PageTableOwner<C>>,
+    with Tracked(pt_own): Tracked<&mut OwnerSubtree<C>>,
         Tracked(guard_perm): Tracked<& vstd::simple_pptr::PointsTo<PageTableGuard<'rcu, C>>>
 )]
 #[verifier::external_body]
@@ -113,7 +110,7 @@ pub fn unlock_range<C: PageTableConfig, A: InAtomicMode>(cursor: &mut Cursor<'_,
 /// page table recycling), it will return `None`. The caller should retry in
 /// this case to lock the proper node.
 #[verus_spec(
-    with Tracked(pt_own): Tracked<&mut PageTableOwner<C>>,
+    with Tracked(pt_own): Tracked<&mut OwnerSubtree<C>>,
         Tracked(guard_perm): Tracked<&mut vstd::simple_pptr::PointsTo<PageTableGuard<'rcu, C>>>
 )]
 #[verifier::external_body]
@@ -163,15 +160,15 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
         };
 
         let mut guard_val = pt_guard.take(Tracked(guard_perm));
-        let tracked node_owner = pt_own.tree.value.node.tracked_take();
-        let stray_mut = guard_val.stray_mut(); //.borrow(Tracked(&node_owner.as_node.meta_own.stray));
+        let tracked node_owner = pt_own.value.node.tracked_take();
+        let stray_mut = guard_val.stray_mut(); //.borrow(Tracked(&node_owner.meta_own.stray));
 
         proof {
             pt_guard.put(Tracked(guard_perm), guard_val);
-            pt_own.tree.value.node = Some(node_owner);
+            pt_own.value.node = Some(node_owner);
         }
 
-        if *(stray_mut.borrow(Tracked(&node_owner.as_node.meta_own.stray))) {
+        if *(stray_mut.borrow(Tracked(&node_owner.meta_own.stray))) {
             return None;
         }
         let mut cur_entry = PageTableGuard::<'rcu, C>::entry(pt_guard, start_idx);
@@ -204,15 +201,15 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
     };
 
     let mut guard_val = pt_guard.take(Tracked(guard_perm));
-    let tracked node_owner = pt_own.tree.value.node.tracked_take();
+    let tracked node_owner = pt_own.value.node.tracked_take();
     let stray_mut = guard_val.stray_mut();
 
     proof {
         pt_guard.put(Tracked(guard_perm), guard_val);
-        pt_own.tree.value.node = Some(node_owner);
+        pt_own.value.node = Some(node_owner);
     }
 
-    if *(stray_mut.borrow(Tracked(&node_owner.as_node.meta_own.stray))) {
+    if *(stray_mut.borrow(Tracked(&node_owner.meta_own.stray))) {
         return None;
     }
     Some(pt_guard)
@@ -317,15 +314,29 @@ unsafe fn dfs_release_lock<'rcu, C: PageTableConfig, A: InAtomicMode>(
 ///
 /// This function must not be called upon a shared node, e.g., the second-
 /// top level nodes that the kernel space and user space share.
-#[verus_spec(
-    with Tracked(entry_own): Tracked<&mut EntryOwner<'a, C>>,
-        Tracked(guard_perm): Tracked<&mut vstd::simple_pptr::PointsTo<PageTableGuard<'a, C>>>
+#[verus_spec(res =>
+    with Tracked(owner): Tracked<&mut CursorOwner<'a, C>>
+    requires
+        old(owner).inv(),
+    ensures
+        owner.inv(),
+        owner.guard_level == old(owner).guard_level,
+        owner.level == old(owner).level,
+        owner.va == old(owner).va,
+        owner.prefix == old(owner).prefix,
+        // Preserve the guard_perm.pptr() for each continuation level
+        owner.level <= 4 ==> owner.continuations[3].guard_perm.pptr() == old(owner).continuations[3].guard_perm.pptr(),
+        owner.level <= 3 ==> owner.continuations[2].guard_perm.pptr() == old(owner).continuations[2].guard_perm.pptr(),
+        owner.level <= 2 ==> owner.continuations[1].guard_perm.pptr() == old(owner).continuations[1].guard_perm.pptr(),
+        owner.level == 1 ==> owner.continuations[0].guard_perm.pptr() == old(owner).continuations[0].guard_perm.pptr(),
 )]
 #[verifier::external_body]
 pub fn dfs_mark_stray_and_unlock<'a, C: PageTableConfig, A: InAtomicMode>(
     rcu_guard: &A,
     sub_tree: PPtr<PageTableGuard<'a, C>>,
 ) -> usize {
+    unimplemented!();
+    /*
     let mut sub_tree_val = sub_tree.take(Tracked(guard_perm));
     let stray_mut = sub_tree_val.stray_mut();
     let tracked node_owner = entry_own.node.tracked_take();
@@ -359,7 +370,7 @@ pub fn dfs_mark_stray_and_unlock<'a, C: PageTableConfig, A: InAtomicMode>(
         }
     }
 
-    num_frames
+    num_frames*/
 }
 
 #[verifier::external_body]

@@ -3,17 +3,38 @@ use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref, ptr::NonNull};
 
 use vstd::prelude::*;
 
+use vstd_extra::external::manually_drop::*;
 use vstd_extra::ownership::*;
+use vstd_extra::undroppable::*;
 
-use aster_common::prelude::frame::*;
-use aster_common::prelude::*;
+use crate::mm::frame::meta::mapping::{frame_to_index, meta_to_frame};
+use crate::mm::frame::meta::{AnyFrameMeta, MetaSlot};
+use crate::mm::frame::MetaPerm;
+use crate::mm::{Paddr, PagingLevel, Vaddr};
+use crate::specs::arch::mm::{MAX_PADDR, PAGE_SIZE};
+use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 
 use super::Frame;
-use crate::{mm::Paddr /*, sync::non_null::NonNullPtr*/};
 
 use vstd::simple_pptr::PPtr;
 
 verus! {
+
+/// A struct that can work as `&'a Frame<M>`.
+#[rustc_has_incoherent_inherent_impls]
+pub struct FrameRef<'a, M: AnyFrameMeta> {
+    pub inner: NeverDrop<Frame<M>>,
+    pub _marker: PhantomData<&'a Frame<M>>,
+}
+
+impl<M: AnyFrameMeta> Deref for FrameRef<'_, M> {
+    type Target = Frame<M>;
+
+    #[verus_spec(ensures returns manually_drop_deref_spec(&self.inner.0))]
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
 
 #[verus_verify]
 impl<M: AnyFrameMeta> FrameRef<'_, M> {
@@ -25,10 +46,10 @@ impl<M: AnyFrameMeta> FrameRef<'_, M> {
     ///  - the frame outlives the created reference, so that the reference can
     ///    be seen as borrowed from that frame.
     ///  - the type of the [`FrameRef`] (`M`) matches the borrowed frame.
-    #[rustc_allow_incoherent_impl]
     #[verus_spec(r =>
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            Tracked(perm): Tracked<&MetaPerm<M>>,
         requires
             raw % PAGE_SIZE() == 0,
             raw < MAX_PADDR(),
@@ -36,15 +57,16 @@ impl<M: AnyFrameMeta> FrameRef<'_, M> {
             old(regions).dropped_slots.contains_key(frame_to_index(raw)),
             old(regions).inv(),
         ensures
-            regions.inv()
+            regions.inv(),
+            r.inner@.paddr() == raw,
     )]
+    #[verifier::external_body]
     pub fn borrow_paddr(raw: Paddr) -> Self {
-        #[verus_spec(with Tracked(regions))]
+        #[verus_spec(with Tracked(regions), Tracked(perm))]
         let frame = Frame::from_raw(raw);
 
         Self {
-            // SAFETY: The caller ensures the safety.
-            inner: ManuallyDrop::new(frame),
+            inner: NeverDrop::new(frame, Tracked(regions)),
             _marker: PhantomData,
         }
     }
@@ -84,7 +106,7 @@ pub unsafe trait NonNullPtr: 'static + Sized {
     /// The lower [`Self::ALIGN_BITS`] of the raw pointer is guaranteed to
     /// be zero. In other words, the pointer is guaranteed to be aligned to
     /// `1 << Self::ALIGN_BITS`.
-    fn into_raw(self) -> PPtr<Self::Target>;
+    fn into_raw(self, Tracked(regions): Tracked<&mut MetaRegionOwners>) -> PPtr<Self::Target>;
 
     /// Converts back from a raw pointer.
     ///
@@ -106,13 +128,22 @@ pub unsafe trait NonNullPtr: 'static + Sized {
     ///
     /// The original pointer must outlive the lifetime parameter `'a`, and during `'a`
     /// no mutable references to the pointer will exist.
-    unsafe fn raw_as_ref<'a>(raw: PPtr<Self::Target>) -> Self::Ref<'a>;
+    unsafe fn raw_as_ref<'a>(
+        raw: PPtr<Self::Target>,
+        Tracked(regions): Tracked<&mut MetaRegionOwners>,
+    ) -> Self::Ref<'a>
+        requires
+            old(regions).inv(),
+            old(regions).slots.contains_key(frame_to_index(meta_to_frame(raw.addr()))),
+            !old(regions).dropped_slots.contains_key(frame_to_index(meta_to_frame(raw.addr()))),
+    ;
 
     /// Converts a shared reference to a raw pointer.
     fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> PPtr<Self::Target>;
 }
 
-pub assume_specification [usize::trailing_zeros] (_0: usize) -> u32;
+pub assume_specification[ usize::trailing_zeros ](_0: usize) -> u32
+;
 
 // SAFETY: `Frame` is essentially a `*const MetaSlot` that could be used as a non-null
 // `*const` pointer.
@@ -125,31 +156,31 @@ unsafe impl<M: AnyFrameMeta + ?Sized + 'static> NonNullPtr for Frame<M> {
         core::mem::align_of::<MetaSlot>().trailing_zeros()
     }
 
-    fn into_raw(self) -> PPtr<Self::Target> {
+    fn into_raw(self, Tracked(regions): Tracked<&mut MetaRegionOwners>) -> PPtr<Self::Target> {
         let ptr = self.ptr;
-        let _ = ManuallyDrop::new(self);
+        assert(self.constructor_requires(*old(regions))) by { admit() };
+        let _ = NeverDrop::new(self, Tracked(regions));
         PPtr::<Self::Target>::from_addr(ptr.addr())
     }
 
     unsafe fn from_raw(raw: PPtr<Self::Target>) -> Self {
-        Self {
-            ptr: PPtr::<MetaSlot>::from_addr(raw.addr()),
-            _marker: PhantomData,
-        }
+        Self { ptr: PPtr::<MetaSlot>::from_addr(raw.addr()), _marker: PhantomData }
     }
 
-    unsafe fn raw_as_ref<'a>(raw: PPtr<Self::Target>) -> Self::Ref<'a> {
-        Self::Ref {
-            inner: ManuallyDrop::new(Frame {
-                ptr: PPtr::<MetaSlot>::from_addr(raw.addr()),
-                _marker: PhantomData,
-            }),
-            _marker: PhantomData,
-        }
+    unsafe fn raw_as_ref<'a>(
+        raw: PPtr<Self::Target>,
+        Tracked(regions): Tracked<&mut MetaRegionOwners>,
+    ) -> Self::Ref<'a> {
+        let dropped = NeverDrop::<Frame<M>>::new(
+            Frame { ptr: PPtr::<MetaSlot>::from_addr(raw.addr()), _marker: PhantomData },
+            Tracked(regions),
+        );
+        Self::Ref { inner: dropped, _marker: PhantomData }
     }
 
     fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> PPtr<Self::Target> {
         PPtr::from_addr(ptr_ref.inner.ptr.addr())
     }
 }
+
 } // verus!

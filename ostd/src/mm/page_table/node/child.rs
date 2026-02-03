@@ -1,33 +1,143 @@
 // SPDX-License-Identifier: MPL-2.0
 //! This module specifies the type of the children of a page table node.
 use vstd::prelude::*;
+use vstd_extra::external::manually_drop_deref_spec;
 
-use aster_common::prelude::frame::*;
-use aster_common::prelude::page_table::*;
-use aster_common::prelude::*;
+use crate::mm::frame::meta::mapping::{frame_to_index, meta_to_frame};
+use crate::mm::frame::Frame;
+use crate::mm::page_table::*;
+use crate::specs::arch::mm::{NR_ENTRIES, NR_LEVELS, PAGE_SIZE};
+use crate::specs::arch::paging_consts::PagingConsts;
+use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 
 use vstd_extra::cast_ptr::*;
 use vstd_extra::ownership::*;
+use vstd_extra::undroppable::*;
 
-use ostd_specs::*;
+use crate::specs::*;
 
 use crate::{
-    mm::{Paddr, PagingLevel},
+    mm::{page_prop::PageProperty, Paddr, PagingConstsTrait, PagingLevel, Vaddr},
     //    sync::RcuDrop,
 };
-use core::mem::ManuallyDrop;
+use vstd_extra::undroppable::NeverDrop;
+
+use super::*;
 
 verus! {
+
+/// A page table entry that owns the child of a page table node if present.
+#[rustc_has_incoherent_inherent_impls]
+pub enum Child<C: PageTableConfig> {
+    /// A child page table node.
+    pub PageTable(  /*RcuDrop<*/ PageTableNode<C>  /*>*/ ),
+    /// Physical address of a mapped physical frame.
+    ///
+    /// It is associated with the virtual page property and the level of the
+    /// mapping node, which decides the size of the frame.
+    pub Frame(Paddr, PagingLevel, PageProperty),
+    pub None,
+}
+
+impl<C: PageTableConfig> Child<C> {
+    pub open spec fn get_node(self) -> Option<PageTableNode<C>> {
+        match self {
+            Self::PageTable(node) => Some(node),
+            _ => None,
+        }
+    }
+
+    pub open spec fn get_frame_tuple(self) -> Option<(Paddr, PagingLevel, PageProperty)> {
+        match self {
+            Self::Frame(paddr, level, prop) => Some((paddr, level, prop)),
+            _ => None,
+        }
+    }
+
+    /// Returns whether the child is not present.
+    #[vstd::contrib::auto_spec]
+    pub fn is_none(&self) -> (b: bool) {
+        matches!(self, Child::None)
+    }
+}
+
+/// A reference to the child of a page table node.
+#[rustc_has_incoherent_inherent_impls]
+pub enum ChildRef<'a, C: PageTableConfig> {
+    /// A child page table node.
+    PageTable(PageTableNodeRef<'a, C>),
+    /// Physical address of a mapped physical frame.
+    ///
+    /// It is associated with the virtual page property and the level of the
+    /// mapping node, which decides the size of the frame.
+    Frame(Paddr, PagingLevel, PageProperty),
+    None,
+}
+
+impl<'a, C: PageTableConfig> Inv for ChildRef<'a, C> {
+    open spec fn inv(self) -> bool {
+        true
+    }
+}
+
+impl<'a, C: PageTableConfig> OwnerOf for ChildRef<'a, C> {
+    type Owner = EntryOwner<C>;
+
+    open spec fn wf(self, owner: Self::Owner) -> bool {
+        match self {
+            Self::PageTable(node) => {
+                &&& owner.is_node()
+                &&& manually_drop_deref_spec(&node.inner.0).ptr.addr()
+                    == owner.node.unwrap().meta_perm.addr()
+            },
+            Self::Frame(paddr, level, prop) => {
+                &&& owner.is_frame()
+                &&& owner.frame.unwrap().mapped_pa == paddr
+                &&& owner.frame.unwrap().prop == prop
+            },
+            Self::None => owner.is_absent(),
+        }
+    }
+}
+
+impl<'a, C: PageTableConfig> Inv for Child<C> {
+    open spec fn inv(self) -> bool {
+        true
+    }
+}
+
+impl<C: PageTableConfig> OwnerOf for Child<C> {
+    type Owner = EntryOwner<C>;
+
+    open spec fn wf(self, owner: Self::Owner) -> bool {
+        match self {
+            Self::PageTable(node) => {
+                &&& owner.is_node()
+                &&& node.ptr.addr() == owner.node.unwrap().meta_perm.addr()
+            },
+            Self::Frame(paddr, level, prop) => {
+                &&& owner.is_frame()
+                &&& owner.frame.unwrap().mapped_pa == paddr
+                &&& owner.frame.unwrap().prop == prop
+            },
+            Self::None => owner.is_absent(),
+        }
+    }
+}
 
 impl<C: PageTableConfig> Child<C> {
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with slot_own: Option<Tracked<&MetaSlotOwner>>,
-            slot_perm: Option<Tracked<&PointsTo<MetaSlot, PageTablePageMeta<C>>>>
+        with Tracked(owner): Tracked<&EntryOwner<C>>,
+            Tracked(regions): Tracked<&mut MetaRegionOwners>
     )]
     pub fn into_pte(self) -> (res: C::E)
         requires
-            self is PageTable ==> {
+            owner.inv(),
+            old(regions).inv(),
+            self.wf(
+                *owner,
+            ),/*            self is PageTable ==> {
                 &&& slot_own is Some
                 &&& slot_own.unwrap()@.inv()
                 &&& slot_perm is Some
@@ -36,17 +146,40 @@ impl<C: PageTableConfig> Child<C> {
                 &&& slot_perm.unwrap()@.is_init()
                 &&& slot_perm.unwrap()@.points_to.value().wf(*slot_own.unwrap()@)
                 &&& slot_perm.unwrap()@.addr() == slot_own.unwrap()@.self_addr
-            },
+            }*/
+
         ensures
-            self is PageTable ==> res == self.into_pte_pt_spec(*slot_own.unwrap()@),
+            regions.inv(),
+            res.paddr() % PAGE_SIZE() == 0,
+            res.paddr()
+                < MAX_PADDR(),/*            self is PageTable ==> res == self.into_pte_pt_spec(*slot_own.unwrap()@),
             self is Frame ==> res == self.into_pte_frame_spec(self.get_frame_tuple().unwrap()),
-            self is None ==> res == self.into_pte_none_spec(),
+            self is None ==> res == self.into_pte_none_spec(),*/
+
     {
         match self {
             Child::PageTable(node) => {
-                #[verus_spec(with Tracked(&slot_perm.tracked_unwrap().borrow().points_to))]
+                // From Child::PageTable::wf: owner.is_node() and node.ptr.addr() == owner.node.unwrap().meta_perm.addr()
+                assert(owner.is_node());
+                let ghost node_owner = owner.node.unwrap();
+                assert(node_owner.inv());
+                assert(node.ptr.addr() == node_owner.meta_perm.addr());
+                // From NodeOwner::inv():
+                assert(meta_to_frame(node_owner.meta_perm.addr()) < MAX_PADDR());
+                assert(FRAME_METADATA_RANGE().start <= node_owner.meta_perm.addr()
+                    < FRAME_METADATA_RANGE().end);
+                assert(node_owner.meta_perm.addr() % META_SLOT_SIZE() == 0);
+
+                #[verus_spec(with Tracked(&owner.node.tracked_borrow().meta_perm.points_to))]
                 let paddr = node.start_paddr();
-                let _ = ManuallyDrop::new(node);
+
+                // paddr == meta_to_frame(node.ptr.addr()) == meta_to_frame(node_owner.meta_perm.addr())
+                assert(paddr == meta_to_frame(node.ptr.addr()));
+                assert(paddr % PAGE_SIZE() == 0);
+                assert(paddr < MAX_PADDR());
+
+                assert(node.constructor_requires(*old(regions))) by { admit() };
+                let _ = NeverDrop::new(node, Tracked(regions));
                 C::E::new_pt(paddr)
             },
             Child::Frame(paddr, level, prop) => C::E::new_page(paddr, level, prop),
@@ -61,9 +194,10 @@ impl<C: PageTableConfig> Child<C> {
     ///  - must not be referenced by a living [`ChildRef`].
     ///
     /// The level must match the original level of the child.
-    #[rustc_allow_incoherent_impl]
+    #[verifier::external_body]
     #[verus_spec(
-        with Tracked(regions) : Tracked<&mut MetaRegionOwners>
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            Tracked(entry_own): Tracked<&EntryOwner<C>>,
     )]
     pub fn from_pte(pte: C::E, level: PagingLevel) -> (res: Self)
         requires
@@ -72,8 +206,12 @@ impl<C: PageTableConfig> Child<C> {
             old(regions).inv(),
             !old(regions).slots.contains_key(frame_to_index(pte.paddr())),
             old(regions).dropped_slots.contains_key(frame_to_index(pte.paddr())),
+            entry_own.inv(),
+    //            pte.wf(*entry_own),
+
         ensures
             regions.inv(),
+            res.wf(*entry_own),
             !pte.is_present() ==> res == Child::<C>::None,
             pte.is_present() && pte.is_last(level) ==> res == Child::<C>::from_pte_frame_spec(
                 pte,
@@ -90,11 +228,14 @@ impl<C: PageTableConfig> Child<C> {
         let paddr = pte.paddr();
 
         if !pte.is_last(level) {
+            assert(entry_own.is_node()) by { admit() };
+
             // SAFETY: The caller ensures that this node was created by
             // `into_pte`, so that restoring the forgotten reference is safe.
-            #[verus_spec(with Tracked(regions))]
+            #[verus_spec(with Tracked(regions), Tracked(&entry_own.node.tracked_borrow().meta_perm))]
             let node = PageTableNode::from_raw(paddr);
             //            debug_assert_eq!(node.level(), level - 1);
+
             return Child::PageTable(  /*RcuDrop::new(*/ node  /*)*/ );
         }
         Child::Frame(paddr, level, pte.prop())
@@ -113,32 +254,48 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
     /// node that contains this PTE.
     #[rustc_allow_incoherent_impl]
     #[verus_spec(
-        with Tracked(regions): Tracked<&mut MetaRegionOwners>
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            Tracked(entry_owner): Tracked<&EntryOwner<C>>
     )]
     pub fn from_pte(pte: &C::E, level: PagingLevel) -> (res: Self)
         requires
+    //            pte.wf(*entry_owner),
+
+            entry_owner.inv(),
             pte.paddr() % PAGE_SIZE() == 0,
             pte.paddr() < MAX_PADDR(),
             !old(regions).slots.contains_key(frame_to_index(pte.paddr())),
             old(regions).dropped_slots.contains_key(frame_to_index(pte.paddr())),
             old(regions).inv(),
         ensures
-            regions.inv()
+            regions.inv(),
+            res.wf(*entry_owner),
     {
         if !pte.is_present() {
+            assert(entry_owner.is_absent()) by { admit() };
             return ChildRef::None;
         }
         let paddr = pte.paddr();
 
         if !pte.is_last(level) {
+            assert(entry_owner.is_node()) by { admit() };
+
             // SAFETY: The caller ensures that the lifetime of the child is
             // contained by the residing node, and the physical address is
             // valid since the entry is present.
-            #[verus_spec(with Tracked(regions))]
+            #[verus_spec(with Tracked(regions), Tracked(&entry_owner.node.tracked_borrow().meta_perm))]
             let node = PageTableNodeRef::borrow_paddr(paddr);
-            //            debug_assert_eq!(node.level(), level - 1);
+
+            assert(manually_drop_deref_spec(&node.inner.0).ptr.addr()
+                == entry_owner.node.unwrap().meta_perm.addr()) by { admit() };
+
+            // debug_assert_eq!(node.level(), level - 1);
             return ChildRef::PageTable(node);
         }
+        assert(entry_owner.is_frame()) by { admit() };
+        assert(entry_owner.frame.unwrap().mapped_pa == paddr) by { admit() };
+        assert(entry_owner.frame.unwrap().prop == pte.prop()) by { admit() };
+
         ChildRef::Frame(paddr, level, pte.prop())
     }
 }
