@@ -318,7 +318,7 @@ impl VirtPtr {
             old(mem).addr_transl(self.vaddr) is Some,
             self.is_valid(),
         ensures
-            mem == old(mem).write(self.vaddr, x).unwrap(),
+            *mem == old(mem).write(self.vaddr, x).unwrap(),
     {
         unimplemented!()
     }
