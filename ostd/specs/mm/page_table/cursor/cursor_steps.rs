@@ -172,13 +172,13 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     { admit() }
 
     #[verifier::returns(proof)]
-    pub proof fn pop_level_owner(tracked &mut self) -> (guard_perm: Tracked<GuardPerm<'rcu, C>>)
+    pub proof fn pop_level_owner(tracked &mut self) -> (tracked guard_perm: GuardPerm<'rcu, C>)
         requires
             old(self).inv(),
             old(self).level < NR_LEVELS(),
         ensures
             *self == old(self).pop_level_owner_spec().0,
-            guard_perm@ == old(self).pop_level_owner_spec().1,
+            guard_perm == old(self).pop_level_owner_spec().1,
     {
         let ghost self0 = *self;
         let tracked mut parent = self.continuations.tracked_remove(self.level as int);

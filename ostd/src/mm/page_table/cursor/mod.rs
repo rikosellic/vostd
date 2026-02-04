@@ -327,7 +327,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     #[verus_spec(with Tracked(&child_node), Tracked(guards))]
                     let guard = pt.make_guard_unchecked(rcu_guard);
 
-                    let tracked Tracked(guard_perm) = guards.take(child_node.meta_perm.addr());
+                    let tracked guard_perm = guards.take(child_node.meta_perm.addr());
 
                     proof {
                         child_owner.value.node = Some(child_node);
@@ -529,7 +529,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     #[verus_spec(with Tracked(&child_node_owner), Tracked(guards))]
                     let pt_guard = pt.make_guard_unchecked(rcu_guard);
 
-                    let tracked Tracked(guard_perm) = guards.take(
+                    let tracked guard_perm = guards.take(
                         child_node_owner.meta_perm.addr(),
                     );
 
@@ -608,7 +608,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
                     assert(guards.locked(child_owner.value.node.unwrap().meta_perm.addr()));
                     assert(guards.guards[child_owner.value.node.unwrap().meta_perm.addr()] is Some);
-                    let tracked Tracked(guard_perm) = guards.take(
+                    let tracked guard_perm = guards.take(
                         child_owner.value.node.unwrap().meta_perm.addr(),
                     );
 
@@ -847,7 +847,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             assert(guards.lock_held(owner.continuations[owner.level - 1].guard_perm.value().inner.inner@.ptr.addr()));
             owner.pop_level_owner_preserves_guard_conditions(*guards);
         }
-        let tracked Tracked(guard_perm) = owner.pop_level_owner();
+        let tracked guard_perm = owner.pop_level_owner();
 
         let ghost owner0 = *owner;
         let ghost guards0 = *guards;
@@ -1291,7 +1291,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                     #[verus_spec(with Tracked(&child_node), Tracked(guards))]
                     let pt_guard = pt.make_guard_unchecked(rcu_guard);
 
-                    let tracked Tracked(guard_perm) = guards.take(child_node.meta_perm.addr());
+                    let tracked guard_perm = guards.take(child_node.meta_perm.addr());
 
                     proof {
                         child_owner.value.node = Some(child_node);
@@ -1351,7 +1351,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
 
                     assert(guards.locked(child_owner.value.node.unwrap().meta_perm.addr()));
                     assert(guards.guards[child_owner.value.node.unwrap().meta_perm.addr()] is Some);
-                    let tracked Tracked(child_guard_perm) = guards.take(child_owner.value.node.unwrap().meta_perm.addr());
+                    let tracked child_guard_perm = guards.take(child_owner.value.node.unwrap().meta_perm.addr());
 
                     assert(child_owner.value.node.unwrap().relate_guard_perm(child_guard_perm));
                     assert(child_owner.value.node.unwrap().meta_perm.addr() == split_child.addr());
@@ -1631,7 +1631,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 #[verus_spec(with Tracked(&old_node_owner), Tracked(guards))]
                 let locked_pt = borrow_pt.make_guard_unchecked(rcu_guard);
 
-                let tracked Tracked(guard_perm) = guards.take(old_node_owner.meta_perm.addr());
+                let tracked guard_perm = guards.take(old_node_owner.meta_perm.addr());
 
                 // SAFETY:
                 //  - We checked that we are not unmapping shared kernel page table nodes.

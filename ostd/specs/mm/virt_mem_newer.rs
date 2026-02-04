@@ -598,10 +598,10 @@ impl GlobalMemView {
         )
     }
 
-    pub axiom fn take_view(tracked &mut self, vaddr: usize, len: usize) -> (tracked view: Tracked<MemView>)
+    pub axiom fn take_view(tracked &mut self, vaddr: usize, len: usize) -> (tracked view: MemView)
         ensures
             *self == old(self).take_view_spec(vaddr, len).0,
-            view@ == old(self).take_view_spec(vaddr, len).1;
+            view == old(self).take_view_spec(vaddr, len).1;
 
     pub open spec fn return_view_spec(self, view: MemView) -> Self {
         GlobalMemView {

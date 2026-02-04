@@ -134,10 +134,10 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
     }
 
     #[verifier::returns(proof)]
-    pub axiom fn restore(tracked &mut self, tracked child: Self) -> (tracked guard_perm: Tracked<GuardPerm<'rcu, C>>)
+    pub axiom fn restore(tracked &mut self, tracked child: Self) -> (tracked guard_perm: GuardPerm<'rcu, C>)
         ensures
             *self == old(self).restore_spec(child).0,
-            guard_perm@ == old(self).restore_spec(child).1,
+            guard_perm == old(self).restore_spec(child).1,
     ;
 
     pub open spec fn prev_views(self) -> Seq<EntryView<C>> {
