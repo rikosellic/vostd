@@ -360,9 +360,7 @@ impl VirtPtr {
 
             0 <= old(self).vaddr + n < usize::MAX,
         ensures
-            *self == old(self).add_spec(
-                n,
-            ),
+            *self == old(self).add_spec(n),
     // If we take option 1, we can also ensure:
     // self.is_defined()
 
