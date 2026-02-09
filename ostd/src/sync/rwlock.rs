@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 use vstd::atomic_ghost::*;
-use vstd::cell::{self, PCell};
+use vstd::cell::pcell::{self, PCell};
 use vstd::tokens::frac::Frac;
 use vstd::prelude::*;
 use vstd_extra::prelude::*;
@@ -28,10 +28,10 @@ use super::{
 verus!{
 
 broadcast use group_deref_spec;
-type RwFrac<T> = Frac<cell::PointsTo<T>,MAX_READER_U64>;
+type RwFrac<T> = Frac<pcell::PointsTo<T>,MAX_READER_U64>;
 const MAX_READER_U64: u64 = MAX_READER as u64;
 
-//struct_with_invariants! {
+struct_with_invariants! {
 /// Spin-based Read-write Lock
 ///
 /// # Overview
@@ -117,13 +117,13 @@ pub struct RwLock<T/* : ?Sized*/, Guard /* = PreemptDisabled*/> {
     /// - **Bit 62:** Upgradeable reader lock.
     /// - **Bit 61:** Indicates if an upgradeable reader is being upgraded.
     /// - **Bits 60-0:** Reader lock count.
-    //lock: AtomicUsize<_, Option<RwFrac<T>>,_>,
+    lock: AtomicUsize<_, Option<RwFrac<T>>,_>,
     val: PCell<T>,
     //val: UnsafeCell<T>,
 }
 
 /// This invariant holds at any time, i.e. not violated during any method execution.
-/* closed spec fn wf(self) -> bool {
+closed spec fn wf(self) -> bool {
     invariant on lock with (val, guard) is (v:usize, g:Option<RwFrac<T>>) {
         /* match g {
             None => v == WRITER,
@@ -134,9 +134,9 @@ pub struct RwLock<T/* : ?Sized*/, Guard /* = PreemptDisabled*/> {
         }*/
         true
     } 
-}*/
+}
 
-//}
+}
 
 const READER: usize = 1;
 const WRITER: usize = 1 << (usize::BITS - 1);
@@ -146,7 +146,7 @@ const MAX_READER: usize = 1 << (usize::BITS - 4);
 }
 
 verus!{
-impl<T, G> RwLock<T, G> {
+/* impl<T, G> RwLock<T, G> {
     /// Creates a new spin-based read-write lock with an initial value.
     pub const fn new(val: T) -> Self {
         let (val, Tracked(perm)) = PCell::new(val);
@@ -158,7 +158,7 @@ impl<T, G> RwLock<T, G> {
             //val: UnsafeCell::new(val),
         }
     }
-}
+}*/
 }
 
 /* 
