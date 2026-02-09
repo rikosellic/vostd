@@ -125,14 +125,27 @@ pub struct RwLock<T/* : ?Sized*/, Guard /* = PreemptDisabled*/> {
 /// This invariant holds at any time, i.e. not violated during any method execution.
 closed spec fn wf(self) -> bool {
     invariant on lock with (val, guard) is (v:usize, g:Option<RwFrac<T>>) {
-        /* match g {
-            None => v == WRITER,
-            Some(perm) => {
-                &&& perm.resource().id() == val.id()
-                &&& perm.resource().is_init()
+        let base_readers: usize = v & READER_MASK;
+        let has_max_reader: bool = (v & MAX_READER) != 0usize;
+        let reader_count: usize = if has_max_reader { MAX_READER } else { base_readers };
+        let upread_count: usize = if (v & UPGRADEABLE_READER) != 0usize { 1usize } else { 0usize };
+        let total_readers: int = (reader_count + upread_count) as int;
+
+        &&& (!has_max_reader ==> base_readers == reader_count)
+        &&& (has_max_reader ==> base_readers == 0)
+        &&& ((v & BEING_UPGRADED) != 0usize ==> (v & UPGRADEABLE_READER) != 0usize)
+        &&& match g {
+            None => {
+                &&& (v & WRITER) != 0usize
+                &&& reader_count == 0
+                &&& (v & BEING_UPGRADED) == 0usize
             }
-        }*/
-        true
+            Some(perm) => {
+                &&& (v & WRITER) == 0usize
+                &&& perm.resource().id() == val.id()
+                &&& perm.frac() == (MAX_READER_U64 as int) - total_readers
+            }
+        }
     } 
 }
 
@@ -143,6 +156,7 @@ const WRITER: usize = 1 << (usize::BITS - 1);
 const UPGRADEABLE_READER: usize = 1 << (usize::BITS - 2);
 const BEING_UPGRADED: usize = 1 << (usize::BITS - 3);
 const MAX_READER: usize = 1 << (usize::BITS - 4);
+const READER_MASK: usize = (!0usize) >> 4;
 }
 
 verus!{
