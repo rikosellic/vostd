@@ -163,6 +163,8 @@ const BEING_UPGRADED: usize = 1 << (usize::BITS - 3);
 
 const MAX_READER: usize = 1 << (usize::BITS - 4);
 
+const READER_MASK: usize = (!0usize) >> 4;
+
 } // verus!
 verus! {
 
