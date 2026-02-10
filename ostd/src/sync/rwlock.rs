@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 use vstd::atomic_ghost::*;
 use vstd::cell::pcell::{self, PCell};
-use vstd::tokens::frac::Frac;
 use vstd::prelude::*;
+use vstd::tokens::frac::Frac;
 use vstd_extra::prelude::*;
 use vstd_extra::resource::*;
 
@@ -25,10 +25,12 @@ use super::{
 };
 //use crate::task::atomic_mode::AsAtomicModeGuard;
 
-verus!{
+verus! {
 
 broadcast use group_deref_spec;
-type RwFrac<T> = Frac<pcell::PointsTo<T>,MAX_READER_U64>;
+
+type RwFrac<T> = Frac<pcell::PointsTo<T>, MAX_READER_U64>;
+
 const MAX_READER_U64: u64 = MAX_READER as u64;
 
 struct_with_invariants! {
@@ -110,7 +112,7 @@ struct_with_invariants! {
 /// ```
 ///
 /// [`SpinLock`]: super::SpinLock
-pub struct RwLock<T/* : ?Sized*/, Guard /* = PreemptDisabled*/> {
+pub struct RwLock<T  /* : ?Sized*/ , Guard  /* = PreemptDisabled*/ > {
     guard: PhantomData<Guard>,
     /// The internal representation of the lock state is as follows:
     /// - **Bit 63:** Writer lock.
@@ -152,12 +154,17 @@ closed spec fn wf(self) -> bool {
 }
 
 const READER: usize = 1;
+
 const WRITER: usize = 1 << (usize::BITS - 1);
+
 const UPGRADEABLE_READER: usize = 1 << (usize::BITS - 2);
+
 const BEING_UPGRADED: usize = 1 << (usize::BITS - 3);
+
 const MAX_READER: usize = 1 << (usize::BITS - 4);
-const READER_MASK: usize = (!0usize) >> 4;
-}
+
+} // verus!
+verus! {
 
 verus!{
 /* impl<T, G> RwLock<T, G> {
@@ -175,9 +182,10 @@ verus!{
 }*/
 }
 
-/* 
+} // verus!
+/*
 impl<T: ?Sized, G: SpinGuardian> RwLock<T, G> {
-    /* 
+    /*
     /// Acquires a read lock and spin-wait until it can be acquired.
     ///
     /// The calling thread will spin-wait until there are no writers or
@@ -439,16 +447,19 @@ unsafe impl<T: ?Sized + Sync, R: Deref<Target = RwLock<T, G>> + Clone + Sync, G:
     for RwLockUpgradeableGuard_<T, R, G>
 {
 }*/
-
 /// A guard that provides immutable data access.
 #[clippy::has_significant_drop]
 #[must_use]
-pub struct RwLockReadGuard_<T/*: ?Sized*/, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> {
+pub struct RwLockReadGuard_<
+    T, /*: ?Sized*/
+    R: Deref<Target = RwLock<T, G>> + Clone,
+    G: SpinGuardian,
+> {
     guard: G::ReadGuard,
     inner: R,
 }
 
-/* 
+/*
 impl<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> AsAtomicModeGuard
     for RwLockReadGuard_<T, R, G>
 {
@@ -492,11 +503,15 @@ impl<T: ?Sized + fmt::Debug, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGua
 }*/
 
 /// A guard that provides mutable data access.
-pub struct RwLockWriteGuard_<T/*: ?Sized*/, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> {
+pub struct RwLockWriteGuard_<
+    T, /*: ?Sized*/
+    R: Deref<Target = RwLock<T, G>> + Clone,
+    G: SpinGuardian,
+> {
     guard: G::Guard,
     inner: R,
 }
-/* 
+/*
 impl<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> AsAtomicModeGuard
     for RwLockWriteGuard_<T, R, G>
 {
@@ -521,7 +536,7 @@ impl<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> Deref
     }
 }
 
-/* 
+/*
 impl<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian>
     RwLockWriteGuard_<T, R, G>
 {
@@ -582,14 +597,14 @@ impl<T: ?Sized + fmt::Debug, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGua
 /// A guard that provides immutable data access but can be atomically
 /// upgraded to `RwLockWriteGuard`.
 pub struct RwLockUpgradeableGuard_<
-    T/*: ?Sized*/,
+    T, /*: ?Sized*/
     R: Deref<Target = RwLock<T, G>> + Clone,
     G: SpinGuardian,
 > {
     guard: G::Guard,
     inner: R,
 }
-/* 
+/*
 impl<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> AsAtomicModeGuard
     for RwLockUpgradeableGuard_<T, R, G>
 {
@@ -603,7 +618,7 @@ pub type RwLockUpgradeableGuard<'a, T, G> = RwLockUpgradeableGuard_<T, &'a RwLoc
 /// A upgradable guard that provides read access to the data protected by a `Arc<RwLock>`.
 pub type ArcRwLockUpgradeableGuard<T, G> = RwLockUpgradeableGuard_<T, Arc<RwLock<T, G>>, G>;
 /*
-/* 
+/*
 impl<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian>
     RwLockUpgradeableGuard_<T, R, G>
 {
