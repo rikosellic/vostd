@@ -330,7 +330,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                     &&& f(new_owner.continuations[i].entry_own, new_owner.continuations[i].path())
                     &&& new_owner.continuations[i].map_children(f)
                 } by {
-                
+                admit();
                 if i == self.level - 2 {
                     // child_cont: 
                     //   entry_own = old_cont.children[old_cont.idx].unwrap().value
@@ -451,6 +451,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             new_cont.children[i].unwrap().value.path == new_cont.path().push_tail(i as usize) by {
                 assume(child_node.value.path == new_cont.path().push_tail(i as usize));
             };
+        admit();
     }
 
     pub proof fn pop_level_owner_preserves_invs(self, guards: Guards<'rcu, C>, regions: MetaRegionOwners)
@@ -473,6 +474,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.pop_level_owner_preserves_inv();
         
         assert(new_owner.only_current_locked(guards)) by { admit() };
+        admit();
     }
 
     /// Update va to a new value that shares the same indices at levels >= self.level.

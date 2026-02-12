@@ -31,6 +31,14 @@ pub ghost struct PageTableView {
 }
 
 impl Mapping {
+    pub open spec fn disjoint_vaddrs(m1: Mapping, m2: Mapping) -> bool {
+        m1.va_range.end <= m2.va_range.start || m2.va_range.end <= m1.va_range.start
+    }
+
+    pub open spec fn disjoint_paddrs(m1: Mapping, m2: Mapping) -> bool {
+        m1.pa_range.end <= m2.pa_range.start || m2.pa_range.end <= m1.pa_range.start
+    }
+
     pub open spec fn inv(self) -> bool {
         &&& set![4096, 2097152, 1073741824].contains(self.page_size)
         &&& self.pa_range.start % self.page_size == 0
@@ -48,8 +56,8 @@ impl Mapping {
 /// not have any overlapping mappings, in the physical or virtual address space.
 /// The virtual ranges not overlapping is a consequence of the structure of the page table.
 /// The physical ranges not overlapping must be maintained by the page table implementation.
-impl Inv for PageTableView {
-    open spec fn inv(self) -> bool {
+impl PageTableView {
+    pub open spec fn inv(self) -> bool {
         &&& forall|m: Mapping| #![auto] self.mappings has m ==> m.inv()
         &&& forall|m: Mapping, n:Mapping| #![auto]
             self.mappings has m ==>

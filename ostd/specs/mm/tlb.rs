@@ -1,6 +1,11 @@
 use vstd::prelude::*;
 
 use crate::specs::mm::cpu::*;
+use crate::specs::mm::page_table::*;
+use crate::mm::{Vaddr, Paddr};
+
+use vstd::set;
+use vstd_extra::ownership::*;
 
 verus! {
 
@@ -10,25 +15,94 @@ pub struct TlbModel {
 
 impl Inv for TlbModel {
     open spec fn inv(self) -> bool {
-        &&& forall|m: Mapping| m in self.mappings ==> m.inv()
-        &&& forall|m: Mapping| m in self.mappings ==> m.va % m.page_size == 0
-        &&& forall|m: Mapping| m in self.mappings ==> m.pa % m.page_size == 0
-        &&& forall|m: Mapping| m in self.mappings ==> set![4096, 2097152, 1073741824].contains(m.page_size)
-        &&& forall|m: Mapping| forall|n: Mapping|
-            m in self.mappings ==>
-            n in self.mappings ==> {
-                &&& m.va + m.page_size <= n.va || n.va + n.page_size <= m.va
-                &&& m.pa + m.page_size <= n.pa || n.pa + n.page_size <= m.pa
-            }
+        &&& forall|m: Mapping| #![auto] self.mappings has m ==> m.inv()
+        &&& forall|m: Mapping, n:Mapping| #![auto]
+            self.mappings has m ==>
+            self.mappings has n ==>
+            m != n ==>
+            Mapping::disjoint_vaddrs(m, n)
+        &&& forall|m: Mapping, n:Mapping| #![auto]
+            self.mappings has m ==>
+            self.mappings has n ==>
+            m != n ==>
+            Mapping::disjoint_paddrs(m, n)
     }
 }
 
 impl TlbModel {
-    pub open spec fn update(self, mapping: Mapping) -> Self
+    pub open spec fn update_spec(self, pt: PageTableView, va: Vaddr) -> Self
     {
-        let va = mapping.va;
-        let filtered = self.mappings.filter(|m: Mapping| m.va != va);
+        let m = pt.mappings.filter(|m: Mapping| m.va_range.start <= va < m.va_range.end).choose();
+        TlbModel {
+            mappings: self.mappings.insert(m),
+        }
     }
+
+    pub axiom fn update(&mut self, pt: PageTableView, va: Vaddr)
+        requires
+            old(self).inv(),
+            forall|m: Mapping| old(self).mappings has m ==> !(m.va_range.start <= va < m.va_range.end),
+            exists|m: Mapping| pt.mappings has m ==> m.va_range.start <= va < m.va_range.end,
+        ensures
+            *self == old(self).update_spec(pt, va);
+
+    pub open spec fn flush_spec(self, va: Vaddr) -> Self
+    {
+        let m = self.mappings.filter(|m: Mapping| m.va_range.start <= va < m.va_range.end);
+        TlbModel {
+            mappings: self.mappings - m,
+        }
+    }
+
+    pub axiom fn flush(&mut self, va: Vaddr)
+        requires
+            old(self).inv(),
+        ensures
+            *self == old(self).flush_spec(va);
+
+    pub open spec fn consistent_with_pt(self, pt: PageTableView) -> bool {
+        self.mappings <= pt.mappings
+    }
+
+    pub proof fn lemma_flush_preserves_inv(self, va: Vaddr)
+        requires
+            self.inv(),
+        ensures
+            self.flush_spec(va).inv()
+    { }
+
+    pub proof fn lemma_update_preserves_consistent(self, pt: PageTableView, va: Vaddr)
+        requires
+            pt.inv(),
+            self.inv(),
+            self.consistent_with_pt(pt),
+            exists|m: Mapping| pt.mappings has m && m.va_range.start <= va < m.va_range.end,
+        ensures
+            self.update_spec(pt, va).consistent_with_pt(pt),
+    {
+        let filtered = pt.mappings.filter(|m: Mapping| m.va_range.start <= va < m.va_range.end);
+        let m = filtered.choose();
+
+        let witness: Mapping = choose|a: Mapping| pt.mappings has a && a.va_range.start <= va < a.va_range.end;
+        assert(filtered.contains(witness));
+
+        if self.mappings.contains(m) {
+            assert(self.mappings.insert(m) =~= self.mappings);
+        } else {
+            assert(filtered.contains(m));
+            assert(pt.mappings.contains(m));
+        }
+    }
+
+    pub proof fn lemma_consistent_with_pt_implies_inv(self, pt: PageTableView)
+        requires
+            self.inv(),
+            self.consistent_with_pt(pt),
+            pt.inv(),
+        ensures
+            self.inv()
+    { }
+
 }
 
 }
