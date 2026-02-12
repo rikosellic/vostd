@@ -482,7 +482,7 @@ pub struct RwLockReadGuard_<
 > {
     guard: G::ReadGuard,
     inner: R,
-    v_perm: RwFrac<T>,
+    v_perm: Tracked<RwFrac<T>>,
 }
 
 /*
@@ -506,8 +506,8 @@ impl<T, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> RwLockReadGuar
 {
     #[verifier::type_invariant]
     pub closed spec fn type_inv(self) -> bool {
-        &&& self.inner.deref_spec().cell_id() == self.v_perm.resource().id()
-        &&& self.v_perm.frac() == 1
+        &&& self.inner.deref_spec().cell_id() == self.v_perm@.resource().id()
+        &&& self.v_perm@.frac() == 1
     }
 }
 }
