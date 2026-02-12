@@ -1,3 +1,4 @@
+use pcm::frac;
 // SPDX-License-Identifier: MPL-2.0
 use vstd::atomic_ghost::*;
 use vstd::cell::pcell::{self, PCell};
@@ -168,20 +169,55 @@ const READER_MASK: usize = (!0usize) >> 4;
 } // verus!
 verus! {
 
+impl<T,G> RwLock<T,G>
+{
+    #[verifier::type_invariant]
+    closed spec fn type_inv(self) -> bool{
+        self.wf()
+    }
+
+    proof fn lemma_bitvector_0_properties()
+    ensures
+        0 & WRITER == 0,
+        0 & UPGRADEABLE_READER == 0,
+        0 & BEING_UPGRADED == 0,
+        0 & READER_MASK == 0,
+        0 & MAX_READER == 0,
+        0 & READER == 0,
+    {
+        assert(0 & WRITER == 0) by (compute_only);
+        assert(0 & UPGRADEABLE_READER == 0) by (compute_only);
+        assert(0 & BEING_UPGRADED == 0) by (compute_only);
+        assert(0 & READER_MASK == 0) by (compute_only);
+        assert(0 & MAX_READER == 0) by (compute_only);
+        assert(0 & READER == 0) by (compute_only);
+    }
+}
+
 verus!{
-/* impl<T, G> RwLock<T, G> {
+#[verus_verify]
+impl<T, G> RwLock<T, G> {
     /// Creates a new spin-based read-write lock with an initial value.
+    #[verus_verify]
     pub const fn new(val: T) -> Self {
         let (val, Tracked(perm)) = PCell::new(val);
+        
+        // Proof code
+        let tracked frac_perm = Frac::<pcell::PointsTo<T>, MAX_READER_U64>::new(perm);
+        assert(frac_perm.frac() == MAX_READER_U64 as int);
+        proof{
+            Self::lemma_bitvector_0_properties();
+        }
+        
         Self {
             guard: PhantomData,
             //lock: AtomicUsize::new(0),
-            //lock:AtomicUsize::new((Ghost(val),Ghost(PhantomData)),0,None),
+            lock:AtomicUsize::new(Ghost((val,PhantomData)),0,Tracked(Some(frac_perm))),
             val: val,
             //val: UnsafeCell::new(val),
         }
     }
-}*/
+}
 }
 
 } // verus!
