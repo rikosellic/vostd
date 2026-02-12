@@ -175,23 +175,6 @@ impl<T,G> RwLock<T,G>
     closed spec fn type_inv(self) -> bool{
         self.wf()
     }
-
-    proof fn lemma_bitvector_0_properties()
-    ensures
-        0 & WRITER == 0,
-        0 & UPGRADEABLE_READER == 0,
-        0 & BEING_UPGRADED == 0,
-        0 & READER_MASK == 0,
-        0 & MAX_READER == 0,
-        0 & READER == 0,
-    {
-        assert(0 & WRITER == 0) by (compute_only);
-        assert(0 & UPGRADEABLE_READER == 0) by (compute_only);
-        assert(0 & BEING_UPGRADED == 0) by (compute_only);
-        assert(0 & READER_MASK == 0) by (compute_only);
-        assert(0 & MAX_READER == 0) by (compute_only);
-        assert(0 & READER == 0) by (compute_only);
-    }
 }
 
 verus!{
@@ -204,9 +187,8 @@ impl<T, G> RwLock<T, G> {
         
         // Proof code
         let tracked frac_perm = Frac::<pcell::PointsTo<T>, MAX_READER_U64>::new(perm);
-        assert(frac_perm.frac() == MAX_READER_U64 as int);
         proof{
-            Self::lemma_bitvector_0_properties();
+            Self::lemma_consts_properties();
         }
         
         Self {
@@ -721,3 +703,36 @@ impl<T: ?Sized + fmt::Debug, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGua
     }
 }
 */
+
+verus!{
+
+impl<T, G> RwLock<T, G> {
+    proof fn lemma_consts_properties()
+    ensures
+        0 & WRITER == 0,
+        0 & UPGRADEABLE_READER == 0,
+        0 & BEING_UPGRADED == 0,
+        0 & READER_MASK == 0,
+        0 & MAX_READER == 0,
+        0 & READER == 0,
+        WRITER == 0x8000_0000_0000_0000,
+        UPGRADEABLE_READER == 0x4000_0000_0000_0000,
+        BEING_UPGRADED == 0x2000_0000_0000_0000,
+        READER_MASK == 0x0FFF_FFFF_FFFF_FFFF,
+        MAX_READER == 0x1000_0000_0000_0000,
+    {
+        assert(0 & WRITER == 0) by (compute_only);
+        assert(0 & UPGRADEABLE_READER == 0) by (compute_only);
+        assert(0 & BEING_UPGRADED == 0) by (compute_only);
+        assert(0 & READER_MASK == 0) by (compute_only);
+        assert(0 & MAX_READER == 0) by (compute_only);
+        assert(0 & READER == 0) by (compute_only);
+        assert(WRITER == 0x8000_0000_0000_0000) by (compute_only);
+        assert(UPGRADEABLE_READER == 0x4000_0000_0000_0000) by (compute_only);
+        assert(BEING_UPGRADED == 0x2000_0000_0000_0000) by (compute_only);
+        assert(READER_MASK == 0x0FFF_FFFF_FFFF_FFFF) by (compute_only);
+        assert(MAX_READER == 0x1000_0000_0000_0000) by (compute_only);
+    }
+}
+
+}
