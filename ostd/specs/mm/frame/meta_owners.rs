@@ -14,7 +14,7 @@ use vstd_extra::ownership::*;
 use super::*;
 use crate::mm::frame::meta::{MetaSlot, MetaSlotStorage};
 use crate::specs::arch::kspace::FRAME_METADATA_RANGE;
-use crate::specs::arch::mm::CONST_NR_ENTRIES;
+use crate::specs::arch::mm::NR_ENTRIES;
 use crate::specs::mm::frame::mapping::META_SLOT_SIZE;
 
 use core::marker::PhantomData;
@@ -38,7 +38,6 @@ pub enum PageState {
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone, Copy)]
-#[rustc_has_incoherent_inherent_impls]
 pub enum PageUsage {
     // The zero variant is reserved for the unused type. Only an unused page
     // can be designated for one of the other purposes.
@@ -104,7 +103,7 @@ pub tracked struct MetaSlotOwner {
     pub in_list: PermissionU64,
     pub self_addr: usize,
     pub usage: PageUsage,
-    pub path_if_in_pt: Option<TreePath<CONST_NR_ENTRIES>>,
+    pub path_if_in_pt: Option<TreePath<NR_ENTRIES>>,
 }
 
 impl Inv for MetaSlotOwner {
@@ -124,8 +123,8 @@ impl Inv for MetaSlotOwner {
             &&& self.vtable_ptr.is_uninit()
             &&& self.in_list.value() == 0
         }
-        &&& FRAME_METADATA_RANGE().start <= self.self_addr < FRAME_METADATA_RANGE().end
-        &&& self.self_addr % META_SLOT_SIZE() == 0
+        &&& FRAME_METADATA_RANGE.start <= self.self_addr < FRAME_METADATA_RANGE.end
+        &&& self.self_addr % META_SLOT_SIZE == 0
     }
 }
 
