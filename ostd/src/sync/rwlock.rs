@@ -1,7 +1,7 @@
 use pcm::frac;
 // SPDX-License-Identifier: MPL-2.0
 use vstd::atomic_ghost::*;
-use vstd::cell::pcell::{self, PCell};
+use vstd::cell::{self, pcell::*};
 use vstd::prelude::*;
 use vstd::tokens::frac::Frac;
 use vstd_extra::prelude::*;
@@ -30,7 +30,7 @@ verus! {
 
 broadcast use group_deref_spec;
 
-type RwFrac<T> = Frac<pcell::PointsTo<T>, MAX_READER_U64>;
+type RwFrac<T> = Frac<PointsTo<T>, MAX_READER_U64>;
 
 const MAX_READER_U64: u64 = MAX_READER as u64;
 
@@ -166,18 +166,21 @@ const MAX_READER: usize = 1 << (usize::BITS - 4);
 
 const READER_MASK: usize = (!0usize) >> 4;
 
-} // verus!
-verus! {
-
 impl<T,G> RwLock<T,G>
 {
+    /// Returns the unique [`CellId`](https://verus-lang.github.io/verus/verusdoc/vstd/cell/struct.CellId.html) of the internal `PCell<T>`.
+    pub closed spec fn cell_id(self) -> cell::CellId {
+        self.val.id()
+    }
+    
+    /// Encapsulates the invariant described in the *Invariant* section of [`RwLock`].
     #[verifier::type_invariant]
     closed spec fn type_inv(self) -> bool{
         self.wf()
     }
 }
 
-verus!{
+
 #[verus_verify]
 impl<T, G> RwLock<T, G> {
     /// Creates a new spin-based read-write lock with an initial value.
@@ -186,11 +189,11 @@ impl<T, G> RwLock<T, G> {
         let (val, Tracked(perm)) = PCell::new(val);
         
         // Proof code
-        let tracked frac_perm = Frac::<pcell::PointsTo<T>, MAX_READER_U64>::new(perm);
-        proof{
-            Self::lemma_consts_properties();
+        let tracked frac_perm = RwFrac::<T>::new(perm);
+        proof { 
+            lemma_consts_properties();
         }
-        
+
         Self {
             guard: PhantomData,
             //lock: AtomicUsize::new(0),
@@ -202,7 +205,6 @@ impl<T, G> RwLock<T, G> {
 }
 }
 
-} // verus!
 /*
 impl<T: ?Sized, G: SpinGuardian> RwLock<T, G> {
     /*
@@ -470,6 +472,9 @@ unsafe impl<T: ?Sized + Sync, R: Deref<Target = RwLock<T, G>> + Clone + Sync, G:
 /// A guard that provides immutable data access.
 #[clippy::has_significant_drop]
 #[must_use]
+#[verifier::reject_recursive_types(T)]
+#[verifier::reject_recursive_types(G)]
+#[verus_verify]
 pub struct RwLockReadGuard_<
     T, /*: ?Sized*/
     R: Deref<Target = RwLock<T, G>> + Clone,
@@ -477,6 +482,7 @@ pub struct RwLockReadGuard_<
 > {
     guard: G::ReadGuard,
     inner: R,
+    v_perm: RwFrac<T>,
 }
 
 /*
@@ -494,6 +500,17 @@ pub type RwLockReadGuard<'a, T, G> = RwLockReadGuard_<T, &'a RwLock<T, G>, G>;
 
 /// A guard that provides shared read access to the data protected by a `Arc<RwLock>`.
 pub type ArcRwLockReadGuard<T, G> = RwLockReadGuard_<T, Arc<RwLock<T, G>>, G>;
+
+verus!{
+impl<T, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> RwLockReadGuard_<T, R, G>
+{
+    #[verifier::type_invariant]
+    pub closed spec fn type_inv(self) -> bool {
+        &&& self.inner.deref_spec().cell_id() == self.v_perm.resource().id()
+        &&& self.v_perm.frac() == 1
+    }
+}
+}
 
 /*
 impl<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> Deref
@@ -523,6 +540,9 @@ impl<T: ?Sized + fmt::Debug, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGua
 }*/
 
 /// A guard that provides mutable data access.
+#[verifier::reject_recursive_types(T)]
+#[verifier::reject_recursive_types(G)]
+#[verus_verify]
 pub struct RwLockWriteGuard_<
     T, /*: ?Sized*/
     R: Deref<Target = RwLock<T, G>> + Clone,
@@ -616,6 +636,9 @@ impl<T: ?Sized + fmt::Debug, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGua
 */
 /// A guard that provides immutable data access but can be atomically
 /// upgraded to `RwLockWriteGuard`.
+#[verifier::reject_recursive_types(T)]
+#[verifier::reject_recursive_types(G)]
+#[verus_verify]
 pub struct RwLockUpgradeableGuard_<
     T, /*: ?Sized*/
     R: Deref<Target = RwLock<T, G>> + Clone,
@@ -706,33 +729,31 @@ impl<T: ?Sized + fmt::Debug, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGua
 
 verus!{
 
-impl<T, G> RwLock<T, G> {
-    proof fn lemma_consts_properties()
-    ensures
-        0 & WRITER == 0,
-        0 & UPGRADEABLE_READER == 0,
-        0 & BEING_UPGRADED == 0,
-        0 & READER_MASK == 0,
-        0 & MAX_READER == 0,
-        0 & READER == 0,
-        WRITER == 0x8000_0000_0000_0000,
-        UPGRADEABLE_READER == 0x4000_0000_0000_0000,
-        BEING_UPGRADED == 0x2000_0000_0000_0000,
-        READER_MASK == 0x0FFF_FFFF_FFFF_FFFF,
-        MAX_READER == 0x1000_0000_0000_0000,
-    {
-        assert(0 & WRITER == 0) by (compute_only);
-        assert(0 & UPGRADEABLE_READER == 0) by (compute_only);
-        assert(0 & BEING_UPGRADED == 0) by (compute_only);
-        assert(0 & READER_MASK == 0) by (compute_only);
-        assert(0 & MAX_READER == 0) by (compute_only);
-        assert(0 & READER == 0) by (compute_only);
-        assert(WRITER == 0x8000_0000_0000_0000) by (compute_only);
-        assert(UPGRADEABLE_READER == 0x4000_0000_0000_0000) by (compute_only);
-        assert(BEING_UPGRADED == 0x2000_0000_0000_0000) by (compute_only);
-        assert(READER_MASK == 0x0FFF_FFFF_FFFF_FFFF) by (compute_only);
-        assert(MAX_READER == 0x1000_0000_0000_0000) by (compute_only);
-    }
+proof fn lemma_consts_properties()
+ensures
+    0 & WRITER == 0,
+    0 & UPGRADEABLE_READER == 0,
+    0 & BEING_UPGRADED == 0,
+    0 & READER_MASK == 0,
+    0 & MAX_READER == 0,
+    0 & READER == 0,
+    WRITER == 0x8000_0000_0000_0000,
+    UPGRADEABLE_READER == 0x4000_0000_0000_0000,
+    BEING_UPGRADED == 0x2000_0000_0000_0000,
+    READER_MASK == 0x0FFF_FFFF_FFFF_FFFF,
+    MAX_READER == 0x1000_0000_0000_0000,
+{
+    assert(0 & WRITER == 0) by (compute_only);
+    assert(0 & UPGRADEABLE_READER == 0) by (compute_only);
+    assert(0 & BEING_UPGRADED == 0) by (compute_only);
+    assert(0 & READER_MASK == 0) by (compute_only);
+    assert(0 & MAX_READER == 0) by (compute_only);
+    assert(0 & READER == 0) by (compute_only);
+    assert(WRITER == 0x8000_0000_0000_0000) by (compute_only);
+    assert(UPGRADEABLE_READER == 0x4000_0000_0000_0000) by (compute_only);
+    assert(BEING_UPGRADED == 0x2000_0000_0000_0000) by (compute_only);
+    assert(READER_MASK == 0x0FFF_FFFF_FFFF_FFFF) by (compute_only);
+    assert(MAX_READER == 0x1000_0000_0000_0000) by (compute_only);
 }
 
 }
