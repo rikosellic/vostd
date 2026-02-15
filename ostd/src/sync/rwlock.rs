@@ -146,7 +146,7 @@ closed spec fn wf(self) -> bool {
             Some(perm) => {
                 &&& (v & WRITER) == 0usize
                 &&& perm.resource().id() == val.id()
-                &&& perm.frac() == (MAX_READER_U64 as int) - total_readers
+                &&& perm.frac() >= (MAX_READER_U64 as int) - total_readers
             }
         }
     } 
@@ -205,8 +205,8 @@ impl<T, G> RwLock<T, G> {
 }
 }
 
-/*
-impl<T: ?Sized, G: SpinGuardian> RwLock<T, G> {
+#[verus_verify]
+impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /*
     /// Acquires a read lock and spin-wait until it can be acquired.
     ///
@@ -307,7 +307,8 @@ impl<T: ?Sized, G: SpinGuardian> RwLock<T, G> {
             }
         }
     }
-
+    */
+    /*
     /// Attempts to acquire a read lock.
     ///
     /// This function will never spin-wait and will return immediately.
@@ -320,8 +321,8 @@ impl<T: ?Sized, G: SpinGuardian> RwLock<T, G> {
             self.lock.fetch_sub(READER, Release);
             None
         }
-    }
-
+    }*/
+    /*
     /// Attempts to acquire an read lock through an [`Arc`].
     ///
     /// The method is similar to [`try_read`], but it doesn't have the requirement
@@ -430,14 +431,13 @@ impl<T: ?Sized, G: SpinGuardian> RwLock<T, G> {
         self.val.get()
     } */
 }
-
+/*
 impl<T: ?Sized + fmt::Debug, G> fmt::Debug for RwLock<T, G> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self.val, f)
     }
 }
-*/
-/*
+
 /// Because there can be more than one readers to get the T's immutable ref,
 /// so T must be Sync to guarantee the sharing safety.
 unsafe impl<T: ?Sized + Send, G> Send for RwLock<T, G> {}
