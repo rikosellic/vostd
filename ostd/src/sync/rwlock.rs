@@ -122,7 +122,7 @@ pub struct RwLock<T  /* : ?Sized*/ , Guard  /* = PreemptDisabled*/ > {
     /// - **Bits 60-0:** Reader lock count.
     lock: AtomicUsize<_, Option<RwFrac<T>>,_>,
     val: PCell<T>,
-    //val: UnsafeCell<T>,
+    // val: UnsafeCell<T>,
 }
 
 /// This invariant holds at any time, i.e. not violated during any method execution.
@@ -413,14 +413,21 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
             self.lock.fetch_sub(UPGRADEABLE_READER, Release);
         }
         None
-    }
+    } */
+}
 
+impl<T, G: SpinGuardian> RwLock<T, G> {
     /// Returns a mutable reference to the underlying data.
     ///
     /// This method is zero-cost: By holding a mutable reference to the lock, the compiler has
     /// already statically guaranteed that access to the data is exclusive.
     pub fn get_mut(&mut self) -> &mut T {
-        self.val.get_mut()
+        // `PCell<T>` is implemented using an `UnsafeCell<T>` internally; we do an unchecked
+        // cast here since `PCell` doesn't expose `UnsafeCell`-style accessors.
+        unsafe {
+            let ucell: *mut UnsafeCell<T> = (&mut self.val as *mut PCell<T>).cast();
+            &mut *(*ucell).get()
+        }
     }
 
     /// Returns a raw pointer to the underlying data.
@@ -428,9 +435,13 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// This method is safe, but it's up to the caller to ensure that access to the data behind it
     /// is still safe.
     pub(super) fn as_ptr(&self) -> *mut T {
-        self.val.get()
-    } */
+        unsafe {
+            let ucell: *const UnsafeCell<T> = (&self.val as *const PCell<T>).cast();
+            (*ucell).get()
+        }
+    }
 }
+
 /*
 impl<T: ?Sized + fmt::Debug, G> fmt::Debug for RwLock<T, G> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
