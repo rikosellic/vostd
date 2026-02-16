@@ -422,6 +422,7 @@ impl<T, G: SpinGuardian> RwLock<T, G> {
     /// This method is zero-cost: By holding a mutable reference to the lock, the compiler has
     /// already statically guaranteed that access to the data is exclusive.
     pub fn get_mut(&mut self) -> &mut T {
+        // self.val.get_mut()
         // `PCell<T>` is implemented using an `UnsafeCell<T>` internally; we do an unchecked
         // cast here since `PCell` doesn't expose `UnsafeCell`-style accessors.
         unsafe {
@@ -435,6 +436,7 @@ impl<T, G: SpinGuardian> RwLock<T, G> {
     /// This method is safe, but it's up to the caller to ensure that access to the data behind it
     /// is still safe.
     pub(super) fn as_ptr(&self) -> *mut T {
+        // self.val.get()
         unsafe {
             let ucell: *const UnsafeCell<T> = (&self.val as *const PCell<T>).cast();
             (*ucell).get()
