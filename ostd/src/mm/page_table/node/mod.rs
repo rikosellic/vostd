@@ -43,13 +43,13 @@ use vstd_extra::ownership::*;
 
 use crate::mm::frame::allocator::FrameAllocOptions;
 use crate::mm::frame::meta::MetaSlot;
-use crate::mm::frame::{frame_to_index, AnyFrameMeta, Frame, StoredPageTablePageMeta};
+use crate::mm::frame::{frame_to_index, AnyFrameMeta, Frame};
 use crate::mm::page_table::*;
 use crate::mm::{kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, Paddr, Vaddr};
 use crate::specs::arch::kspace::FRAME_METADATA_RANGE;
 use crate::mm::kspace::VMALLOC_BASE_VADDR;
 use crate::specs::mm::frame::mapping::{meta_to_frame, META_SLOT_SIZE};
-use crate::specs::mm::frame::meta_owners::MetaSlotOwner;
+use crate::specs::mm::frame::meta_owners::{MetaSlotOwner, StoredPageTablePageMeta};
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::page_table::node::owners::*;
 
@@ -233,11 +233,12 @@ impl<C: PageTableConfig> PageTableNode<C> {
 
     /// Allocates a new empty page table node.
     #[verus_spec(res =>
-        with Tracked(regions): Tracked<&mut MetaRegionOwners>
+        with Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            Ghost(guard_addrs): Ghost<Set<usize>>
         -> owner: Tracked<OwnerSubtree<C>>
         requires
             1 <= level < NR_LEVELS,
-            old(regions).inv()
+            old(regions).inv(),
         ensures
             regions.inv(),
             owner@.inv(),
@@ -262,6 +263,14 @@ impl<C: PageTableConfig> PageTableNode<C> {
             forall |i: int| #![auto] 0 <= i < NR_ENTRIES ==>
                 owner@.children[i].unwrap().value.parent_level == owner@.value.node.unwrap().level,
             res.ptr.addr() == owner@.value.node.unwrap().meta_perm.addr(),
+            !guard_addrs.contains(owner@.value.node.unwrap().meta_perm.addr()),
+            // Allocation preserves slot_owners and only changes slots at the new index
+            regions.slot_owners =~= old(regions).slot_owners,
+            regions.slots.contains_key(
+                frame_to_index(meta_to_frame(owner@.value.node.unwrap().meta_perm.addr()))),
+            forall |i: usize| i != frame_to_index(
+                meta_to_frame(owner@.value.node.unwrap().meta_perm.addr()))
+                ==> (regions.slots.contains_key(i) == old(regions).slots.contains_key(i)),
     )]
     #[verifier::external_body]
     pub fn alloc(level: PagingLevel) -> Self {
@@ -339,9 +348,23 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
     ///  1. prevent deadlocks;
     ///  2. provide a lifetime (`'rcu`) that the nodes are guaranteed to outlive.
     #[verifier::external_body]
-    #[verus_spec(
-        with Tracked(guards): Tracked<&mut Guards<'rcu, C>>
+    #[verus_spec(res =>
+        with Tracked(owner): Tracked<&NodeOwner<C>>,
+            Tracked(guards): Tracked<&mut Guards<'rcu, C>>
         -> guard_perm: Tracked<GuardPerm<'rcu, C>>
+        requires
+            owner.inv(),
+            self.inner@.wf(*owner),
+            !old(guards).guards.contains_key(owner.meta_perm.addr()),
+            old(guards).unlocked(owner.meta_perm.addr()),
+        ensures
+            guards.lock_held(owner.meta_perm.addr()),
+            OwnerSubtree::implies(CursorOwner::node_unlocked(*old(guards)),
+                CursorOwner::node_unlocked_except(*guards, owner.meta_perm.addr())),
+            forall |i: usize| old(guards).lock_held(i) ==> guards.lock_held(i),
+            forall |i: usize| old(guards).unlocked(i) && i != owner.meta_perm.addr() ==> guards.unlocked(i),
+            res.addr() == guard_perm@.addr(),
+            owner.relate_guard_perm(guard_perm@),
     )]
     pub fn lock<'rcu, A: InAtomicMode>(self, _guard: &'rcu A) -> PPtr<PageTableGuard<'rcu, C>>
         where 'a: 'rcu {
@@ -411,7 +434,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             child_owner.inv(),
             owner.relate_guard_perm(*guard_perm),
             guard_perm.addr() == guard.addr(),
-            idx < NR_ENTRIES,  // NR_ENTRIES == nr_subpage_per_huge::<C>()
+            idx < NR_ENTRIES,
             child_owner.match_pte(owner.children_perm.value()[idx as int], child_owner.parent_level),
         ensures
             res.wf(*child_owner),

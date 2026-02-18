@@ -3,7 +3,7 @@
 //! - The invariants for both MetaSlot and MetaSlotModel.
 //! - The primitives for MetaSlot.
 use vstd::atomic::*;
-use vstd::cell;
+use vstd::cell::{self, PCell};
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
@@ -12,7 +12,9 @@ use vstd_extra::ghost_tree::TreePath;
 use vstd_extra::ownership::*;
 
 use super::*;
-use crate::mm::frame::meta::{MetaSlot, MetaSlotStorage};
+use crate::mm::PagingLevel;
+use crate::mm::frame::meta::MetaSlot;
+use crate::mm::frame::linked_list::StoredLink;
 use crate::specs::arch::kspace::FRAME_METADATA_RANGE;
 use crate::specs::arch::mm::NR_ENTRIES;
 use crate::specs::mm::frame::mapping::META_SLOT_SIZE;
@@ -93,8 +95,56 @@ pub const REF_COUNT_UNIQUE: u64 = u64::MAX - 1;
 
 pub const REF_COUNT_MAX: u64 = i64::MAX as u64;
 
-} // verus!
-verus! {
+pub struct StoredPageTablePageMeta {
+    pub nr_children: PCell<u16>,
+    pub stray: PCell<bool>,
+    pub level: PagingLevel,
+    pub lock: PAtomicU8,
+}
+
+pub enum MetaSlotStorage {
+    Empty([u8; 39]),
+    FrameLink(StoredLink),
+    PTNode(StoredPageTablePageMeta),
+}
+
+impl MetaSlotStorage {
+    pub open spec fn get_link_spec(self) -> Option<StoredLink> {
+        match self {
+            MetaSlotStorage::FrameLink(link) => Some(link),
+            _ => None,
+        }
+    }
+
+    #[verifier::when_used_as_spec(get_link_spec)]
+    pub fn get_link(self) -> (res: Option<StoredLink>)
+        ensures
+            res == self.get_link_spec(),
+    {
+        match self {
+            MetaSlotStorage::FrameLink(link) => Some(link),
+            _ => None,
+        }
+    }
+
+    pub open spec fn get_node_spec(self) -> Option<StoredPageTablePageMeta> {
+        match self {
+            MetaSlotStorage::PTNode(node) => Some(node),
+            _ => None,
+        }
+    }
+
+    #[verifier::when_used_as_spec(get_node_spec)]
+    pub fn get_node(self) -> (res: Option<StoredPageTablePageMeta>)
+        ensures
+            res == self.get_node_spec(),
+    {
+        match self {
+            MetaSlotStorage::PTNode(node) => Some(node),
+            _ => None,
+        }
+    }
+}
 
 pub tracked struct MetaSlotOwner {
     pub storage: PointsTo<MetaSlotStorage>,
@@ -115,7 +165,7 @@ impl Inv for MetaSlotOwner {
         &&& self.ref_count.value() == REF_COUNT_UNIQUE ==> {
             &&& self.vtable_ptr.is_init()
         }
-        &&& 0 < self.ref_count.value() < REF_COUNT_MAX ==> {
+        &&& 0 < self.ref_count.value() <= REF_COUNT_MAX ==> {
             &&& self.vtable_ptr.is_init()
         }
         &&& REF_COUNT_MAX <= self.ref_count.value() < REF_COUNT_UNUSED ==> { false }

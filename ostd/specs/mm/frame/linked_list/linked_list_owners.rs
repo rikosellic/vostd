@@ -6,13 +6,58 @@ use vstd_extra::cast_ptr::Repr;
 use vstd_extra::ownership::*;
 
 use super::*;
-use crate::mm::frame::{AnyFrameMeta, CursorMut, Link, LinkedList, MetaSlot, UniqueFrameOwner};
+use crate::mm::frame::{AnyFrameMeta, CursorMut, Link, LinkedList, MetaSlot};
 use crate::mm::Paddr;
 use crate::specs::arch::kspace::FRAME_METADATA_RANGE;
 use crate::specs::arch::mm::MAX_NR_PAGES;
 use crate::specs::mm::frame::mapping::META_SLOT_SIZE;
+use crate::specs::mm::frame::unique::UniqueFrameOwner;
 
 verus! {
+
+impl<M: AnyFrameMeta + Repr<MetaSlot>> Repr<MetaSlot> for Link<M> {
+    uninterp spec fn wf(r: MetaSlot) -> bool;
+
+    uninterp spec fn to_repr_spec(self) -> MetaSlot;
+
+    #[verifier::external_body]
+    fn to_repr(self) -> MetaSlot {
+        unimplemented!()
+    }
+
+    uninterp spec fn from_repr_spec(r: MetaSlot) -> Self;
+
+    #[verifier::external_body]
+    fn from_repr(r: MetaSlot) -> Self {
+        unimplemented!()
+    }
+
+    #[verifier::external_body]
+    fn from_borrowed<'a>(r: &'a MetaSlot) -> &'a Self {
+        unimplemented!()
+    }
+
+    proof fn from_to_repr(self)
+        ensures
+            Self::from_repr(self.to_repr()) == self,
+    {
+        admit();
+    }
+
+    proof fn to_from_repr(r: MetaSlot)
+        ensures
+            Self::from_repr(r).to_repr() == r,
+    {
+        admit();
+    }
+
+    proof fn to_repr_wf(self)
+        ensures
+            <Self as Repr<MetaSlot>>::wf(self.to_repr()),
+    {
+        admit();
+    }
+}
 
 pub ghost struct LinkModel {
     pub paddr: Paddr,
@@ -146,6 +191,66 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> LinkedListOwner<M> {
             Self::view_preserves_len(owners.remove(0))
         }
     }
+
+    /// Proves that view_helper preserves indexing: view_helper(s)[i] == s[i].view()
+    pub proof fn view_helper_index(owners: Seq<LinkOwner>, i: int)
+        requires
+            0 <= i < owners.len(),
+        ensures
+            Self::view_helper(owners)[i] == owners[i].view(),
+        decreases owners.len(),
+    {
+        Self::view_preserves_len(owners);
+        if i > 0 {
+            Self::view_helper_index(owners.remove(0), i - 1);
+        }
+    }
+
+    /// Proves that view_helper commutes with remove:
+    /// view_helper(s.remove(i)) =~= view_helper(s).remove(i)
+    pub proof fn view_helper_remove(owners: Seq<LinkOwner>, i: int)
+        requires
+            0 <= i < owners.len(),
+        ensures
+            Self::view_helper(owners.remove(i)) =~= Self::view_helper(owners).remove(i),
+    {
+        Self::view_preserves_len(owners);
+        Self::view_preserves_len(owners.remove(i));
+        assert forall |j: int| 0 <= j < Self::view_helper(owners.remove(i)).len() implies
+            Self::view_helper(owners.remove(i))[j] == Self::view_helper(owners).remove(i)[j]
+        by {
+            Self::view_helper_index(owners.remove(i), j);
+            if j < i {
+                Self::view_helper_index(owners, j);
+            } else {
+                Self::view_helper_index(owners, j + 1);
+            }
+        };
+    }
+
+    /// Proves that view_helper commutes with insert:
+    /// view_helper(s.insert(i, v)) =~= view_helper(s).insert(i, v.view())
+    pub proof fn view_helper_insert(owners: Seq<LinkOwner>, i: int, v: LinkOwner)
+        requires
+            0 <= i <= owners.len(),
+        ensures
+            Self::view_helper(owners.insert(i, v)) =~= Self::view_helper(owners).insert(i, v.view()),
+    {
+        Self::view_preserves_len(owners);
+        Self::view_preserves_len(owners.insert(i, v));
+        assert forall |j: int| 0 <= j < Self::view_helper(owners.insert(i, v)).len() implies
+            Self::view_helper(owners.insert(i, v))[j] == Self::view_helper(owners).insert(i, v.view())[j]
+        by {
+            Self::view_helper_index(owners.insert(i, v), j);
+            if j < i {
+                Self::view_helper_index(owners, j);
+            } else if j == i {
+                // owners.insert(i, v)[i] == v, and view_helper(owners).insert(i, v@)[i] == v@
+            } else {
+                Self::view_helper_index(owners, j - 1);
+            }
+        };
+    }
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlot>> View for LinkedListOwner<M> {
@@ -159,25 +264,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> View for LinkedListOwner<M> {
 impl<M: AnyFrameMeta + Repr<MetaSlot>> InvView for LinkedListOwner<M> {
     proof fn view_preserves_inv(self) {
     }
-}
-
-impl<M: AnyFrameMeta + Repr<MetaSlot>> LinkedListOwner<M> {
-    /*    pub open spec fn update_prev(links: Seq<LinkOwner<M>>, i: int, prev: Option<PPtr<Link<M>>>) -> Seq<LinkOwner<M>> {
-        let link = links[i];
-        let new_link = LinkOwner::<M> { prev: prev, ..link };
-        links.update(i, new_link)
-    }
-
-    pub open spec fn update_next(
-        links: Seq<LinkOwner<M>>,
-        i: int,
-        next: Option<PPtr<Link<M>>>,
-    ) -> Seq<LinkOwner<M>> {
-        let link = links[i];
-        let new_link = LinkOwner::<M> { next: next, ..link };
-        links.update(i, new_link)
-    }*/
-
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlot>> OwnerOf for LinkedList<M> {
@@ -283,14 +369,15 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorOwner<M> {
         }
     }
 
-    #[verifier::external_body]
-    pub fn list_insert(
-        Tracked(cursor): Tracked<&mut Self>,
-        Tracked(link): Tracked<&mut LinkOwner>,
-        Tracked(perm): Tracked<&vstd_extra::cast_ptr::PointsTo<MetaSlot, Link<M>>>,
+    pub axiom fn list_insert(
+        tracked cursor: &mut Self,
+        tracked link: &mut LinkOwner,
+        tracked perm: &vstd_extra::cast_ptr::PointsTo<MetaSlot, Link<M>>,
     )
         ensures
-            cursor.list_own.list == old(cursor).list_own.list.insert(old(cursor).index, *old(link)),
+            link.paddr == old(link).paddr,
+            link.in_list == cursor.list_own.list_id,
+            cursor.list_own.list == old(cursor).list_own.list.insert(old(cursor).index, *link),
             cursor.list_own.list_id == old(cursor).list_own.list_id,
             forall|idx: int| 0 <= idx < cursor.length() ==> cursor.list_own.perms.contains_key(idx),
             forall|idx: int|
@@ -302,11 +389,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorOwner<M> {
                     == old(cursor).list_own.perms[idx - 1],
             cursor.list_own.perms[old(cursor).index] == perm,
             cursor.index == old(cursor).index + 1,
-            cursor.list_perm == old(cursor).list_perm,
-            *link == *old(link),
-    {
-        unimplemented!()
-    }
+            cursor.list_perm == old(cursor).list_perm;
 
     pub open spec fn front_owner_spec(
         list_own: LinkedListOwner<M>,
@@ -315,18 +398,26 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorOwner<M> {
         CursorOwner::<M> { list_own: list_own, list_perm: list_perm, index: 0 }
     }
 
+    pub open spec fn cursor_mut_at_owner_spec(
+        list_own: LinkedListOwner<M>,
+        list_perm: PointsTo<LinkedList<M>>,
+        index: int,
+    ) -> Self {
+        CursorOwner::<M> { list_own: list_own, list_perm: list_perm, index: index }
+    }
+
     #[verifier::returns(proof)]
-    #[verifier::external_body]
-    pub proof fn front_owner(
+    pub axiom fn cursor_mut_at_owner(list_own: LinkedListOwner<M>, list_perm: PointsTo<LinkedList<M>>, index: int) -> Self
+        returns Self::cursor_mut_at_owner_spec(list_own, list_perm, index);
+
+    #[verifier::returns(proof)]
+    pub axiom fn front_owner(
         list_own: LinkedListOwner<M>,
         list_perm: PointsTo<LinkedList<M>>,
     ) -> (res: Self)
         ensures
-            res == Self::front_owner_spec(list_own, list_perm),
-    {
-        CursorOwner::<M> { list_own: list_own, list_perm: list_perm, index: 0 }
-    }
-
+            res == Self::front_owner_spec(list_own, list_perm);
+    
     pub open spec fn back_owner_spec(
         list_own: LinkedListOwner<M>,
         list_perm: PointsTo<LinkedList<M>>,

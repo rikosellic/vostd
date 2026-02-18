@@ -85,7 +85,7 @@ impl<'a, C: PageTableConfig> OwnerOf for ChildRef<'a, C> {
         match self {
             Self::PageTable(node) => {
                 &&& owner.is_node()
-                &&& manually_drop_deref_spec(&node.inner.0).ptr.addr()
+                &&& node.inner.0.ptr.addr()
                     == owner.node.unwrap().meta_perm.addr()
             },
             Self::Frame(paddr, level, prop) => {
@@ -135,13 +135,17 @@ impl<C: PageTableConfig> Child<C> {
             owner.inv(),
             old(regions).inv(),
             self.wf(*owner),
-            owner.is_node() ==> old(regions).slots.contains_key(frame_to_index(owner.meta_slot_paddr())),
+            owner.is_node() ==> old(regions).slots.contains_key(frame_to_index(owner.meta_slot_paddr().unwrap())),
         ensures
             regions.inv(),
             res.paddr() % PAGE_SIZE == 0,
             res.paddr() < MAX_PADDR,
             owner.match_pte(res, owner.parent_level),
-            owner.is_node() ==> !regions.slots.contains_key(frame_to_index(owner.meta_slot_paddr())),
+            owner.is_node() ==> !regions.slots.contains_key(frame_to_index(owner.meta_slot_paddr().unwrap())),
+            regions.slot_owners =~= old(regions).slot_owners,
+            owner.is_node() ==> regions.slots =~= old(regions).slots.remove(
+                frame_to_index(owner.meta_slot_paddr().unwrap())),
+            !owner.is_node() ==> *regions =~= *old(regions),
     {
         proof {
             C::E::new_properties();
@@ -195,6 +199,11 @@ impl<C: PageTableConfig> Child<C> {
                 *regions,
             ),
             entry_own.relate_region(*regions),
+            regions.slot_owners =~= old(regions).slot_owners,
+            !entry_own.is_node() ==> *regions =~= *old(regions),
+            entry_own.is_node() ==> forall|i: usize|
+                i != frame_to_index(entry_own.meta_slot_paddr().unwrap()) ==>
+                (regions.slots.contains_key(i) == old(regions).slots.contains_key(i)),
     {
         if !pte.is_present() {
             return Child::None;
@@ -257,7 +266,7 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
             #[verus_spec(with Tracked(regions), Tracked(&entry_owner.node.tracked_borrow().meta_perm))]
             let node = PageTableNodeRef::borrow_paddr(paddr);
 
-            assert(manually_drop_deref_spec(&node.inner.0).ptr.addr()
+            assert(node.inner.0.ptr.addr()
                 == entry_owner.node.unwrap().meta_perm.addr());
 
             proof {
