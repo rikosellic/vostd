@@ -78,7 +78,7 @@ impl<C: PageTableConfig> CursorView<C> {
 
     /// The specification for the internal function, `find_next_impl`. It finds the next mapped virtual address
     /// that is at most `len` bytes away from the current virtual address. TODO: add the specifications for
-    /// `find_unmap_subtree` and `split_huge`, which are used by other functions that call thie one.
+    /// `find_unmap_subtree` and `split_huge`, which are used by other functions that call this one.
     /// This returns a mapping rather than the address because that is useful when it's called as a subroutine.
     pub open spec fn find_next_impl_spec(self, len: usize, find_unmap_subtree: bool, split_huge: bool) -> (Self, Option<Mapping>) {
         let mappings_in_range = self.mappings.filter(|m: Mapping| self.cur_va <= m.va_range.start < self.cur_va + len);
@@ -205,14 +205,12 @@ impl<C: PageTableConfig> CursorView<C> {
 
     /// Unmaps a range of virtual addresses from the current address up to `len` bytes.
     /// It returns the number of mappings that were removed.
-    pub open spec fn unmap_spec(self, len: usize) -> (Self, usize) {
+    pub open spec fn unmap_spec(self, len: usize, new_view: Self, num_unmapped: usize) -> bool {
         let taken = self.mappings.filter(|m: Mapping|
             self.cur_va <= m.va_range.start < self.cur_va + len);
-        (CursorView {
-            cur_va: (self.cur_va + len) as Vaddr,
-            mappings: self.mappings.difference(taken),
-            ..self
-        }, taken.len() as usize)
+            &&& new_view.cur_va >= (self.cur_va + len) as Vaddr
+            &&& new_view.mappings == self.mappings - taken
+            &&& num_unmapped == taken.len() as usize
     }
 
     pub open spec fn protect_spec(self, len: usize, op: impl Fn(PageProperty) -> PageProperty) -> (Self, Option<Range<Vaddr>>) {

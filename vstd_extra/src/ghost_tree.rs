@@ -355,7 +355,7 @@ pub trait TreeNodeValue<const L: usize>: Sized + Inv {
             self.inv(),
             self.la_inv(lv),
         ensures
-            forall |i:int| #[trigger] self.rel_children(i, Some(Self::default(lv + 1))),
+            forall|i: int| #[trigger] self.rel_children(i, Some(Self::default(lv + 1))),
     ;
 }
 
@@ -466,6 +466,37 @@ impl<T: TreeNodeValue<L>, const N: usize, const L: usize> Node<T, N, L> {
         }
     }
 
+    /// Proves `tree_predicate_map(self, path, g)` from two source predicates `f1`, `f2`,
+    /// and the implication `forall |v, p| v.inv() && f1(v, p) && f2(v, p) ==> g(v, p)`.
+    pub proof fn map_implies_and(
+        self,
+        path: TreePath<N>,
+        f1: spec_fn(T, TreePath<N>) -> bool,
+        f2: spec_fn(T, TreePath<N>) -> bool,
+        g: spec_fn(T, TreePath<N>) -> bool,
+    )
+        requires
+            self.inv(),
+            Self::implies(|v: T, p: TreePath<N>| f1(v, p) && f2(v, p), g),
+            Self::tree_predicate_map(self, path, f1),
+            Self::tree_predicate_map(self, path, f2),
+        ensures
+            Self::tree_predicate_map(self, path, g),
+        decreases L - self.level,
+    {
+        if self.level < L - 1 {
+            assert forall|i: int|
+                #![trigger self.children[i]->Some_0]
+                0 <= i < self.children.len()
+                    && self.children[i] is Some implies self.children[i]->Some_0.tree_predicate_map(
+                path.push_tail(i as usize),
+                g,
+            ) by {
+                self.children[i]->Some_0.map_implies_and(path.push_tail(i as usize), f1, f2, g);
+            }
+        }
+    }
+
     pub open spec fn inv_node(self) -> bool {
         &&& self.value.inv()
         &&& self.value.la_inv(self.level)
@@ -530,10 +561,10 @@ impl<T: TreeNodeValue<L>, const N: usize, const L: usize> Node<T, N, L> {
     pub broadcast proof fn new_preserves_inv(lv: nat)
         requires
             lv < L,
-            forall |i:int| 0 <= i < N ==> #[trigger] T::default(lv).rel_children(i, None),
+            forall|i: int| 0 <= i < N ==> #[trigger] T::default(lv).rel_children(i, None),
         ensures
             #[trigger] Self::new(lv).inv(),
-            forall |i:int| 0 <= i < N ==> #[trigger] Self::new(lv).value.rel_children(i, None),
+            forall|i: int| 0 <= i < N ==> #[trigger] Self::new(lv).value.rel_children(i, None),
     {
         let n = Self::new(lv);
         T::default_preserves_inv();
@@ -862,7 +893,8 @@ impl<T: TreeNodeValue<L>, const N: usize, const L: usize> Node<T, N, L> {
             node.inv(),
             path.len() < L - self.level,
             node.level == self.level + path.len() as nat,
-            forall|lv: nat| lv < L ==> #[trigger] T::default(lv).rel_children(path.pop_tail().0 as int, None),
+            forall|lv: nat|
+                lv < L ==> #[trigger] T::default(lv).rel_children(path.pop_tail().0 as int, None),
         ensures
             #[trigger] self.recursive_insert(path, node).level == self.level,
         decreases path.len(),
@@ -885,7 +917,7 @@ impl<T: TreeNodeValue<L>, const N: usize, const L: usize> Node<T, N, L> {
                 let c = Node::new(self.level + 1);
                 admit();
                 Self::new_preserves_inv(self.level + 1);
-                if forall |i:int| 0 <= i < N ==> self.value.rel_children(i, Some(c.value)) {
+                if forall|i: int| 0 <= i < N ==> self.value.rel_children(i, Some(c.value)) {
                     c.lemma_recursive_insert_preserves_level(tl, node);
                 }
             }
@@ -903,8 +935,8 @@ impl<T: TreeNodeValue<L>, const N: usize, const L: usize> Node<T, N, L> {
             node.inv(),
             path.len() < L - self.level,
             node.level == self.level + path.len() as nat,
-            forall|lv: nat, i: int| lv < L && 0 <= i < N ==>
-                #[trigger] T::default(lv).rel_children(i, None),
+            forall|lv: nat, i: int|
+                lv < L && 0 <= i < N ==> #[trigger] T::default(lv).rel_children(i, None),
         ensures
             #[trigger] self.recursive_insert(path, node).value == self.value,
         decreases path.len(),
@@ -945,9 +977,8 @@ impl<T: TreeNodeValue<L>, const N: usize, const L: usize> Node<T, N, L> {
             self.recursive_seek(path.pop_tail().1) is None ==> T::default(
                 (node.level - 1) as nat,
             ).rel_children(path.pop_tail().0 as int, Some(node.value)),
-            forall|lv: nat, i:int| lv < L ==>
-            0 <= i < N ==>
-            #[trigger] T::default(lv).rel_children(i, None),
+            forall|lv: nat, i: int|
+                lv < L ==> 0 <= i < N ==> #[trigger] T::default(lv).rel_children(i, None),
         ensures
             #[trigger] self.recursive_insert(path, node).inv(),
         decreases path.len(),
@@ -1647,7 +1678,7 @@ impl<T: TreeNodeValue<L>, const N: usize, const L: usize> Tree<T, N, L> {
 
     pub broadcast proof fn new_preserves_inv()
         requires
-            forall |i:int| 0 <= i < N ==> #[trigger] T::default(0).rel_children(i, None),
+            forall|i: int| 0 <= i < N ==> #[trigger] T::default(0).rel_children(i, None),
         ensures
             #[trigger] Self::new().inv(),
     {
@@ -1789,9 +1820,7 @@ impl<T: TreeNodeValue<L>, const N: usize, const L: usize> Tree<T, N, L> {
                 (path.len() - 1) as nat,
             ).rel_children(path.index(path.len() - 1) as int, Some(node.value)),
             forall|lv: nat, i: int|
-                lv < L ==>
-                0 <= i < N ==>
-                #[trigger] T::default(lv).rel_children(i, None),
+                lv < L ==> 0 <= i < N ==> #[trigger] T::default(lv).rel_children(i, None),
         ensures
             #[trigger] self.insert(path, node).inv(),
     {

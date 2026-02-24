@@ -282,9 +282,9 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// readers or writers waiting simultaneously will obtain the lock.
     ///
     /// Upreader will not block new readers until it tries to upgrade. Upreader
-    /// and reader do not differ before invoking the upgread method. However,
+    /// and reader do not differ before invoking the upgrade method. However,
     /// only one upreader can exist at any time to avoid deadlock in the
-    /// upgread method.
+    /// upgrade method.
     #[verifier::external_body]
     pub fn upread(&self) -> RwLockUpgradeableGuard<T, G> {
         loop {

@@ -692,7 +692,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// Create a new empty page table.
     ///
     /// Useful for the IOMMU page tables only.
-    #[rustc_allow_incoherent_impl]
+
     #[verifier::external_body]
     pub fn empty() -> Self {
         unimplemented!()/*        PageTable {
@@ -701,7 +701,7 @@ impl<C: PageTableConfig> PageTable<C> {
 
     }
 
-    #[rustc_allow_incoherent_impl]
+
     #[verifier::external_body]
     pub(in crate::mm) unsafe fn first_activate_unchecked(&self) {
         unimplemented!()
@@ -715,7 +715,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// Obtaining the physical address of the root page table is safe, however, using it or
     /// providing it to the hardware will be unsafe since the page table node may be dropped,
     /// resulting in UAF.
-    #[rustc_allow_incoherent_impl]
+
     #[verifier::external_body]
     #[verifier::when_used_as_spec(root_paddr_spec)]
     pub fn root_paddr(&self) -> (r: Paddr)
@@ -733,7 +733,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// cursors concurrently accessing the same virtual address range, just like what
     /// happens for the hardware MMU walk.
     #[cfg(ktest)]
-    #[rustc_allow_incoherent_impl]
+
     pub fn page_walk(&self, vaddr: Vaddr) -> Option<(Paddr, PageProperty)> {
         // SAFETY: The root node is a valid page table node so the address is valid.
         unsafe { page_walk::<C>(self.root_paddr(), vaddr) }
@@ -743,7 +743,7 @@ impl<C: PageTableConfig> PageTable<C> {
     ///
     /// If another cursor is already accessing the range, the new cursor may wait until the
     /// previous cursor is dropped.
-    #[rustc_allow_incoherent_impl]
+
     pub fn cursor_mut<'rcu, G: InAtomicMode>(
         &'rcu self,
         guard: &'rcu G,
@@ -757,7 +757,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// If another cursor is already accessing the range, the new cursor may wait until the
     /// previous cursor is dropped. The modification to the mapping by the cursor may also
     /// block or be overridden by the mapping of another cursor.
-    #[rustc_allow_incoherent_impl]
+
     #[verus_spec(
         with Tracked(owner): Tracked<&mut OwnerSubtree<C>>,
             Tracked(guard_perm): Tracked<&vstd::simple_pptr::PointsTo<PageTableGuard<'rcu, C>>>
@@ -838,46 +838,65 @@ pub(super) unsafe fn page_walk<C: PageTableConfig>(root_paddr: Paddr, vaddr: Vad
 
 /// Loads a page table entry with an atomic instruction.
 ///
-/// # Safety
-///
-/// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
+/// # Verification Design
+/// ## Preconditions
+/// - The pointer must be a valid pointer to the array that represents the page table node.
+/// - The array must be initialized at the target index.
+/// ## Postconditions
+/// - The value is loaded from the array at the given index.
+/// ## Safety
+/// - We require the caller to provide a permission token to ensure that this function is only called on a valid array
+/// and the pointer is in bounds.
+/// - Like an `AtomicUsize::load` in normal Rust, this function assumes that the value being loaded is an integer
+/// (and therefore can be safely cloned). We model the PTE as an abstract type, but in all actual implementations it is an
+/// integer. Importantly, it does not inclue any data that is unsafe to duplicate.
 #[verifier::external_body]
 #[verus_spec(
     with Tracked(perm): Tracked<&vstd_extra::array_ptr::PointsTo<E, NR_ENTRIES>>
+    requires
+        perm.is_init(ptr.index as int),
+        perm.addr() == ptr.addr(),
+        0 <= ptr.index < NR_ENTRIES,
+    returns
+        perm.value()[ptr.index as int],
 )]
 pub fn load_pte<E: PageTableEntryTrait>(
     ptr: vstd_extra::array_ptr::ArrayPtr<E, NR_ENTRIES>,
     ordering: Ordering,
 ) -> (pte: E)
-    requires
-        perm.is_init(ptr.index as int),
-        perm.addr() == ptr.addr(),
-    ensures
-        pte == perm.value()[ptr.index as int],
 {
-    unimplemented!()/*    // SAFETY: The safety is upheld by the caller.
-    let atomic = unsafe { AtomicUsize::from_ptr(ptr.cast()) };
-    let pte_raw = atomic.load(ordering);
-    E::from_usize(pte_raw)*/
-
+    unimplemented!()
 }
 
 /// Stores a page table entry with an atomic instruction.
 ///
-/// # Safety
-///
-/// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
+/// # Verification Design
+/// We axiomatize this function as a store operation in the array that represents the page table node.
+/// ## Preconditions
+/// - The pointer must be a valid pointer to the array that represents the page table node.
+/// - The array must be initialized so that the verifier knows that it remains initialized after the store.
+/// ## Postconditions
+/// - The new value is stored in the array at the given index.
+/// ## Safety
+/// - We require the caller to provide a permission token to ensure that this function is only called on a valid array
+/// and the pointer is in bounds.
 #[verifier::external_body]
+#[verus_spec(
+    with Tracked(perm): Tracked<&mut vstd_extra::array_ptr::PointsTo<E, NR_ENTRIES>>
+    requires
+        old(perm).addr() == ptr.addr(),
+        0 <= ptr.index < NR_ENTRIES,
+        old(perm).is_init_all(),
+    ensures
+        perm.value()[ptr.index as int] == new_val,
+        perm.value() == old(perm).value().update(ptr.index as int, new_val),
+        perm.addr() == old(perm).addr(),
+        perm.is_init_all(),
+)]
 pub fn store_pte<E: PageTableEntryTrait>(
     ptr: vstd_extra::array_ptr::ArrayPtr<E, NR_ENTRIES>,
     new_val: E,
     ordering: Ordering,
-) {
-    unimplemented!()/*    let new_raw = new_val.as_usize();
-    // SAFETY: The safety is upheld by the caller.
-    let atomic = unsafe { AtomicUsize::from_ptr(ptr.cast()) };
-    atomic.store(new_raw, ordering)*/
-
-}
+);
 
 } // verus!

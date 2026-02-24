@@ -1,7 +1,7 @@
 pub mod cpu;
-pub mod tlb;
 pub mod frame;
 pub mod page_table;
+pub mod tlb;
 pub mod virt_mem_newer;
 
 use vstd::prelude::*;
@@ -11,7 +11,7 @@ use vstd_extra::ownership::*;
 use crate::mm::vm_space::UserPtConfig;
 use crate::mm::{Paddr, Vaddr};
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
-use crate::specs::mm::page_table::{Guards, PageTableOwner, Mapping, PageTableView};
+use crate::specs::mm::page_table::{Guards, Mapping, PageTableOwner, PageTableView};
 use crate::specs::mm::tlb::TlbModel;
 use crate::specs::mm::virt_mem_newer::FrameContents;
 
@@ -28,21 +28,17 @@ verus! {
 /// hold. We then prove that the internal invariants imply the top-level properties that we want the
 /// memory system to obey.
 pub tracked struct GlobalMemOwner {
-    /// [`MetaRegionOwners`](crate::specs::mm::frame::meta_region_owners::MetaRegionOwners)
-    /// is the fundamental data structure of the `frame` module, tracking the allocation
+    /// [`MetaRegionOwners`] is the fundamental data structure of the `frame` module, tracking the allocation
     /// of metadata slots and their permissions.
     pub regions: MetaRegionOwners,
-    /// [`PageTableOwner`](crate::specs::mm::page_table::owners::PageTableOwner) tracks the
-    /// tree structure of the page table. It can be converted to a
-    /// [`CursorOwner`](crate::specs::mm::page_table::cursor::owners::CursorOwner) for traversal and updates.
+    /// [`PageTableOwner`] tracks the tree structure of the page table. It can be converted to a
+    /// [`CursorOwner`] for traversal and updates.
     /// A well-formed `CursorOwner` can be converted back into a `PageTableOwner` with consistent mappings,
     /// ensuring that its internal invariants are preserved.
     pub pt: PageTableOwner<UserPtConfig>,
-    /// [`TlbModel`](crate::specs::mm::tlb::TlbModel) tracks the mappings in the TLB. It can flush mappings
-    /// and it can load new ones from the page table.
+    /// [`TlbModel`] tracks the mappings in the TLB. It can flush mappings and it can load new ones from the page table.
     pub tlb: TlbModel,
-    /// [`FrameContents`](crate::specs::mm::virt_mem_newer::FrameContents) tracks the contents
-    /// of a frame for use in the [`VirtMem`](crate::specs::mm::virt_mem::VirtMem) library.
+    /// [`FrameContents`] tracks the contents of a frame for use in the [`VirtMem`] library.
     pub memory: Map<Paddr, FrameContents>,
 }
 
@@ -80,7 +76,7 @@ impl GlobalMemOwner {
         let pt_mappings = self.page_table_mappings();
         forall |m: Mapping|
             pt_mappings has m ==>
-            m.inv()
+            #[trigger] m.inv()
     }
 
     /// Top-level property: the TLB mappings are disjoint in the virtual address space.
@@ -108,7 +104,7 @@ impl GlobalMemOwner {
         let tlb_mappings = self.tlb.mappings;
         forall |m: Mapping|
             tlb_mappings has m ==>
-            m.inv()
+            #[trigger] m.inv()
     }
 
     /// Top-level properties: the page table mappings are disjoint and well-formed.

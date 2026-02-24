@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
-use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref, ptr::NonNull};
+use core::{marker::PhantomData, ops::Deref, ptr::NonNull};
 
 use vstd::prelude::*;
 
 use vstd_extra::external::manually_drop::*;
 use vstd_extra::ownership::*;
-use vstd_extra::undroppable::*;
+use vstd_extra::drop_tracking::*;
 
 use crate::mm::frame::meta::mapping::{frame_to_index, frame_to_meta, meta_to_frame};
-use crate::mm::frame::meta::{AnyFrameMeta, MetaSlot};
+use crate::mm::frame::meta::{AnyFrameMeta, MetaSlot, has_safe_slot};
 use crate::mm::frame::MetaPerm;
 use crate::mm::{Paddr, PagingLevel, Vaddr};
 use crate::specs::arch::mm::{MAX_PADDR, PAGE_SIZE};
@@ -22,14 +22,14 @@ verus! {
 
 /// A struct that can work as `&'a Frame<M>`.
 pub struct FrameRef<'a, M: AnyFrameMeta> {
-    pub inner: NeverDrop<Frame<M>>,
+    pub inner: ManuallyDrop<Frame<M>>,
     pub _marker: PhantomData<&'a Frame<M>>,
 }
 
 impl<M: AnyFrameMeta> Deref for FrameRef<'_, M> {
     type Target = Frame<M>;
 
-    #[verus_spec(ensures returns manually_drop_deref_spec(&self.inner.0))]
+    #[verus_spec(ensures returns &self.inner.0)]
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
@@ -39,34 +39,43 @@ impl<M: AnyFrameMeta> Deref for FrameRef<'_, M> {
 impl<M: AnyFrameMeta> FrameRef<'_, M> {
     /// Borrows the [`Frame`] at the physical address as a [`FrameRef`].
     ///
-    /// # Safety
-    ///
-    /// The caller must ensure that:
-    ///  - the frame outlives the created reference, so that the reference can
-    ///    be seen as borrowed from that frame.
-    ///  - the type of the [`FrameRef`] (`M`) matches the borrowed frame.
+    /// # Verified Properties
+    /// ## Preconditions
+    /// The raw frame address must be well-formed (`has_safe_slot(raw)`).
+    /// ## Postconditions
+    /// The result points to the frame at the physical address, and the metadata region is unchanged.
+    /// ## Safety
+    /// By providing a borrowed `MetaPerm` of the appropriate type, the caller ensures that the frame 
+    /// has that type and that the `FrameRef` will be useless if it outlives the frame.
+    /// ## Verification Issues
+    /// Currently we cannot provide the underlying `PointsTo<MetaSlot>` permission needed by
+    /// `Frame::from_raw` without breaking Verus' ability to reason about its lifetime.
+    /// But we immediately take that permission back, so it should not actually be a problem to do so.
+    /// The solution is to overhaul `MetaPerm` to allow us to take and restore the underlying permission.
     #[verus_spec(r =>
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(perm): Tracked<&MetaPerm<M>>,
+            Tracked(perm): Tracked<&MetaPerm<M>>
         requires
-            raw % PAGE_SIZE == 0,
-            raw < MAX_PADDR,
+            has_safe_slot(raw),
             !old(regions).slots.contains_key(frame_to_index(raw)),
             old(regions).inv(),
         ensures
             regions.inv(),
-            manually_drop_deref_spec(&r.inner.0).ptr.addr() == frame_to_meta(raw),
+            r.inner.0.ptr.addr() == frame_to_meta(raw),
             regions.slots =~= old(regions).slots,
             regions.slot_owners =~= old(regions).slot_owners,
-            regions.dropped_slots =~= old(regions).dropped_slots,
     )]
     #[verifier::external_body]
-    pub fn borrow_paddr(raw: Paddr) -> Self {
+    pub(in crate::mm) fn borrow_paddr(raw: Paddr) -> Self {
         #[verus_spec(with Tracked(regions), Tracked(perm))]
         let frame = Frame::from_raw(raw);
 
-        Self { inner: NeverDrop::new(frame, Tracked(regions)), _marker: PhantomData }
+        proof {
+            Frame::lemma_from_raw_manuallydrop_inverse(raw, frame, *old(regions), *regions);
+        }
+
+        Self { inner: ManuallyDrop::new(frame, Tracked(regions)), _marker: PhantomData }
     }
 }
 
@@ -132,15 +141,17 @@ pub unsafe trait NonNullPtr: 'static + Sized {
     ) -> Self::Ref<'a>
         requires
             old(regions).inv(),
-            old(regions).slots.contains_key(frame_to_index(meta_to_frame(raw.addr()))),
-            !old(regions).dropped_slots.contains_key(frame_to_index(meta_to_frame(raw.addr()))),
+            old(regions).slot_owners.contains_key(frame_to_index(meta_to_frame(raw.addr()))),
+            old(regions).slot_owners[frame_to_index(meta_to_frame(raw.addr()))].raw_count == 0,
+//            old(regions).slot_owners[frame_to_index(meta_to_frame(raw.addr()))].read_only == raw.addr(),
     ;
 
     /// Converts a shared reference to a raw pointer.
     fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> PPtr<Self::Target>;
 }
 
-pub assume_specification[ usize::trailing_zeros ](_0: usize) -> u32;
+pub assume_specification[ usize::trailing_zeros ](_0: usize) -> u32
+;
 
 // SAFETY: `Frame` is essentially a `*const MetaSlot` that could be used as a non-null
 // `*const` pointer.
@@ -156,7 +167,7 @@ unsafe impl<M: AnyFrameMeta + ?Sized + 'static> NonNullPtr for Frame<M> {
     fn into_raw(self, Tracked(regions): Tracked<&mut MetaRegionOwners>) -> PPtr<Self::Target> {
         let ptr = self.ptr;
         assert(self.constructor_requires(*old(regions))) by { admit() };
-        let _ = NeverDrop::new(self, Tracked(regions));
+        let _ = ManuallyDrop::new(self, Tracked(regions));
         PPtr::<Self::Target>::from_addr(ptr.addr())
     }
 
@@ -168,7 +179,7 @@ unsafe impl<M: AnyFrameMeta + ?Sized + 'static> NonNullPtr for Frame<M> {
         raw: PPtr<Self::Target>,
         Tracked(regions): Tracked<&mut MetaRegionOwners>,
     ) -> Self::Ref<'a> {
-        let dropped = NeverDrop::<Frame<M>>::new(
+        let dropped = ManuallyDrop::<Frame<M>>::new(
             Frame { ptr: PPtr::<MetaSlot>::from_addr(raw.addr()), _marker: PhantomData },
             Tracked(regions),
         );

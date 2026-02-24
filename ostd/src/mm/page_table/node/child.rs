@@ -3,7 +3,7 @@
 use vstd::prelude::*;
 use vstd_extra::external::manually_drop_deref_spec;
 
-use crate::mm::frame::meta::mapping::{frame_to_index, meta_to_frame};
+use crate::mm::frame::meta::mapping::{frame_to_index, meta_addr, meta_to_frame};
 use crate::mm::frame::Frame;
 use crate::mm::page_table::*;
 use crate::specs::arch::mm::{NR_ENTRIES, NR_LEVELS, PAGE_SIZE};
@@ -12,7 +12,7 @@ use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 
 use vstd_extra::cast_ptr::*;
 use vstd_extra::ownership::*;
-use vstd_extra::undroppable::*;
+use vstd_extra::drop_tracking::*;
 
 use crate::specs::*;
 
@@ -20,7 +20,7 @@ use crate::{
     mm::{page_prop::PageProperty, Paddr, PagingConstsTrait, PagingLevel, Vaddr},
     //    sync::RcuDrop,
 };
-use vstd_extra::undroppable::NeverDrop;
+use vstd_extra::drop_tracking::ManuallyDrop;
 
 use super::*;
 
@@ -85,8 +85,7 @@ impl<'a, C: PageTableConfig> OwnerOf for ChildRef<'a, C> {
         match self {
             Self::PageTable(node) => {
                 &&& owner.is_node()
-                &&& manually_drop_deref_spec(&node.inner.0).ptr.addr()
-                    == owner.node.unwrap().meta_perm.addr()
+                &&& node.inner.0.ptr.addr() == owner.node.unwrap().meta_perm.addr()
             },
             Self::Frame(paddr, level, prop) => {
                 &&& owner.is_frame()
@@ -135,13 +134,18 @@ impl<C: PageTableConfig> Child<C> {
             owner.inv(),
             old(regions).inv(),
             self.wf(*owner),
-            owner.is_node() ==> old(regions).slots.contains_key(frame_to_index(owner.meta_slot_paddr())),
+            owner.is_node() ==> old(regions).slots.contains_key(frame_to_index(owner.meta_slot_paddr().unwrap())),
         ensures
             regions.inv(),
             res.paddr() % PAGE_SIZE == 0,
             res.paddr() < MAX_PADDR,
             owner.match_pte(res, owner.parent_level),
-            owner.is_node() ==> !regions.slots.contains_key(frame_to_index(owner.meta_slot_paddr())),
+            owner.is_node() ==> !regions.slots.contains_key(frame_to_index(owner.meta_slot_paddr().unwrap())),
+            owner.is_node() ==> regions.slots =~= old(regions).slots.remove(frame_to_index(owner.meta_slot_paddr().unwrap())),
+            owner.is_node() ==> forall|i: usize| #![trigger regions.slot_owners[i]]
+                i != frame_to_index(owner.meta_slot_paddr().unwrap())
+                    ==> regions.slot_owners[i] == old(regions).slot_owners[i],
+            !owner.is_node() ==> *regions =~= *old(regions),
     {
         proof {
             C::E::new_properties();
@@ -154,8 +158,32 @@ impl<C: PageTableConfig> Child<C> {
                 #[verus_spec(with Tracked(&owner.node.tracked_borrow().meta_perm.points_to))]
                 let paddr = node.start_paddr();
 
-                assert(node.constructor_requires(*old(regions))) by { admit() };
-                let _ = NeverDrop::new(node, Tracked(regions));
+                let ghost node_index = frame_to_index(meta_to_frame(node.ptr.addr()));
+
+                proof {
+                    let tracked _slot_perm = regions.slots.tracked_remove(node_index);
+                }
+
+                let _ = ManuallyDrop::new(node, Tracked(regions));
+
+                proof {
+                    assert(regions.slots =~= old(regions).slots.remove(node_index));
+                    assert forall|i: usize| #[trigger]
+                        regions.slots.contains_key(i) implies {
+                            &&& regions.slot_owners.contains_key(i)
+                            &&& regions.slot_owners[i].inv()
+                            &&& regions.slot_owners[i].inner_perms is Some
+                            &&& regions.slots[i].is_init()
+                            &&& regions.slots[i].addr() == meta_addr(i)
+                            &&& regions.slots[i].value().wf(regions.slot_owners[i])
+                            &&& regions.slot_owners[i].self_addr == regions.slots[i].addr()
+                        } by {
+                        assert(i != node_index);
+                        assert(old(regions).slots.contains_key(i));
+                    };
+                    assert(regions.inv());
+                }
+
                 C::E::new_pt(paddr)
             },
             Child::Frame(paddr, level, prop) => C::E::new_page(paddr, level, prop),
@@ -195,6 +223,11 @@ impl<C: PageTableConfig> Child<C> {
                 *regions,
             ),
             entry_own.relate_region(*regions),
+            regions.slot_owners =~= old(regions).slot_owners,
+            !entry_own.is_node() ==> *regions =~= *old(regions),
+            entry_own.is_node() ==> forall|i: usize|
+                i != frame_to_index(entry_own.meta_slot_paddr().unwrap()) ==>
+                (regions.slots.contains_key(i) == old(regions).slots.contains_key(i)),
     {
         if !pte.is_present() {
             return Child::None;
@@ -257,14 +290,12 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
             #[verus_spec(with Tracked(regions), Tracked(&entry_owner.node.tracked_borrow().meta_perm))]
             let node = PageTableNodeRef::borrow_paddr(paddr);
 
-            assert(manually_drop_deref_spec(&node.inner.0).ptr.addr()
-                == entry_owner.node.unwrap().meta_perm.addr());
+            assert(node.inner.0.ptr.addr() == entry_owner.node.unwrap().meta_perm.addr());
 
             proof {
-                // borrow_paddr preserves slots, slot_owners, and dropped_slots
+                // borrow_paddr preserves slots, slot_owners
                 assert(regions.slots =~= regions0.slots);
                 assert(regions.slot_owners =~= regions0.slot_owners);
-                assert(regions.dropped_slots =~= regions0.dropped_slots);
 
                 // Since regions is unchanged, relate_region is trivially preserved
                 assert(*regions =~= regions0);
