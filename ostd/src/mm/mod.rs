@@ -79,22 +79,15 @@ pub const fn is_page_aligned(p: usize) -> bool {
 
 #[allow(non_snake_case)]
 pub trait PagingConstsTrait: Debug + Sync {
-    spec fn BASE_PAGE_SIZE_spec() -> usize;
+    
+    /// The smallest page size.
+    /// This is also the page size at level 1 page tables.
+    const BASE_PAGE_SIZE: usize;
 
     proof fn lemma_BASE_PAGE_SIZE_properties()
         ensures
-            0 < Self::BASE_PAGE_SIZE_spec(),
-            is_pow2(Self::BASE_PAGE_SIZE_spec() as int),
-    ;
-
-    /// The smallest page size.
-    /// This is also the page size at level 1 page tables.
-    #[verifier::when_used_as_spec(BASE_PAGE_SIZE_spec)]
-    fn BASE_PAGE_SIZE() -> (res: usize)
-        ensures
-            res == Self::BASE_PAGE_SIZE_spec(),
-            0 < res,
-            is_pow2(res as int),
+            0 < Self::BASE_PAGE_SIZE,
+            is_pow2(Self::BASE_PAGE_SIZE as int),
     ;
 
     spec fn NR_LEVELS_spec() -> PagingLevel;
@@ -129,12 +122,12 @@ pub trait PagingConstsTrait: Debug + Sync {
         ensures
             res == Self::PTE_SIZE_spec(),
             is_pow2(res as int),
-            0 < res <= Self::BASE_PAGE_SIZE(),
+            0 < res <= Self::BASE_PAGE_SIZE,
     ;
 
     proof fn lemma_PTE_SIZE_properties()
         ensures
-            0 < Self::PTE_SIZE_spec() <= Self::BASE_PAGE_SIZE(),
+            0 < Self::PTE_SIZE_spec() <= Self::BASE_PAGE_SIZE,
             is_pow2(Self::PTE_SIZE_spec() as int),
     ;
 
@@ -167,7 +160,7 @@ pub trait PagingConstsTrait: Debug + Sync {
 
 #[verifier::inline]
 pub open spec fn nr_subpage_per_huge_spec<C: PagingConstsTrait>() -> usize {
-    C::BASE_PAGE_SIZE() / C::PTE_SIZE()
+    C::BASE_PAGE_SIZE / C::PTE_SIZE()
 }
 
 /// The number of sub pages in a huge page.
@@ -177,20 +170,20 @@ pub fn nr_subpage_per_huge<C: PagingConstsTrait>() -> (res: usize)
     ensures
         res == nr_subpage_per_huge_spec::<C>(),
 {
-    C::BASE_PAGE_SIZE() / C::PTE_SIZE()
+    C::BASE_PAGE_SIZE / C::PTE_SIZE()
 }
 
 pub proof fn lemma_nr_subpage_per_huge_bounded<C: PagingConstsTrait>()
     ensures
-        0 < nr_subpage_per_huge::<C>() <= C::BASE_PAGE_SIZE(),
+        0 < nr_subpage_per_huge::<C>() <= C::BASE_PAGE_SIZE,
 {
     C::lemma_PTE_SIZE_properties();
     broadcast use group_div_basics;
 
-    assert(C::PTE_SIZE() <= C::BASE_PAGE_SIZE());
-    assert(C::BASE_PAGE_SIZE() / C::PTE_SIZE() <= C::BASE_PAGE_SIZE());
-    assert(C::BASE_PAGE_SIZE() / C::PTE_SIZE() > 0) by {
-        lemma_div_non_zero(C::BASE_PAGE_SIZE() as int, C::PTE_SIZE() as int);
+    assert(C::PTE_SIZE() <= C::BASE_PAGE_SIZE);
+    assert(C::BASE_PAGE_SIZE / C::PTE_SIZE() <= C::BASE_PAGE_SIZE);
+    assert(C::BASE_PAGE_SIZE / C::PTE_SIZE() > 0) by {
+        lemma_div_non_zero(C::BASE_PAGE_SIZE as int, C::PTE_SIZE() as int);
     };
 }
 

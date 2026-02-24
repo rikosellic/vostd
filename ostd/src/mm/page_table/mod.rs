@@ -108,7 +108,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
 
     proof fn axiom_nr_subpage_per_huge_eq_nr_entries()
         ensures
-            Self::C::BASE_PAGE_SIZE() / Self::C::PTE_SIZE() == NR_ENTRIES,
+            Self::C::BASE_PAGE_SIZE / Self::C::PTE_SIZE() == NR_ENTRIES,
     ;
 
     /// The item that can be mapped into the virtual memory space using the
@@ -180,13 +180,8 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
 // Implement it so that we can comfortably use low level functions
 // like `page_size::<C>` without typing `C::C` everywhere.
 impl<C: PageTableConfig> PagingConstsTrait for C {
-    open spec fn BASE_PAGE_SIZE_spec() -> usize {
-        C::C::BASE_PAGE_SIZE_spec()
-    }
-
-    fn BASE_PAGE_SIZE() -> usize {
-        C::C::BASE_PAGE_SIZE()
-    }
+    
+    const BASE_PAGE_SIZE: usize = C::C::BASE_PAGE_SIZE;
 
     open spec fn NR_LEVELS_spec() -> PagingLevel {
         C::C::NR_LEVELS_spec()
@@ -229,16 +224,13 @@ impl<C: PageTableConfig> PagingConstsTrait for C {
     }
 
     proof fn lemma_BASE_PAGE_SIZE_properties()
-        ensures
-            0 < Self::BASE_PAGE_SIZE_spec(),
-            is_pow2(Self::BASE_PAGE_SIZE_spec() as int),
     {
         admit()
     }
 
     proof fn lemma_PTE_SIZE_properties()
         ensures
-            0 < Self::PTE_SIZE_spec() <= Self::BASE_PAGE_SIZE(),
+            0 < Self::PTE_SIZE_spec() <= Self::BASE_PAGE_SIZE,
             is_pow2(Self::PTE_SIZE_spec() as int),
     {
         admit()
@@ -433,17 +425,17 @@ pub fn nr_pte_index_bits<C: PagingConstsTrait>() -> (res: usize)
 
 pub proof fn lemma_nr_pte_index_bits_bounded<C: PagingConstsTrait>()
     ensures
-        0 <= nr_pte_index_bits::<C>() <= C::BASE_PAGE_SIZE().ilog2(),
+        0 <= nr_pte_index_bits::<C>() <= C::BASE_PAGE_SIZE.ilog2(),
 {
     lemma_nr_subpage_per_huge_bounded::<C>();
     let nr = nr_subpage_per_huge::<C>();
-    assert(1 <= nr <= C::BASE_PAGE_SIZE());
+    assert(1 <= nr <= C::BASE_PAGE_SIZE);
     let bits = nr.ilog2();
     assert(0 <= bits) by {
         lemma_usize_ilog2_ordered(1, nr);
     }
-    assert(bits <= C::BASE_PAGE_SIZE().ilog2()) by {
-        lemma_usize_ilog2_ordered(nr, C::BASE_PAGE_SIZE());
+    assert(bits <= C::BASE_PAGE_SIZE.ilog2()) by {
+        lemma_usize_ilog2_ordered(nr, C::BASE_PAGE_SIZE);
     }
 }
 
@@ -477,9 +469,9 @@ pub fn largest_pages<C: PageTableConfig>(
     mut pa: Paddr,
     mut len: usize,
 ) -> impl Iterator<Item = (Paddr, PagingLevel)> {
-    assert_eq!(va % C::BASE_PAGE_SIZE(), 0);
-    assert_eq!(pa % C::BASE_PAGE_SIZE(), 0);
-    assert_eq!(len % C::BASE_PAGE_SIZE(), 0);
+    assert_eq!(va % C::BASE_PAGE_SIZE, 0);
+    assert_eq!(pa % C::BASE_PAGE_SIZE, 0);
+    assert_eq!(len % C::BASE_PAGE_SIZE, 0);
     assert!(is_valid_range::<C>(&(va..(va + len))));
 
     core::iter::from_fn(
@@ -582,7 +574,7 @@ fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> (res: usize
 /// is 12 (the 4KiB in-page offset) plus 9 (index width in the level-1 table).
 #[verifier::external_body]
 fn pte_index_bit_offset<C: PagingConstsTrait>(level: PagingLevel) -> usize {
-    C::BASE_PAGE_SIZE().ilog2() as usize + nr_pte_index_bits::<C>() * (level as usize - 1)
+    C::BASE_PAGE_SIZE.ilog2() as usize + nr_pte_index_bits::<C>() * (level as usize - 1)
 }
 
 /* TODO: stub out UserPtConfig

@@ -22,29 +22,12 @@ impl Clone for PagingConsts {
 }
 
 impl PagingConstsTrait for PagingConsts {
-    // Expansion for BASE_PAGE_SIZE
-    #[verifier::inline]
-    open spec fn BASE_PAGE_SIZE_spec() -> usize {
-        4096
-    }
+    
+    const BASE_PAGE_SIZE: usize = 4096;
 
     proof fn lemma_BASE_PAGE_SIZE_properties()
-        ensures
-            0 < Self::BASE_PAGE_SIZE_spec(),
-            is_pow2(Self::BASE_PAGE_SIZE_spec() as int),
     {
         lemma_pow2_is_pow2_to64();
-    }
-
-    #[inline(always)]
-    fn BASE_PAGE_SIZE() -> (res: usize)
-        ensures
-            res == Self::BASE_PAGE_SIZE_spec(),
-    {
-        proof {
-            Self::lemma_BASE_PAGE_SIZE_properties();
-        }
-        4096
     }
 
     // Expansion for NR_LEVELS
@@ -107,7 +90,7 @@ impl PagingConstsTrait for PagingConsts {
 
     proof fn lemma_PTE_SIZE_properties()
         ensures
-            0 < Self::PTE_SIZE_spec() <= Self::BASE_PAGE_SIZE(),
+            0 < Self::PTE_SIZE_spec() <= Self::BASE_PAGE_SIZE,
             is_pow2(Self::PTE_SIZE_spec() as int),
     {
         lemma_pow2_is_pow2_to64();

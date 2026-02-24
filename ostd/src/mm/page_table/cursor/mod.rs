@@ -195,7 +195,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         if !is_valid_range::<C>(va) || va.start >= va.end {
             return Err(PageTableError::InvalidVaddrRange(va.start, va.end));
         }
-        if va.start % C::BASE_PAGE_SIZE() != 0 || va.end % C::BASE_PAGE_SIZE() != 0 {
+        if va.start % C::BASE_PAGE_SIZE != 0 || va.end % C::BASE_PAGE_SIZE != 0 {
             return Err(PageTableError::UnalignedVaddr);
         }
         //        const { assert!(C::NR_LEVELS() as usize <= MAX_NR_LEVELS) };
@@ -432,7 +432,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             old(self).invariants(*old(owner), *old(regions), *old(guards)),
             old(self).level < old(self).guard_level,
             old(owner).in_locked_range(),
-            len % C::BASE_PAGE_SIZE() == 0,
+            len % C::BASE_PAGE_SIZE == 0,
             old(self).va + len <= old(self).barrier_va.end,
         ensures
             self.invariants(*owner, *regions, *guards),
@@ -469,7 +469,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             old(self).invariants(*old(owner), *old(regions), *old(guards)),
             old(owner).in_locked_range(),
             // Panic conditions as preconditions
-            len % C::BASE_PAGE_SIZE() == 0,
+            len % C::BASE_PAGE_SIZE == 0,
             old(self).va + len <= old(self).barrier_va.end,
         ensures
             self.invariants(*owner, *regions, *guards),
@@ -1190,7 +1190,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             old(self).inner.invariants(*old(owner), *old(regions), *old(guards)),
             old(self).inner.level < old(self).inner.guard_level,
             old(owner).in_locked_range(),
-            len % C::BASE_PAGE_SIZE() == 0,
+            len % C::BASE_PAGE_SIZE == 0,
             old(self).inner.va + len <= old(self).inner.barrier_va.end,
         ensures
             self.inner.invariants(*owner, *regions, *guards),
@@ -1814,13 +1814,13 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         requires
             old(self).inner.invariants(*old(owner), *old(regions), *old(guards)),
             old(owner).in_locked_range(),
-            len % C::BASE_PAGE_SIZE() == 0,
+            len % C::BASE_PAGE_SIZE == 0,
             old(self).inner.va + len <= old(self).inner.barrier_va.end,
         ensures
             self.inner.invariants(*owner, *regions, *guards),
             self.inner.va > old(self).inner.va,
             self.inner.va <= old(self).inner.va + len,
-            self.inner.va % C::BASE_PAGE_SIZE() == 0,
+            self.inner.va % C::BASE_PAGE_SIZE == 0,
             self.inner.barrier_va == old(self).inner.barrier_va,
             owner.in_locked_range(),
             res is None ==> {
@@ -1903,7 +1903,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             old(owner).children_not_locked(*old(guards)),
             old(owner).nodes_locked(*old(guards)),
             old(owner).relate_region(*old(regions)),
-            len % C::BASE_PAGE_SIZE() == 0,
+            len % C::BASE_PAGE_SIZE == 0,
             old(self).inner.va + len <= old(self).inner.barrier_va.end,
             old(self).inner.level < NR_LEVELS,
             op.requires((old(owner).cur_entry_owner().frame.unwrap().prop,)),
