@@ -443,7 +443,7 @@ impl<'a> VmSpace<'a> {
                     );
                     let o_mv = old_mv.mappings.filter(
                         |m: Mapping| m.va_range.start <= va < m.va_range.end,
-                    ); 
+                    );
 
                     assert(old_mv.addr_transl(va) is Some);
                     assert(o_mv.len() > 0);
@@ -580,7 +580,6 @@ impl<A: InAtomicMode> Iterator for Cursor<'_, A> {
 
 #[verus_verify]
 impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
-
     pub open spec fn query_success_requires(self) -> bool {
         self.0.barrier_va.start <= self.0.va < self.0.barrier_va.end
     }
@@ -724,8 +723,7 @@ impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
             },
             !(self.0.barrier_va.start <= va < self.0.barrier_va.end) ==> res is Err,
     )]
-    pub fn jump(&mut self, va: Vaddr) -> Result<()>
-    {
+    pub fn jump(&mut self, va: Vaddr) -> Result<()> {
         (#[verus_spec(with Tracked(owner), Tracked(regions), Tracked(guards))]
         self.0.jump(va))?;
         Ok(())
@@ -733,7 +731,8 @@ impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
 
     /// Get the virtual address of the current slot.
     pub fn virt_addr(&self) -> Vaddr
-        returns self.0.va,
+        returns
+            self.0.va,
     {
         self.0.virt_addr()
     }
@@ -1027,7 +1026,10 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
         let start_va = self.virt_addr();
         let item = MappedItem { frame: frame, prop: prop };
 
-        assert(crate::mm::page_table::CursorMut::<'a, UserPtConfig, A>::item_not_mapped(item, *old(regions))) by { admit() };
+        assert(crate::mm::page_table::CursorMut::<'a, UserPtConfig, A>::item_not_mapped(
+            item,
+            *old(regions),
+        )) by { admit() };
 
         // SAFETY: It is safe to map untyped memory into the userspace.
         let Err(frag) = (
@@ -1046,7 +1048,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                     .issue_tlb_flush_with(TlbFlushOp::Address(start_va), old_frame.into());
                 #[verus_spec(with Tracked(tlb_model))]
                 self.flusher.dispatch_tlb_flush();
-            }
+            },
             PageTableFrag::StrayPageTable { .. } => {
                 assert(false) by { admit() };
                 //panic!("`UFrame` is base page sized but re-mapping out a child PT");
@@ -1385,6 +1387,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
     // the non-active `VmSpace`s can still have their TLB entries in the CPU!
     static ACTIVATED_VM_SPACE: *const VmSpace = core::ptr::null();
 }*/
+
 /*#[cfg(ktest)]
 pub(super) fn get_activated_vm_space() -> *const VmSpace {
     ACTIVATED_VM_SPACE.load()

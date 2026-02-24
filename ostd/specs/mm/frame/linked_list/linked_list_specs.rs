@@ -4,7 +4,7 @@ use vstd_extra::cast_ptr::*;
 use vstd_extra::ownership::*;
 use vstd_extra::prelude::*;
 
-use super::linked_list_owners::{CursorModel, CursorOwner, LinkModel, LinkOwner, LinkedListModel, LinkedListOwner};
+use super::linked_list_owners::*;
 use crate::mm::frame::linked_list::Link;
 use crate::mm::frame::*;
 use crate::mm::{Paddr, PagingLevel, Vaddr};
@@ -77,7 +77,7 @@ impl CursorModel {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorOwner<M> {
+impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorOwner<M> {
     pub open spec fn remove_owner_spec(self, post: Self) -> bool
         recommends
             self.index < self.length(),
@@ -231,7 +231,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlot>> CursorOwner<M> {
         }
     }
 
-    #[rustc_allow_incoherent_impl]
     pub open spec fn move_prev_owner_spec(self) -> Self {
         if self.length() == 0 {
             self
