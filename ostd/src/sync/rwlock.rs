@@ -14,10 +14,10 @@ use core::{
     fmt,
     marker::PhantomData,
     ops::{Deref, DerefMut},
-    /* sync::atomic::{
-        AtomicUsize,
+    sync::atomic::{
+        // AtomicUsize,
         Ordering::{AcqRel, Acquire, Relaxed, Release},
-    },*/
+    },
 };
 
 use super::{
@@ -207,13 +207,13 @@ impl<T, G> RwLock<T, G> {
 
 #[verus_verify]
 impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
-    /*
     /// Acquires a read lock and spin-wait until it can be acquired.
     ///
     /// The calling thread will spin-wait until there are no writers or
     /// upgrading upreaders present. There is no guarantee for the order
     /// in which other readers or writers waiting simultaneously will
     /// obtain the lock.
+    #[verifier::external_body]
     pub fn read(&self) -> RwLockReadGuard<T, G> {
         loop {
             if let Some(readguard) = self.try_read() {
@@ -230,6 +230,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// for compile-time checked lifetimes of the read guard.
     ///
     /// [`read`]: Self::read
+    #[verifier::external_body]
     pub fn read_arc(self: &Arc<Self>) -> ArcRwLockReadGuard<T, G> {
         loop {
             if let Some(readguard) = self.try_read_arc() {
@@ -246,6 +247,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// upreaders or readers present. There is no guarantee for the order
     /// in which other readers or writers waiting simultaneously will
     /// obtain the lock.
+    #[verifier::external_body]
     pub fn write(&self) -> RwLockWriteGuard<T, G> {
         loop {
             if let Some(writeguard) = self.try_write() {
@@ -262,6 +264,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// for compile-time checked lifetimes of the lock guard.
     ///
     /// [`write`]: Self::write
+    #[verifier::external_body]
     pub fn write_arc(self: &Arc<Self>) -> ArcRwLockWriteGuard<T, G> {
         loop {
             if let Some(writeguard) = self.try_write_arc() {
@@ -282,6 +285,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// and reader do not differ before invoking the upgread method. However,
     /// only one upreader can exist at any time to avoid deadlock in the
     /// upgread method.
+    #[verifier::external_body]
     pub fn upread(&self) -> RwLockUpgradeableGuard<T, G> {
         loop {
             if let Some(guard) = self.try_upread() {
@@ -298,6 +302,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// for compile-time checked lifetimes of the lock guard.
     ///
     /// [`upread`]: Self::upread
+    #[verifier::external_body]
     pub fn upread_arc(self: &Arc<Self>) -> ArcRwLockUpgradeableGuard<T, G> {
         loop {
             if let Some(guard) = self.try_upread_arc() {
@@ -307,38 +312,62 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
             }
         }
     }
-    */
-    /*
+
     /// Attempts to acquire a read lock.
     ///
     /// This function will never spin-wait and will return immediately.
+    #[verifier::external_body]
     pub fn try_read(&self) -> Option<RwLockReadGuard<T, G>> {
         let guard = G::read_guard();
-        let lock = self.lock.fetch_add(READER, Acquire);
+        // let lock = self.lock.fetch_add(READER, Acquire);
+        let lock = atomic_with_ghost!(
+            &self.lock => fetch_add(READER);
+            returning res;
+            ghost g => { }
+        );
         if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
-            Some(RwLockReadGuard { inner: self, guard })
+            Some(RwLockReadGuard {
+                inner: self,
+                guard,
+                v_perm: Tracked::assume_new(),
+            })
         } else {
-            self.lock.fetch_sub(READER, Release);
+            // self.lock.fetch_sub(READER, Release);
+            atomic_with_ghost!(
+                &self.lock => fetch_sub(READER);
+                ghost g => { }
+            );
             None
         }
-    }*/
-    /*
+    }
+
     /// Attempts to acquire an read lock through an [`Arc`].
     ///
     /// The method is similar to [`try_read`], but it doesn't have the requirement
     /// for compile-time checked lifetimes of the lock guard.
     ///
     /// [`try_read`]: Self::try_read
+    #[verifier::external_body]
     pub fn try_read_arc(self: &Arc<Self>) -> Option<ArcRwLockReadGuard<T, G>> {
         let guard = G::read_guard();
-        let lock = self.lock.fetch_add(READER, Acquire);
+        // let lock = self.lock.fetch_add(READER, Acquire);
+        let lock = atomic_with_ghost!(
+            &self.lock => fetch_add(READER);
+            returning res;
+            ghost g => { }
+        );
         if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
             Some(ArcRwLockReadGuard {
                 inner: self.clone(),
                 guard,
+                v_perm: Tracked::assume_new(),
             })
         } else {
-            self.lock.fetch_sub(READER, Release);
+            // self.lock.fetch_sub(READER, Release);
+            atomic_with_ghost!(
+                &self.lock => fetch_sub(READER);
+                ghost g => { }
+            );
             None
         }
     }
@@ -346,13 +375,20 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// Attempts to acquire a write lock.
     ///
     /// This function will never spin-wait and will return immediately.
+    #[verifier::external_body]
     pub fn try_write(&self) -> Option<RwLockWriteGuard<T, G>> {
         let guard = G::guard();
-        if self
-            .lock
-            .compare_exchange(0, WRITER, Acquire, Relaxed)
-            .is_ok()
-        {
+        // if self
+        //     .lock
+        //     .compare_exchange(0, WRITER, Acquire, Relaxed)
+        //     .is_ok()
+        // {
+        let result = atomic_with_ghost!(
+            &self.lock => compare_exchange(0, WRITER);
+            returning res;
+            ghost g => { }
+        );
+        if result.is_ok() {
             Some(RwLockWriteGuard { inner: self, guard })
         } else {
             None
@@ -365,13 +401,20 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// for compile-time checked lifetimes of the lock guard.
     ///
     /// [`try_write`]: Self::try_write
+    #[verifier::external_body]
     fn try_write_arc(self: &Arc<Self>) -> Option<ArcRwLockWriteGuard<T, G>> {
         let guard = G::guard();
-        if self
-            .lock
-            .compare_exchange(0, WRITER, Acquire, Relaxed)
-            .is_ok()
-        {
+        // if self
+        //     .lock
+        //     .compare_exchange(0, WRITER, Acquire, Relaxed)
+        //     .is_ok()
+        // {
+        let result = atomic_with_ghost!(
+            &self.lock => compare_exchange(0, WRITER);
+            returning res;
+            ghost g => { }
+        );
+        if result.is_ok() {
             Some(ArcRwLockWriteGuard {
                 inner: self.clone(),
                 guard,
@@ -384,13 +427,23 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// Attempts to acquire an upread lock.
     ///
     /// This function will never spin-wait and will return immediately.
+    #[verifier::external_body]
     pub fn try_upread(&self) -> Option<RwLockUpgradeableGuard<T, G>> {
         let guard = G::guard();
-        let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
+        // let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
+        let lock = atomic_with_ghost!(
+            &self.lock => fetch_or(UPGRADEABLE_READER);
+            returning res;
+            ghost g => { }
+        ) & (WRITER | UPGRADEABLE_READER);
         if lock == 0 {
             return Some(RwLockUpgradeableGuard { inner: self, guard });
         } else if lock == WRITER {
-            self.lock.fetch_sub(UPGRADEABLE_READER, Release);
+            // self.lock.fetch_sub(UPGRADEABLE_READER, Release);
+            atomic_with_ghost!(
+                &self.lock => fetch_sub(UPGRADEABLE_READER);
+                ghost g => { }
+            );
         }
         None
     }
@@ -401,19 +454,29 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// for compile-time checked lifetimes of the lock guard.
     ///
     /// [`try_upread`]: Self::try_upread
+    #[verifier::external_body]
     pub fn try_upread_arc(self: &Arc<Self>) -> Option<ArcRwLockUpgradeableGuard<T, G>> {
         let guard = G::guard();
-        let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
+        // let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
+        let lock = atomic_with_ghost!(
+            &self.lock => fetch_or(UPGRADEABLE_READER);
+            returning res;
+            ghost g => { }
+        ) & (WRITER | UPGRADEABLE_READER);
         if lock == 0 {
             return Some(ArcRwLockUpgradeableGuard {
                 inner: self.clone(),
                 guard,
             });
         } else if lock == WRITER {
-            self.lock.fetch_sub(UPGRADEABLE_READER, Release);
+            // self.lock.fetch_sub(UPGRADEABLE_READER, Release);
+            atomic_with_ghost!(
+                &self.lock => fetch_sub(UPGRADEABLE_READER);
+                ghost g => { }
+            );
         }
         None
-    } */
+    }
 }
 
 impl<T, G: SpinGuardian> RwLock<T, G> {
