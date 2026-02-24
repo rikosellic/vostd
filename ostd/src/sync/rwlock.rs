@@ -149,7 +149,7 @@ closed spec fn wf(self) -> bool {
                 &&& perm.frac() >= (MAX_READER_U64 as int) - total_readers
             }
         }
-    } 
+    }
 }
 
 }
@@ -166,20 +166,18 @@ const MAX_READER: usize = 1 << (usize::BITS - 4);
 
 const READER_MASK: usize = (!0usize) >> 4;
 
-impl<T,G> RwLock<T,G>
-{
+impl<T, G> RwLock<T, G> {
     /// Returns the unique [`CellId`](https://verus-lang.github.io/verus/verusdoc/vstd/cell/struct.CellId.html) of the internal `PCell<T>`.
     pub closed spec fn cell_id(self) -> cell::CellId {
         self.val.id()
     }
-    
+
     /// Encapsulates the invariant described in the *Invariant* section of [`RwLock`].
     #[verifier::type_invariant]
-    closed spec fn type_inv(self) -> bool{
+    closed spec fn type_inv(self) -> bool {
         self.wf()
     }
 }
-
 
 #[verus_verify]
 impl<T, G> RwLock<T, G> {
@@ -187,33 +185,33 @@ impl<T, G> RwLock<T, G> {
     #[verus_verify]
     pub const fn new(val: T) -> Self {
         let (val, Tracked(perm)) = PCell::new(val);
-        
+
         // Proof code
         let tracked frac_perm = RwFrac::<T>::new(perm);
-        proof { 
+        proof {
             lemma_consts_properties();
         }
 
         Self {
             guard: PhantomData,
             //lock: AtomicUsize::new(0),
-            lock:AtomicUsize::new(Ghost((val,PhantomData)),0,Tracked(Some(frac_perm))),
+            lock: AtomicUsize::new(Ghost((val, PhantomData)), 0, Tracked(Some(frac_perm))),
             val: val,
             //val: UnsafeCell::new(val),
         }
     }
 }
-}
 
+} // verus!
 #[verus_verify]
-impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
+impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// Acquires a read lock and spin-wait until it can be acquired.
     ///
     /// The calling thread will spin-wait until there are no writers or
     /// upgrading upreaders present. There is no guarantee for the order
     /// in which other readers or writers waiting simultaneously will
     /// obtain the lock.
-    #[verifier::external_body]
+    #[verifier::exec_allows_no_decreases_clause]
     pub fn read(&self) -> RwLockReadGuard<T, G> {
         loop {
             if let Some(readguard) = self.try_read() {
@@ -230,7 +228,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// for compile-time checked lifetimes of the read guard.
     ///
     /// [`read`]: Self::read
-    #[verifier::external_body]
+    #[verifier::exec_allows_no_decreases_clause]
     pub fn read_arc(self: &Arc<Self>) -> ArcRwLockReadGuard<T, G> {
         loop {
             if let Some(readguard) = self.try_read_arc() {
@@ -247,7 +245,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// upreaders or readers present. There is no guarantee for the order
     /// in which other readers or writers waiting simultaneously will
     /// obtain the lock.
-    #[verifier::external_body]
+    #[verifier::exec_allows_no_decreases_clause]
     pub fn write(&self) -> RwLockWriteGuard<T, G> {
         loop {
             if let Some(writeguard) = self.try_write() {
@@ -264,7 +262,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// for compile-time checked lifetimes of the lock guard.
     ///
     /// [`write`]: Self::write
-    #[verifier::external_body]
+    #[verifier::exec_allows_no_decreases_clause]
     pub fn write_arc(self: &Arc<Self>) -> ArcRwLockWriteGuard<T, G> {
         loop {
             if let Some(writeguard) = self.try_write_arc() {
@@ -286,6 +284,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// only one upreader can exist at any time to avoid deadlock in the
     /// upgrade method.
     #[verifier::external_body]
+    #[verifier::exec_allows_no_decreases_clause]
     pub fn upread(&self) -> RwLockUpgradeableGuard<T, G> {
         loop {
             if let Some(guard) = self.try_upread() {
@@ -302,7 +301,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// for compile-time checked lifetimes of the lock guard.
     ///
     /// [`upread`]: Self::upread
-    #[verifier::external_body]
+    #[verifier::exec_allows_no_decreases_clause]
     pub fn upread_arc(self: &Arc<Self>) -> ArcRwLockUpgradeableGuard<T, G> {
         loop {
             if let Some(guard) = self.try_upread_arc() {
@@ -321,7 +320,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
         let guard = G::read_guard();
         // let lock = self.lock.fetch_add(READER, Acquire);
         let lock = atomic_with_ghost!(
-            &self.lock => fetch_add(READER);
+            self.lock => fetch_add(READER);
             returning res;
             ghost g => { }
         );
@@ -334,7 +333,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
         } else {
             // self.lock.fetch_sub(READER, Release);
             atomic_with_ghost!(
-                &self.lock => fetch_sub(READER);
+                self.lock => fetch_sub(READER);
                 ghost g => { }
             );
             None
@@ -352,7 +351,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
         let guard = G::read_guard();
         // let lock = self.lock.fetch_add(READER, Acquire);
         let lock = atomic_with_ghost!(
-            &self.lock => fetch_add(READER);
+            self.lock => fetch_add(READER);
             returning res;
             ghost g => { }
         );
@@ -365,7 +364,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
         } else {
             // self.lock.fetch_sub(READER, Release);
             atomic_with_ghost!(
-                &self.lock => fetch_sub(READER);
+                self.lock => fetch_sub(READER);
                 ghost g => { }
             );
             None
@@ -383,12 +382,13 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
         //     .compare_exchange(0, WRITER, Acquire, Relaxed)
         //     .is_ok()
         // {
-        let result = atomic_with_ghost!(
-            &self.lock => compare_exchange(0, WRITER);
+        if atomic_with_ghost!(
+            self.lock => compare_exchange(0, WRITER);
             returning res;
             ghost g => { }
-        );
-        if result.is_ok() {
+        )
+        .is_ok()
+        {
             Some(RwLockWriteGuard { inner: self, guard })
         } else {
             None
@@ -409,12 +409,13 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
         //     .compare_exchange(0, WRITER, Acquire, Relaxed)
         //     .is_ok()
         // {
-        let result = atomic_with_ghost!(
-            &self.lock => compare_exchange(0, WRITER);
+        if atomic_with_ghost!(
+            self.lock => compare_exchange(0, WRITER);
             returning res;
             ghost g => { }
-        );
-        if result.is_ok() {
+        )
+        .is_ok()
+        {
             Some(ArcRwLockWriteGuard {
                 inner: self.clone(),
                 guard,
@@ -432,7 +433,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
         let guard = G::guard();
         // let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
         let lock = atomic_with_ghost!(
-            &self.lock => fetch_or(UPGRADEABLE_READER);
+            self.lock => fetch_or(UPGRADEABLE_READER);
             returning res;
             ghost g => { }
         ) & (WRITER | UPGRADEABLE_READER);
@@ -441,7 +442,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
         } else if lock == WRITER {
             // self.lock.fetch_sub(UPGRADEABLE_READER, Release);
             atomic_with_ghost!(
-                &self.lock => fetch_sub(UPGRADEABLE_READER);
+                self.lock => fetch_sub(UPGRADEABLE_READER);
                 ghost g => { }
             );
         }
@@ -459,7 +460,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
         let guard = G::guard();
         // let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
         let lock = atomic_with_ghost!(
-            &self.lock => fetch_or(UPGRADEABLE_READER);
+            self.lock => fetch_or(UPGRADEABLE_READER);
             returning res;
             ghost g => { }
         ) & (WRITER | UPGRADEABLE_READER);
@@ -471,7 +472,7 @@ impl<T/*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
         } else if lock == WRITER {
             // self.lock.fetch_sub(UPGRADEABLE_READER, Release);
             atomic_with_ghost!(
-                &self.lock => fetch_sub(UPGRADEABLE_READER);
+                self.lock => fetch_sub(UPGRADEABLE_READER);
                 ghost g => { }
             );
         }
@@ -577,17 +578,17 @@ pub type RwLockReadGuard<'a, T, G> = RwLockReadGuard_<T, &'a RwLock<T, G>, G>;
 /// A guard that provides shared read access to the data protected by a `Arc<RwLock>`.
 pub type ArcRwLockReadGuard<T, G> = RwLockReadGuard_<T, Arc<RwLock<T, G>>, G>;
 
-verus!{
-impl<T, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> RwLockReadGuard_<T, R, G>
-{
+verus! {
+
+impl<T, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> RwLockReadGuard_<T, R, G> {
     #[verifier::type_invariant]
     pub closed spec fn type_inv(self) -> bool {
         &&& self.inner.deref_spec().cell_id() == self.v_perm@.resource().id()
         &&& self.v_perm@.frac() == 1
     }
 }
-}
 
+} // verus!
 /*
 impl<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> Deref
     for RwLockReadGuard_<T, R, G>
@@ -614,7 +615,6 @@ impl<T: ?Sized + fmt::Debug, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGua
         fmt::Debug::fmt(&**self, f)
     }
 }*/
-
 /// A guard that provides mutable data access.
 #[verifier::reject_recursive_types(T)]
 #[verifier::reject_recursive_types(G)]
@@ -803,21 +803,21 @@ impl<T: ?Sized + fmt::Debug, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGua
 }
 */
 
-verus!{
+verus! {
 
 proof fn lemma_consts_properties()
-ensures
-    0 & WRITER == 0,
-    0 & UPGRADEABLE_READER == 0,
-    0 & BEING_UPGRADED == 0,
-    0 & READER_MASK == 0,
-    0 & MAX_READER == 0,
-    0 & READER == 0,
-    WRITER == 0x8000_0000_0000_0000,
-    UPGRADEABLE_READER == 0x4000_0000_0000_0000,
-    BEING_UPGRADED == 0x2000_0000_0000_0000,
-    READER_MASK == 0x0FFF_FFFF_FFFF_FFFF,
-    MAX_READER == 0x1000_0000_0000_0000,
+    ensures
+        0 & WRITER == 0,
+        0 & UPGRADEABLE_READER == 0,
+        0 & BEING_UPGRADED == 0,
+        0 & READER_MASK == 0,
+        0 & MAX_READER == 0,
+        0 & READER == 0,
+        WRITER == 0x8000_0000_0000_0000,
+        UPGRADEABLE_READER == 0x4000_0000_0000_0000,
+        BEING_UPGRADED == 0x2000_0000_0000_0000,
+        READER_MASK == 0x0FFF_FFFF_FFFF_FFFF,
+        MAX_READER == 0x1000_0000_0000_0000,
 {
     assert(0 & WRITER == 0) by (compute_only);
     assert(0 & UPGRADEABLE_READER == 0) by (compute_only);
@@ -832,4 +832,4 @@ ensures
     assert(MAX_READER == 0x1000_0000_0000_0000) by (compute_only);
 }
 
-}
+} // verus!
