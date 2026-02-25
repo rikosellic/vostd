@@ -404,12 +404,35 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
                 if res is Ok {
                     assert(prev == 0);
                     assert(next == WRITER);
-                    assert(cell_perm is Some && cell_perm->Some_0.frac() == MAX_READER_U64) by {admit();};
-                    let tracked mut tmp: Option<RwFrac<T>> = None;
-                    tracked_swap(&mut tmp, &mut cell_perm);
-                    let tracked (full_perm, empty) = tmp.tracked_unwrap().take_resource();
+                    assert(cell_perm is Some);
+                    let tracked frac_perm = cell_perm.tracked_take();
+                    assert(frac_perm.frac() >= MAX_READER_U64);
+                    frac_perm.bounded();
+                    assert(frac_perm.frac() <= MAX_READER_U64);
+                    assert(frac_perm.frac() == MAX_READER_U64) by {
+                        assert(frac_perm.frac() >= MAX_READER_U64);
+                        assert(frac_perm.frac() <= MAX_READER_U64);
+                    };
+                    let tracked (full_perm, _empty) = frac_perm.take_resource();
                     perm = Some(full_perm);
-                    admit();
+                    assert(cell_perm is None);
+                    assert(next & WRITER == WRITER) by {
+                        assert(next == WRITER);
+                        assert(WRITER & WRITER == WRITER) by (compute_only);
+                    };
+                    assert(next & WRITER != 0);
+                    assert(next & BEING_UPGRADED == 0) by {
+                        assert(next == WRITER);
+                        assert(WRITER & BEING_UPGRADED == 0) by (compute_only);
+                    };
+                    assert(next & READER_MASK == 0) by {
+                        assert(next == WRITER);
+                        assert(WRITER & READER_MASK == 0) by (compute_only);
+                    };
+                    assert(next & MAX_READER == 0) by {
+                        assert(next == WRITER);
+                        assert(WRITER & MAX_READER == 0) by (compute_only);
+                    };
                 }
             }
         )
