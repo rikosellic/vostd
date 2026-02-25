@@ -465,9 +465,12 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// Attempts to acquire an upread lock.
     ///
     /// This function will never spin-wait and will return immediately.
-    #[verifier::external_body]
+    #[verus_spec]
     pub fn try_upread(&self) -> Option<RwLockUpgradeableGuard<T, G>> {
         let guard = G::guard();
+        proof_decl!{
+            let tracked mut perm: Option<RwFrac<T>> = None;
+        }
         proof!{
             use_type_invariant(self);
             lemma_consts_properties();
@@ -475,16 +478,27 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
         // let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
         let lock = atomic_with_ghost!(
             self.lock => fetch_or(UPGRADEABLE_READER);
-            returning res;
-            ghost g => { }
+            update prev -> next;
+            ghost cell_perm => { 
+                if prev & (WRITER | UPGRADEABLE_READER) == 0 {
+                    admit();
+                    let tracked mut tmp = cell_perm.tracked_take();
+                    let tracked frac_perm = tmp.split(1int);
+                    cell_perm = Some(tmp);
+                    perm = Some(frac_perm);
+                }
+                admit();
+            }
         ) & (WRITER | UPGRADEABLE_READER);
         if lock == 0 {
-            return Some(RwLockUpgradeableGuard { inner: self, guard, v_perm: Tracked::assume_new() });
+            return Some(RwLockUpgradeableGuard { inner: self, guard, v_perm: Tracked(perm.tracked_unwrap()) });
         } else if lock == WRITER {
             // self.lock.fetch_sub(UPGRADEABLE_READER, Release);
             atomic_with_ghost!(
                 self.lock => fetch_sub(UPGRADEABLE_READER);
-                ghost g => { }
+                ghost cell_perm => { 
+                    admit();
+                }
             );
         }
         None
