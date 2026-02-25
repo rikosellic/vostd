@@ -132,7 +132,8 @@ closed spec fn wf(self) -> bool {
         let base_readers: usize = v & READER_MASK;
         let has_max_reader: bool = (v & MAX_READER) != 0usize;
         let reader_count: usize = if has_max_reader { MAX_READER } else { base_readers };
-        let total_readers: int = reader_count as int;
+        let upread_count: usize = if (v & UPGRADEABLE_READER) != 0usize { 1usize } else { 0usize };
+        let total_readers: int = (reader_count + upread_count) as int;
 
         &&& (!has_max_reader ==> base_readers == reader_count)
         &&& (has_max_reader ==> base_readers == 0)
@@ -464,7 +465,7 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// Attempts to acquire an upread lock.
     ///
     /// This function will never spin-wait and will return immediately.
-    #[verus_spec]
+    #[verifier::external_body]
     pub fn try_upread(&self) -> Option<RwLockUpgradeableGuard<T, G>> {
         let guard = G::guard();
         proof!{
@@ -474,121 +475,16 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
         // let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
         let lock = atomic_with_ghost!(
             self.lock => fetch_or(UPGRADEABLE_READER);
-            update prev -> next;
             returning res;
-            ghost g => {
-                assert(next == (prev | UPGRADEABLE_READER));
-
-                let base_prev: usize = prev & READER_MASK;
-                let has_max_prev: bool = (prev & MAX_READER) != 0usize;
-                let reader_prev: usize = if has_max_prev { MAX_READER } else { base_prev };
-                let up_prev: usize = if (prev & UPGRADEABLE_READER) != 0usize { 1usize } else { 0usize };
-                let total_prev: int = (reader_prev + up_prev) as int;
-
-                let base_next: usize = next & READER_MASK;
-                let has_max_next: bool = (next & MAX_READER) != 0usize;
-                let reader_next: usize = if has_max_next { MAX_READER } else { base_next };
-                let up_next: usize = if (next & UPGRADEABLE_READER) != 0usize { 1usize } else { 0usize };
-                let total_next: int = (reader_next + up_next) as int;
-
-                assert((next & READER_MASK) == ((prev | UPGRADEABLE_READER) & READER_MASK)) by {
-                    assert(next == (prev | UPGRADEABLE_READER));
-                };
-                assert(((prev | UPGRADEABLE_READER) & READER_MASK) == (prev & READER_MASK)) by (bit_vector);
-                assert(base_next == base_prev);
-
-                assert((next & MAX_READER) == ((prev | UPGRADEABLE_READER) & MAX_READER)) by {
-                    assert(next == (prev | UPGRADEABLE_READER));
-                };
-                assert(((prev | UPGRADEABLE_READER) & MAX_READER) == (prev & MAX_READER)) by (bit_vector);
-                assert(has_max_next == has_max_prev);
-
-                assert((next & BEING_UPGRADED) == ((prev | UPGRADEABLE_READER) & BEING_UPGRADED)) by {
-                    assert(next == (prev | UPGRADEABLE_READER));
-                };
-                assert(((prev | UPGRADEABLE_READER) & BEING_UPGRADED) == (prev & BEING_UPGRADED)) by (bit_vector);
-
-                assert(reader_next == reader_prev);
-                assert((next & UPGRADEABLE_READER) == ((prev | UPGRADEABLE_READER) & UPGRADEABLE_READER)) by {
-                    assert(next == (prev | UPGRADEABLE_READER));
-                };
-                assert(((prev | UPGRADEABLE_READER) & UPGRADEABLE_READER) == UPGRADEABLE_READER) by (bit_vector);
-                assert((next & UPGRADEABLE_READER) != 0usize);
-                assert(up_next == 1usize);
-
-                if (prev & UPGRADEABLE_READER) != 0usize {
-                    assert(up_prev == 1usize);
-                    assert(up_next >= up_prev);
-                    assert(total_next == total_prev);
-                } else {
-                    assert(up_prev == 0usize);
-                    assert(up_next >= up_prev);
-                    assert(total_next >= total_prev);
-                }
-
-                assert(!has_max_next ==> base_next == reader_next);
-                assert(has_max_next ==> base_next == 0usize) by {
-                    assert(has_max_prev ==> base_prev == 0usize);
-                };
-                assert((next & BEING_UPGRADED) != 0usize ==> (next & UPGRADEABLE_READER) != 0usize) by {
-                    if (next & BEING_UPGRADED) != 0usize {
-                        assert((next & UPGRADEABLE_READER) != 0usize);
-                    }
-                };
-
-                match g {
-                    Option::None => {
-                        assert((prev & WRITER) != 0usize);
-                        assert(reader_prev == 0usize);
-                        assert((prev & BEING_UPGRADED) == 0usize);
-
-                        assert((next & WRITER) == ((prev | UPGRADEABLE_READER) & WRITER)) by {
-                            assert(next == (prev | UPGRADEABLE_READER));
-                        };
-                        assert(((prev | UPGRADEABLE_READER) & WRITER) == (prev & WRITER)) by (bit_vector);
-                        assert((next & WRITER) != 0usize);
-                        assert(reader_next == 0usize);
-                        assert((next & BEING_UPGRADED) == 0usize);
-                    }
-                    Option::Some(ref perm) => {
-                        assert((next & WRITER) == ((prev | UPGRADEABLE_READER) & WRITER)) by {
-                            assert(next == (prev | UPGRADEABLE_READER));
-                        };
-                        assert(((prev | UPGRADEABLE_READER) & WRITER) == (prev & WRITER)) by (bit_vector);
-                        assert((next & WRITER) == 0usize);
-                        assert(perm.resource().id() == self.val.id());
-                        assert(perm.frac() >= (MAX_READER_U64 as int) - total_prev);
-                        assert((MAX_READER_U64 as int) - total_prev >= (MAX_READER_U64 as int) - total_next) by {
-                            assert(total_next >= total_prev);
-                        };
-                        assert(perm.frac() >= (MAX_READER_U64 as int) - total_next);
-                    }
-                }
-            }
+            ghost g => { }
         ) & (WRITER | UPGRADEABLE_READER);
         if lock == 0 {
             return Some(RwLockUpgradeableGuard { inner: self, guard });
         } else if lock == WRITER {
-            // Try to rollback the transient UPGRADEABLE_READER bit only if state is unchanged.
+            // self.lock.fetch_sub(UPGRADEABLE_READER, Release);
             atomic_with_ghost!(
-                self.lock => compare_exchange(WRITER | UPGRADEABLE_READER, WRITER);
-                update prev -> next;
-                returning res;
-                ghost g => {
-                    if res is Ok {
-                        assert(prev == WRITER | UPGRADEABLE_READER);
-                        assert((prev & WRITER) == ((WRITER | UPGRADEABLE_READER) & WRITER)) by {
-                            assert(prev == WRITER | UPGRADEABLE_READER);
-                        };
-                        assert(((WRITER | UPGRADEABLE_READER) & WRITER) == WRITER) by (compute_only);
-                        assert((prev & WRITER) == WRITER);
-                        assert((prev & WRITER) != 0usize);
-                        if g is Some {
-                            assert((prev & WRITER) == 0usize);
-                            assert(false);
-                        }
-                    }
-                }
+                self.lock => fetch_sub(UPGRADEABLE_READER);
+                ghost g => { }
             );
         }
         None
