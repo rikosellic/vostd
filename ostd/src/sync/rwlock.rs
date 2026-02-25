@@ -2,6 +2,7 @@ use pcm::frac;
 // SPDX-License-Identifier: MPL-2.0
 use vstd::atomic_ghost::*;
 use vstd::cell::{self, pcell::*};
+use vstd::modes::*;
 use vstd::prelude::*;
 use vstd::tokens::frac::Frac;
 use vstd_extra::prelude::*;
@@ -203,6 +204,8 @@ impl<T, G> RwLock<T, G> {
 }
 
 } // verus!
+
+verus!{
 #[verus_verify]
 impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// Acquires a read lock and spin-wait until it can be acquired.
@@ -211,6 +214,7 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// upgrading upreaders present. There is no guarantee for the order
     /// in which other readers or writers waiting simultaneously will
     /// obtain the lock.
+    #[verifier::external_body]
     #[verifier::exec_allows_no_decreases_clause]
     pub fn read(&self) -> RwLockReadGuard<T, G> {
         loop {
@@ -228,6 +232,7 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// for compile-time checked lifetimes of the read guard.
     ///
     /// [`read`]: Self::read
+    #[verifier::external_body]
     #[verifier::exec_allows_no_decreases_clause]
     pub fn read_arc(self: &Arc<Self>) -> ArcRwLockReadGuard<T, G> {
         loop {
@@ -245,6 +250,7 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// upreaders or readers present. There is no guarantee for the order
     /// in which other readers or writers waiting simultaneously will
     /// obtain the lock.
+    #[verifier::external_body]
     #[verifier::exec_allows_no_decreases_clause]
     pub fn write(&self) -> RwLockWriteGuard<T, G> {
         loop {
@@ -263,6 +269,7 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     ///
     /// [`write`]: Self::write
     #[verifier::exec_allows_no_decreases_clause]
+    #[verifier::external_body]
     pub fn write_arc(self: &Arc<Self>) -> ArcRwLockWriteGuard<T, G> {
         loop {
             if let Some(writeguard) = self.try_write_arc() {
@@ -302,6 +309,7 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     ///
     /// [`upread`]: Self::upread
     #[verifier::exec_allows_no_decreases_clause]
+    #[verifier::external_body]
     pub fn upread_arc(self: &Arc<Self>) -> ArcRwLockUpgradeableGuard<T, G> {
         loop {
             if let Some(guard) = self.try_upread_arc() {
@@ -374,22 +382,40 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// Attempts to acquire a write lock.
     ///
     /// This function will never spin-wait and will return immediately.
-    #[verifier::external_body]
+    #[verus_spec]
     pub fn try_write(&self) -> Option<RwLockWriteGuard<T, G>> {
         let guard = G::guard();
         // if self
         //     .lock
         //     .compare_exchange(0, WRITER, Acquire, Relaxed)
         //     .is_ok()
-        // {
+        proof_decl!{
+            let tracked mut perm: Option<PointsTo<T>> = None;
+        }
+        proof!{ 
+            use_type_invariant(self);
+            lemma_consts_properties();
+        }
         if atomic_with_ghost!(
             self.lock => compare_exchange(0, WRITER);
+            update prev -> next;
             returning res;
-            ghost g => { }
+            ghost cell_perm => { 
+                if res is Ok {
+                    assert(prev == 0);
+                    assert(next == WRITER);
+                    assert(cell_perm is Some && cell_perm->Some_0.frac() == MAX_READER_U64) by {admit();};
+                    let tracked mut tmp: Option<RwFrac<T>> = None;
+                    tracked_swap(&mut tmp, &mut cell_perm);
+                    let tracked (full_perm, empty) = tmp.tracked_unwrap().take_resource();
+                    perm = Some(full_perm);
+                    admit();
+                }
+            }
         )
         .is_ok()
         {
-            Some(RwLockWriteGuard { inner: self, guard })
+            Some(RwLockWriteGuard { inner: self, guard, v_perm: Tracked(perm.tracked_unwrap()) })
         } else {
             None
         }
@@ -408,7 +434,6 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
         //     .lock
         //     .compare_exchange(0, WRITER, Acquire, Relaxed)
         //     .is_ok()
-        // {
         if atomic_with_ghost!(
             self.lock => compare_exchange(0, WRITER);
             returning res;
@@ -419,6 +444,7 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
             Some(ArcRwLockWriteGuard {
                 inner: self.clone(),
                 guard,
+                v_perm: Tracked::assume_new(),
             })
         } else {
             None
@@ -478,6 +504,7 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
         }
         None
     }
+}
 }
 
 impl<T, G: SpinGuardian> RwLock<T, G> {
@@ -626,6 +653,17 @@ pub struct RwLockWriteGuard_<
 > {
     guard: G::Guard,
     inner: R,
+    /// Ghost permission for verification
+    v_perm: Tracked<PointsTo<T>>,
+}
+
+verus!{
+impl<T, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> RwLockWriteGuard_<T, R, G> {
+    #[verifier::type_invariant]
+    spec fn type_inv(self) -> bool {
+        self.inner.deref_spec().cell_id() == self.v_perm@.id()
+    }
+}
 }
 /*
 impl<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> AsAtomicModeGuard
