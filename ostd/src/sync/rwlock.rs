@@ -423,24 +423,39 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// for compile-time checked lifetimes of the lock guard.
     ///
     /// [`try_write`]: Self::try_write
-    #[verifier::external_body]
+    #[verus_spec]
     fn try_write_arc(self: &Arc<Self>) -> Option<ArcRwLockWriteGuard<T, G>> {
         let guard = G::guard();
         // if self
         //     .lock
         //     .compare_exchange(0, WRITER, Acquire, Relaxed)
         //     .is_ok()
+        proof_decl!{
+            let tracked mut perm: Option<PointsTo<T>> = None;
+        }
+        proof!{
+            use_type_invariant(self);
+            lemma_consts_properties();
+        }
         if atomic_with_ghost!(
             self.lock => compare_exchange(0, WRITER);
+            update prev -> next;
             returning res;
-            ghost g => { }
+            ghost cell_perm => {
+                if res is Ok {
+                    let tracked frac_perm = cell_perm.tracked_take();
+                    frac_perm.bounded();
+                    let tracked (full_perm, _empty) = frac_perm.take_resource();
+                    perm = Some(full_perm);
+                }
+            }
         )
         .is_ok()
         {
             Some(ArcRwLockWriteGuard {
                 inner: self.clone(),
                 guard,
-                v_perm: Tracked::assume_new(),
+                v_perm: Tracked(perm.tracked_unwrap()),
             })
         } else {
             None
@@ -453,6 +468,10 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     #[verifier::external_body]
     pub fn try_upread(&self) -> Option<RwLockUpgradeableGuard<T, G>> {
         let guard = G::guard();
+        proof!{
+            use_type_invariant(self);
+            lemma_consts_properties();
+        }
         // let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
         let lock = atomic_with_ghost!(
             self.lock => fetch_or(UPGRADEABLE_READER);
