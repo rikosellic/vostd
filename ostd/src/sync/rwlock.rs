@@ -468,6 +468,10 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     #[verifier::external_body]
     pub fn try_upread(&self) -> Option<RwLockUpgradeableGuard<T, G>> {
         let guard = G::guard();
+        proof!{
+            use_type_invariant(self);
+            lemma_consts_properties();
+        }
         // let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
         let lock = atomic_with_ghost!(
             self.lock => fetch_or(UPGRADEABLE_READER);
@@ -475,14 +479,11 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
             ghost g => { }
         ) & (WRITER | UPGRADEABLE_READER);
         if lock == 0 {
-            proof_decl!{
-                let tracked perm: Option<RwFrac<T>> = None;
-            }
-            return Some(RwLockUpgradeableGuard { inner: self, guard, v_perm: Tracked(perm) });
+            return Some(RwLockUpgradeableGuard { inner: self, guard, v_perm: Tracked::assume_new() });
         } else if lock == WRITER {
             // self.lock.fetch_sub(UPGRADEABLE_READER, Release);
             atomic_with_ghost!(
-                self.lock => fetch_and(!UPGRADEABLE_READER);
+                self.lock => fetch_sub(UPGRADEABLE_READER);
                 ghost g => { }
             );
         }
@@ -775,7 +776,7 @@ pub struct RwLockUpgradeableGuard_<
 > {
     guard: G::Guard,
     inner: R,
-    v_perm: Tracked<Option<RwFrac<T>>>,
+    v_perm: Tracked<RwFrac<T>>,
 }
 /*
 impl<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> AsAtomicModeGuard
@@ -796,8 +797,8 @@ verus! {
 impl<T, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> RwLockUpgradeableGuard_<T, R, G> {
     #[verifier::type_invariant]
     pub closed spec fn type_inv(self) -> bool {
-        &&& (self.v_perm@ is Some ==> self.inner.deref_spec().cell_id() == self.v_perm@->Some_0.resource().id())
-        &&& (self.v_perm@ is Some ==> self.v_perm@->Some_0.frac() == 1)
+        &&& self.inner.deref_spec().cell_id() == self.v_perm@.resource().id()
+        &&& self.v_perm@.frac() == 1
     }
 }
 
