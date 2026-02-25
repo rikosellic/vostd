@@ -479,7 +479,7 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
             ghost g => { }
         ) & (WRITER | UPGRADEABLE_READER);
         if lock == 0 {
-            return Some(RwLockUpgradeableGuard { inner: self, guard });
+            return Some(RwLockUpgradeableGuard { inner: self, guard, v_perm: Tracked::assume_new() });
         } else if lock == WRITER {
             // self.lock.fetch_sub(UPGRADEABLE_READER, Release);
             atomic_with_ghost!(
@@ -509,6 +509,7 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
             return Some(ArcRwLockUpgradeableGuard {
                 inner: self.clone(),
                 guard,
+                v_perm: Tracked::assume_new(),
             });
         } else if lock == WRITER {
             // self.lock.fetch_sub(UPGRADEABLE_READER, Release);
@@ -775,6 +776,7 @@ pub struct RwLockUpgradeableGuard_<
 > {
     guard: G::Guard,
     inner: R,
+    v_perm: Tracked<RwFrac<T>>,
 }
 /*
 impl<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> AsAtomicModeGuard
@@ -789,6 +791,19 @@ impl<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> AsAtom
 pub type RwLockUpgradeableGuard<'a, T, G> = RwLockUpgradeableGuard_<T, &'a RwLock<T, G>, G>;
 /// A upgradable guard that provides read access to the data protected by a `Arc<RwLock>`.
 pub type ArcRwLockUpgradeableGuard<T, G> = RwLockUpgradeableGuard_<T, Arc<RwLock<T, G>>, G>;
+
+verus! {
+
+impl<T, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> RwLockUpgradeableGuard_<T, R, G> {
+    #[verifier::type_invariant]
+    pub closed spec fn type_inv(self) -> bool {
+        &&& self.inner.deref_spec().cell_id() == self.v_perm@.resource().id()
+        &&& self.v_perm@.frac() == 1
+    }
+}
+
+}
+
 /*
 /*
 impl<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian>
