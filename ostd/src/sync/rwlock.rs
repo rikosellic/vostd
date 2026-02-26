@@ -36,11 +36,11 @@ const MAX_READER_U64: u64 = MAX_READER as u64;
 
 tracked struct RwPerms<T> {
     cell_perm: Option<RwFrac<T>>,
-    failed_upgrade_token: FracGhost<()>,
+    upgrade_retract_token: FracGhost<()>,
 }
 
 ghost struct RwId {
-    failed_upgrade_token_id: Loc,
+    upgrade_retract_token_id: Loc,
 }
 
 struct_with_invariants! {
@@ -147,8 +147,8 @@ closed spec fn wf(self) -> bool {
         let total_readers: int = reader_count + upgrade_reader_count;
         // Not checked
         &&& ((v & BEING_UPGRADED) != 0usize ==> (v & UPGRADEABLE_READER) != 0usize)
-        &&& v_id@.failed_upgrade_token_id == g.failed_upgrade_token.id()
-        &&& g.failed_upgrade_token.frac() == if has_writer && has_upgrade {
+        &&& v_id@.upgrade_retract_token_id == g.upgrade_retract_token.id()
+        &&& g.upgrade_retract_token.frac() == if has_writer && has_upgrade {
             1int
         } else {
             2int
@@ -188,8 +188,8 @@ impl<T, G> RwLock<T, G> {
         self.val.id()
     }
 
-    pub closed spec fn upgrade_token_id(self) -> Loc {
-        self.v_id@.failed_upgrade_token_id
+    pub closed spec fn upgrade_retract_token_id(self) -> Loc {
+        self.v_id@.upgrade_retract_token_id
     }
 
     /// Encapsulates the invariant described in the *Invariant* section of [`RwLock`].
@@ -490,6 +490,7 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
         let guard = G::guard();
         proof_decl!{
             let tracked mut perm: Option<RwFrac<T>> = None;
+            let tracked mut retract_upgrade_token: Option<FracGhost<()>> = None;
         }
         proof!{
             use_type_invariant(self);
@@ -506,6 +507,11 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
                     let tracked frac_perm = tmp.split(1int);
                     g.cell_perm = Some(tmp);
                     perm = Some(frac_perm);
+                }
+                if prev & (WRITER | UPGRADEABLE_READER) == WRITER {
+                    admit();
+                    let tracked mut tmp = g.upgrade_retract_token.split(1int);
+                    retract_upgrade_token = Some(tmp);
                 }
                 admit();
             }
