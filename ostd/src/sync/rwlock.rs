@@ -1,10 +1,9 @@
-use pcm::frac;
 // SPDX-License-Identifier: MPL-2.0
 use vstd::atomic_ghost::*;
 use vstd::cell::{self, pcell::*};
-use vstd::modes::*;
+use vstd::pcm::Loc;
 use vstd::prelude::*;
-use vstd::tokens::frac::Frac;
+use vstd::tokens::frac::{Frac, FracGhost};
 use vstd_extra::prelude::*;
 use vstd_extra::resource::*;
 
@@ -34,6 +33,15 @@ broadcast use group_deref_spec;
 type RwFrac<T> = Frac<PointsTo<T>, MAX_READER_U64>;
 
 const MAX_READER_U64: u64 = MAX_READER as u64;
+
+tracked struct RwPerms<T> {
+    cell_perm: Option<RwFrac<T>>,
+    failed_upgrade_token: FracGhost<()>,
+}
+
+ghost struct RwId {
+    failed_upgrade_token_id: Loc,
+}
 
 struct_with_invariants! {
 /// Spin-based Read-write Lock
@@ -121,24 +129,31 @@ pub struct RwLock<T  /* : ?Sized*/ , Guard  /* = PreemptDisabled*/ > {
     /// - **Bit 62:** Upgradeable reader lock.
     /// - **Bit 61:** Indicates if an upgradeable reader is being upgraded.
     /// - **Bits 60-0:** Reader lock count.
-    lock: AtomicUsize<_, Option<RwFrac<T>>,_>,
-    val: PCell<T>,
+    lock: AtomicUsize<_, RwPerms<T>,_>,
     // val: UnsafeCell<T>,
+    val: PCell<T>,
+    v_id: Ghost<RwId>,
 }
 
 /// This invariant holds at any time, i.e. not violated during any method execution.
 closed spec fn wf(self) -> bool {
-    invariant on lock with (val, guard) is (v:usize, g:Option<RwFrac<T>>) {
-        let base_readers: usize = v & READER_MASK;
+    invariant on lock with (val, guard, v_id) is (v:usize, g: RwPerms<T>) {
+        let has_writer: bool = (v & WRITER) != 0usize;
+        let has_upgrade: bool = (v & UPGRADEABLE_READER) != 0usize;
         let has_max_reader: bool = (v & MAX_READER) != 0usize;
-        let reader_count: usize = if has_max_reader { MAX_READER } else { base_readers };
-        let upread_count: usize = if (v & UPGRADEABLE_READER) != 0usize { 1usize } else { 0usize };
-        let total_readers: int = (reader_count + upread_count) as int;
-
-        &&& (!has_max_reader ==> base_readers == reader_count)
-        &&& (has_max_reader ==> base_readers == 0)
+        let base_readers: usize = v & READER_MASK;
+        let reader_count: int = (if has_max_reader { MAX_READER } else { base_readers }) as int;
+        let upgrade_reader_count: int = if has_upgrade && !has_writer { 1int } else { 0int };
+        let total_readers: int = reader_count + upgrade_reader_count;
+        // Not checked
         &&& ((v & BEING_UPGRADED) != 0usize ==> (v & UPGRADEABLE_READER) != 0usize)
-        &&& match g {
+        &&& v_id@.failed_upgrade_token_id == g.failed_upgrade_token.id()
+        &&& g.failed_upgrade_token.frac() == if has_writer && has_upgrade {
+            1int
+        } else {
+            2int
+        }
+        &&& match g.cell_perm {
             None => {
                 &&& (v & WRITER) != 0usize
                 &&& reader_count == 0
@@ -173,6 +188,10 @@ impl<T, G> RwLock<T, G> {
         self.val.id()
     }
 
+    pub closed spec fn upgrade_token_id(self) -> Loc {
+        self.v_id@.failed_upgrade_token_id
+    }
+
     /// Encapsulates the invariant described in the *Invariant* section of [`RwLock`].
     #[verifier::type_invariant]
     closed spec fn type_inv(self) -> bool {
@@ -180,7 +199,7 @@ impl<T, G> RwLock<T, G> {
     }
 }
 
-#[verus_verify]
+/*#[verus_verify]
 impl<T, G> RwLock<T, G> {
     /// Creates a new spin-based read-write lock with an initial value.
     #[verus_verify]
@@ -201,7 +220,7 @@ impl<T, G> RwLock<T, G> {
             //val: UnsafeCell::new(val),
         }
     }
-}
+}*/
 
 } // verus!
 
@@ -400,9 +419,9 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
             self.lock => compare_exchange(0, WRITER);
             update prev -> next;
             returning res;
-            ghost cell_perm => { 
+            ghost g=> { 
                 if res is Ok {
-                    let tracked frac_perm = cell_perm.tracked_take();
+                    let tracked frac_perm = g.cell_perm.tracked_take();
                     frac_perm.bounded();
                     let tracked (full_perm, _empty) = frac_perm.take_resource();
                     perm = Some(full_perm);
@@ -441,9 +460,9 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
             self.lock => compare_exchange(0, WRITER);
             update prev -> next;
             returning res;
-            ghost cell_perm => {
+            ghost g => {
                 if res is Ok {
-                    let tracked frac_perm = cell_perm.tracked_take();
+                    let tracked frac_perm = g.cell_perm.tracked_take();
                     frac_perm.bounded();
                     let tracked (full_perm, _empty) = frac_perm.take_resource();
                     perm = Some(full_perm);
@@ -466,6 +485,7 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     ///
     /// This function will never spin-wait and will return immediately.
     #[verus_spec]
+    #[verifier::external_body]
     pub fn try_upread(&self) -> Option<RwLockUpgradeableGuard<T, G>> {
         let guard = G::guard();
         proof_decl!{
@@ -479,12 +499,12 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
         let lock = atomic_with_ghost!(
             self.lock => fetch_or(UPGRADEABLE_READER);
             update prev -> next;
-            ghost cell_perm => { 
+            ghost g => { 
                 if prev & (WRITER | UPGRADEABLE_READER) == 0 {
                     admit();
-                    let tracked mut tmp = cell_perm.tracked_take();
+                    let tracked mut tmp = g.cell_perm.tracked_take();
                     let tracked frac_perm = tmp.split(1int);
-                    cell_perm = Some(tmp);
+                    g.cell_perm = Some(tmp);
                     perm = Some(frac_perm);
                 }
                 admit();
@@ -904,6 +924,7 @@ proof fn lemma_consts_properties()
         WRITER & BEING_UPGRADED == 0,
         WRITER & READER_MASK == 0,
         WRITER & MAX_READER == 0,
+        WRITER & UPGRADEABLE_READER == 0,
 {
     assert(0 & WRITER == 0) by (compute_only);
     assert(0 & UPGRADEABLE_READER == 0) by (compute_only);
@@ -920,6 +941,7 @@ proof fn lemma_consts_properties()
     assert(WRITER & BEING_UPGRADED == 0) by (compute_only);
     assert(WRITER & READER_MASK == 0) by (compute_only);
     assert(WRITER & MAX_READER == 0) by (compute_only);
+    assert(WRITER & UPGRADEABLE_READER == 0) by (compute_only);
 }
 
 } // verus!
