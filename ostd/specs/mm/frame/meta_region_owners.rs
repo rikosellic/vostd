@@ -5,14 +5,15 @@ use vstd::simple_pptr::{self, *};
 
 use core::ops::Range;
 
+use vstd_extra::cast_ptr::Repr;
 use vstd_extra::ghost_tree::TreePath;
 use vstd_extra::ownership::*;
 
-use super::meta_owners::{MetaSlotModel, MetaSlotOwner};
+use super::meta_owners::{MetaPerm, MetaSlotModel, MetaSlotOwner, MetaSlotStorage};
 use super::*;
 use crate::mm::frame::meta::{
     mapping::{frame_to_index_spec, frame_to_meta, max_meta_slots, meta_addr, META_SLOT_SIZE},
-    MetaSlot,
+    AnyFrameMeta, MetaSlot,
 };
 use crate::mm::Paddr;
 use crate::specs::arch::kspace::FRAME_METADATA_RANGE;
@@ -66,11 +67,17 @@ impl Inv for MetaRegionOwners {
                 self.slots.contains_key(i) ==> {
                     &&& self.slot_owners.contains_key(i)
                     &&& self.slot_owners[i].inv()
-                    &&& self.slot_owners[i].inner_perms is Some
                     &&& self.slots[i].is_init()
                     &&& self.slots[i].addr() == meta_addr(i)
                     &&& self.slots[i].value().wf(self.slot_owners[i])
+                    &&& self.slot_owners.contains_key(i)
                     &&& self.slot_owners[i].self_addr == self.slots[i].addr()
+                }
+        }
+        &&& {
+            forall|i: usize| #[trigger]
+                self.slot_owners.contains_key(i) ==> {
+                    &&& self.slot_owners[i].inv()
                 }
         }
     }
@@ -115,9 +122,8 @@ impl MetaRegionOwners {
         recommends
             self.inv(),
             i < max_meta_slots() as usize,
-            self.slot_owners[i].inner_perms is Some,
     {
-        self.slot_owners[i].inner_perms.unwrap().ref_count.value()
+        self.slot_owners[i].inner_perms.ref_count.value()
     }
 
     pub open spec fn paddr_range_in_region(self, range: Range<Paddr>) -> bool
@@ -163,6 +169,26 @@ impl MetaRegionOwners {
     {
         assert((frame_to_index_spec(paddr)) < max_meta_slots() as usize);
     }
+
+    pub axiom fn sync_perm<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
+        tracked &mut self,
+        index: usize,
+        perm: &MetaPerm<M>,
+    )
+        ensures
+            self.slots == old(self).slots.insert(index, perm.points_to),
+            self.slot_owners == old(self).slot_owners;
+
+    pub axiom fn copy_perm<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
+        tracked &mut self,
+        index: usize,
+    ) -> (tracked perm: MetaPerm<M>)
+        requires
+            old(self).slots.contains_key(index),
+        ensures
+            perm.points_to == old(self).slots[index],
+            self.slots == old(self).slots.remove(index),
+            self.slot_owners == old(self).slot_owners;
 }
 
 } // verus!

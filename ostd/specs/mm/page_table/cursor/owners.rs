@@ -1,8 +1,8 @@
 use vstd::prelude::*;
 
+use vstd_extra::drop_tracking::*;
 use vstd_extra::ghost_tree::*;
 use vstd_extra::ownership::*;
-use vstd_extra::drop_tracking::*;
 
 use crate::mm::page_table::*;
 
