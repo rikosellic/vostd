@@ -3,7 +3,7 @@
 //! - The invariants for both MetaSlot and MetaSlotModel.
 //! - The primitives for MetaSlot.
 use vstd::atomic::*;
-use vstd::cell::{self, PCell, PointsTo};
+use vstd::cell::pcell_maybe_uninit;
 use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
@@ -12,15 +12,13 @@ use vstd_extra::ghost_tree::TreePath;
 use vstd_extra::ownership::*;
 
 use super::*;
-use crate::mm::PagingLevel;
 use crate::mm::frame::meta::MetaSlot;
-use crate::specs::mm::frame::linked_list::linked_list_owners::StoredLink;
+use crate::mm::frame::AnyFrameMeta;
+use crate::mm::PagingLevel;
 use crate::specs::arch::kspace::FRAME_METADATA_RANGE;
 use crate::specs::arch::mm::NR_ENTRIES;
+use crate::specs::mm::frame::linked_list::linked_list_owners::StoredLink;
 use crate::specs::mm::frame::mapping::META_SLOT_SIZE;
-use crate::mm::frame::AnyFrameMeta;
-
-use core::marker::PhantomData;
 
 verus! {
 
@@ -97,8 +95,8 @@ pub const REF_COUNT_UNIQUE: u64 = u64::MAX - 1;
 pub const REF_COUNT_MAX: u64 = i64::MAX as u64;
 
 pub struct StoredPageTablePageMeta {
-    pub nr_children: PCell<u16>,
-    pub stray: PCell<bool>,
+    pub nr_children: pcell_maybe_uninit::PCell<u16>,
+    pub stray: pcell_maybe_uninit::PCell<bool>,
     pub level: PagingLevel,
     pub lock: PAtomicU8,
 }
@@ -192,15 +190,14 @@ impl MetaSlotStorage {
 }
 
 pub tracked struct MetadataInnerPerms {
-    pub storage: cell::PointsTo<MetaSlotStorage>,
+    pub storage: pcell_maybe_uninit::PointsTo<MetaSlotStorage>,
     pub ref_count: PermissionU64,
     pub vtable_ptr: vstd::simple_pptr::PointsTo<usize>,
     pub in_list: PermissionU64,
 }
 
 pub tracked struct MetaSlotOwner {
-    /// The inner permissions of the metadata slot. When the slot is in use, these will be transferred to its current owner.
-    pub inner_perms: Option<MetadataInnerPerms>,
+    pub inner_perms: MetadataInnerPerms,
     pub self_addr: usize,
     pub usage: PageUsage,
     pub raw_count: usize,
@@ -209,26 +206,24 @@ pub tracked struct MetaSlotOwner {
 
 impl Inv for MetaSlotOwner {
     open spec fn inv(self) -> bool {
-        &&& self.inner_perms.unwrap().ref_count.value() == REF_COUNT_UNUSED ==> {
-            /// An unused slot had better not have any raw pointer hanging around.
+        &&& self.inner_perms.ref_count.value() == REF_COUNT_UNUSED ==> {
             &&& self.raw_count == 0
-            &&& self.inner_perms is Some
-            &&& self.inner_perms.unwrap().storage.is_uninit()
-            &&& self.inner_perms.unwrap().vtable_ptr.is_uninit()
-            &&& self.inner_perms.unwrap().in_list.value() == 0
+            &&& self.inner_perms.storage.is_uninit()
+            &&& self.inner_perms.vtable_ptr.is_uninit()
+            &&& self.inner_perms.in_list.value() == 0
         }
-        &&& self.inner_perms.unwrap().ref_count.value() == REF_COUNT_UNIQUE ==> {
-            &&& self.inner_perms.unwrap().vtable_ptr.is_init()
+        &&& self.inner_perms.ref_count.value() == REF_COUNT_UNIQUE ==> {
+            &&& self.inner_perms.vtable_ptr.is_init()
+            &&& self.inner_perms.storage.is_init()
+            &&& self.inner_perms.in_list.value() == 0
         }
-        &&& 0 < self.inner_perms.unwrap().ref_count.value() <= REF_COUNT_MAX ==> {
-            &&& self.inner_perms.unwrap().vtable_ptr.is_init()
+        &&& 0 < self.inner_perms.ref_count.value() <= REF_COUNT_MAX ==> {
+            &&& self.inner_perms.vtable_ptr.is_init()
         }
-        &&& REF_COUNT_MAX <= self.inner_perms.unwrap().ref_count.value() < REF_COUNT_UNUSED ==> { false }
-        &&& self.inner_perms.unwrap().ref_count.value() == 0 ==> {
-            // If we ever have 0 ref count, there had better be a `ManuallyDrop` somewhere keeping us from getting garbage collected.
-            &&& self.raw_count > 0
-            &&& self.inner_perms.unwrap().vtable_ptr.is_uninit()
-            &&& self.inner_perms.unwrap().in_list.value() == 0
+        &&& REF_COUNT_MAX <= self.inner_perms.ref_count.value() < REF_COUNT_UNIQUE ==> { false }
+        &&& self.inner_perms.ref_count.value() == 0 ==> {
+            &&& self.inner_perms.vtable_ptr.is_uninit()
+            &&& self.inner_perms.in_list.value() == 0
         }
         &&& FRAME_METADATA_RANGE.start <= self.self_addr < FRAME_METADATA_RANGE.end
         &&& self.self_addr % META_SLOT_SIZE == 0
@@ -267,10 +262,10 @@ impl View for MetaSlotOwner {
     type V = MetaSlotModel;
 
     open spec fn view(&self) -> Self::V {
-        let storage = self.inner_perms.unwrap().storage.mem_contents();
-        let ref_count = self.inner_perms.unwrap().ref_count.value();
-        let vtable_ptr = self.inner_perms.unwrap().vtable_ptr.mem_contents();
-        let in_list = self.inner_perms.unwrap().in_list.value();
+        let storage = self.inner_perms.storage.mem_contents();
+        let ref_count = self.inner_perms.ref_count.value();
+        let vtable_ptr = self.inner_perms.vtable_ptr.mem_contents();
+        let in_list = self.inner_perms.in_list.value();
         let self_addr = self.self_addr;
         let usage = self.usage;
         let status = match ref_count {
@@ -293,16 +288,28 @@ impl OwnerOf for MetaSlot {
     type Owner = MetaSlotOwner;
 
     open spec fn wf(self, owner: Self::Owner) -> bool {
-        &&& owner.inner_perms is Some
-        &&& self.storage.id() == owner.inner_perms.unwrap().storage.id()
-        &&& self.ref_count.id() == owner.inner_perms.unwrap().ref_count.id()
-        &&& self.vtable_ptr == owner.inner_perms.unwrap().vtable_ptr.pptr()
-        &&& self.in_list.id() == owner.inner_perms.unwrap().in_list.id()
+        &&& self.storage.id() == owner.inner_perms.storage.id()
+        &&& self.ref_count.id() == owner.inner_perms.ref_count.id()
+        &&& self.vtable_ptr == owner.inner_perms.vtable_ptr.pptr()
+        &&& self.in_list.id() == owner.inner_perms.in_list.id()
     }
 }
 
 impl ModelOf for MetaSlot {
 
+}
+
+impl MetaSlotOwner {
+    pub axiom fn take_inner_perms(tracked &mut self) -> (tracked res: MetadataInnerPerms)
+        ensures
+            res == old(self).inner_perms,
+            self.self_addr == old(self).self_addr,
+            self.usage == old(self).usage,
+            self.raw_count == old(self).raw_count,
+            self.path_if_in_pt == old(self).path_if_in_pt;
+
+    pub axiom fn sync_inner(tracked &mut self, inner_perms: &MetadataInnerPerms)
+        ensures *self == (Self { inner_perms: *inner_perms, ..*old(self) });
 }
 
 pub struct Metadata<M: AnyFrameMeta> {
@@ -316,7 +323,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Metadata<M> {
     /// The metadata value is an abstract function of the inner permissions,
     /// since extracting `M` from `MetaSlotStorage` requires `M::Perm` which
     /// is not stored in `MetadataInnerPerms`.
-    pub uninterp spec fn metadata_from_inner_perms(perm: cell::PointsTo<MetaSlotStorage>) -> M;
+    pub uninterp spec fn metadata_from_inner_perms(perm: pcell_maybe_uninit::PointsTo<MetaSlotStorage>) -> M;
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Repr<MetaSlot> for Metadata<M> {

@@ -8,15 +8,15 @@ use core::{fmt::Debug, ops::Range};
 use crate::mm::frame::{inc_frame_ref_count, untyped::AnyUFrameMeta, Frame};
 
 use vstd_extra::cast_ptr::*;
-use vstd_extra::ownership::*;
 use vstd_extra::cast_ptr::*;
+use vstd_extra::ownership::*;
 
-use super::meta::mapping::{frame_to_index, frame_to_index_spec, meta_addr};
+use super::meta::mapping::{frame_to_index, frame_to_index_spec, frame_to_meta, meta_addr};
 use super::{AnyFrameMeta, GetFrameError, MetaPerm, MetaSlot};
 use crate::mm::{Paddr, PagingLevel, Vaddr};
 use crate::specs::arch::mm::{MAX_NR_PAGES, MAX_PADDR, PAGE_SIZE};
-use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::frame::meta_owners::*;
+use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use vstd_extra::drop_tracking::*;
 
 verus! {
@@ -249,7 +249,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 &&& paddr_in == paddr_out
                 &&& regions.slots.contains_key(frame_to_index(paddr_out))
                 &&& regions.slot_owners[frame_to_index(paddr_out)].usage is Unused
-                &&& regions.slot_owners[frame_to_index(paddr_out)].inner_perms.unwrap().in_list.points_to(0)
+                &&& regions.slot_owners[frame_to_index(paddr_out)].inner_perms.in_list.points_to(0)
             }
     }
 
@@ -423,6 +423,10 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         &&& !regions.slots.contains_key(frame_to_index(self.range.start))
         &&& regions.slot_owners.contains_key(frame_to_index(self.range.start))
         &&& regions.slot_owners[frame_to_index(self.range.start)].raw_count == 1
+        &&& regions.slot_owners[frame_to_index(self.range.start)].self_addr == frame_to_meta(self.range.start)
+        &&& owner.perms[0].points_to.is_init()
+        &&& owner.perms[0].points_to.addr() == frame_to_meta(self.range.start)
+        &&& owner.perms[0].points_to.value().wf(regions.slot_owners[frame_to_index(self.range.start)])
     }
 
     /// The wrapper for the postcondition for iterating to the next frame:
@@ -510,7 +514,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                         &&& paddr_in == paddr_out
                         &&& regions.slots.contains_key(frame_to_index(paddr_out))
                         &&& regions.slot_owners[frame_to_index(paddr_out)].usage is Unused
-                        &&& regions.slot_owners[frame_to_index(paddr_out)].inner_perms.unwrap().in_list.points_to(0)
+                        &&& regions.slot_owners[frame_to_index(paddr_out)].inner_perms.in_list.points_to(0)
                     },
                 forall|j: int|
                     0 <= j < addrs.len() as int ==> {
@@ -549,7 +553,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 assert(forall|paddr_in: Paddr, paddr_out: Paddr, m: M|
                     metadata_fn.ensures((paddr_in,), (paddr_out, m)) ==> {
                         &&& regions.slot_owners[frame_to_index(paddr_out)].usage is Unused
-                        &&& regions.slot_owners[frame_to_index(paddr_out)].inner_perms.unwrap().in_list.points_to(0)
+                        &&& regions.slot_owners[frame_to_index(paddr_out)].inner_perms.in_list.points_to(0)
                     }) by {
                     admit();
                 }
@@ -580,7 +584,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                         MetaPerm {
                             addr: meta_addr(frame_to_index(addr)),
                             points_to: perm,
-                            inner_perms: regions.slot_owners[frame_to_index(addr)].inner_perms.unwrap(),
+                            inner_perms: regions.slot_owners[frame_to_index(addr)].inner_perms,
                             _T: core::marker::PhantomData,
                         }
                     },
@@ -618,11 +622,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
     ///
     /// The resulting frames cannot be empty. So the offset cannot be neither
     /// zero nor the length of the frames.
-    /// 
+    ///
     /// # Verified Properties
     /// ## Preconditions
     /// See [`Self::split_requires`].
-    /// 
+    ///
     /// ## Postconditions
     /// See [`Self::split_ensures`].
     #[verus_spec(r =>
@@ -715,6 +719,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
     /// The sliced byte offset range in indexed by the offset from the start of
     /// the contiguous frames. The resulting frames holds extra reference counts.
     /// 
+    /// # Verified Properties
+    ///
     /// # Verified Properties
     ///
     /// ## Preconditions

@@ -234,21 +234,23 @@ impl<R, T: Repr<R>> PointsTo<R, T> {
     {
     }
 
-    #[verifier::external_body]
-    pub proof fn take_inner_perms(tracked &mut self) -> (tracked result: T::Perm)
+    pub axiom fn take_inner_perms(tracked &mut self) -> (tracked result: T::Perm)
         ensures
             result == old(self).inner_perms,
             self.addr == old(self).addr,
-            self.points_to == old(self).points_to,
-    { unimplemented!() }
-
-    #[verifier::external_body]
-    pub proof fn put_inner_perms(tracked &mut self, tracked perms: T::Perm)
+            self.points_to == old(self).points_to;
+            
+    pub axiom fn put_inner_perms(tracked &mut self, tracked perms: T::Perm)
         ensures
             self.inner_perms == perms,
             self.addr == old(self).addr,
-            self.points_to == old(self).points_to,
-    { unimplemented!() }
+            self.points_to == old(self).points_to;
+
+    pub axiom fn take_points_to(tracked &mut self) -> (tracked result: simple_pptr::PointsTo<R>)
+        ensures
+            result == old(self).points_to,
+            self.addr == old(self).addr,
+            self.inner_perms == old(self).inner_perms;
 }
 
 impl<R, T: Repr<R>> From<PointsTo<R, T>> for vstd::simple_pptr::PointsTo<R> {
