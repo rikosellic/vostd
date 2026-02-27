@@ -517,6 +517,7 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
                         assert (prev & (WRITER | UPGRADEABLE_READER) != 0usize) by (bit_vector)
                         requires
                             prev & WRITER != 0usize;
+                        assert(false);
                     }
                     assert (prev & UPGRADEABLE_READER == 0) by (bit_vector)
                     requires
@@ -549,12 +550,29 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
                 self.lock => fetch_sub(UPGRADEABLE_READER);
                 update prev -> next;
                 ghost g => {
-                    assume(prev as usize & UPGRADEABLE_READER != 0);
-                    assume(prev >= UPGRADEABLE_READER);
-                    assume(next == prev - UPGRADEABLE_READER);
-                    lemma_consts_properties_prev_next(prev as usize, next as usize); 
-                    g.upgrade_retract_token.combine(retract_upgrade_token.tracked_unwrap());
-                    admit();
+                    let prev_usize = prev as usize;
+                    let next_usize = next as usize;
+                    if (prev_usize & UPGRADEABLE_READER) == 0 {
+                        assert(g.upgrade_retract_token.frac() == 2int);
+                        g.upgrade_retract_token.combine(retract_upgrade_token.tracked_unwrap());
+                        g.upgrade_retract_token.bounded();
+                        assert(false);
+                    } else {
+                        assert(prev_usize >= UPGRADEABLE_READER) by (bit_vector)
+                            requires (prev_usize & UPGRADEABLE_READER != 0);
+                        assert(next == prev - UPGRADEABLE_READER);
+                        lemma_consts_properties_prev_next(prev_usize, next_usize); 
+                        let frac = g.upgrade_retract_token.frac();
+                        assert(frac == 1int || frac == 2int);
+                        g.upgrade_retract_token.combine(retract_upgrade_token.tracked_unwrap());
+                        if frac == 2int {
+                            g.upgrade_retract_token.bounded();
+                            assert(false);
+                        } else
+                        {
+                            assert(g.upgrade_retract_token.frac() == 2int);
+                        }
+                    }
                 }
             );
         }
