@@ -585,26 +585,89 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// for compile-time checked lifetimes of the lock guard.
     ///
     /// [`try_upread`]: Self::try_upread
-    #[verifier::external_body]
+    #[verus_spec]
     pub fn try_upread_arc(self: &Arc<Self>) -> Option<ArcRwLockUpgradeableGuard<T, G>> {
         let guard = G::guard();
+        proof_decl!{
+            let tracked mut perm: Option<RwFrac<T>> = None;
+            let tracked mut retract_upgrade_token: Option<FracGhost<()>> = None;
+        }
+        proof!{
+            use_type_invariant(self);
+            lemma_consts_properties();
+        }
         // let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
         let lock = atomic_with_ghost!(
             self.lock => fetch_or(UPGRADEABLE_READER);
-            returning res;
-            ghost g => { }
+            update prev -> next;
+            ghost g => {
+                lemma_consts_properties_prev_next(prev, next);
+                if prev & (WRITER | UPGRADEABLE_READER) == 0 {
+                    if g.cell_perm is None {
+                        assert (prev & (WRITER | UPGRADEABLE_READER) != 0usize) by (bit_vector)
+                        requires
+                            prev & WRITER != 0usize;
+                        assert(false);
+                    }
+                    assert (prev & UPGRADEABLE_READER == 0) by (bit_vector)
+                    requires
+                        prev & (WRITER | UPGRADEABLE_READER) == 0;
+                    let tracked mut tmp = g.cell_perm.tracked_take();
+                    let tracked frac_perm = tmp.split(1int);
+                    g.cell_perm = Some(tmp);
+                    perm = Some(frac_perm);
+                }
+                else if prev & (WRITER | UPGRADEABLE_READER) == WRITER {
+                    assert (prev & UPGRADEABLE_READER == 0 && prev & WRITER == WRITER) by (bit_vector)
+                    requires
+                        prev & (WRITER | UPGRADEABLE_READER) == WRITER;
+                    let tracked mut tmp = g.upgrade_retract_token.split(1int);
+                    retract_upgrade_token = Some(tmp);
+                }
+                else {
+                    assert (prev & UPGRADEABLE_READER != 0) by (bit_vector)
+                    requires
+                        !(prev & (WRITER | UPGRADEABLE_READER) == 0),
+                        !(prev & (WRITER | UPGRADEABLE_READER) == WRITER);
+                }
+            }
         ) & (WRITER | UPGRADEABLE_READER);
         if lock == 0 {
             return Some(ArcRwLockUpgradeableGuard {
                 inner: self.clone(),
                 guard,
-                v_perm: Tracked::assume_new(),
+                v_perm: Tracked(perm.tracked_unwrap()),
             });
         } else if lock == WRITER {
             // self.lock.fetch_sub(UPGRADEABLE_READER, Release);
             atomic_with_ghost!(
                 self.lock => fetch_sub(UPGRADEABLE_READER);
-                ghost g => { }
+                update prev -> next;
+                ghost g => {
+                    let prev_usize = prev as usize;
+                    let next_usize = next as usize;
+                    if (prev_usize & UPGRADEABLE_READER) == 0 {
+                        assert(g.upgrade_retract_token.frac() == 2int);
+                        g.upgrade_retract_token.combine(retract_upgrade_token.tracked_unwrap());
+                        g.upgrade_retract_token.bounded();
+                        assert(false);
+                    } else {
+                        assert(prev_usize >= UPGRADEABLE_READER) by (bit_vector)
+                            requires (prev_usize & UPGRADEABLE_READER != 0);
+                        assert(next == prev - UPGRADEABLE_READER);
+                        lemma_consts_properties_prev_next(prev_usize, next_usize);
+                        let frac = g.upgrade_retract_token.frac();
+                        assert(frac == 1int || frac == 2int);
+                        g.upgrade_retract_token.combine(retract_upgrade_token.tracked_unwrap());
+                        if frac == 2int {
+                            g.upgrade_retract_token.bounded();
+                            assert(false);
+                        } else
+                        {
+                            assert(g.upgrade_retract_token.frac() == 2int);
+                        }
+                    }
+                }
             );
         }
         None
