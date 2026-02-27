@@ -244,7 +244,6 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// upgrading upreaders present. There is no guarantee for the order
     /// in which other readers or writers waiting simultaneously will
     /// obtain the lock.
-    #[verifier::external_body]
     #[verifier::exec_allows_no_decreases_clause]
     pub fn read(&self) -> RwLockReadGuard<T, G> {
         loop {
@@ -262,7 +261,6 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// for compile-time checked lifetimes of the read guard.
     ///
     /// [`read`]: Self::read
-    #[verifier::external_body]
     #[verifier::exec_allows_no_decreases_clause]
     pub fn read_arc(self: &Arc<Self>) -> ArcRwLockReadGuard<T, G> {
         loop {
@@ -280,7 +278,6 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// upreaders or readers present. There is no guarantee for the order
     /// in which other readers or writers waiting simultaneously will
     /// obtain the lock.
-    #[verifier::external_body]
     #[verifier::exec_allows_no_decreases_clause]
     pub fn write(&self) -> RwLockWriteGuard<T, G> {
         loop {
@@ -299,7 +296,6 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     ///
     /// [`write`]: Self::write
     #[verifier::exec_allows_no_decreases_clause]
-    #[verifier::external_body]
     pub fn write_arc(self: &Arc<Self>) -> ArcRwLockWriteGuard<T, G> {
         loop {
             if let Some(writeguard) = self.try_write_arc() {
@@ -320,7 +316,6 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     /// and reader do not differ before invoking the upgrade method. However,
     /// only one upreader can exist at any time to avoid deadlock in the
     /// upgrade method.
-    #[verifier::external_body]
     #[verifier::exec_allows_no_decreases_clause]
     pub fn upread(&self) -> RwLockUpgradeableGuard<T, G> {
         loop {
@@ -339,7 +334,6 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     ///
     /// [`upread`]: Self::upread
     #[verifier::exec_allows_no_decreases_clause]
-    #[verifier::external_body]
     pub fn upread_arc(self: &Arc<Self>) -> ArcRwLockUpgradeableGuard<T, G> {
         loop {
             if let Some(guard) = self.try_upread_arc() {
