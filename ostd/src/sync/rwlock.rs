@@ -30,9 +30,20 @@ verus! {
 
 broadcast use group_deref_spec;
 
-type RwFrac<T> = Frac<PointsTo<T>, MAX_READER_U64>;
+type RwFrac<T> = Frac<PointsTo<T>, V_MAX_PERM_FRACS>;
 
-const MAX_READER_U64: u64 = MAX_READER as u64;
+spec const V_MAX_PERM_FRACS_SPEC: u64 = (MAX_READER + 1) as u64;
+
+#[verifier::when_used_as_spec(V_MAX_PERM_FRACS_SPEC)]
+exec const V_MAX_PERM_FRACS: u64 
+ensures
+    V_MAX_PERM_FRACS == V_MAX_PERM_FRACS_SPEC,
+    V_MAX_PERM_FRACS == MAX_READER + 1,
+    V_MAX_PERM_FRACS < u64::MAX,
+{ 
+    assert(MAX_READER + 1 < u64::MAX) by (compute_only);
+    (MAX_READER + 1) as u64
+}
 
 tracked struct RwPerms<T> {
     cell_perm: Option<RwFrac<T>>,
@@ -142,7 +153,7 @@ closed spec fn wf(self) -> bool {
         let has_upgrade: bool = (v & UPGRADEABLE_READER) != 0usize;
         let has_max_reader: bool = (v & MAX_READER) != 0usize;
         let base_readers: usize = v & READER_MASK;
-        let reader_count: int = (if has_max_reader { MAX_READER } else { base_readers }) as int;
+        let reader_count: int = if has_max_reader { MAX_READER - 1 } else { base_readers as int };
         let upgrade_reader_count: int = if has_upgrade && !has_writer { 1int } else { 0int };
         let total_readers: int = reader_count + upgrade_reader_count;
         // Not checked
@@ -162,7 +173,7 @@ closed spec fn wf(self) -> bool {
             Some(perm) => {
                 &&& (v & WRITER) == 0usize
                 &&& perm.resource().id() == val.id()
-                &&& perm.frac() >= (MAX_READER_U64 as int) - total_readers
+                &&& perm.frac() >= (V_MAX_PERM_FRACS as int) - total_readers
             }
         }
     }
@@ -485,7 +496,6 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
     ///
     /// This function will never spin-wait and will return immediately.
     #[verus_spec]
-    #[verifier::external_body]
     pub fn try_upread(&self) -> Option<RwLockUpgradeableGuard<T, G>> {
         let guard = G::guard();
         proof_decl!{
@@ -502,14 +512,27 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
             update prev -> next;
             ghost g => { 
                 if prev & (WRITER | UPGRADEABLE_READER) == 0 {
-                    admit();
-                    let tracked mut tmp = g.cell_perm.tracked_take();
+                    if g.cell_perm is None {
+                        assert (prev & (WRITER | UPGRADEABLE_READER) != 0usize) by (bit_vector)
+                        requires
+                            prev & WRITER != 0usize;
+                    }
+                    assert (prev & READER_MASK < MAX_READER) by (bit_vector);
+                    assert (prev & UPGRADEABLE_READER == 0) by (bit_vector)
+                    requires
+                        prev & (WRITER | UPGRADEABLE_READER) == 0;
+                    let tracked mut tmp = g.cell_perm.tracked_take();                
                     let tracked frac_perm = tmp.split(1int);
                     g.cell_perm = Some(tmp);
                     perm = Some(frac_perm);
                 }
                 if prev & (WRITER | UPGRADEABLE_READER) == WRITER {
-                    admit();
+                    assert (prev & UPGRADEABLE_READER == 0) by (bit_vector)
+                    requires
+                        prev & (WRITER | UPGRADEABLE_READER) == WRITER;
+                    assert (prev & WRITER == WRITER) by (bit_vector)
+                    requires
+                        prev & (WRITER | UPGRADEABLE_READER) == WRITER;
                     let tracked mut tmp = g.upgrade_retract_token.split(1int);
                     retract_upgrade_token = Some(tmp);
                 }
@@ -522,8 +545,8 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLock<T, G> {
             // self.lock.fetch_sub(UPGRADEABLE_READER, Release);
             atomic_with_ghost!(
                 self.lock => fetch_sub(UPGRADEABLE_READER);
-                ghost cell_perm => { 
-                    admit();
+                ghost g => { 
+                    g.upgrade_retract_token.combine(retract_upgrade_token.tracked_unwrap());
                 }
             );
         }
