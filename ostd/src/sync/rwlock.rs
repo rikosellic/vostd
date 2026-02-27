@@ -48,10 +48,12 @@ ensures
 tracked struct RwPerms<T> {
     cell_perm: Option<RwFrac<T>>,
     upgrade_retract_token: FracGhost<()>,
+    read_retract_token: FracGhost<(),V_MAX_PERM_FRACS>,
 }
 
 ghost struct RwId {
     upgrade_retract_token_id: Loc,
+    read_retract_token_id: Loc,
 }
 
 struct_with_invariants! {
@@ -152,13 +154,18 @@ closed spec fn wf(self) -> bool {
         let has_writer: bool = (v & WRITER) != 0usize;
         let has_upgrade: bool = (v & UPGRADEABLE_READER) != 0usize;
         let has_max_reader: bool = (v & MAX_READER) != 0usize;
-        let base_readers: usize = v & READER_MASK;
-        let reader_count: int = if has_max_reader { MAX_READER - 1 } else { base_readers as int };
+        // NOTE: This does not mean there are actually `v & READER_MASK` read guards, even if `MAX_READER` is set,
+        // it is not necessary to have `MAX_READER - 1` read guards
+        let reader_count: usize = v & READER_MASK;
+        // NOTE: This does not mean there is actually an upgradeable guard
         let upgrade_reader_count: int = if has_upgrade && !has_writer { 1int } else { 0int };
         let total_readers: int = reader_count + upgrade_reader_count;
+        let total_reader_attempts: int = reader_count + if has_max_reader { MAX_READER } else { 0 };
+        //&&& total_reader_attempts == V_MAX_PERM_FRACS - g.cell_perm->Some_0.frac() + V_MAX_PERM_FRACS - g.read_retract_token.frac()
         // Not checked
-        &&& ((v & BEING_UPGRADED) != 0usize ==> (v & UPGRADEABLE_READER) != 0usize)
+        //&&& ((v & BEING_UPGRADED) != 0usize ==> (v & UPGRADEABLE_READER) != 0usize)
         &&& v_id@.upgrade_retract_token_id == g.upgrade_retract_token.id()
+        &&& v_id@.read_retract_token_id == g.read_retract_token.id()
         &&& g.upgrade_retract_token.frac() == if has_writer && has_upgrade {
             1int
         } else {
