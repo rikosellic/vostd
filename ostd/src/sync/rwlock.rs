@@ -154,14 +154,22 @@ closed spec fn wf(self) -> bool {
         let has_writer: bool = (v & WRITER) != 0usize;
         let has_upgrade: bool = (v & UPGRADEABLE_READER) != 0usize;
         let has_max_reader: bool = (v & MAX_READER) != 0usize;
-        // NOTE: This does not mean there are actually `v & READER_MASK` read guards, even if `MAX_READER` is set,
-        // it is not necessary to have `MAX_READER - 1` read guards
+        // The value of the reader count bits.
+        // NOTE: This does not mean there are actually `v & READER_MASK` `RwLockReadGuard`s, some of them may be in the middle of being created.
+        // Even if `MAX_READER` is set, it is not necessary to have `MAX_READER - 1` `RwLockReadGuard`s.
         let reader_count: usize = v & READER_MASK;
-        // NOTE: This does not mean there is actually an upgradeable guard
+        // The value of the upgradeable reader bit.
+        // NOTE: This does not mean there is actually an `RwLockUpgradeableGuard`, it may be in the middle of creating one.
         let upgrade_reader_count: int = if has_upgrade && !has_writer { 1int } else { 0int };
+        // The total number of readers, considering normal `RwLockReadGuard`s and the `RwLockUpgradeableGuard`. 
+        // NOTE: This does not mean there are actually `total_readers` guards, it is an upper bound.
         let total_readers: int = reader_count + upgrade_reader_count;
+        // The total number of reader creation attempts, including created `RwLockReadGuard`s and those who are trying.
         let total_reader_attempts: int = reader_count + if has_max_reader { MAX_READER } else { 0 };
-        //&&& total_reader_attempts == V_MAX_PERM_FRACS - g.cell_perm->Some_0.frac() + V_MAX_PERM_FRACS - g.read_retract_token.frac()
+        // The remaining permissions in the `RwLock` to create new read guards, it serves as an upper bound of the number of new `RwLockReadGuard` and `RwLockUpgradeableGuard` that can be successfully created.
+        let remaining_pcell_perms: int = if g.cell_perm is Some { g.cell_perm->Some_0.frac() } else { 0 };
+        // Invariant: The sum of all reader attempts, remaining permissions and the upgrade reader should be equal to the maximum permissions.
+        &&& total_reader_attempts + g.read_retract_token.frac() + upgrade_reader_count + remaining_pcell_perms == V_MAX_PERM_FRACS + if g.cell_perm is Some {V_MAX_PERM_FRACS} else { 0 }
         // Not checked
         //&&& ((v & BEING_UPGRADED) != 0usize ==> (v & UPGRADEABLE_READER) != 0usize)
         &&& v_id@.upgrade_retract_token_id == g.upgrade_retract_token.id()
@@ -173,14 +181,14 @@ closed spec fn wf(self) -> bool {
         }
         &&& match g.cell_perm {
             None => {
-                &&& (v & WRITER) != 0usize
+                &&& has_writer
                 &&& reader_count == 0
                 &&& (v & BEING_UPGRADED) == 0usize
             }
             Some(perm) => {
-                &&& (v & WRITER) == 0usize
+                &&& !has_writer
                 &&& perm.resource().id() == val.id()
-                &&& perm.frac() >= (V_MAX_PERM_FRACS as int) - total_readers
+                &&& perm.frac() >= V_MAX_PERM_FRACS - total_readers
             }
         }
     }
