@@ -56,6 +56,20 @@ ghost struct RwId {
     read_retract_token_id: Loc,
 }
 
+/// The number of concurrent readers will not exceed `2*MAX_READER` is necessary to ensure the correctness of the implementation.
+/// **NOTE**: We *ASSUME* this property always holds without proving it. The implementation will not work correctly because of overflow caused by 
+/// more than `2*MAX_READER` concurrent `RwLock::try_read` operations, but it will never happen in the real world 
+/// because it will require more than `2^61` threads.
+pub closed spec fn no_max_reader_overflow(v: usize) -> bool {
+    let has_max_reader: bool = (v & MAX_READER) != 0usize;
+    let reader_count: usize = v & READER_MASK;
+    if has_max_reader {
+        reader_count + READER <= MAX_READER
+    } else {
+        true
+    }
+}
+
 struct_with_invariants! {
 /// Spin-based Read-write Lock
 ///
