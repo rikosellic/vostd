@@ -835,10 +835,9 @@ impl<'a, T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'a, T, G>
     /// This function is not exposed publicly because the `BEING_UPGRADED` bit
     /// is set only in [`Self::upgrade`].
     #[verus_spec]
-    #[verifier::external_body]
     fn try_upgrade(/* mut */ self) -> Result<RwLockWriteGuard<'a, T, G>, Self> {
         proof_decl! {
-            let tracked mut lock_perm: Option<RwFrac<T>> = None;
+            let tracked mut up_perm: Option<RwFrac<T>> = None;
             let tracked mut write_perm: Option<PointsTo<T>> = None;
         }
         let lock = self.inner;
@@ -846,6 +845,12 @@ impl<'a, T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'a, T, G>
             use_type_invariant(&self);
             use_type_invariant(lock);
             lemma_consts_properties();
+        }
+        let this = core::mem::ManuallyDrop::new(self);
+        let guard = unsafe { Self::get_guard(&this) };
+        let Tracked(up_perm0) = unsafe { Self::get_v_perm(&this) };
+        proof! {
+            up_perm = Some(up_perm0);
         }
         // let res = self.inner.lock.compare_exchange(
         //     UPGRADEABLE_READER | BEING_UPGRADED,
@@ -860,7 +865,11 @@ impl<'a, T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'a, T, G>
             ghost g => {
                 lemma_consts_properties_prev_next(prev, next);
                 if res is Ok {
-                    lock_perm = Some(g.cell_perm.tracked_take_left());
+                    let tracked mut rem = g.cell_perm.tracked_take_left();
+                    rem.combine(up_perm.tracked_take());
+                    let tracked (full_perm, empty) = rem.take_resource();
+                    write_perm = Some(full_perm);
+                    g.cell_perm = Sum::new_right(empty);
                 }
             }
         );
@@ -868,19 +877,10 @@ impl<'a, T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'a, T, G>
             // let inner = self.inner;
             // let guard = self.guard.transfer_to();
             // drop(self);
-            let mut this = core::mem::ManuallyDrop::new(self);
             let inner = &this.inner;
-            let guard = unsafe { Self::get_guard(&this) };
-            let Tracked(up_perm) = unsafe { Self::get_v_perm(&this) };
-            proof! {
-                let tracked mut rem = lock_perm.tracked_unwrap();
-                rem.combine(up_perm);
-                let tracked (full_perm, _) = rem.take_resource();
-                write_perm = Some(full_perm);
-            }
             Ok(RwLockWriteGuard { inner, guard, v_perm: Tracked(write_perm.tracked_unwrap()) })
         } else {
-            Err(self)
+            Err(RwLockUpgradeableGuard { inner: lock, guard, v_perm: Tracked(up_perm.tracked_unwrap()) })
         }
     }
 
