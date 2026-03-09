@@ -730,9 +730,18 @@ impl<T: ?Sized, G: SpinGuardian> Drop for RwLockWriteGuard<'_, T, G> {
     fn drop(&mut self) {
         self.inner.lock.fetch_and(!WRITER, Release);
     }
+}*/
+
+#[verus_verify]
+impl<T /*: ?Sized*/, G: SpinGuardian> RwLockWriteGuard<'_, T, G>
+{
+    #[verus_verify]
+    pub fn drop(self) {
+
+    }
 }
 
-impl<T: ?Sized + fmt::Debug, G: SpinGuardian> fmt::Debug for RwLockWriteGuard<'_, T, G> {
+/* impl<T: ?Sized + fmt::Debug, G: SpinGuardian> fmt::Debug for RwLockWriteGuard<'_, T, G> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
