@@ -3,7 +3,7 @@ use vstd::atomic_ghost::*;
 use vstd::cell::{self, pcell::*};
 use vstd::pcm::Loc;
 use vstd::prelude::*;
-use vstd::tokens::frac::{Frac, FracGhost};
+use vstd::tokens::frac::{Empty, Frac, FracGhost};
 use vstd_extra::prelude::*;
 use vstd_extra::resource::*;
 
@@ -29,6 +29,8 @@ use super::{
 verus! {
 
 type RwFrac<T> = Frac<PointsTo<T>, V_MAX_PERM_FRACS>;
+
+type NoPerm<T> = Empty<PointsTo<T>, V_MAX_PERM_FRACS>;
 
 type UpgradeRetractToken = FracGhost<()>;
 
@@ -64,7 +66,7 @@ tracked struct RwPerms<T> {
     /// The fractional permission of the `PCell<T>`. It can be splited up to `V_MAX_PERM_FRACS:= MAX_READER + 2` pieces,
     /// which allows at most `MAX_READER` `RwLockReadGuard`s and 1 `RwLockUpgradeableGuard`, and 1 reserved in the lock atomic.
     /// It will be switched out when there is a writer.
-    cell_perm: Option<RwFrac<T>>,
+    cell_perm: Sum<RwFrac<T>, NoPerm<T>>,
     /// The permission to retract a `READER` count. Its total quantity tracks the gap between
     /// the number of `try_read` increments recorded in the lock atomic and the number of active
     /// `RwLockReadGuard`s (created and ongoing creation that will succeed) represented by `cell_perm`.
@@ -200,9 +202,9 @@ closed spec fn wf(self) -> bool {
         // created/creating `RwLockReadGuard`s can be smaller than this number, because previously created `RwLockReadGuard`s may be dropped.
         let reader_count: int = if has_max_reader { MAX_READER as int } else { (v & READER_MASK) as int };
         // Remaining fractional permissions in the lock to access the protected data.
-        let remaining_pcell_perms: int = if g.cell_perm is Some { g.cell_perm->Some_0.frac() } else { 0 };
+        let remaining_pcell_perms: int = if g.cell_perm is Left { g.cell_perm->Left_0.frac() } else { 0 };
         // The number of successfully created/creating readers, including both `RwLockReadGuard`s and `RwLockUpgradeableGuard`s.
-        let total_successful_readers: int = if g.cell_perm is Some { (V_MAX_PERM_FRACS as int) - remaining_pcell_perms } else { 0 };
+        let total_successful_readers: int = if g.cell_perm is Left { (V_MAX_PERM_FRACS as int) - remaining_pcell_perms } else { 0 };
         // The number of successfully created/creating `RwLockReadGuard`s.
         let successful_read_guards: int = total_successful_readers - upgrade_reader_count;
         // The number of `try_read` attempts that will fail.
@@ -213,16 +215,18 @@ closed spec fn wf(self) -> bool {
         } else {
             2int
         }
-        &&& (v & UPGRADEABLE_READER) != 0usize && (v & WRITER) == 0usize ==> g.cell_perm is Some
-        &&& g.cell_perm is Some ==> g.cell_perm->Some_0.id() == v_id@.cell_perm_id
+        &&& (v & UPGRADEABLE_READER) != 0usize && (v & WRITER) == 0usize ==> g.cell_perm is Left
+        &&& g.cell_perm is Left ==> g.cell_perm->Left_0.id() == v_id@.cell_perm_id
         &&& 0 <= successful_read_guards <= reader_count <= total_reader_attempts
         &&& 1 <= g.read_retract_token.frac() <= V_MAX_READ_RETRACT_FRACS
         &&& match g.cell_perm {
-            None => {
+            Sum::Right(empty) => {
                 &&& has_writer
+                &&& empty.id() == v_id@.cell_perm_id
             }
-            Some(perm) => {
+            Sum::Left(perm) => {
                 &&& !has_writer
+                &&& perm.id() == v_id@.cell_perm_id
                 &&& perm.resource().id() == val.id()
             }
         }
@@ -298,7 +302,7 @@ impl<T, G> RwLock<T, G> {
             read_retract_token_id: read_retract_token.id(),
         };
         let tracked perms = RwPerms {
-            cell_perm: Some(frac_perm),
+            cell_perm: Sum::new_left(frac_perm),
             read_retract_token,
             upgrade_retract_token,
         };
@@ -400,9 +404,9 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> RwLock<T, G> {
                 lemma_consts_properties_value(prev_usize);
                 lemma_consts_properties_prev_next(prev_usize, next_usize);
                 if prev_usize & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
-                    let tracked mut tmp = g.cell_perm.tracked_take();
+                    let tracked mut tmp = g.cell_perm.tracked_take_left();
                     perm = Some(tmp.split(1int));
-                    g.cell_perm = Some(tmp);
+                    g.cell_perm = Sum::new_left(tmp);
                 } else {
                     retract_read_token = Some(g.read_retract_token.split(1int));
                 }
@@ -450,10 +454,11 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> RwLock<T, G> {
         if atomic_with_ghost!(
             self.lock => compare_exchange(0, WRITER);
             returning res;
-            ghost g=> {
+            ghost g => {
                 if res is Ok {
-                    let tracked (full_perm, _) = g.cell_perm.tracked_take().take_resource();
+                    let tracked (full_perm, empty) = g.cell_perm.tracked_take_left().take_resource();
                     perm = Some(full_perm);
+                    g.cell_perm = Sum::new_right(empty);
                 }
             }
         ).is_ok() {
@@ -486,9 +491,9 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> RwLock<T, G> {
                 lemma_consts_properties_value(prev);
                 lemma_consts_properties_prev_next(prev, next);
                 if prev & (WRITER | UPGRADEABLE_READER) == 0 {
-                    let tracked mut tmp = g.cell_perm.tracked_take();
+                    let tracked mut tmp = g.cell_perm.tracked_take_left();
                     perm = Some(tmp.split(1int));
-                    g.cell_perm = Some(tmp);
+                    g.cell_perm = Sum::new_left(tmp);
                 }
                 else if prev & (WRITER | UPGRADEABLE_READER) == WRITER {
                     retract_upgrade_token = Some(g.upgrade_retract_token.split(1int));
@@ -735,9 +740,22 @@ impl<T: ?Sized, G: SpinGuardian> Drop for RwLockWriteGuard<'_, T, G> {
 #[verus_verify]
 impl<T /*: ?Sized*/, G: SpinGuardian> RwLockWriteGuard<'_, T, G>
 {
-    #[verus_verify]
+    /// VERUS LIMITATION: We implement `drop` and call it manually because Verus's support for `Drop` is incomplete for now.
+    #[verus_spec]
+    #[verifier::external_body]
     pub fn drop(self) {
-
+        let Tracked(perm) = self.v_perm;
+        //self.inner.lock.fetch_and(!WRITER, Release);
+        proof!{
+            use_type_invariant(self);
+            lemma_consts_properties();
+        }
+        atomic_with_ghost!{
+            self.inner.lock => fetch_and(!WRITER);
+            update prev -> next;
+            ghost g => {
+            }
+        };
     }
 }
 
@@ -817,6 +835,7 @@ impl<'a, T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'a, T, G>
     /// This function is not exposed publicly because the `BEING_UPGRADED` bit
     /// is set only in [`Self::upgrade`].
     #[verus_spec]
+    #[verifier::external_body]
     fn try_upgrade(/* mut */ self) -> Result<RwLockWriteGuard<'a, T, G>, Self> {
         proof_decl! {
             let tracked mut lock_perm: Option<RwFrac<T>> = None;
@@ -841,7 +860,7 @@ impl<'a, T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'a, T, G>
             ghost g => {
                 lemma_consts_properties_prev_next(prev, next);
                 if res is Ok {
-                    lock_perm = Some(g.cell_perm.tracked_take());
+                    lock_perm = Some(g.cell_perm.tracked_take_left());
                 }
             }
         );

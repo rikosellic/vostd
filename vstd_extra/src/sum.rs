@@ -1,0 +1,77 @@
+use vstd::prelude::*;
+use vstd::modes::tracked_swap;
+use crate::ownership::Inv;
+
+verus!{
+/// The Sum Type, corresponding to the `Either` type in Rust.
+pub tracked enum Sum<L, R> {
+    Left(L),
+    Right(R),
+}
+
+impl<L, R> Sum<L, R> {
+    pub proof fn new_left(tracked left: L) -> (tracked res: Self)
+    returns
+        Self::Left(left),
+    {
+        Self::Left(left)
+    }
+
+    pub proof fn new_right(tracked right: R) -> (tracked res: Self)
+    returns
+        Self::Right(right),
+    {
+        Self::Right(right)
+    }
+
+    pub proof fn tracked_take_left(tracked self) -> (tracked res: L)
+    requires
+        self is Left,
+    {
+        match self {
+            Self::Left(left) => left,
+            Self::Right(_) => proof_from_false(),
+        }
+    }
+
+    pub proof fn tracked_take_right(tracked self) -> (tracked res: R)
+    requires
+        self is Right,
+    {
+        match self {
+            Self::Left(_) => proof_from_false(),
+            Self::Right(right) => right,
+        }
+    }
+
+    pub proof fn tracked_borrow_left(tracked &self) -> (tracked res: &L)
+    requires
+        self is Left,
+    {
+        match self {
+            Self::Left(left) => left,
+            Self::Right(_) => proof_from_false(),
+        }
+    }
+
+    pub proof fn tracked_borrow_right(tracked &self) -> (tracked res: &R)
+    requires
+        self is Right,
+    {
+        match self {
+            Self::Left(_) => proof_from_false(),
+            Self::Right(right) => right,
+        }
+    }
+    
+}
+
+impl <L:Inv, R:Inv> Inv for Sum<L, R> {
+    open spec fn inv(self) -> bool {
+        match self {
+            Self::Left(left) => left.inv(),
+            Self::Right(right) => right.inv(),
+        }
+    }
+}
+}
