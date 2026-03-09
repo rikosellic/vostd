@@ -27,6 +27,8 @@ impl<L, R> Sum<L, R> {
     pub proof fn tracked_take_left(tracked self) -> (tracked res: L)
     requires
         self is Left,
+    returns
+        self -> Left_0,
     {
         match self {
             Self::Left(left) => left,
@@ -37,6 +39,8 @@ impl<L, R> Sum<L, R> {
     pub proof fn tracked_take_right(tracked self) -> (tracked res: R)
     requires
         self is Right,
+    returns
+        self -> Right_0,
     {
         match self {
             Self::Left(_) => proof_from_false(),
@@ -47,6 +51,8 @@ impl<L, R> Sum<L, R> {
     pub proof fn tracked_borrow_left(tracked &self) -> (tracked res: &L)
     requires
         self is Left,
+    ensures
+        *res == self -> Left_0,
     {
         match self {
             Self::Left(left) => left,
@@ -57,6 +63,8 @@ impl<L, R> Sum<L, R> {
     pub proof fn tracked_borrow_right(tracked &self) -> (tracked res: &R)
     requires
         self is Right,
+    ensures
+        *res == self -> Right_0,
     {
         match self {
             Self::Left(_) => proof_from_false(),
