@@ -28,6 +28,12 @@ use super::{
 
 verus! {
 
+axiom fn is_exclusive<T>(tracked value: &mut PointsTo<T>, tracked other: & PointsTo<T>)
+    ensures
+        *value == *old(value),
+        value.id() != other.id(),
+;
+
 type RwFrac<T> = Frac<PointsTo<T>, V_MAX_PERM_FRACS>;
 
 type NoPerm<T> = Empty<PointsTo<T>, V_MAX_PERM_FRACS>;
@@ -215,13 +221,14 @@ closed spec fn wf(self) -> bool {
         } else {
             2int
         }
-        &&& (v & UPGRADEABLE_READER) != 0usize && (v & WRITER) == 0usize ==> g.cell_perm is Left
-        &&& g.cell_perm is Left ==> g.cell_perm->Left_0.id() == v_id@.cell_perm_id
+        //&&& (v & UPGRADEABLE_READER) != 0usize && (v & WRITER) == 0usize ==> g.cell_perm is Left
+        &&& g.cell_perm is Right <==> has_writer
         &&& 0 <= successful_read_guards <= reader_count <= total_reader_attempts
         &&& 1 <= g.read_retract_token.frac() <= V_MAX_READ_RETRACT_FRACS
         &&& match g.cell_perm {
             Sum::Right(empty) => {
                 &&& has_writer
+                &&& v == WRITER
                 &&& empty.id() == v_id@.cell_perm_id
             }
             Sum::Left(perm) => {
@@ -279,7 +286,7 @@ impl<T, G> RwLock<T, G> {
 
     /// Encapsulates the invariant described in the *Invariant* section of [`RwLock`].
     #[verifier::type_invariant]
-    closed spec fn type_inv(self) -> bool {
+    pub closed spec fn type_inv(self) -> bool {
         self.wf()
     }
 }
@@ -742,18 +749,28 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLockWriteGuard<'_, T, G>
 {
     /// VERUS LIMITATION: We implement `drop` and call it manually because Verus's support for `Drop` is incomplete for now.
     #[verus_spec]
-    #[verifier::external_body]
+    //#[verifier::external_body]
     pub fn drop(self) {
-        let Tracked(perm) = self.v_perm;
-        //self.inner.lock.fetch_and(!WRITER, Release);
         proof!{
-            use_type_invariant(self);
+            use_type_invariant(&self);
+            use_type_invariant(self.inner);
             lemma_consts_properties();
         }
+        let Tracked(perm) = self.v_perm;
+        //self.inner.lock.fetch_and(!WRITER, Release);
         atomic_with_ghost!{
             self.inner.lock => fetch_and(!WRITER);
             update prev -> next;
             ghost g => {
+                lemma_consts_properties_prev_next(prev, next);
+                if g.cell_perm is Left {
+                    assert(g.cell_perm->Left_0.resource().id() == self.inner.val.id());
+                    is_exclusive(&mut perm, g.cell_perm.tracked_borrow_left().borrow());
+                    assert(false);
+                }
+                let tracked empty = g.cell_perm.tracked_take_right();
+                let tracked full = empty.put_resource(perm);
+                g.cell_perm = Sum::new_left(full);
             }
         };
     }
@@ -962,6 +979,7 @@ proof fn lemma_consts_properties()
         MAX_READER_MASK == 0x1FFF_FFFF_FFFF_FFFF,
         MAX_READER == 0x1000_0000_0000_0000,
         WRITER & WRITER == WRITER,
+        WRITER & !WRITER == 0,
         WRITER & BEING_UPGRADED == 0,
         WRITER & READER_MASK == 0,
         WRITER & MAX_READER_MASK == 0,
@@ -998,6 +1016,7 @@ proof fn lemma_consts_properties()
     assert(MAX_READER == 0x1000_0000_0000_0000) by (compute_only);
     assert(MAX_READER_MASK == 0x1FFF_FFFF_FFFF_FFFF) by (compute_only);
     assert(WRITER & WRITER == WRITER) by (compute_only);
+    assert(WRITER & !WRITER == 0) by (compute_only);
     assert(WRITER & BEING_UPGRADED == 0) by (compute_only);
     assert(WRITER & READER_MASK == 0) by (compute_only);
     assert(WRITER & MAX_READER_MASK == 0) by (compute_only);
@@ -1164,6 +1183,14 @@ proof fn lemma_consts_properties_prev_next(prev: usize, next: usize)
             }
             &&& next & BEING_UPGRADED == prev & BEING_UPGRADED
         },
+        next == prev & !WRITER ==> {
+            &&& next & WRITER == 0
+            &&& next & UPGRADEABLE_READER == prev & UPGRADEABLE_READER
+            &&& next & READER_MASK == prev & READER_MASK
+            &&& next & MAX_READER_MASK == prev & MAX_READER_MASK
+            &&& next & MAX_READER == prev & MAX_READER
+            &&& next & BEING_UPGRADED == prev & BEING_UPGRADED
+        }
 {
     assert(prev & READER_MASK < MAX_READER) by (bit_vector);
     if next == prev | UPGRADEABLE_READER {
@@ -1320,6 +1347,32 @@ proof fn lemma_consts_properties_prev_next(prev: usize, next: usize)
         assert(next & BEING_UPGRADED == prev & BEING_UPGRADED) by (bit_vector)
             requires
                 next == prev + READER && prev & MAX_READER_MASK < MAX_READER_MASK,
+        ;
+    }
+    if next == prev & !WRITER {
+        assert(next & WRITER == 0) by (bit_vector)
+            requires
+                next == prev & !WRITER,
+        ;
+        assert(next & UPGRADEABLE_READER == prev & UPGRADEABLE_READER) by (bit_vector)
+            requires
+                next == prev & !WRITER,
+        ;
+        assert(next & READER_MASK == prev & READER_MASK) by (bit_vector)
+            requires
+                next == prev & !WRITER,
+        ;
+        assert(next & MAX_READER_MASK == prev & MAX_READER_MASK) by (bit_vector)
+            requires
+                next == prev & !WRITER,
+        ;
+        assert(next & MAX_READER == prev & MAX_READER) by (bit_vector)
+            requires
+                next == prev & !WRITER,
+        ;
+        assert(next & BEING_UPGRADED == prev & BEING_UPGRADED) by (bit_vector)
+            requires
+                next == prev & !WRITER,
         ;
     }
 }
