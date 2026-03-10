@@ -36,4 +36,5 @@ pub mod set_extra;
 pub mod state_machine;
 pub mod std_extra;
 pub mod sum;
+pub mod token;
 pub mod temporal_logic;

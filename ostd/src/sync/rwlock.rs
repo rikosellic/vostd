@@ -754,7 +754,6 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLockWriteGuard<'_, T, G>
 {
     /// VERUS LIMITATION: We implement `drop` and call it manually because Verus's support for `Drop` is incomplete for now.
     #[verus_spec]
-    //#[verifier::external_body]
     pub fn drop(self) {
         proof!{
             use_type_invariant(&self);
@@ -769,10 +768,7 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLockWriteGuard<'_, T, G>
             ghost g => {
                 lemma_consts_properties_prev_next(prev, next);
                 if g.cell_perm is Left {
-                    assert(perm.id() == self.inner.val.id());
-                    assert(g.cell_perm->Left_0.resource().id() == self.inner.val.id());
                     is_exclusive(&mut perm, g.cell_perm.tracked_borrow_left().borrow());
-                    assert(perm.id() != g.cell_perm->Left_0.resource().id());
                     assert(false);
                 }
                 let tracked empty = g.cell_perm.tracked_take_right();
@@ -957,22 +953,29 @@ impl<T /*: ?Sized*/, G: SpinGuardian> Deref for RwLockUpgradeableGuard<'_, T, G>
         self.inner.val.borrow(Tracked(read_perm))
     }
 }
+} // verus!
 
-impl<T /*: ?Sized*/, G: SpinGuardian> Drop for RwLockUpgradeableGuard<'_, T, G>
+/*impl<T: ?Sized, G: SpinGuardian> Drop for RwLockUpgradeableGuard<'_, T, G> {
+    fn drop(&mut self) {
+        self.inner.lock.fetch_sub(UPGRADEABLE_READER, Release);
+    }
+}*/
+
+#[verus_verify]
+impl<T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'_, T, G>
 {
+    /// VERUS LIMITATION: We implement `drop` and call it manually because Verus's support for `Drop` is incomplete for now.
     #[verifier::external_body]
-    fn drop(&mut self)
-        opens_invariants none
-        no_unwind
-    {
-        // self.inner.lock.fetch_sub(UPGRADEABLE_READER, Release);
-        atomic_with_ghost!(
-            &self.inner.lock => fetch_sub(UPGRADEABLE_READER);
-            ghost g => { }
-        );
+    pub fn drop(self) {
+        proof!{
+            use_type_invariant(&self);
+            use_type_invariant(self.inner);
+            lemma_consts_properties();
+        }
+        //self.inner.lock.fetch_sub(UPGRADEABLE_READER, Release);
     }
 }
-} // verus!
+
 /*
 impl<T: ?Sized + fmt::Debug, G: SpinGuardian> fmt::Debug for RwLockUpgradeableGuard<'_, T, G> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
