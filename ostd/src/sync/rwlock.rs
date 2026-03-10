@@ -197,9 +197,16 @@ closed spec fn wf(self) -> bool {
         let has_writer: bool = (v & WRITER) != 0;
         let has_upgrade: bool = (v & UPGRADEABLE_READER) != 0;
         let has_max_reader: bool = (v & MAX_READER) != 0;
+        // A set `UPGRADEABLE_READER` bit can either be a real `RwLockUpgradeableGuard`
+        // or a failed `try_upread` that has not yet retracted its marker bit.
+        let pending_failed_upgrade_attempt: bool =
+            has_upgrade && g.upgrade_retract_token.frac() == 1int;
         // The maximum number of created `RwLockUpgradeableGuard`, which can only be 0 or 1.
-        // NOTE: This does not mean there is actually an `RwLockUpgradeableGuard`, it may be in the middle of being created.
-        let upgrade_reader_count: int = if has_upgrade && !has_writer { 1int } else { 0int };
+        let upgrade_reader_count: int = if has_upgrade && !pending_failed_upgrade_attempt {
+            1int
+        } else {
+            0int
+        };
         // The total number of `try_read` attempts recorded in the lock atomic, including created `RwLockReadGuard`s
         // and those who are trying, no matter they will succeed or fail.
         let total_reader_attempts: int = (v & MAX_READER_MASK) as int;
@@ -216,7 +223,7 @@ closed spec fn wf(self) -> bool {
         // The number of `try_read` attempts that will fail.
         let failed_reader_attempts: int = total_reader_attempts + upgrade_reader_count - total_successful_readers;
         &&& g.read_retract_token.frac() + failed_reader_attempts == V_MAX_READ_RETRACT_FRACS
-        &&& g.upgrade_retract_token.frac() == if has_writer && has_upgrade {
+        &&& g.upgrade_retract_token.frac() == if pending_failed_upgrade_attempt {
             1int
         } else {
             2int
@@ -228,7 +235,6 @@ closed spec fn wf(self) -> bool {
         &&& match g.cell_perm {
             Sum::Right(empty) => {
                 &&& has_writer
-                &&& v == WRITER
                 &&& empty.id() == v_id@.cell_perm_id
             }
             Sum::Left(perm) => {
@@ -756,7 +762,7 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLockWriteGuard<'_, T, G>
             use_type_invariant(self.inner);
             lemma_consts_properties();
         }
-        let Tracked(perm) = self.v_perm;
+        let Tracked(mut perm) = self.v_perm;
         //self.inner.lock.fetch_and(!WRITER, Release);
         atomic_with_ghost!{
             self.inner.lock => fetch_and(!WRITER);
@@ -764,8 +770,10 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLockWriteGuard<'_, T, G>
             ghost g => {
                 lemma_consts_properties_prev_next(prev, next);
                 if g.cell_perm is Left {
+                    assert(perm.id() == self.inner.val.id());
                     assert(g.cell_perm->Left_0.resource().id() == self.inner.val.id());
                     is_exclusive(&mut perm, g.cell_perm.tracked_borrow_left().borrow());
+                    assert(perm.id() != g.cell_perm->Left_0.resource().id());
                     assert(false);
                 }
                 let tracked empty = g.cell_perm.tracked_take_right();
@@ -883,7 +891,20 @@ impl<'a, T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'a, T, G>
                 lemma_consts_properties_prev_next(prev, next);
                 if res is Ok {
                     let tracked mut rem = g.cell_perm.tracked_take_left();
+                    let ghost rem_frac = rem.frac();
+                    assert(prev == (UPGRADEABLE_READER | BEING_UPGRADED));
+                    assert((prev & MAX_READER_MASK) == 0) by (bit_vector)
+                        requires
+                            prev == (UPGRADEABLE_READER | BEING_UPGRADED),
+                    ;
+                    assert((prev & READER_MASK) == 0) by (bit_vector)
+                        requires
+                            prev == (UPGRADEABLE_READER | BEING_UPGRADED),
+                    ;
+                    assert(0 <= (V_MAX_PERM_FRACS as int) - rem_frac <= 1);
                     rem.combine(up_perm.tracked_take());
+                    rem.bounded();
+                    assert(rem.frac() == V_MAX_PERM_FRACS as int);
                     let tracked (full_perm, empty) = rem.take_resource();
                     write_perm = Some(full_perm);
                     g.cell_perm = Sum::new_right(empty);
