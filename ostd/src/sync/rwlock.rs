@@ -199,8 +199,7 @@ closed spec fn wf(self) -> bool {
         let has_max_reader: bool = (v & MAX_READER) != 0;
         // A set `UPGRADEABLE_READER` bit can either be a real `RwLockUpgradeableGuard`
         // or a failed `try_upread` that has not yet retracted its marker bit.
-        let pending_failed_upgrade_attempt: bool =
-            has_upgrade && g.upgrade_retract_token.frac() == 1int;
+        let pending_failed_upgrade_attempt: bool = g.upgrade_retract_token.frac() == 1int;
         // The maximum number of created `RwLockUpgradeableGuard`, which can only be 0 or 1.
         let upgrade_reader_count: int = if has_upgrade && !pending_failed_upgrade_attempt {
             1int
@@ -228,10 +227,10 @@ closed spec fn wf(self) -> bool {
         } else {
             2int
         }
-        //&&& (v & UPGRADEABLE_READER) != 0usize && (v & WRITER) == 0usize ==> g.cell_perm is Left
         &&& g.cell_perm is Right <==> has_writer
         &&& 0 <= successful_read_guards <= reader_count <= total_reader_attempts
         &&& 1 <= g.read_retract_token.frac() <= V_MAX_READ_RETRACT_FRACS
+        &&& pending_failed_upgrade_attempt ==> has_upgrade
         &&& match g.cell_perm {
             Sum::Right(empty) => {
                 &&& has_writer
