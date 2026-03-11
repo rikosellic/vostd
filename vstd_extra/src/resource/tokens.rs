@@ -140,7 +140,7 @@ impl<T, const TOTAL: u64> FracGhostStorage<T, TOTAL> {
         }
     }
 
-    proof fn bounded(tracked &self)
+    pub proof fn bounded(tracked &self)
         ensures
             0 <= self.frac() <= TOTAL,
     {
@@ -149,7 +149,7 @@ impl<T, const TOTAL: u64> FracGhostStorage<T, TOTAL> {
         }
     }
 
-    proof fn update(tracked &mut self, value: T)
+    pub proof fn update(tracked &mut self, value: T)
         requires
             old(self).is_full(),
         ensures
@@ -165,12 +165,12 @@ impl<T, const TOTAL: u64> FracGhostStorage<T, TOTAL> {
     }
 }
 
-pub type TokenStorage<const TOTAL: usize> = FracGhostStorage<(), TOTAL>;
+pub type TokenStorage<const TOTAL: u64> = FracGhostStorage<(), TOTAL>;
 
 pub type UniqueTokenStorage = TokenStorage<1>;
 
-pub type Token<const TOTAL: usize> = FracGhost<(), TOTAL>;
+pub type Token<const TOTAL: u64> = FracGhost<(), TOTAL>;
 
-pub type UniqueToken = Token<1>;
+pub type UniqueToken = Token<1u64>;
 
 } // verus!

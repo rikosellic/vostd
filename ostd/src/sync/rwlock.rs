@@ -5,7 +5,7 @@ use vstd::pcm::Loc;
 use vstd::prelude::*;
 use vstd::tokens::frac::{Empty, Frac, FracGhost};
 use vstd_extra::prelude::*;
-use vstd_extra::resource::*;
+use vstd_extra::resource::tokens::*;
 
 use alloc::sync::Arc;
 use core::char::MAX;
@@ -44,8 +44,6 @@ type RwFrac<T> = Frac<PointsTo<T>, V_MAX_PERM_FRACS>;
 type NoPerm<T> = Empty<PointsTo<T>, V_MAX_PERM_FRACS>;
 
 type UpreaderGuardToken = FracGhost<()>;
-
-type UpgradeRetractToken = FracGhost<()>;
 
 type ReadRetractToken = FracGhost<(), V_MAX_READ_RETRACT_FRACS>;
 
@@ -88,7 +86,7 @@ tracked struct RwPerms<T> {
     read_retract_token: ReadRetractToken,
     /// The permission to retract the set of `UPGRADEABLE_READER` bit, it can be spilit at two pieces,
     /// which allows at most 1 failing `try_upread` to subtract the `UPGRADEABLE_READER` bit, and 1 reserved in the lock atomic.
-    upgrade_retract_token: UpgradeRetractToken,
+    upgrade_retract_token: UniqueTokenStorage,
     /// Tracks whether there is a live `RwLockUpgradeableGuard`.
     upreader_guard_token: UpreaderGuardToken,
 }
@@ -209,7 +207,7 @@ closed spec fn wf(self) -> bool {
         let has_max_reader: bool = (v & MAX_READER) != 0;
         // A set `UPGRADEABLE_READER` bit can either be a real `RwLockUpgradeableGuard`
         // or a failed `try_upread` that has not yet retracted its marker bit.
-        let pending_failed_upgrade_attempt: bool = g.upgrade_retract_token.frac() == 1int;
+        let pending_failed_upgrade_attempt: bool = g.upgrade_retract_token.is_empty();
         // The maximum number of created `RwLockUpgradeableGuard`, which can only be 0 or 1.
         let upgrade_reader_count: int = if has_upgrade && !pending_failed_upgrade_attempt {
             1int
@@ -246,12 +244,8 @@ closed spec fn wf(self) -> bool {
         &&& !(has_upreader_guard && pending_failed_upgrade_attempt)
         &&& g.upreader_guard_token.frac() == 1int ==> (v & UPGRADEABLE_READER) != 0usize
         &&& (v & UPGRADEABLE_READER) == 0usize ==> g.upreader_guard_token.frac() == 2int
-        &&& g.upgrade_retract_token.frac() == 1int ==> g.upreader_guard_token.frac() == 2int
-        &&& g.upgrade_retract_token.frac() == if pending_failed_upgrade_attempt {
-            1int
-        } else {
-            2int
-        }
+        &&& g.upgrade_retract_token.is_empty() ==> g.upreader_guard_token.frac() == 2int
+        &&& g.upgrade_retract_token.is_empty() || g.upgrade_retract_token.is_full()
         &&& g.cell_perm is Right <==> has_writer
         &&& 0 <= successful_read_guards <= reader_count <= total_reader_attempts
         &&& 1 <= g.read_retract_token.frac() <= V_MAX_READ_RETRACT_FRACS
@@ -337,7 +331,7 @@ impl<T, G> RwLock<T, G> {
         proof {lemma_consts_properties();}
         let tracked frac_perm = RwFrac::<T>::new(perm);
         let tracked read_retract_token = ReadRetractToken::new(());
-        let tracked upgrade_retract_token = UpgradeRetractToken::new(());
+        let tracked upgrade_retract_token = UniqueTokenStorage::new(());
         let tracked upreader_guard_token = UpreaderGuardToken::new(());
         let ghost v_id = RwId {
             cell_perm_id: frac_perm.id(),
@@ -521,7 +515,7 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> RwLock<T, G> {
         proof_decl!{
             let tracked mut perm: Option<RwFrac<T>> = None;
             let tracked mut upreader_guard_token: Option<UpreaderGuardToken> = None;
-            let tracked mut retract_upgrade_token: Option<UpgradeRetractToken> = None;
+            let tracked mut retract_upgrade_token: Option<UniqueToken> = None;
         }
         proof!{
             use_type_invariant(self);
@@ -543,7 +537,7 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> RwLock<T, G> {
                     upreader_guard_token = Some(g.upreader_guard_token.split(1int));
                 }
                 else if prev & (WRITER | UPGRADEABLE_READER) == WRITER {
-                    retract_upgrade_token = Some(g.upgrade_retract_token.split(1int));
+                    retract_upgrade_token = Some(g.upgrade_retract_token.split_one());
                 }
             }
         ) & (WRITER | UPGRADEABLE_READER);
@@ -567,15 +561,14 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> RwLock<T, G> {
                     lemma_consts_properties_value(prev_usize);
                     lemma_consts_properties_prev_next(prev_usize, next_usize);
                     if (prev_usize & UPGRADEABLE_READER) == 0 {
-                        assert(g.upgrade_retract_token.frac() == 2int);
+                        assert(g.upgrade_retract_token.is_full());
                         g.upgrade_retract_token.combine(retract_upgrade_token.tracked_unwrap());
                         g.upgrade_retract_token.bounded();
                         assert(false);
                     } else {
                         let frac = g.upgrade_retract_token.frac();
-                        assert(frac == 1int || frac == 2int);
                         g.upgrade_retract_token.combine(retract_upgrade_token.tracked_unwrap());
-                        if frac == 2int {
+                        if frac == 1int {
                             g.upgrade_retract_token.bounded();
                             assert(false);
                         } 
