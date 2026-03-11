@@ -149,6 +149,22 @@ impl<T, const TOTAL: u64> FracGhostStorage<T, TOTAL> {
         }
     }
 
+    pub proof fn full(tracked &self)
+        requires
+            self.is_full(),
+        ensures
+            self.not_empty(),
+            self.frac() == TOTAL,
+    {
+        use_type_invariant(self);
+        self.bounded();
+        if self.is_empty() {
+            assert(self.frac() == 0int);
+            assert(TOTAL > 0);
+            assert(false);
+        }
+    }
+
     pub proof fn update(tracked &mut self, value: T)
         requires
             old(self).is_full(),
