@@ -23,22 +23,20 @@ impl<T, const TOTAL: u64> FracGhostStorage<T, TOTAL> {
         }
     }
 
-    pub closed spec fn is_empty(self) -> bool {
-        self.r is None
+    pub open spec fn is_empty(self) -> bool {
+        self.frac() == 0
     }
 
-    pub closed spec fn not_empty(self) -> bool {
+    pub open spec fn not_empty(self) -> bool {
         !self.is_empty()
     }
 
-    pub closed spec fn is_full(self) -> bool {
+    pub open spec fn is_full(self) -> bool {
         self.frac() == TOTAL
     }
 
     /// Returns the `FracGhost<T,TOTAL>` stored in this `FracGhostStorage`.
     pub closed spec fn storage(self) -> FracGhost<T, TOTAL>
-        recommends
-            self.not_empty(),
     {
         self.r->Some_0
     }
@@ -48,8 +46,8 @@ impl<T, const TOTAL: u64> FracGhostStorage<T, TOTAL> {
         self.snapshot
     }
 
-    pub open spec fn frac(self) -> int {
-        if self.is_empty() {
+    pub closed spec fn frac(self) -> int {
+        if self.r is None {
             0int
         } else {
             self.storage().frac()
