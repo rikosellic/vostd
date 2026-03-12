@@ -22,7 +22,8 @@ pub trait SpinGuardian {
     fn read_guard() -> Self::ReadGuard;
 }
 
-verus!{
+verus! {
+
 /// The Guard can be transferred atomically.
 #[verus_verify]
 pub trait GuardTransfer: Sized {
@@ -33,10 +34,11 @@ pub trait GuardTransfer: Sized {
     ///
     /// The original guard must be dropped immediately after calling this method.
     fn transfer_to(&mut self) -> Self
-    no_unwind;
-}
+        no_unwind
+    ;
 }
 
+} // verus!
 /// A guardian that disables preemption while holding a lock.
 #[verifier::external]
 pub enum PreemptDisabled {}

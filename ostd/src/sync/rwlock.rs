@@ -41,6 +41,7 @@ type NoPerm<T> = Empty<PointsTo<T>, V_MAX_PERM_FRACS>;
 type UpreaderGuardToken = UniqueToken;
 
 type ReadRetractToken = TokenStorage<V_MAX_READ_RETRACT_FRACS>;
+type ReadGuardToken = TokenStorage<V_MAX_READ_GUARDS>;
 
 spec const V_MAX_PERM_FRACS_SPEC: u64 = (MAX_READER + 2) as u64;
 
@@ -68,6 +69,19 @@ exec const V_MAX_READ_RETRACT_FRACS: u64
     (MAX_READER_MASK + 1) as u64
 }
 
+spec const V_MAX_READ_GUARDS_SPEC: u64 = MAX_READER as u64;
+
+#[verifier::when_used_as_spec(V_MAX_READ_GUARDS_SPEC)]
+exec const V_MAX_READ_GUARDS: u64
+    ensures
+        V_MAX_READ_GUARDS == V_MAX_READ_GUARDS_SPEC,
+        V_MAX_READ_GUARDS == MAX_READER,
+        V_MAX_READ_GUARDS < u64::MAX,
+{
+    assert(MAX_READER < u64::MAX) by (compute_only);
+    MAX_READER as u64
+}
+
 tracked struct RwPerms<T> {
     /// The fractional permission of the `PCell<T>`. It can be splited up to `V_MAX_PERM_FRACS:= MAX_READER + 2` pieces,
     /// which allows at most `MAX_READER` `RwLockReadGuard`s and 1 `RwLockUpgradeableGuard`, and 1 reserved in the lock atomic.
@@ -79,6 +93,8 @@ tracked struct RwPerms<T> {
     /// It can be splited up to `V_MAX_READ_RETRACT_FRACS:= 2 * MAX_READER` pieces,
     /// which allows at most `2*MAX_READER - 1` `try_read` attempts that will fail to acquire the lock, and 1 reserved in the lock atomic.
     read_retract_token: ReadRetractToken,
+    /// Tracks live `RwLockReadGuard`s.
+    read_guard_token: ReadGuardToken,
     /// The permission to retract the set of `UPGRADEABLE_READER` bit, it can be spilit at two pieces,
     /// which allows at most 1 failing `try_upread` to subtract the `UPGRADEABLE_READER` bit, and 1 reserved in the lock atomic.
     upgrade_retract_token: UniqueTokenStorage,
@@ -91,6 +107,7 @@ ghost struct RwId {
     upgrade_retract_token_id: Loc,
     upreader_guard_token_id: Loc,
     read_retract_token_id: Loc,
+    read_guard_token_id: Loc,
 }
 
 /// The number of `try_read` operations recorded in the lock atomic (created and ongoing) can never reach `2*MAX_READER` to avoid overflow.
@@ -226,6 +243,7 @@ closed spec fn wf(self) -> bool {
         // The number of `try_read` attempts that will fail.
         let failed_reader_attempts: int = total_reader_attempts + upgrade_reader_count - total_successful_readers;
         &&& g.read_retract_token.frac() + failed_reader_attempts == V_MAX_READ_RETRACT_FRACS
+        &&& g.read_guard_token.frac() + successful_read_guards == V_MAX_READ_GUARDS
         &&& has_upgrade <==> (has_upreader_guard || pending_failed_upgrade_attempt)
         &&& !(has_upreader_guard && pending_failed_upgrade_attempt)
         &&& g.upreader_guard_token.is_empty() ==> (v & UPGRADEABLE_READER) != 0usize
@@ -237,6 +255,7 @@ closed spec fn wf(self) -> bool {
         &&& g.cell_perm is Right <==> has_writer
         &&& 0 <= successful_read_guards <= reader_count <= total_reader_attempts
         &&& 0 <= g.read_retract_token.frac() <= V_MAX_READ_RETRACT_FRACS
+        &&& 0 <= g.read_guard_token.frac() <= V_MAX_READ_GUARDS
         &&& pending_failed_upgrade_attempt ==> has_upgrade
         &&& match g.cell_perm {
             Sum::Right(empty) => {
@@ -252,6 +271,7 @@ closed spec fn wf(self) -> bool {
         &&& v_id@.upgrade_retract_token_id == g.upgrade_retract_token.id()
         &&& v_id@.upreader_guard_token_id == g.upreader_guard_token.id()
         &&& v_id@.read_retract_token_id == g.read_retract_token.id()
+        &&& v_id@.read_guard_token_id == g.read_guard_token.id()
     }
 }
 
@@ -319,6 +339,7 @@ impl<T, G> RwLock<T, G> {
         proof {lemma_consts_properties();}
         let tracked frac_perm = RwFrac::<T>::new(perm);
         let tracked read_retract_token = TokenStorage::<V_MAX_READ_RETRACT_FRACS>::new(());
+        let tracked read_guard_token = TokenStorage::<V_MAX_READ_GUARDS>::new(());
         let tracked upgrade_retract_token = UniqueTokenStorage::new(());
         let tracked upreader_guard_token = UniqueTokenStorage::new(());
         let ghost v_id = RwId {
@@ -326,10 +347,12 @@ impl<T, G> RwLock<T, G> {
             upgrade_retract_token_id: upgrade_retract_token.id(),
             upreader_guard_token_id: upreader_guard_token.id(),
             read_retract_token_id: read_retract_token.id(),
+            read_guard_token_id: read_guard_token.id(),
         };
         let tracked perms = RwPerms {
             cell_perm: Sum::new_left(frac_perm),
             read_retract_token,
+            read_guard_token,
             upgrade_retract_token,
             upreader_guard_token,
         };
@@ -410,6 +433,7 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> RwLock<T, G> {
     pub fn try_read(&self) -> Option<RwLockReadGuard<T, G>> {
         proof_decl!{
             let tracked mut perm: Option<RwFrac<T>> = None;
+            let tracked mut read_guard_token: Option<Token<V_MAX_READ_GUARDS>> = None;
             let tracked mut retract_read_token: Option<Token<V_MAX_READ_RETRACT_FRACS>> = None;
         }
         proof!{
@@ -433,6 +457,8 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> RwLock<T, G> {
                     let tracked mut tmp = g.cell_perm.tracked_take_left();
                     perm = Some(tmp.split(1int));
                     g.cell_perm = Sum::new_left(tmp);
+                    g.read_guard_token.bounded();
+                    read_guard_token = Some(g.read_guard_token.split_one());
                 } else {
                     g.read_retract_token.bounded();
                     retract_read_token = Some(g.read_retract_token.split_one());
@@ -440,7 +466,12 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> RwLock<T, G> {
             }
         );
         if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
-            Some(RwLockReadGuard { inner: self, guard, v_perm: Tracked(perm.tracked_unwrap()) })
+            Some(RwLockReadGuard {
+                inner: self,
+                guard,
+                v_perm: Tracked(perm.tracked_unwrap()),
+                v_token: Tracked(read_guard_token.tracked_unwrap()),
+            })
         } else {
             // self.lock.fetch_sub(READER, Release);
             atomic_with_ghost!(
@@ -635,6 +666,7 @@ pub struct RwLockReadGuard<'a, T /*: ?Sized*/, G: SpinGuardian> {
     guard: G::ReadGuard,
     inner: &'a RwLock<T, G>,
     v_perm: Tracked<RwFrac<T>>,
+    v_token: Tracked<Token<V_MAX_READ_GUARDS>>,
 }
 
 /*
@@ -653,6 +685,8 @@ impl<'a, T, G: SpinGuardian> RwLockReadGuard<'a, T, G> {
         &&& self.inner.cell_perm_id() == self.v_perm@.id()
         &&& self.inner.cell_id() == self.v_perm@.resource().id()
         &&& self.v_perm@.frac() == 1
+        &&& self.v_token@.id() == self.inner.v_id@.read_guard_token_id
+        &&& self.v_token@.frac() == 1
     }
 }
 }
@@ -677,19 +711,129 @@ impl<T /*: ?Sized*/, G: SpinGuardian> Deref for RwLockReadGuard<'_, T, G>
     }
 }
 
-verus!{
-#[verus_verify]
-impl<T /*: ?Sized*/, G: SpinGuardian> Drop for RwLockReadGuard<'_, T, G>
+/* impl<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> Drop
+    for RwLockReadGuard_<T, R, G>
 {
-    #[verifier::external_body]
-    fn drop(&mut self)
-        opens_invariants none
-        no_unwind
+    fn drop(&mut self) {
+        self.inner.lock.fetch_sub(READER, Release);
+    }
+} */
+
+verus!{
+
+impl<T /*: ?Sized*/, G: SpinGuardian> RwLockReadGuard<'_, T, G>
+{
+    /// VERUS LIMITATION: We implement `drop` and call it manually because Verus's support for `Drop` is incomplete for now.
+    #[verus_spec]
+    fn drop(self)
     {
+        proof! {
+            use_type_invariant(&self);
+            use_type_invariant(self.inner);
+            lemma_consts_properties();
+        }
+        let Tracked(perm) = self.v_perm;
+        let Tracked(token) = self.v_token;
         // self.inner.lock.fetch_sub(READER, Release);
         atomic_with_ghost!(
-            &self.inner.lock => fetch_sub(READER);
-            ghost g => { }
+            self.inner.lock => fetch_sub(READER);
+            update prev -> next;
+            ghost g => {
+                let prev_usize = prev as usize;
+                let next_usize = next as usize;
+                lemma_consts_properties_value(prev_usize);
+                lemma_consts_properties_prev_next(prev_usize, next_usize);
+                let ghost total_successful_readers =
+                    if g.cell_perm is Left {
+                        (V_MAX_PERM_FRACS as int) - g.cell_perm->Left_0.frac()
+                    } else {
+                        0int
+                    };
+                let ghost pending_failed_upgrade_attempt = g.upgrade_retract_token.is_empty();
+                let ghost upgrade_reader_count =
+                    if (prev_usize & UPGRADEABLE_READER) != 0 && !pending_failed_upgrade_attempt {
+                        1int
+                    } else {
+                        0int
+                    };
+                let ghost successful_read_guards = total_successful_readers - upgrade_reader_count;
+                let ghost old_read_guard_frac = g.read_guard_token.frac();
+                assert(old_read_guard_frac + successful_read_guards == V_MAX_READ_GUARDS as int);
+                g.read_guard_token.combine(token);
+                g.read_guard_token.bounded();
+                assert(old_read_guard_frac + 1int <= V_MAX_READ_GUARDS as int);
+                assert(old_read_guard_frac < V_MAX_READ_GUARDS as int);
+                assert(successful_read_guards > 0);
+                assert(total_successful_readers > 0);
+                assert((prev_usize & MAX_READER_MASK) != 0);
+                if g.cell_perm is Right {
+                    assert(total_successful_readers == 0);
+                    assert(false);
+                }
+                assert((prev_usize & WRITER) == 0);
+                let ghost old_remaining_pcell_perms = g.cell_perm->Left_0.frac();
+                let tracked mut rem = g.cell_perm.tracked_take_left();
+                rem.combine(perm);
+                rem.bounded();
+                assert(rem.frac() == old_remaining_pcell_perms + 1int);
+                assert((V_MAX_PERM_FRACS as int) - rem.frac() == total_successful_readers - 1int);
+                assert((next_usize & MAX_READER_MASK) as int == (prev_usize & MAX_READER_MASK) as int - 1int);
+                assert((next_usize & UPGRADEABLE_READER) == (prev_usize & UPGRADEABLE_READER));
+                assert((next_usize & WRITER) == (prev_usize & WRITER));
+                assert((next_usize & BEING_UPGRADED) == (prev_usize & BEING_UPGRADED));
+                assert((next_usize & WRITER) == 0);
+                assert(g.read_guard_token.frac() + (successful_read_guards - 1int) == V_MAX_READ_GUARDS as int);
+                g.cell_perm = Sum::new_left(rem);
+                let ghost next_pending_failed_upgrade_attempt = g.upgrade_retract_token.is_empty();
+                assert(next_pending_failed_upgrade_attempt == pending_failed_upgrade_attempt);
+                let ghost next_upgrade_reader_count =
+                    if (next_usize & UPGRADEABLE_READER) != 0 && !next_pending_failed_upgrade_attempt {
+                        1int
+                    } else {
+                        0int
+                    };
+                assert(next_upgrade_reader_count == upgrade_reader_count);
+                let ghost next_total_successful_readers =
+                    if g.cell_perm is Left {
+                        (V_MAX_PERM_FRACS as int) - g.cell_perm->Left_0.frac()
+                    } else {
+                        0int
+                    };
+                assert(next_total_successful_readers == total_successful_readers - 1int);
+                let ghost next_successful_read_guards = next_total_successful_readers - next_upgrade_reader_count;
+                assert(next_successful_read_guards == successful_read_guards - 1int);
+                assert(g.read_guard_token.frac() + next_successful_read_guards == V_MAX_READ_GUARDS as int);
+                let ghost next_total_reader_attempts = (next_usize & MAX_READER_MASK) as int;
+                assert(next_total_reader_attempts == (prev_usize & MAX_READER_MASK) as int - 1int);
+                let ghost next_reader_count =
+                    if (next_usize & MAX_READER) != 0 {
+                        MAX_READER as int
+                    } else {
+                        (next_usize & READER_MASK) as int
+                    };
+                let ghost next_failed_reader_attempts =
+                    next_total_reader_attempts + next_upgrade_reader_count - next_total_successful_readers;
+                let ghost failed_reader_attempts =
+                    ((prev_usize & MAX_READER_MASK) as int) + upgrade_reader_count - total_successful_readers;
+                assert(next_failed_reader_attempts == failed_reader_attempts);
+                assert(g.read_retract_token.frac() + next_failed_reader_attempts == V_MAX_READ_RETRACT_FRACS);
+                assert(0 <= next_successful_read_guards);
+                if (next_usize & MAX_READER) != 0 {
+                    assert(next_reader_count == MAX_READER as int);
+                    assert((next_usize & MAX_READER_MASK) >= MAX_READER) by (bit_vector)
+                        requires
+                            (next_usize & MAX_READER) != 0,
+                    ;
+                } else {
+                    assert((next_usize & MAX_READER_MASK) == (next_usize & READER_MASK)) by (bit_vector)
+                        requires
+                            (next_usize & MAX_READER) == 0,
+                    ;
+                    assert(next_reader_count == next_total_reader_attempts);
+                }
+                assert(next_reader_count <= next_total_reader_attempts);
+                assert(next_successful_read_guards <= next_reader_count);
+            }
         );
     }
 }
@@ -1065,7 +1209,7 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'_, T, G>
             use_type_invariant(self.inner);
             lemma_consts_properties();
         }
-        let Tracked(perm) = self.v_perm; 
+        let Tracked(perm) = self.v_perm;
         let Tracked(token) = self.v_token;
         //self.inner.lock.fetch_sub(UPGRADEABLE_READER, Release);
         atomic_with_ghost!(

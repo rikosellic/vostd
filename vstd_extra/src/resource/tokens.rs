@@ -36,8 +36,7 @@ impl<T, const TOTAL: u64> FracGhostStorage<T, TOTAL> {
     }
 
     /// Returns the `FracGhost<T,TOTAL>` stored in this `FracGhostStorage`.
-    pub closed spec fn storage(self) -> FracGhost<T, TOTAL>
-    {
+    pub closed spec fn storage(self) -> FracGhost<T, TOTAL> {
         self.r->Some_0
     }
 
