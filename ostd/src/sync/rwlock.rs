@@ -872,26 +872,20 @@ impl<'a, T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'a, T, G>
     /// This function is not exposed publicly because the `BEING_UPGRADED` bit
     /// is set only in [`Self::upgrade`].
     #[verus_spec]
+    #[verifier::external_body]
     fn try_upgrade(/* mut */ self) -> Result<RwLockWriteGuard<'a, T, G>, Self> {
-        proof_decl! {
-            let tracked mut up_perm: Option<RwFrac<T>> = None;
-            let tracked mut upreader_guard_token: Option<UniqueToken> = None;
-            let tracked mut write_perm: Option<PointsTo<T>> = None;
-        }
-        let lock = self.inner;
         proof! {
             use_type_invariant(&self);
-            use_type_invariant(lock);
+            use_type_invariant(self.inner);
             lemma_consts_properties();
         }
-        let this = core::mem::ManuallyDrop::new(self);
-        let guard = unsafe { Self::get_guard(&this) };
-        let Tracked(up_perm0) = unsafe { Self::get_v_perm(&this) };
-        let Tracked(upreader_guard_token0) = unsafe { Self::get_v_token(&this) };
-        proof! {
-            up_perm = Some(up_perm0);
-            upreader_guard_token = Some(upreader_guard_token0);
+        let mut this = self; // VERUS LIMITATION
+        proof_decl! {
+            let tracked mut write_perm: Option<PointsTo<T>> = None;
+            let tracked mut upreader_guard_token: Option<UniqueToken> = None;
+            let tracked mut up_perm: Option<RwFrac<T>> = None;
         }
+
         // let res = self.inner.lock.compare_exchange(
         //     UPGRADEABLE_READER | BEING_UPGRADED,
         //     WRITER | UPGRADEABLE_READER,
@@ -899,73 +893,27 @@ impl<'a, T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'a, T, G>
         //     Relaxed,
         // );
         let res = atomic_with_ghost!(
-            &lock.lock => compare_exchange(UPGRADEABLE_READER | BEING_UPGRADED, WRITER);
+            this.inner.lock => compare_exchange(UPGRADEABLE_READER | BEING_UPGRADED, WRITER | UPGRADEABLE_READER);
             update prev -> next;
             returning res;
             ghost g => {
                 lemma_consts_properties_prev_next(prev, next);
                 if res is Ok {
-                    let tracked mut rem = g.cell_perm.tracked_take_left();
-                    let ghost rem_frac = rem.frac();
-                    assert(prev == (UPGRADEABLE_READER | BEING_UPGRADED));
-                    assert((prev & MAX_READER_MASK) == 0) by (bit_vector)
-                        requires
-                            prev == (UPGRADEABLE_READER | BEING_UPGRADED),
-                    ;
-                    assert((prev & READER_MASK) == 0) by (bit_vector)
-                        requires
-                            prev == (UPGRADEABLE_READER | BEING_UPGRADED),
-                    ;
-                    assert(0 <= (V_MAX_PERM_FRACS as int) - rem_frac <= 1);
-                    g.upreader_guard_token.combine(upreader_guard_token.tracked_take());
-                    rem.combine(up_perm.tracked_take());
-                    rem.bounded();
-                    assert(rem.frac() == V_MAX_PERM_FRACS as int);
-                    let tracked (full_perm, empty) = rem.take_resource();
-                    write_perm = Some(full_perm);
-                    g.cell_perm = Sum::new_right(empty);
                 }
             }
         );
         if res.is_ok() {
-            // let inner = self.inner;
-            // let guard = self.guard.transfer_to();
+            let inner = this.inner;
+            let guard = this.guard.transfer_to();
             // drop(self);
-            let inner = &this.inner;
+            this.drop();
             Ok(RwLockWriteGuard { inner, guard, v_perm: Tracked(write_perm.tracked_unwrap()) })
         } else {
-            Err(RwLockUpgradeableGuard {
-                inner: lock,
-                guard,
-                v_perm: Tracked(up_perm.tracked_unwrap()),
-                v_token: Tracked(upreader_guard_token.tracked_unwrap()),
-            })
+            this.v_perm = Tracked(up_perm.tracked_unwrap());
+            this.v_token = Tracked(upreader_guard_token.tracked_unwrap());       
+            //Err(self)
+            Err(this)
         }
-    }
-
-    #[verifier::external_body]
-    unsafe fn get_guard(me: &core::mem::ManuallyDrop<Self>) -> G::Guard {
-        core::ptr::read(&me.guard)
-    }
-
-    #[verifier::external_body]
-    #[verus_spec(
-        ret =>
-        ensures
-            ret@ == me@.v_perm@,
-    )]
-    unsafe fn get_v_perm(me: &core::mem::ManuallyDrop<Self>) -> Tracked<RwFrac<T>> {
-        core::ptr::read(&me.v_perm)
-    }
-
-    #[verifier::external_body]
-    #[verus_spec(
-        ret =>
-        ensures
-            ret@ == me@.v_token@,
-    )]
-    unsafe fn get_v_token(me: &core::mem::ManuallyDrop<Self>) -> Tracked<UpreaderGuardToken> {
-        core::ptr::read(&me.v_token)
     }
 
 }
