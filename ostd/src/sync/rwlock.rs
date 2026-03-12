@@ -741,98 +741,15 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLockReadGuard<'_, T, G>
             ghost g => {
                 let prev_usize = prev as usize;
                 let next_usize = next as usize;
-                lemma_consts_properties_value(prev_usize);
+                lemma_consts_properties_value(next_usize);
                 lemma_consts_properties_prev_next(prev_usize, next_usize);
-                let ghost total_successful_readers =
-                    if g.cell_perm is Left {
-                        (V_MAX_PERM_FRACS as int) - g.cell_perm->Left_0.frac()
-                    } else {
-                        0int
-                    };
-                let ghost pending_failed_upgrade_attempt = g.upgrade_retract_token.is_empty();
-                let ghost upgrade_reader_count =
-                    if (prev_usize & UPGRADEABLE_READER) != 0 && !pending_failed_upgrade_attempt {
-                        1int
-                    } else {
-                        0int
-                    };
-                let ghost successful_read_guards = total_successful_readers - upgrade_reader_count;
-                let ghost old_read_guard_frac = g.read_guard_token.frac();
-                assert(old_read_guard_frac + successful_read_guards == V_MAX_READ_GUARDS as int);
                 g.read_guard_token.combine(token);
                 g.read_guard_token.bounded();
-                assert(old_read_guard_frac + 1int <= V_MAX_READ_GUARDS as int);
-                assert(old_read_guard_frac < V_MAX_READ_GUARDS as int);
-                assert(successful_read_guards > 0);
-                assert(total_successful_readers > 0);
-                assert((prev_usize & MAX_READER_MASK) != 0);
-                if g.cell_perm is Right {
-                    assert(total_successful_readers == 0);
-                    assert(false);
-                }
-                assert((prev_usize & WRITER) == 0);
-                let ghost old_remaining_pcell_perms = g.cell_perm->Left_0.frac();
+
                 let tracked mut rem = g.cell_perm.tracked_take_left();
                 rem.combine(perm);
                 rem.bounded();
-                assert(rem.frac() == old_remaining_pcell_perms + 1int);
-                assert((V_MAX_PERM_FRACS as int) - rem.frac() == total_successful_readers - 1int);
-                assert((next_usize & MAX_READER_MASK) as int == (prev_usize & MAX_READER_MASK) as int - 1int);
-                assert((next_usize & UPGRADEABLE_READER) == (prev_usize & UPGRADEABLE_READER));
-                assert((next_usize & WRITER) == (prev_usize & WRITER));
-                assert((next_usize & BEING_UPGRADED) == (prev_usize & BEING_UPGRADED));
-                assert((next_usize & WRITER) == 0);
-                assert(g.read_guard_token.frac() + (successful_read_guards - 1int) == V_MAX_READ_GUARDS as int);
                 g.cell_perm = Sum::new_left(rem);
-                let ghost next_pending_failed_upgrade_attempt = g.upgrade_retract_token.is_empty();
-                assert(next_pending_failed_upgrade_attempt == pending_failed_upgrade_attempt);
-                let ghost next_upgrade_reader_count =
-                    if (next_usize & UPGRADEABLE_READER) != 0 && !next_pending_failed_upgrade_attempt {
-                        1int
-                    } else {
-                        0int
-                    };
-                assert(next_upgrade_reader_count == upgrade_reader_count);
-                let ghost next_total_successful_readers =
-                    if g.cell_perm is Left {
-                        (V_MAX_PERM_FRACS as int) - g.cell_perm->Left_0.frac()
-                    } else {
-                        0int
-                    };
-                assert(next_total_successful_readers == total_successful_readers - 1int);
-                let ghost next_successful_read_guards = next_total_successful_readers - next_upgrade_reader_count;
-                assert(next_successful_read_guards == successful_read_guards - 1int);
-                assert(g.read_guard_token.frac() + next_successful_read_guards == V_MAX_READ_GUARDS as int);
-                let ghost next_total_reader_attempts = (next_usize & MAX_READER_MASK) as int;
-                assert(next_total_reader_attempts == (prev_usize & MAX_READER_MASK) as int - 1int);
-                let ghost next_reader_count =
-                    if (next_usize & MAX_READER) != 0 {
-                        MAX_READER as int
-                    } else {
-                        (next_usize & READER_MASK) as int
-                    };
-                let ghost next_failed_reader_attempts =
-                    next_total_reader_attempts + next_upgrade_reader_count - next_total_successful_readers;
-                let ghost failed_reader_attempts =
-                    ((prev_usize & MAX_READER_MASK) as int) + upgrade_reader_count - total_successful_readers;
-                assert(next_failed_reader_attempts == failed_reader_attempts);
-                assert(g.read_retract_token.frac() + next_failed_reader_attempts == V_MAX_READ_RETRACT_FRACS);
-                assert(0 <= next_successful_read_guards);
-                if (next_usize & MAX_READER) != 0 {
-                    assert(next_reader_count == MAX_READER as int);
-                    assert((next_usize & MAX_READER_MASK) >= MAX_READER) by (bit_vector)
-                        requires
-                            (next_usize & MAX_READER) != 0,
-                    ;
-                } else {
-                    assert((next_usize & MAX_READER_MASK) == (next_usize & READER_MASK)) by (bit_vector)
-                        requires
-                            (next_usize & MAX_READER) == 0,
-                    ;
-                    assert(next_reader_count == next_total_reader_attempts);
-                }
-                assert(next_reader_count <= next_total_reader_attempts);
-                assert(next_successful_read_guards <= next_reader_count);
             }
         );
     }
