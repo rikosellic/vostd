@@ -1004,26 +1004,17 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'_, T, G>
 {
     /// VERUS LIMITATION: We implement `drop` and call it manually because Verus's support for `Drop` is incomplete for now.
     #[verus_spec]
-    #[verifier::external_body]
     pub fn drop(self) {
-        proof_decl! {
-            let tracked mut token: Option<UpreaderGuardToken> = None;
-        }
         proof! {
             use_type_invariant(&self);
             use_type_invariant(self.inner);
             lemma_consts_properties();
         }
+        let Tracked(perm) = self.v_perm; 
+        let Tracked(token) = self.v_token;
         //self.inner.lock.fetch_sub(UPGRADEABLE_READER, Release);
-        let this = core::mem::ManuallyDrop::new(self);
-        let inner = &this.inner;
-        let Tracked(perm) = unsafe { Self::get_v_perm(&this) };
-        let Tracked(token0) = unsafe { Self::get_v_token(&this) };
-        proof! {
-            token = Some(token0);
-        }
         atomic_with_ghost!(
-            &inner.lock => fetch_sub(UPGRADEABLE_READER);
+            self.inner.lock => fetch_sub(UPGRADEABLE_READER);
             update prev -> next;
             ghost g => {
                 let prev_usize = prev as usize;
@@ -1031,22 +1022,21 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'_, T, G>
                 lemma_consts_properties_value(prev_usize);
                 lemma_consts_properties_prev_next(prev_usize, next_usize);
                 if g.upreader_guard_token.is_full() {
-                    g.upreader_guard_token.combine(token.tracked_take());
+                    g.upreader_guard_token.combine(token);
                     g.upreader_guard_token.bounded();
                     assert(g.upreader_guard_token.frac() == 2int);
                     assert(false);
-                }
+                } else {
                 assert((prev_usize & UPGRADEABLE_READER) != 0);
-                if g.cell_perm is Right {
-                    assert(g.cell_perm->Right_0.id() == inner.cell_perm_id());
-                    assert(false);
+                    if g.cell_perm is Right {
+                        assert(false);
+                    }
+                    let tracked mut rem = g.cell_perm.tracked_take_left();
+                    rem.combine(perm);
+                    g.cell_perm = Sum::new_left(rem);
+                    g.upreader_guard_token.combine(token);
+                    g.upreader_guard_token.bounded();
                 }
-                let tracked mut rem = g.cell_perm.tracked_take_left();
-                rem.combine(perm);
-                g.cell_perm = Sum::new_left(rem);
-                g.upreader_guard_token.combine(token.tracked_unwrap());
-                g.upreader_guard_token.bounded();
-                assert(g.upreader_guard_token.frac() == 1int);
             }
         );
     }
