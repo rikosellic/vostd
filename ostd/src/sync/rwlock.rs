@@ -1050,24 +1050,6 @@ impl<'a, T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'a, T, G>
             ghost g => {
                 lemma_consts_properties_prev_next(prev, next);
                 if res is Ok {
-                    assert(prev == UPGRADEABLE_READER | BEING_UPGRADED);
-                    assert(next == WRITER | UPGRADEABLE_READER);
-                    assert((prev & WRITER) == 0) by (bit_vector)
-                        requires
-                            prev == UPGRADEABLE_READER | BEING_UPGRADED,
-                    ;
-                    assert((prev & READER_MASK) == 0) by (bit_vector)
-                        requires
-                            prev == UPGRADEABLE_READER | BEING_UPGRADED,
-                    ;
-                    assert((prev & MAX_READER_MASK) == 0) by (bit_vector)
-                        requires
-                            prev == UPGRADEABLE_READER | BEING_UPGRADED,
-                    ;
-                    assert((prev & MAX_READER) == 0) by (bit_vector)
-                        requires
-                            prev == UPGRADEABLE_READER | BEING_UPGRADED,
-                    ;
                     if g.upreader_guard_token.is_full() {
                         let tracked token = guard_token.tracked_unwrap();
                         g.upreader_guard_token.combine(token);
@@ -1088,39 +1070,11 @@ impl<'a, T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'a, T, G>
                     if g.cell_perm is Right {
                         assert(false);
                     }
-                    assert(g.cell_perm->Left_0.frac() == (V_MAX_PERM_FRACS as int) - 1int);
                     let tracked mut rem = g.cell_perm.tracked_take_left();
                     rem.combine(guard_perm.tracked_unwrap());
-                    assert(rem.frac() == V_MAX_PERM_FRACS as int);
                     let tracked (full_perm, empty) = rem.take_resource();
-                    assert(full_perm.id() == inner.cell_id());
-                    assert(empty.id() == inner.cell_perm_id());
                     write_perm = Some(full_perm);
                     g.cell_perm = Sum::new_right(empty);
-                    assert(g.cell_perm is Right);
-                    assert(g.upreader_guard_token.is_full());
-                    assert(g.upgrade_retract_token.is_empty());
-                    assert((next & WRITER) != 0) by (bit_vector)
-                        requires
-                            next == WRITER | UPGRADEABLE_READER,
-                    ;
-                    assert((next & UPGRADEABLE_READER) != 0) by (bit_vector)
-                        requires
-                            next == WRITER | UPGRADEABLE_READER,
-                    ;
-                    assert((next & READER_MASK) == 0) by (bit_vector)
-                        requires
-                            next == WRITER | UPGRADEABLE_READER,
-                    ;
-                    assert((next & MAX_READER_MASK) == 0) by (bit_vector)
-                        requires
-                            next == WRITER | UPGRADEABLE_READER,
-                    ;
-                    assert((next & MAX_READER) == 0) by (bit_vector)
-                        requires
-                            next == WRITER | UPGRADEABLE_READER,
-                    ;
-                    assert(g.read_retract_token.frac() == V_MAX_READ_RETRACT_FRACS);
                 } else {
                     err_guard_perm = guard_perm;
                     err_guard_token = guard_token;
@@ -1289,7 +1243,12 @@ proof fn lemma_consts_properties()
         (UPGRADEABLE_READER | BEING_UPGRADED) & READER_MASK == 0,
         (UPGRADEABLE_READER | BEING_UPGRADED) & MAX_READER_MASK == 0,
         (UPGRADEABLE_READER | BEING_UPGRADED) & MAX_READER == 0,
-
+        (WRITER | UPGRADEABLE_READER) & WRITER == WRITER,
+        (WRITER | UPGRADEABLE_READER) & UPGRADEABLE_READER == UPGRADEABLE_READER,
+        (WRITER | UPGRADEABLE_READER) & BEING_UPGRADED == 0,
+        (WRITER | UPGRADEABLE_READER) & READER_MASK == 0,
+        (WRITER | UPGRADEABLE_READER) & MAX_READER_MASK == 0,
+        (WRITER | UPGRADEABLE_READER) & MAX_READER == 0,
 {
     assert(0 & WRITER == 0) by (compute_only);
     assert(0 & UPGRADEABLE_READER == 0) by (compute_only);
@@ -1326,6 +1285,12 @@ proof fn lemma_consts_properties()
     assert((UPGRADEABLE_READER | BEING_UPGRADED) & READER_MASK == 0) by (compute_only);
     assert((UPGRADEABLE_READER | BEING_UPGRADED) & MAX_READER_MASK == 0) by (compute_only);
     assert((UPGRADEABLE_READER | BEING_UPGRADED) & MAX_READER == 0) by (compute_only);
+    assert((WRITER | UPGRADEABLE_READER) & WRITER == WRITER) by (compute_only);
+    assert((WRITER | UPGRADEABLE_READER) & UPGRADEABLE_READER == UPGRADEABLE_READER) by (compute_only);
+    assert((WRITER | UPGRADEABLE_READER) & BEING_UPGRADED == 0) by (compute_only);
+    assert((WRITER | UPGRADEABLE_READER) & READER_MASK == 0) by (compute_only);
+    assert((WRITER | UPGRADEABLE_READER) & MAX_READER_MASK == 0) by (compute_only);
+    assert((WRITER | UPGRADEABLE_READER) & MAX_READER == 0) by (compute_only);
 }
 
 proof fn lemma_consts_properties_value(prev: usize)
