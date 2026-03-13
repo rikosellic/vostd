@@ -232,12 +232,6 @@ closed spec fn wf(self) -> bool {
         &&& has_upgrade_bit <==> (active_upgrade_guard || pending_failed_upread_attempt)
         // An active `RwLockUpgradeableGuard` cannot coexist with a pending failed `try_upread` attempt.
         &&& !(active_upgrade_guard && pending_failed_upread_attempt)
-        // Make the two exclusive-token storages line up explicitly with the atomic bits.
-        &&& g.upreader_guard_token.is_empty() ==> has_upgrade_bit
-        &&& !has_upgrade_bit ==> g.upreader_guard_token.is_full()
-        &&& !has_upgrade_bit ==> !pending_failed_upread_attempt
-        &&& pending_failed_upread_attempt ==> has_upgrade_bit
-        &&& pending_failed_upread_attempt ==> g.upreader_guard_token.is_full()
         // The `READER` bits count the number of all active readers and pending failed `try_read` attempts.
         &&& total_reader_bits + if active_upgrade_guard { 1int } else {0} == total_active_readers +  failed_reader_attempts
         // There is an active `RwLockWriteGuard` iff the `WRITER` bit is set.
@@ -247,15 +241,13 @@ closed spec fn wf(self) -> bool {
         // The core invariant of `RwLock`: there are no simultaneous active writers and readers.
         &&& !(active_writer && total_active_readers > 0)
         &&& 0 <= g.read_retract_token.frac() <= V_MAX_READ_RETRACT_FRACS
-        &&& g.upread_retract_token.is_empty() || g.upread_retract_token.is_full()
-        &&& g.upreader_guard_token.is_empty() || g.upreader_guard_token.is_full()
+        &&& g.upread_retract_token.wf()
+        &&& g.upreader_guard_token.wf()
         &&& match g.cell_perm {
             Sum::Right(empty) => {
-                &&& has_writer_bit
                 &&& empty.id() == v_id@.cell_perm_id
             }
             Sum::Left(perm) => {
-                &&& !has_writer_bit
                 &&& perm.id() == v_id@.cell_perm_id
                 &&& perm.resource().id() == val.id()
             }
@@ -329,19 +321,16 @@ impl<T, G> RwLock<T, G> {
         // Proof code
         proof {lemma_consts_properties();}
         let tracked frac_perm = RwFrac::<T>::new(perm);
-        let tracked read_retract_token = TokenStorage::<V_MAX_READ_RETRACT_FRACS>::new(());
-        let tracked upread_retract_token = UniqueTokenStorage::alloc(());
-        let tracked upreader_guard_token = UniqueTokenStorage::alloc(());
-        
+        proof_decl!{
+            let tracked read_retract_token = TokenStorage::<V_MAX_READ_RETRACT_FRACS>::new(());
+            let tracked upread_retract_token = UniqueTokenStorage::alloc(());
+            let tracked upreader_guard_token = UniqueTokenStorage::alloc(());
+        }
         let ghost v_id = RwId {
             cell_perm_id: frac_perm.id(),
             upread_retract_token_id: upread_retract_token.id(),
             upreader_guard_token_id: upreader_guard_token.id(),
             read_retract_token_id: read_retract_token.id(),
-        };
-        proof { 
-            upread_retract_token.validate();
-            upreader_guard_token.validate();
         };
         let tracked perms = RwPerms {
             cell_perm: Sum::new_left(frac_perm),
@@ -569,14 +558,7 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> RwLock<T, G> {
                     let next_usize = next as usize;
                     lemma_consts_properties_value(prev_usize);
                     lemma_consts_properties_prev_next(prev_usize, next_usize);
-                    let tracked token = retract_upgrade_token.tracked_unwrap();
-                    if g.upread_retract_token.is_full() {
-                        g.upread_retract_token.is_exclusive(&token);
-                        assert(false);
-                    } else {
-                        g.upread_retract_token.join(token);
-                        g.upread_retract_token.validate();
-                    }
+                    g.upread_retract_token.join(retract_upgrade_token.tracked_unwrap());
                 }
             );
         }
@@ -949,82 +931,14 @@ impl<'a, T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'a, T, G>
             ghost g => {
                 lemma_consts_properties_prev_next(prev, next);
                 if res is Ok {
-                    assert(prev == UPGRADEABLE_READER | BEING_UPGRADED);
-                    assert(next == WRITER | UPGRADEABLE_READER);
-                    assert((prev & WRITER) == 0) by (bit_vector)
-                        requires
-                            prev == UPGRADEABLE_READER | BEING_UPGRADED,
-                    ;
-                    assert((prev & READER_MASK) == 0) by (bit_vector)
-                        requires
-                            prev == UPGRADEABLE_READER | BEING_UPGRADED,
-                    ;
-                    assert((prev & MAX_READER_MASK) == 0) by (bit_vector)
-                        requires
-                            prev == UPGRADEABLE_READER | BEING_UPGRADED,
-                    ;
-                    assert((prev & MAX_READER) == 0) by (bit_vector)
-                        requires
-                            prev == UPGRADEABLE_READER | BEING_UPGRADED,
-                    ;
-                    if g.upreader_guard_token.is_full() {
-                        let tracked token = guard_token.tracked_unwrap();
-                        g.upreader_guard_token.is_exclusive(&token);
-                        assert(false);
-                    } else {
-                        g.upreader_guard_token.validate();
-                        assert(g.upreader_guard_token.is_empty());
-                        g.upreader_guard_token.join(guard_token.tracked_unwrap());
-                        g.upreader_guard_token.validate();
-                        assert(g.upreader_guard_token.is_full());
-                        assert(!g.upreader_guard_token.is_empty());
-                    }
-                    if g.upread_retract_token.is_empty() {
-                        assert(false);
-                    } else {
-                        retract_upgrade_token = Some(g.upread_retract_token.take());
-                        assert(g.upread_retract_token.is_empty());
-                        g.upread_retract_token.validate();
-                        assert(!g.upread_retract_token.is_full());
-                    }
-                    if g.cell_perm is Right {
-                        assert(false);
-                    }
-                    assert(g.cell_perm->Left_0.frac() == (V_MAX_PERM_FRACS as int) - 1int);
+                    g.upreader_guard_token.join(guard_token.tracked_unwrap());
+                    retract_upgrade_token = Some(g.upread_retract_token.take());
                     let tracked mut rem = g.cell_perm.tracked_take_left();
                     rem.combine(guard_perm.tracked_unwrap());
-                    assert(rem.frac() == V_MAX_PERM_FRACS as int);
                     let tracked (full_perm, empty) = rem.take_resource();
-                    assert(full_perm.id() == inner.cell_id());
-                    assert(empty.id() == inner.cell_perm_id());
                     write_perm = Some(full_perm);
                     g.cell_perm = Sum::new_right(empty);
-                    assert(g.cell_perm is Right);
-                    assert(g.upreader_guard_token.is_full());
-                    assert(!g.upreader_guard_token.is_empty());
-                    assert(g.upread_retract_token.is_empty());
-                    assert(!g.upread_retract_token.is_full());
-                    assert((next & WRITER) != 0) by (bit_vector)
-                        requires
-                            next == WRITER | UPGRADEABLE_READER,
-                    ;
-                    assert((next & UPGRADEABLE_READER) != 0) by (bit_vector)
-                        requires
-                            next == WRITER | UPGRADEABLE_READER,
-                    ;
-                    assert((next & READER_MASK) == 0) by (bit_vector)
-                        requires
-                            next == WRITER | UPGRADEABLE_READER,
-                    ;
-                    assert((next & MAX_READER_MASK) == 0) by (bit_vector)
-                        requires
-                            next == WRITER | UPGRADEABLE_READER,
-                    ;
-                    assert((next & MAX_READER) == 0) by (bit_vector)
-                        requires
-                            next == WRITER | UPGRADEABLE_READER,
-                    ;
-                    assert(g.read_retract_token.frac() == V_MAX_READ_RETRACT_FRACS);
+
                 } else {
                     err_guard_perm = guard_perm;
                     err_guard_token = guard_token;
@@ -1044,20 +958,7 @@ impl<'a, T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'a, T, G>
                     lemma_consts_properties_prev_next(prev_usize, next_usize);
                     let tracked token = retract_upgrade_token.tracked_unwrap();
                     let tracked mut perm = write_perm.tracked_unwrap();
-                    if g.upread_retract_token.is_full() {
-                        g.upread_retract_token.is_exclusive(&token);
-                        assert(false);
-                    } else {
-                        g.upread_retract_token.validate();
-                        assert(g.upread_retract_token.is_empty());
-                        assert((prev_usize & UPGRADEABLE_READER) != 0);
-                        if g.cell_perm is Left {
-                            is_exclusive(&mut perm, g.cell_perm.tracked_borrow_left().borrow());
-                            assert(false);
-                        }
-                        g.upread_retract_token.join(token);
-                        g.upread_retract_token.validate();
-                    }
+                    g.upread_retract_token.join(token);
                     write_perm = Some(perm);
                 }
             );
@@ -1125,17 +1026,11 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'_, T, G>
                 let next_usize = next as usize;
                 lemma_consts_properties_value(prev_usize);
                 lemma_consts_properties_prev_next(prev_usize, next_usize);
-                if g.upreader_guard_token.is_full() {
-                    g.upreader_guard_token.is_exclusive(&token);
-                    assert(false);
-                } else {
-                assert((prev_usize & UPGRADEABLE_READER) != 0);
-                    let tracked mut rem = g.cell_perm.tracked_take_left();
-                    rem.combine(perm);
-                    g.cell_perm = Sum::new_left(rem);
-                    g.upreader_guard_token.join(token);
-                    g.upreader_guard_token.validate();
-                }
+                g.upreader_guard_token.join(token);
+                let tracked mut rem = g.cell_perm.tracked_take_left();
+                rem.combine(perm);
+                g.cell_perm = Sum::new_left(rem);
+                
             }
         );
     }

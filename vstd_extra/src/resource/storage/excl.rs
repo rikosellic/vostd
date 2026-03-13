@@ -75,7 +75,6 @@ impl<T> ExclusiveGhostResource<T> {
             old(self).is_full(),
         ensures
             res == *old(self),
-            res.is_full(),
             old(self).id() == self.id(),
             self.is_empty(),
     {
@@ -91,7 +90,6 @@ impl<T> ExclusiveGhostResource<T> {
             old(self).id() == other.id(),
         ensures
             *self == other,
-            self.is_full(),
     {
         let tracked mut other = other;
         tracked_swap(&mut self.r, &mut other.r);
@@ -184,10 +182,22 @@ impl<T> ExclusiveGhostStorage<T> {
         self.0.is_full()
     }
 
+    pub open spec fn wf(self) -> bool {
+        &&& self.is_empty() || self.is_full()
+        &&& self.is_empty() <==> !self.is_full()
+        &&& self.is_full() <==> !self.is_empty()
+    }
+    
+    #[verifier::type_invariant]
+    pub open spec fn type_inv(self) -> bool {
+        self.wf()
+    }
+
     pub proof fn alloc(value: T) -> (tracked res: Self)
         ensures
             res.view() == value,
             res.is_full(),
+            res.wf(),
     {
         Self(ExclusiveGhostResource::alloc(value))
     }
@@ -200,6 +210,7 @@ impl<T> ExclusiveGhostStorage<T> {
             self.is_empty(),
             res.id() == old(self).id(),
             res.view() == old(self).view(),
+            self.wf(),
     {
         let tracked r = self.0.take();
         ExclusiveGhost(r)
@@ -210,29 +221,35 @@ impl<T> ExclusiveGhostStorage<T> {
             self.is_full() ==> self.id() != other.id(),
             *old(self) == *self,
     {
+        use_type_invariant(&*self);
         use_type_invariant(other);
         self.0.is_exclusive(&other.0);
     }
 
     pub proof fn join(tracked &mut self, tracked other: ExclusiveGhost<T>)
         requires
-            old(self).is_empty(),
             old(self).id() == other.id(),
         ensures
-            self.id() == old(self).id(),
-            self.view() == other.view(),
-            self.is_full(),
+            old(self).is_empty() ==> {
+                &&& self.id() == old(self).id()
+                &&& self.view() == other.view()
+                &&& self.is_full()
+                &&& self.wf()
+            },
+            old(self).is_full() ==> false,
     {
         use_type_invariant(&other);
-        self.validate();
-        self.0.join(other.0);
+        if self.is_full() {
+            self.0.is_exclusive(&other.0);
+        } else {
+            self.validate();
+            self.0.join(other.0);
+        }
     }
 
     pub proof fn validate(tracked &self)
         ensures
-            self.is_empty() || self.is_full(),
-            self.is_empty() <==> !self.is_full(),
-            self.is_full() <==> !self.is_empty(),
+            self.wf(),
     {
         self.0.validate();
     }
