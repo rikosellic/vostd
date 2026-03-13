@@ -1108,7 +1108,6 @@ impl<T /*: ?Sized*/, G: SpinGuardian> RwLockUpgradeableGuard<'_, T, G>
 {
     /// VERUS LIMITATION: We implement `drop` and call it manually because Verus's support for `Drop` is incomplete for now.
     #[verus_spec]
-    #[verifier::external_body]
     pub fn drop(self) {
         proof! {
             use_type_invariant(&self);
