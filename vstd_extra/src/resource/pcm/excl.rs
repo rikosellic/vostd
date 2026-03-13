@@ -2,7 +2,7 @@
 //!
 //! For Iris definition, see:
 //! <https://gitlab.mpi-sws.org/iris/iris/-/blob/master/iris/algebra/excl.v>
-use vstd::pcm::{conjunct_shared, PCM};
+use vstd::pcm::PCM;
 use vstd::prelude::*;
 
 verus! {
