@@ -240,7 +240,7 @@ closed spec fn wf(self) -> bool {
         &&& 0 <= active_read_guards <= reader_bits <= total_reader_bits
         // The core invariant of `RwLock`: there are no simultaneous active writers and readers.
         &&& !(active_writer && total_active_readers > 0)
-        &&& 0 <= g.read_retract_token.frac() <= V_MAX_READ_RETRACT_FRACS
+        &&& g.read_retract_token.wf()
         &&& g.upread_retract_token.wf()
         &&& g.upreader_guard_token.wf()
         &&& match g.cell_perm {
@@ -440,7 +440,6 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> RwLock<T, G> {
                     perm = Some(tmp.split(1int));
                     g.cell_perm = Sum::new_left(tmp);
                 } else {
-                    g.read_retract_token.bounded();
                     retract_read_token = Some(g.read_retract_token.split_one());
                 }
             }
@@ -463,7 +462,6 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> RwLock<T, G> {
                     lemma_consts_properties_prev_next(prev_usize, next_usize);
                     let tracked token = retract_read_token.tracked_unwrap();
                     g.read_retract_token.combine(token);
-                    g.read_retract_token.bounded();
                 }
             );
             None

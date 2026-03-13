@@ -14,12 +14,19 @@ pub tracked struct FracGhostStorage<T, const TOTAL: u64> {
 
 impl<T, const TOTAL: u64> FracGhostStorage<T, TOTAL> {
     #[verifier::type_invariant]
-    spec fn type_inv(self) -> bool {
+    pub closed spec fn type_inv(self) -> bool {
         &&& TOTAL > 0
+        &&& 0<= self.frac() <= TOTAL
         &&& self.r is Some ==> {
             &&& self.id == self.r->Some_0.id()
             &&& self.view() == self.r->Some_0@
         }
+    }
+
+    pub open spec fn wf(self) -> bool {
+        &&& TOTAL > 0
+        &&& 0 <= self.frac() <= TOTAL
+        &&& self.type_inv()
     }
 
     pub open spec fn is_empty(self) -> bool {
@@ -63,6 +70,7 @@ impl<T, const TOTAL: u64> FracGhostStorage<T, TOTAL> {
             res.not_empty(),
             res.is_full(),
             res@ == value,
+            res.wf(),
     {
         let tracked r = FracGhost::new(value);
         Self { r: Some(r), snapshot: value, id: r.id() }
@@ -79,6 +87,7 @@ impl<T, const TOTAL: u64> FracGhostStorage<T, TOTAL> {
             res.id() == self.id(),
             res@ == self@,
             old(self).frac() == 1 ==> self.is_empty(),
+            self.wf(),
     {
         use_type_invariant(&*self);
         if self.frac() == 1 {
@@ -103,6 +112,7 @@ impl<T, const TOTAL: u64> FracGhostStorage<T, TOTAL> {
             res.id() == self.id(),
             res@ == self@,
             old(self).frac() == n ==> self.is_empty(),
+            self.wf(),
     {
         use_type_invariant(&*self);
         self.r.tracked_borrow().bounded();
@@ -121,9 +131,13 @@ impl<T, const TOTAL: u64> FracGhostStorage<T, TOTAL> {
             old(self).id() == other.id(),
             other@ == old(self)@,
         ensures
-            self.id() == old(self).id(),
-            self@ == old(self)@,
-            self.frac() == old(self).frac() + other.frac(),
+            old(self).frac() + other.frac() > TOTAL ==> false,
+            old(self).frac() + other.frac() <= TOTAL ==> {
+                &&& self.id() == old(self).id()
+                &&& self@ == old(self)@
+                &&& self.frac() == old(self).frac() + other.frac()
+                &&& self.wf()
+            }
     {
         if self.is_empty() {
             other.bounded();
@@ -132,17 +146,16 @@ impl<T, const TOTAL: u64> FracGhostStorage<T, TOTAL> {
             use_type_invariant(&*self);
             let tracked mut r = self.r.tracked_take();
             r.combine(other);
+            r.bounded();
             self.r = Some(r);
         }
     }
 
-    pub proof fn bounded(tracked &self)
+    pub proof fn validate(tracked &self)
         ensures
-            0 <= self.frac() <= TOTAL,
+            self.wf(),
     {
-        if self.not_empty() {
-            self.r.tracked_borrow().bounded();
-        }
+        use_type_invariant(self);
     }
 
     pub proof fn full(tracked &self)
@@ -151,9 +164,9 @@ impl<T, const TOTAL: u64> FracGhostStorage<T, TOTAL> {
         ensures
             self.not_empty(),
             self.frac() == TOTAL,
+            self.wf(),
     {
         use_type_invariant(self);
-        self.bounded();
         if self.is_empty() {
             assert(self.frac() == 0int);
             assert(TOTAL > 0);
@@ -168,6 +181,7 @@ impl<T, const TOTAL: u64> FracGhostStorage<T, TOTAL> {
             self.is_full(),
             self@ == value,
             self.id() == old(self).id(),
+            self.wf(),
     {
         use_type_invariant(&*self);
         let tracked mut r = self.r.tracked_take();
