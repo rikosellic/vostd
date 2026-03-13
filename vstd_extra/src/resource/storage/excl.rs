@@ -52,6 +52,8 @@ impl<T> ExclusiveGhostResource<T> {
     pub proof fn validate(tracked &self)
         ensures
             self.is_empty() || self.is_full(),
+            self.is_empty() <==> !self.is_full(),
+            self.is_full() <==> !self.is_empty(),
     {
         self.r.validate();
     }
@@ -73,6 +75,7 @@ impl<T> ExclusiveGhostResource<T> {
             old(self).is_full(),
         ensures
             res == *old(self),
+            res.is_full(),
             old(self).id() == self.id(),
             self.is_empty(),
     {
@@ -88,6 +91,7 @@ impl<T> ExclusiveGhostResource<T> {
             old(self).id() == other.id(),
         ensures
             *self == other,
+            self.is_full(),
     {
         let tracked mut other = other;
         tracked_swap(&mut self.r, &mut other.r);
@@ -201,29 +205,34 @@ impl<T> ExclusiveGhostStorage<T> {
         ExclusiveGhost(r)
     }
 
+    pub proof fn is_exclusive(tracked &mut self, tracked other: &ExclusiveGhost<T>)
+        ensures
+            self.is_full() ==> self.id() != other.id(),
+            *old(self) == *self,
+    {
+        use_type_invariant(other);
+        self.0.is_exclusive(&other.0);
+    }
+
     pub proof fn join(tracked &mut self, tracked other: ExclusiveGhost<T>)
         requires
+            old(self).is_empty(),
             old(self).id() == other.id(),
         ensures
-            old(self).is_empty() ==> {
-                &&& self.id() == old(self).id()
-                &&& self.view() == other.view()
-                &&& self.is_full()
-            },
-            old(self).is_full() ==> false,
+            self.id() == old(self).id(),
+            self.view() == other.view(),
+            self.is_full(),
     {
         use_type_invariant(&other);
-        if self.is_full() {
-            self.0.is_exclusive(&other.0);
-        } else {
-            self.validate();
-            self.0.join(other.0);
-        }
+        self.validate();
+        self.0.join(other.0);
     }
 
     pub proof fn validate(tracked &self)
         ensures
             self.is_empty() || self.is_full(),
+            self.is_empty() <==> !self.is_full(),
+            self.is_full() <==> !self.is_empty(),
     {
         self.0.validate();
     }
