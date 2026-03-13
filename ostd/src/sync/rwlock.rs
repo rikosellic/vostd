@@ -323,7 +323,6 @@ impl<T, G> RwLock<T, G> {
 impl<T, G> RwLock<T, G> {
     /// Creates a new spin-based read-write lock with an initial value.
     #[verus_verify]
-    #[verifier::external_body]
     pub const fn new(val: T) -> Self {
         let (val, Tracked(perm)) = PCell::new(val);
 
@@ -521,7 +520,6 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> RwLock<T, G> {
     ///
     /// This function will never spin-wait and will return immediately.
     #[verus_spec]
-    #[verifier::external_body]
     pub fn try_upread(&self) -> Option<RwLockUpgradeableGuard<T, G>> {
         proof_decl!{
             let tracked mut perm: Option<RwFrac<T>> = None;
