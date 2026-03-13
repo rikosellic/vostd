@@ -1,4 +1,3 @@
-use crate::sum::*;
 use vstd::pcm::Loc;
 use vstd::prelude::*;
 use vstd::tokens::frac::{Empty, Frac, FracGhost};
@@ -180,10 +179,6 @@ impl<T, const TOTAL: u64> FracGhostStorage<T, TOTAL> {
 
 pub type TokenStorage<const TOTAL: u64> = FracGhostStorage<(), TOTAL>;
 
-pub type UniqueTokenStorage = TokenStorage<1>;
-
 pub type Token<const TOTAL: u64> = FracGhost<(), TOTAL>;
-
-pub type UniqueToken = Token<1u64>;
 
 } // verus!

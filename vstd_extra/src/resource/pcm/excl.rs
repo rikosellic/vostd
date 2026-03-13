@@ -2,7 +2,7 @@
 //!
 //! For Iris definition, see:
 //! <https://gitlab.mpi-sws.org/iris/iris/-/blob/master/iris/algebra/excl.v>
-use vstd::pcm::PCM;
+use vstd::pcm::{conjunct_shared, PCM};
 use vstd::prelude::*;
 
 verus! {
@@ -11,7 +11,7 @@ verus! {
 ///
 /// In modern Iris, it uses CMRA instead of PCM, which uses a core for every element instead of a unit element.
 /// Here we add a unit element to stick to the PCM definition.
-pub tracked enum ExclR<A> {
+pub ghost enum ExclR<A> {
     Unit,
     /// Exclusive ownership of a value.
     Excl(A),
@@ -50,6 +50,19 @@ impl<A> PCM for ExclR<A> {
     }
 
     proof fn unit_valid() {
+    }
+}
+
+impl<A> ExclR<A> {
+    pub open spec fn value(self) -> A {
+        match self {
+            ExclR::Excl(x) => x,
+            _ => arbitrary(),
+        }
+    }
+
+    pub open spec fn new(value: A) -> ExclR<A> {
+        ExclR::Excl(value)
     }
 }
 
