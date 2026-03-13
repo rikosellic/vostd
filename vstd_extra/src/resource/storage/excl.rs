@@ -33,11 +33,11 @@ impl<T> ExclusiveGhostResource<T> {
         self.r.value()
     }
 
-    pub closed spec fn is_empty(self) -> bool {
+    pub open spec fn is_empty(self) -> bool {
         self.pcm() is Unit
     }
 
-    pub closed spec fn is_full(self) -> bool {
+    pub open spec fn is_full(self) -> bool {
         self.pcm() is Excl
     }
 
@@ -120,7 +120,7 @@ impl<T> ExclusiveGhost<T> {
         self.0.value()
     }
 
-    pub closed spec fn view(self) -> T {
+    pub open spec fn view(self) -> T {
         self.value()
     }
 
@@ -168,7 +168,7 @@ impl<T> ExclusiveGhostStorage<T> {
         self.0.value()
     }
 
-    pub closed spec fn view(self) -> T {
+    pub open spec fn view(self) -> T {
         self.value()
     }
 
