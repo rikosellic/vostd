@@ -4,7 +4,6 @@ use vstd::cell::{self, pcell::*};
 use vstd::prelude::*;
 use vstd_extra::prelude::*;
 
-use alloc::sync::Arc;
 use core::{
     cell::UnsafeCell,
     fmt,
@@ -340,11 +339,24 @@ impl<T, G: SpinGuardian> SpinLock<T, G> {
         0
     }
 
-    /*
+    #[verus_spec(
+        with
+            Tracked(perm): Tracked<PointsTo<T>>,
+        requires
+            perm.id() == self.inner.val.id(),
+    )]
     fn release_lock(&self) {
-        self.inner.lock.store(false, Ordering::Release);
+        proof!{
+            use_type_invariant(self);
+        }
+        //self.inner.lock.store(false, Ordering::Release);
+        atomic_with_ghost!{
+            self.inner.lock => store(false);
+            ghost cell_perm => {
+                cell_perm = Some(perm);
+            }
+        }
     }
-    */
 }
 }
 
