@@ -177,6 +177,13 @@ pub struct Waiter {
 impl !Send for Waiter {}
 impl !Sync for Waiter {}
 
+impl Waiter {
+    /// Checks if the input waker is the associated waker of the current waiter.
+    pub closed spec fn rel_waker(self, waker: Arc<Waker>) -> bool {
+        self.waker == waker
+    }
+}
+
 /// A waker that can wake up the associated [`Waiter`].
 ///
 /// A waker can be created by calling [`Waiter::new_pair`]. This method creates an `Arc<Waker>` that can
