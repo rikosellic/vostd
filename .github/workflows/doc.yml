@@ -32,8 +32,42 @@ jobs:
           sudo apt update -qq
           sudo apt install -y build-essential unzip pkg-config libssl-dev llvm
 
-      - name: Run dv bootstrap
-        run: cargo dv bootstrap
+      - name: Get Verus commit
+        id: verus
+        run: |
+          VERUS_COMMIT=$(git ls-remote https://github.com/asterinas/verus HEAD | cut -f1)
+          echo "VERUS_COMMIT=$VERUS_COMMIT" >> "$GITHUB_ENV"
+          echo "Using Verus commit: $VERUS_COMMIT"
+
+      - name: Cache Verus
+        id: cache-verus
+        uses: actions/cache@v4
+        with:
+          path: tools/verus
+          key: ${{ runner.os }}-verus-${{ env.VERUS_COMMIT }}
+
+      - name: Cache verusfmt
+        id: cache-verusfmt
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/verusfmt
+          key: ${{ runner.os }}-verusfmt-${{ env.VERUS_COMMIT }}
+
+      - name: Bootstrap Verus (if needed)
+        run: |
+          if [ "${{ steps.cache-verus.outputs.cache-hit }}" = "true" ]; then
+            echo "Using cached Verus"
+          else
+            echo "Cache miss, bootstrapping Verus..."
+            rm -rf tools/verus
+            cargo dv bootstrap
+          fi
+
+          if ! command -v verusfmt >/dev/null 2>&1; then
+            echo "verusfmt not found, installing via cargo dv bootstrap..."
+            cargo dv bootstrap
+          fi
+          verusfmt --version
 
       - name: Run verification
         run: make
