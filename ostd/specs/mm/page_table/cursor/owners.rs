@@ -1,24 +1,30 @@
+use vstd::arithmetic::power2::pow2;
 use vstd::prelude::*;
 
 use vstd::seq_lib::*;
 
-use vstd_extra::arithmetic::{lemma_nat_align_down_monotone, lemma_nat_align_down_within_block};
+use vstd_extra::arithmetic::{
+    lemma_nat_align_down_monotone, lemma_nat_align_down_sound, lemma_nat_align_down_within_block,
+    lemma_nat_align_up_sound,
+};
 use vstd_extra::drop_tracking::*;
 use vstd_extra::ghost_tree::*;
 use vstd_extra::ownership::*;
 
 use crate::mm::page_table::*;
-use crate::specs::mm::page_table::cursor::page_size_lemmas::{axiom_page_size_divides, axiom_page_size_ge_page_size};
+use crate::specs::mm::page_table::cursor::page_size_lemmas::{
+    lemma_page_size_divides, lemma_page_size_ge_page_size,
+};
 
 use core::marker::PhantomData;
 use core::ops::Range;
 
+use crate::mm::frame::meta::mapping::frame_to_index;
 use crate::mm::page_prop::PageProperty;
-use crate::mm::{Paddr, PagingConstsTrait, PagingLevel, Vaddr};
+use crate::mm::{nr_subpage_per_huge, Paddr, PagingConstsTrait, PagingLevel, Vaddr};
 use crate::specs::arch::mm::MAX_USERSPACE_VADDR;
 use crate::specs::arch::mm::{NR_ENTRIES, NR_LEVELS, PAGE_SIZE};
 use crate::specs::arch::paging_consts::PagingConsts;
-use crate::mm::frame::meta::mapping::frame_to_index;
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::page_table::node::GuardPerm;
 use crate::specs::mm::page_table::owners::*;
@@ -248,7 +254,7 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
 
     pub open spec fn inv_children(self) -> bool {
         self.children.all(
-            |child: Option<OwnerSubtree<C>>| 
+            |child: Option<OwnerSubtree<C>>|
             child is Some ==> child.unwrap().inv()
         )
     }
@@ -1647,7 +1653,77 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 self.cur_entry_owner().frame.unwrap().size,
                 self.cur_entry_owner().frame.unwrap().prop),
     {
-        admit()
+        self.view_preserves_inv();
+        self.cur_subtree_inv();
+        self.inv_continuation((self.level - 1) as int);
+
+        let cont = self.continuations[self.level - 1];
+        let cur_subtree = self.cur_subtree();
+        let path = cur_subtree.value.path;
+        let pa = self.cur_entry_owner().frame.unwrap().mapped_pa;
+        let size = self.cur_entry_owner().frame.unwrap().size;
+        let prop = self.cur_entry_owner().frame.unwrap().prop;
+        let m = Mapping {
+            va_range: Range {
+                start: vaddr(path),
+                end: (vaddr(path) + size) as Vaddr,
+            },
+            pa_range: Range {
+                start: pa,
+                end: (pa + size) as Paddr,
+            },
+            page_size: size,
+            property: prop,
+        };
+
+        lemma_page_size_ge_page_size(self.level as PagingLevel);
+
+        assert forall|i: int| 0 <= i < path.len() implies #[trigger] path.index(i)
+            == self.va.index[NR_LEVELS - 1 - i] by {
+            if self.level == 4 {
+                cont.path().push_tail_property_index(cont.idx as usize);
+            } else if self.level == 3 {
+                self.cursor_path_nesting(3, 2);
+                cont.path().push_tail_property_index(cont.idx as usize);
+                cont.path().push_tail_property_len(cont.idx as usize);
+            } else if self.level == 2 {
+                self.cursor_path_nesting(3, 1);
+                self.cursor_path_nesting(2, 1);
+                cont.path().push_tail_property_index(cont.idx as usize);
+                cont.path().push_tail_property_len(cont.idx as usize);
+            } else {
+                self.cursor_path_nesting(3, 0);
+                self.cursor_path_nesting(2, 0);
+                self.cursor_path_nesting(1, 0);
+                cont.path().push_tail_property_index(cont.idx as usize);
+                cont.path().push_tail_property_len(cont.idx as usize);
+            }
+        };
+        self.va.path_matches_vaddr(path);
+        let aligned = self.va.align_down(self.level as int);
+        self.va.align_down_shape(self.level as int);
+        aligned.to_vaddr_is_compute_vaddr();
+        self.va.align_down_concrete(self.level as int);
+        aligned.reflect_prop(
+            nat_align_down(
+                self.va.to_vaddr() as nat,
+                size as nat,
+            ) as Vaddr,
+        );
+        lemma_nat_align_down_sound(
+            self.va.to_vaddr() as nat,
+            size as nat,
+        );
+        assert(m.inv());
+
+        let filtered = self@.mappings.filter(
+            |m2: Mapping| m2.va_range.start <= self@.cur_va < m2.va_range.end);
+        assert(filtered.contains(m));
+        vstd::set::axiom_set_contains_len(filtered, m);
+
+        let q = self@.query_mapping();
+        if q != m {
+        }
     }
 
     pub open spec fn relate_region(self, regions: MetaRegionOwners) -> bool
@@ -1998,9 +2074,14 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let ps_gl1 = page_size_spec((gl + 1) as PagingLevel) as nat;
         let pv = self.prefix.to_vaddr() as nat;
         let cv = self.va.to_vaddr() as nat;
+        lemma_page_size_ge_page_size(gl as PagingLevel);
+        lemma_page_size_ge_page_size((gl + 1) as PagingLevel);
+        lemma_nat_align_down_sound(pv, ps_gl);
+        lemma_nat_align_up_sound(pv, ps_gl);
+        lemma_nat_align_down_sound(cv, ps_gl1);
 
         // page_size(gl) divides page_size(gl+1)
-        axiom_page_size_divides(gl as PagingLevel, (gl + 1) as PagingLevel);
+        lemma_page_size_divides(gl as PagingLevel, (gl + 1) as PagingLevel);
         assert(ps_gl1 % ps_gl == 0);
 
         // Connect abstract align_down/align_up to concrete nat_align_down/nat_align_up
@@ -2027,10 +2108,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 nat_align_down(pv, ps_gl1) as Vaddr);
             // node_start == nat_align_down(cv, ps_gl1) == nat_align_down(pv, ps_gl1)
 
-            // page_size values are positive (>= PAGE_SIZE > 0)
-            axiom_page_size_ge_page_size(gl as PagingLevel);
-            axiom_page_size_ge_page_size((gl + 1) as PagingLevel);
-
             // Monotonicity: coarser alignment <= finer alignment = lr_start
             lemma_nat_align_down_monotone(pv, ps_gl, ps_gl1);
 
@@ -2041,7 +2118,24 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             // => va < locked_range().end <= node_start + page_size(gl+1)
         } else {
             // guard_level == NR_LEVELS: ps_gl1 covers the entire VA space.
-            admit();
+            crate::specs::arch::paging_consts::lemma_nr_subpage_per_huge_eq_nr_entries();
+            vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
+            vstd::arithmetic::power2::lemma2_to64();
+            vstd::arithmetic::power2::lemma2_to64_rest();
+            assert(page_size_spec(5) == pow2(48nat) as usize) by {
+                vstd::arithmetic::power2::lemma_pow2_adds(12nat, 36nat);
+            };
+            self.va.to_vaddr_bounded();
+            self.va.to_vaddr_indices_gap_bound(0);
+            assert(node_start == 0) by {
+                if nat_align_down(cv, ps_gl1) != 0 {
+                    vstd::arithmetic::div_mod::lemma_small_mod(
+                        nat_align_down(cv, ps_gl1),
+                        ps_gl1,
+                    );
+                }
+            };
+            self.prefix.to_vaddr_indices_gap_bound(0);
         }
     }
 
