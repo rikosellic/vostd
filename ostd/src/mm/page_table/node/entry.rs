@@ -443,6 +443,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
                 &&& owner.tree_predicate_map(owner.value.path,
                     CursorOwner::<'rcu, C>::node_unlocked_except(*guards, owner.value.node.unwrap().meta_perm.addr()))
                 &&& owner.tree_predicate_map(owner.value.path, PageTableOwner::<C>::relate_region_pred(*regions))
+                &&& owner.tree_predicate_map(owner.value.path, PageTableOwner::<C>::path_tracked_pred(*regions))
+                &&& PageTableOwner(*owner).view_rec(owner.value.path) =~= set![]
                 // All children of the newly allocated node are absent (empty PT node).
                 &&& forall|i: int| 0 <= i < NR_ENTRIES ==>
                     #[trigger] owner.children[i] is Some && owner.children[i].unwrap().value.is_absent()
@@ -830,6 +832,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
 
             proof {
                 new_owner.value.node = Some(new_owner_node);
+                new_owner_child.value.in_scope = false;
+                child_owner.in_scope = false;
                 OwnerSubtree::set_value_property(new_owner_child, child_owner);
                 new_owner_child.value = child_owner;
                 new_owner.children.tracked_insert(i as int, Some(new_owner_child));
