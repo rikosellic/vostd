@@ -398,6 +398,8 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
         requires
             old(regions).inv(),
             old(regions).slot_owners[self.index()].raw_count <= 1,
+            old(regions).slot_owners[self.index()].inner_perms.ref_count.value()
+                != crate::mm::frame::meta::REF_COUNT_UNUSED,
             old(regions).slot_owners[self.index()].self_addr == self.ptr.addr(),
             perm.points_to.pptr() == self.ptr,
             perm.points_to.value().wf(old(regions).slot_owners[self.index()]),
@@ -427,6 +429,9 @@ impl<'a, M: AnyFrameMeta> Frame<M> {
             forall |k: usize| old(regions).slots.contains_key(k) ==> #[trigger] final(regions).slots.contains_key(k),
             forall |k: usize| old(regions).slots.contains_key(k) && k != self.index()
                 ==> old(regions).slots[k] == #[trigger] final(regions).slots[k],
+            // No new keys are added except possibly self.index().
+            forall |k: usize| k != self.index() ==>
+                (#[trigger] final(regions).slots.contains_key(k) ==> old(regions).slots.contains_key(k)),
     )]
     pub fn borrow(&self) -> FrameRef<'a, M> {
         assert(regions.slot_owners.contains_key(self.index()));

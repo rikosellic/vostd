@@ -169,7 +169,7 @@ impl<'a> VmSpace<'a> {
             let tracked mut kernel_owner_opt: Option<&PageTableOwner<KernelPtConfig>> = None;
         }
         let kpt = crate::mm::kspace::kvirt_area::get_kernel_page_table(
-            Tracked(&mut kernel_owner_opt), Tracked(regions),
+            Tracked(&mut kernel_owner_opt), Tracked(regions), Tracked(guards_k),
         );
         proof_decl! {
             let tracked kernel_owner = kernel_owner_opt.tracked_take();
@@ -1427,6 +1427,10 @@ impl RCClone for MappedItem {
 unsafe impl PageTableConfig for UserPtConfig {
     open spec fn TOP_LEVEL_INDEX_RANGE_spec() -> Range<usize> {
         0..256
+    }
+
+    open spec fn VADDR_RANGE_spec() -> Range<Vaddr> {
+        0..MAX_USERSPACE_VADDR
     }
 
     open spec fn TOP_LEVEL_CAN_UNMAP_spec() -> (b: bool) {
