@@ -20,7 +20,7 @@ verus! {
 #[verifier(reject_recursive_types(ActionInput))]
 #[verifier(reject_recursive_types(Output))]
 #[verifier(reject_recursive_types(Step))]
-pub struct StateMachine<State, Input, ActionInput, Output, Step> {
+pub ghost struct StateMachine<State, Input, ActionInput, Output, Step> {
     // Check if it is the initial internal state.
     pub init: spec_fn(State) -> bool,
     // The set of actions the state machine can take.
@@ -86,7 +86,7 @@ impl<State, Input, ActionInput, Output, Step> StateMachine<
 // and there is no need for `step_to_action` or `action_input`.
 #[verifier(reject_recursive_types(State))]
 #[verifier(reject_recursive_types(MessageOps))]
-pub struct NetworkStateMachine<State, MessageOps> {
+pub ghost struct NetworkStateMachine<State, MessageOps> {
     // Check if it is the initial internal state.
     pub init: spec_fn(State) -> bool,
     // The deliver action that (1) sends zero or one message to a host and (2) takes any number of messages from a host.

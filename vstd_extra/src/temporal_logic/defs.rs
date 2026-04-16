@@ -6,7 +6,7 @@ use vstd::prelude::*;
 verus! {
 
 #[verifier::ext_equal]
-pub struct Execution<T> {
+pub ghost struct Execution<T> {
     pub nat_to_state: spec_fn(nat) -> T,
 }
 
@@ -26,7 +26,7 @@ impl<T> Execution<T> {
 
 #[verifier::ext_equal]
 #[verifier(reject_recursive_types(T))]
-pub struct StatePred<T> {
+pub ghost struct StatePred<T> {
     pub pred: spec_fn(T) -> bool,
 }
 
@@ -77,7 +77,7 @@ impl<T> StatePred<T> {
 
 #[verifier::ext_equal]
 #[verifier(reject_recursive_types(T))]
-pub struct ActionPred<T> {
+pub ghost struct ActionPred<T> {
     pub pred: spec_fn(T, T) -> bool,
 }
 
@@ -97,7 +97,7 @@ impl<T> ActionPred<T> {
 
 #[verifier::ext_equal]
 #[verifier(reject_recursive_types(T))]
-pub struct TempPred<T> {
+pub ghost struct TempPred<T> {
     pub pred: spec_fn(Execution<T>) -> bool,
 }
 
