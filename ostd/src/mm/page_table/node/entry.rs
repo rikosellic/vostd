@@ -627,6 +627,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
     /// ## Postconditions
     /// - **Safety Invariants**: The node allocated in place of the split page satisfies the safety invariants.
     /// - **Safety**: All other nodes have their invariants preserved.
+    #[verifier::spinoff_prover]
     #[verus_spec(res =>
         with Tracked(owner) : Tracked<&mut OwnerSubtree<C>>,
             Tracked(parent_owner): Tracked<&mut NodeOwner<C>>,
@@ -956,6 +957,11 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'rcu, C> {
 
                 if (level - 1) > 1 {
                     assert(child_owner.frame_sub_pages_valid(*regions));
+                }
+
+                assert(child_owner.metaregion_sound(*regions)) by {
+                    assert(regions.slots.contains_key(small_idx));
+                    assert(regions.slot_owners[small_idx].paths_in_pt.contains(child_owner.path));
                 }
 
                 assert(Child::<C>::Frame(small_pa, (level - 1) as PagingLevel, prop)
