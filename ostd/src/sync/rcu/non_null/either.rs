@@ -82,19 +82,51 @@ unsafe impl<L: NonNullPtr, R: NonNullPtr> NonNullPtr for Either<L, R> {
                 .map_addr(|addr| addr | (1 << Self::ALIGN_BITS))
                 .cast(),
         } */
-        
+        proof_decl!{
+           let ghost align_bits = Self::ALIGN_BITS;
+           let ghost l_align_bits = L::ALIGN_BITS;
+           let ghost r_align_bits = R::ALIGN_BITS;
+           let ghost tag = 1usize << align_bits;
+        }
         proof! {
             L::lemma_align_bits_range();
             R::lemma_align_bits_range();
             Self::lemma_align_bits_range();
             assume(Self::ALIGN_BITS == min(L::ALIGN_BITS, R::ALIGN_BITS) - 1);
+            vstd::bits::lemma_usize_pow2_no_overflow(align_bits as nat);
+            vstd::bits::lemma_usize_pow2_no_overflow(l_align_bits as nat);
+            vstd::bits::lemma_usize_pow2_no_overflow(r_align_bits as nat);
+            vstd::bits::lemma_usize_shl_is_mul(1, align_bits as usize);
+            vstd::bits::lemma_usize_shl_is_mul(1, l_align_bits as usize);
+            vstd::bits::lemma_usize_shl_is_mul(1, r_align_bits as usize);
         }
         match self {
             Self::Left(left) => {
                 let (left, Tracked(perm)) = left.into_raw();
                 proof! {
-                    assert(left.cast::<Self::Target>().view_ptr_mut().addr() % (1usize << Self::ALIGN_BITS) == 0) by {admit();}
-                ;
+                    let left_addr = left.cast::<Self::Target>().view_ptr_mut().addr();
+                    let extra_bits: u32 = (l_align_bits - align_bits) as u32;
+                    let scale = 1usize << extra_bits;
+                    vstd::bits::lemma_usize_pow2_no_overflow(extra_bits as nat);
+                    vstd::bits::lemma_usize_shl_is_mul(1, extra_bits as usize);
+                    vstd::arithmetic::power2::lemma_pow2_adds(align_bits as nat, extra_bits as nat);
+                    assert(left_addr % tag == 0) by {
+                        let big = 1usize << l_align_bits;
+                        let q = left_addr / big;
+                        assert(big != 0) by (nonlinear_arith)
+                        requires
+                            big == tag * scale,
+                            tag > 0,
+                            scale > 0,
+                        ;
+                        vstd::arithmetic::div_mod::lemma_fundamental_div_mod(left_addr as int, big as int);
+                        assert(left_addr as int == (q as int * scale as int) * tag as int) by (nonlinear_arith)
+                        requires
+                            left_addr as int == q as int * big as int,
+                            big == tag * scale,
+                        ;
+                        vstd::arithmetic::div_mod::lemma_mod_multiples_basic(q as int * scale as int, tag as int);
+                    };
                 }
                 (left.cast() , Tracked(EitherPointsTo { perm: Sum::Left(perm) }))
             },
@@ -104,13 +136,9 @@ unsafe impl<L: NonNullPtr, R: NonNullPtr> NonNullPtr for Either<L, R> {
                     ensures ret == addr | (1usize << Self::ALIGN_BITS)
                     {addr | (1usize << Self::ALIGN_BITS)});
                 proof! {
-                    let align_bits = Self::ALIGN_BITS;
-                    let r_align_bits = R::ALIGN_BITS;
-                    let tag = 1usize << align_bits;
                     let addr = right.as_ptr().addr();
                     let tagged_addr = right_raw.addr();
-                    assert((tagged_addr & !tag == addr) && (tagged_addr != 0) 
-                    ) by (bit_vector)
+                    assert(tagged_addr & !tag == addr) by (bit_vector)
                     requires
                         tagged_addr == addr | tag,
                         tag == 1usize << align_bits,
@@ -119,7 +147,39 @@ unsafe impl<L: NonNullPtr, R: NonNullPtr> NonNullPtr for Either<L, R> {
                         addr % (1usize << r_align_bits) == 0,
                         addr != 0,
                     ;
-                    assert(tagged_addr % (1usize << align_bits) == 0) by {admit();};
+                    assert(tagged_addr != 0) by (bit_vector)
+                    requires
+                        tagged_addr == addr | tag,
+                        addr != 0,
+                    ;
+                    let extra_bits: u32 = (r_align_bits - align_bits) as u32;
+                    let scale = 1usize << extra_bits;
+                    vstd::bits::lemma_usize_pow2_no_overflow(extra_bits as nat);
+                    vstd::bits::lemma_usize_shl_is_mul(1, extra_bits as usize);
+                    vstd::arithmetic::power2::lemma_pow2_adds(align_bits as nat, extra_bits as nat);
+                    assert(tagged_addr == addr + tag) by (bit_vector)
+                    requires
+                        tagged_addr == addr | tag,
+                        tag == 1usize << align_bits,
+                        1 <= r_align_bits < usize::BITS,
+                        align_bits < r_align_bits,
+                        addr % (1usize << r_align_bits) == 0,
+                        addr != 0,
+                    ;
+                    assert(addr % tag == 0) by {
+                        let big = 1usize << r_align_bits;
+                        let q = addr / big;
+                        vstd::arithmetic::div_mod::lemma_fundamental_div_mod(addr as int, big as int);
+                        assert(addr as int == (q as int * scale as int) * tag as int) by (nonlinear_arith)
+                        requires
+                            addr as int == q as int * big as int,
+                            big == tag * scale,
+                        ;
+                        vstd::arithmetic::div_mod::lemma_mod_multiples_basic(q as int * scale as int, tag as int);
+                    }
+                    assert(tagged_addr % (1usize << align_bits) == 0) by {
+                        vstd::arithmetic::div_mod::lemma_mod_add_multiples_vanish(addr as int, tag as int);
+                    }
                 }
                 (
                     unsafe { NonNull::new_unchecked(right_raw) }.cast(),
