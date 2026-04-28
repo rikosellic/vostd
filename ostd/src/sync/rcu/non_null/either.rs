@@ -139,12 +139,12 @@ unsafe impl<L: NonNullPtr, R: NonNullPtr> NonNullPtr for Either<L, R> {
                 .map_addr(|addr| addr | (1 << Self::ALIGN_BITS))
                 .cast(), */
                 let (right, Tracked(perm)) = right.into_raw();
-                let right_raw = right.as_ptr().map_addr(|addr| -> (ret: usize) 
-                    ensures ret == addr | (1usize << Self::ALIGN_BITS)
-                    {addr | (1usize << Self::ALIGN_BITS)});
+                let right_tagged = right.map_addr_v(|addr: NonZeroUsize| -> (ret: NonZeroUsize) 
+                    ensures ret@ == addr@ | (1usize << Self::ALIGN_BITS)
+                    {unsafe { NonZeroUsize::new_unchecked(addr.get() | (1usize << Self::ALIGN_BITS)) }});
                 proof! {
-                    let addr = right.as_ptr().addr();
-                    let tagged_addr = right_raw.addr();
+                    let addr = right.addr_spec()@;
+                    let tagged_addr = right_tagged.addr_spec()@;
                     assert(tagged_addr & tag == tag) by (bit_vector)
                     requires
                         tagged_addr == addr | tag,
@@ -201,7 +201,7 @@ unsafe impl<L: NonNullPtr, R: NonNullPtr> NonNullPtr for Either<L, R> {
                     }
                 }
                 (
-                    unsafe { NonNull::new_unchecked(right_raw) }.cast(),
+                    right_tagged.cast(),
                     Tracked(EitherPointsTo { perm: Sum::Right(perm) }),
                 )
             },
@@ -221,7 +221,6 @@ unsafe impl<L: NonNullPtr, R: NonNullPtr> NonNullPtr for Either<L, R> {
         }
         proof! {
             let ghost ptr_addr = ptr.view_ptr_mut()@.addr;
-            ptr.lemma_addr_is_nonnull();
             assert(tag > 0) by (bit_vector)
             requires
                 tag == 1usize << align_bits,
@@ -340,24 +339,21 @@ const fn min(a: u32, b: u32) -> u32 {
 /// non-null pointer.
 #[verus_spec(ret =>
     requires
-        (ptr.view_ptr_mut()@.addr & bits) < ptr.view_ptr_mut()@.addr,
-        (ptr.view_ptr_mut()@.addr & !bits) != 0,
+        (ptr.view_ptr_mut().addr() & bits) < ptr.view_ptr_mut().addr(),
+        (ptr.view_ptr_mut().addr() & !bits) != 0,
     ensures
-        ret.0 == (ptr.view_ptr_mut()@.addr & bits),
-        ret.1.view_ptr_mut() == ptr.view_ptr_mut().with_addr((ptr.view_ptr_mut()@.addr & !bits) as usize),
+        ret.0 == (ptr.view_ptr_mut().addr() & bits),
+        ret.1.view_ptr_mut() == ptr.view_ptr_mut().with_addr((ptr.view_ptr_mut().addr() & !bits) as usize),
 )]
 unsafe fn remove_bits<T>(ptr: NonNull<T>, bits: usize) -> (usize, NonNull<T>) {
     // use core::num::NonZeroUsize;
-    // let removed_bits = ptr.addr().get() & bits;
-    // let result_ptr = ptr.map_addr(|addr|
-    // // SAFETY: The safety is upheld by the caller.
-    // unsafe { NonZeroUsize::new_unchecked(addr.get() & !bits) });
-    // FIXME: Fix when Verus supports `NonZeroUsize`.
-    let raw = ptr.as_ptr();
-    let removed_bits = (raw as usize) & bits;
-    let raw_addr = raw.map_addr(|addr|->(ret:usize) ensures ret == addr & !bits { addr & !bits });
-    let result_ptr = unsafe { NonNull::new_unchecked(raw_addr) };
-
+    use vstd_extra::external::nonzero::NonZeroUsize;
+    let removed_bits = ptr.addr_v().get() & bits;
+    let result_ptr = ptr
+        .map_addr_v(|addr| -> (ret: NonZeroUsize) 
+        ensures ret@ == addr@ & !bits
+        // SAFETY: The safety is upheld by the caller.
+        {unsafe { NonZeroUsize::new_unchecked(addr.get() & !bits) }});
     (removed_bits, result_ptr)
 }
 

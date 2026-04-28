@@ -22,7 +22,6 @@
 //! wrapper signature, which lets verification run with full lifetime checking
 //! enabled.
 use core::cmp::Ordering;
-use core::num::NonZero;
 use vstd::prelude::*;
 use vstd::std_specs::cmp::*;
 
@@ -31,7 +30,7 @@ verus! {
 #[verifier::external_body]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NonZeroUsize {
-    pub inner: NonZero<usize>,
+    pub inner: core::num::NonZero<usize>,
 }
 
 impl View for NonZeroUsize {
@@ -87,9 +86,9 @@ impl NonZeroUsize {
         self.inner.get()
     }
 
-    axiom fn lemma_nonzero_neq_zero(self)
+    broadcast axiom fn lemma_nonzero_neq_zero(self)
         ensures
-            self.view() != 0,
+            #[trigger] self.view() != 0,
     ;
 }
 
@@ -144,6 +143,7 @@ impl OrdSpecImpl for NonZeroUsize {
 }
 
 pub broadcast group group_nonzero_axioms {
+    NonZeroUsize::lemma_nonzero_neq_zero,
     NonZeroUsize::axiom_nonzero_usize_from_usize_view_eq,
     NonZeroUsize::axiom_view_nonzero_usize_from_usize_eq,
 }

@@ -25,18 +25,22 @@ pub trait NonNullAdditionalFns<T: PointeeSized> {
     spec fn dangling_spec() -> NonNull<T>;
 
     /// Type invariant: the address of the pointer is non-null.
-    proof fn lemma_addr_is_nonnull(self)
+    broadcast proof fn lemma_addr_is_nonnull(self)
         ensures
-            self.view_ptr_mut()@.addr != 0,
+            (#[trigger] self.view_ptr_mut())@.addr != 0,
     ;
 
     spec fn addr_spec(self) -> NonZeroUsize;
 
-    /// A wrapper of `NonNull::addr` in `std`, here we use our own `NonZeroUsize`
-    fn addr(self) -> (ret: NonZeroUsize)
+    broadcast proof fn lemma_addr_view_eq_view_ptr_mut(self)
         ensures
-            ret == self.addr_spec(),
-            ret.view() == self.view_ptr_mut()@.addr,
+            (#[trigger] self.addr_spec()).view() == self.view_ptr_mut()@.addr,
+    ;
+
+    /// A wrapper of `NonNull::addr` in `std`, here we use our own `NonZeroUsize`
+    fn addr_v(self) -> NonZeroUsize
+        returns
+            self.addr_spec(),
     ;
 }
 
@@ -53,9 +57,11 @@ impl<T: PointeeSized> NonNullAdditionalFns<T> for NonNull<T> {
         NonZeroUsize::nonzero_usize_from_usize(self.view_ptr_mut()@.addr)
     }
 
+    axiom fn lemma_addr_view_eq_view_ptr_mut(self);
+
     #[verifier::external_body]
     #[verifier::when_used_as_spec(nonnull_addr_spec_wrapper)]
-    fn addr(self) -> (ret: NonZeroUsize) {
+    fn addr_v(self) -> NonZeroUsize {
         unimplemented!()
     }
 }
@@ -153,15 +159,20 @@ pub open spec fn nonnull_with_addr_spec_wrapper<T: PointeeSized>(
 pub trait NonNullAdditionalFnsMore<T>: NonNullAdditionalFns<T> where T: PointeeSized {
     spec fn with_addr_spec(self, addr: NonZeroUsize) -> NonNull<T>;
 
-    fn with_addr(self, addr: NonZeroUsize) -> (ret: NonNull<T>)
+    proof fn lemma_with_addr_properties(self, addr: NonZeroUsize)
         ensures
-            ret.view_ptr_mut()@.metadata == self.view_ptr_mut()@.metadata,
-            ret.view_ptr_mut()@.provenance == self.view_ptr_mut()@.provenance,
-            ret.view_ptr_mut()@.addr == addr.view(),
+            self.with_addr_spec(addr).view_ptr_mut()@.metadata == self.view_ptr_mut()@.metadata,
+            self.with_addr_spec(addr).view_ptr_mut()@.provenance == self.view_ptr_mut()@.provenance,
+            self.with_addr_spec(addr).view_ptr_mut()@.addr == addr.view(),
+    ;
+
+    fn with_addr_v(self, addr: NonZeroUsize) -> (ret: NonNull<T>)
+        returns
+            self.with_addr_spec(addr),
     ;
 
     /// A wrapper of `NonNull::map_addr` in `std`, here we use our own `NonZeroUsize`
-    fn map_addr<F: FnOnce(NonZeroUsize) -> NonZeroUsize>(self, f: F) -> (ret: NonNull<T>)
+    fn map_addr_v<F: FnOnce(NonZeroUsize) -> NonZeroUsize>(self, f: F) -> (ret: NonNull<T>)
         requires
             f.requires((self.addr_spec(),)),
         ensures
@@ -173,15 +184,17 @@ pub trait NonNullAdditionalFnsMore<T>: NonNullAdditionalFns<T> where T: PointeeS
 
 impl<T: PointeeSized> NonNullAdditionalFnsMore<T> for NonNull<T> {
     #[verifier::external_body]
-    fn map_addr<F: FnOnce(NonZeroUsize) -> NonZeroUsize>(self, f: F) -> (ret: NonNull<T>) {
+    fn map_addr_v<F: FnOnce(NonZeroUsize) -> NonZeroUsize>(self, f: F) -> (ret: NonNull<T>) {
         unimplemented!()
     }
 
     uninterp spec fn with_addr_spec(self, addr: NonZeroUsize) -> NonNull<T>;
 
+    axiom fn lemma_with_addr_properties(self, addr: NonZeroUsize);
+
     #[verifier::external_body]
     #[verifier::when_used_as_spec(nonnull_with_addr_spec_wrapper)]
-    fn with_addr(self, addr: NonZeroUsize) -> (ret: NonNull<T>) {
+    fn with_addr_v(self, addr: NonZeroUsize) -> (ret: NonNull<T>) {
         unimplemented!()
     }
 }
@@ -190,6 +203,8 @@ pub broadcast group group_nonull_axioms {
     axiom_nonnull_from_ptr_mut_spec_eq,
     axiom_cast_spec_eq,
     axiom_view_ptr_mut_eq,
+    NonNullAdditionalFns::lemma_addr_view_eq_view_ptr_mut,
+    NonNullAdditionalFns::lemma_addr_is_nonnull,
 }
 
 } // verus!
