@@ -149,6 +149,23 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             b == Self::TOP_LEVEL_CAN_UNMAP_spec(),
     ;
 
+    /// Upper bound on `locked_range().end as int` for cursors of this config.
+    ///
+    /// May be tighter than the structural `vaddr_range_bounds_spec().1 + 1`
+    /// when the actual sources of cursor ranges (e.g. the kvirt allocator
+    /// for `KernelPtConfig`) draw from a sub-window of the configured VA
+    /// range. `KernelPtConfig` overrides this to `FRAME_METADATA_BASE_VADDR`,
+    /// which the `kvirt_alloc_range_bounds` axiom enforces. This bound is
+    /// what allows the cursor's `move_forward` proof to discharge
+    /// `prefix.idx[NR_LEVELS - 1] + 1 < NR_ENTRIES` at the top-level
+    /// boundary — the structural bound only gives `<= NR_ENTRIES` for
+    /// configurations whose `TOP_LEVEL_INDEX_RANGE.end == NR_ENTRIES`.
+    ///
+    /// Default: `usize::MAX + 1` (no tightening over the structural bound).
+    open spec fn LOCKED_END_BOUND_spec() -> int {
+        0x1_0000_0000_0000_0000int
+    }
+
     /// The type of the page table entry.
     type E: PageTableEntryTrait;
 
@@ -225,6 +242,28 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             Self::item_from_raw_spec(paddr, level, prop),
     ;
 
+    /// Whether cloning this item bumps a slot's refcount. For ref-counted items
+    /// (e.g. `MappedItem::Tracked`), `true`; for items where clone is a no-op
+    /// (e.g. `MappedItem::Untracked` for kernel MMIO frames), `false`.
+    spec fn tracked(item: Self::Item) -> bool;
+
+    /// Per-config predicate that captures the structural well-formedness an item
+    /// reconstructed via `item_from_raw_spec` must satisfy. Typically: the
+    /// `Frame::inv()` of the tracked-frame component (if any).
+    ///
+    /// `KernelPtConfig` defines this as `match item { Tracked(f, _) => f.inv(),
+    /// Untracked => true }`. `UserPtConfig` defines it as `item.frame.inv()`.
+    spec fn item_well_formed(item: Self::Item) -> bool;
+
+    /// The item produced by `item_from_raw_spec` is structurally
+    /// well-formed (see `item_well_formed`).
+    proof fn item_from_raw_well_formed(pa: Paddr, level: PagingLevel, prop: PageProperty)
+        requires
+            crate::mm::frame::meta::has_safe_slot(pa),
+        ensures
+            Self::item_well_formed(Self::item_from_raw_spec(pa, level, prop)),
+    ;
+
     /// Proves that `clone_ensures` for `Self::Item` implies concrete per-field
     /// properties on `MetaRegionOwners`. Each `PageTableConfig` implementor proves
     /// this by unfolding its `MappedItem::clone_ensures` → `Frame::clone_ensures`.
@@ -246,26 +285,33 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             new_regions.slots =~= old_regions.slots,
             new_regions.slot_owners.dom() =~= old_regions.slot_owners.dom(),
         ensures
+            // Other slots always unchanged.
             forall|i: usize| i != frame_to_index(pa) ==>
                 (#[trigger] new_regions.slot_owners[i] == old_regions.slot_owners[i]),
-            new_regions.slot_owners[frame_to_index(pa)].inner_perms.ref_count.value()
-                == old_regions.slot_owners[frame_to_index(pa)].inner_perms.ref_count.value() + 1,
-            new_regions.slot_owners[frame_to_index(pa)].inner_perms.ref_count.id()
-                == old_regions.slot_owners[frame_to_index(pa)].inner_perms.ref_count.id(),
-            new_regions.slot_owners[frame_to_index(pa)].inner_perms.storage
-                == old_regions.slot_owners[frame_to_index(pa)].inner_perms.storage,
-            new_regions.slot_owners[frame_to_index(pa)].inner_perms.vtable_ptr
-                == old_regions.slot_owners[frame_to_index(pa)].inner_perms.vtable_ptr,
-            new_regions.slot_owners[frame_to_index(pa)].inner_perms.in_list
-                == old_regions.slot_owners[frame_to_index(pa)].inner_perms.in_list,
-            new_regions.slot_owners[frame_to_index(pa)].paths_in_pt
-                == old_regions.slot_owners[frame_to_index(pa)].paths_in_pt,
-            new_regions.slot_owners[frame_to_index(pa)].self_addr
-                == old_regions.slot_owners[frame_to_index(pa)].self_addr,
-            new_regions.slot_owners[frame_to_index(pa)].raw_count
-                == old_regions.slot_owners[frame_to_index(pa)].raw_count,
-            new_regions.slot_owners[frame_to_index(pa)].usage
-                == old_regions.slot_owners[frame_to_index(pa)].usage,
+            // The frame's slot: bumped if the item is ref-counted, otherwise unchanged.
+            Self::tracked(item) ==> {
+                &&& new_regions.slot_owners[frame_to_index(pa)].inner_perms.ref_count.value()
+                    == old_regions.slot_owners[frame_to_index(pa)].inner_perms.ref_count.value() + 1
+                &&& new_regions.slot_owners[frame_to_index(pa)].inner_perms.ref_count.id()
+                    == old_regions.slot_owners[frame_to_index(pa)].inner_perms.ref_count.id()
+                &&& new_regions.slot_owners[frame_to_index(pa)].inner_perms.storage
+                    == old_regions.slot_owners[frame_to_index(pa)].inner_perms.storage
+                &&& new_regions.slot_owners[frame_to_index(pa)].inner_perms.vtable_ptr
+                    == old_regions.slot_owners[frame_to_index(pa)].inner_perms.vtable_ptr
+                &&& new_regions.slot_owners[frame_to_index(pa)].inner_perms.in_list
+                    == old_regions.slot_owners[frame_to_index(pa)].inner_perms.in_list
+                &&& new_regions.slot_owners[frame_to_index(pa)].paths_in_pt
+                    == old_regions.slot_owners[frame_to_index(pa)].paths_in_pt
+                &&& new_regions.slot_owners[frame_to_index(pa)].self_addr
+                    == old_regions.slot_owners[frame_to_index(pa)].self_addr
+                &&& new_regions.slot_owners[frame_to_index(pa)].raw_count
+                    == old_regions.slot_owners[frame_to_index(pa)].raw_count
+                &&& new_regions.slot_owners[frame_to_index(pa)].usage
+                    == old_regions.slot_owners[frame_to_index(pa)].usage
+            },
+            !Self::tracked(item) ==>
+                new_regions.slot_owners[frame_to_index(pa)]
+                    == old_regions.slot_owners[frame_to_index(pa)],
     ;
 
     proof fn item_roundtrip(item: Self::Item, paddr: Paddr, level: PagingLevel, prop: PageProperty)
@@ -295,9 +341,12 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             crate::mm::frame::meta::has_safe_slot(pa),
             regions.slots.contains_key(frame_to_index(pa)),
             regions.slot_owners.contains_key(frame_to_index(pa)),
-            regions.slot_owners[frame_to_index(pa)].inner_perms.ref_count.value() > 0,
-            regions.slot_owners[frame_to_index(pa)].inner_perms.ref_count.value() + 1
-                < crate::specs::mm::frame::meta_owners::REF_COUNT_MAX,
+            Self::tracked(item) ==>
+                regions.slot_owners[frame_to_index(pa)].inner_perms.ref_count.value() > 0,
+            // `rc != UNUSED` is needed only for tracked frames (untracked clone is a no-op).
+            Self::tracked(item) ==>
+                regions.slot_owners[frame_to_index(pa)].inner_perms.ref_count.value()
+                    != crate::specs::mm::frame::meta_owners::REF_COUNT_UNUSED,
         ensures
             item.clone_requires(regions),
     ;
@@ -643,23 +692,85 @@ fn top_level_index_width<C: PageTableConfig>() -> usize {
     C::ADDRESS_WIDTH() - pte_index_bit_offset::<C>(C::NR_LEVELS())
 }
 
+/// Concrete positional start of the VA range: `idx_range.start * 2^offset`.
 #[verifier::external_body]
-fn pt_va_range_start<C: PageTableConfig>() -> Vaddr {
+fn pt_va_range_start<C: PageTableConfig>() -> (ret: Vaddr)
+    ensures
+        ret as int
+            == C::TOP_LEVEL_INDEX_RANGE_spec().start as int
+                * pow2(pte_index_bit_offset_spec::<C::C>(C::NR_LEVELS()) as nat) as int,
+{
     C::TOP_LEVEL_INDEX_RANGE().start << pte_index_bit_offset::<C>(C::NR_LEVELS())
 }
 
+/// Concrete positional end of the VA range (inclusive):
+/// `(idx_range.end * 2^offset) - 1`, with wrap semantics when
+/// `idx_range.end * 2^offset == 2^64` (e.g. kernel top-level with all
+/// entries mapped — `2^64 - 1 = usize::MAX`).
 #[verifier::external_body]
-fn pt_va_range_end<C: PageTableConfig>() -> Vaddr {
+fn pt_va_range_end<C: PageTableConfig>() -> (ret: Vaddr)
+    ensures
+        ret as int
+            == (C::TOP_LEVEL_INDEX_RANGE_spec().end as int
+                * pow2(pte_index_bit_offset_spec::<C::C>(C::NR_LEVELS()) as nat) as int
+                - 1)
+                    % 0x1_0000_0000_0000_0000int,
+{
     C::TOP_LEVEL_INDEX_RANGE().end.unbounded_shl(
         pte_index_bit_offset::<C>(C::NR_LEVELS()) as u32,
     ).wrapping_sub(1)  // Inclusive end.
-
 }
 
+/// Test whether bit `ADDRESS_WIDTH - 1` of `va` is set.
 #[verifier::external_body]
-fn sign_bit_of_va<C: PageTableConfig>(va: Vaddr) -> bool {
+fn sign_bit_of_va<C: PageTableConfig>(va: Vaddr) -> (ret: bool)
+    ensures
+        ret == ((va as int / pow2((C::ADDRESS_WIDTH() - 1) as nat) as int) % 2 == 1),
+{
     (va >> (C::ADDRESS_WIDTH() - 1)) & 1 != 0
 }
+
+/// Trait-level invariant the upstream enforces via `const` assertions in
+/// `vaddr_range`'s prologue. Captured here as an axiom so we can use it in
+/// proofs (Verus has no `const { ... }` form for trait constants).
+///
+/// `idx.start < 2^(ADDRESS_WIDTH - offset)` and `idx.end <= 2^(...)`
+/// together bound the positional VA at `pt_va_range_start` /
+/// `pt_va_range_end` by `2^ADDRESS_WIDTH`.
+pub axiom fn axiom_top_level_index_range_bounds<C: PageTableConfig>()
+    ensures
+        (C::TOP_LEVEL_INDEX_RANGE_spec().start as int)
+            < (pow2((C::ADDRESS_WIDTH() as int
+                - pte_index_bit_offset_spec::<C::C>(C::NR_LEVELS())) as nat) as int),
+        C::TOP_LEVEL_INDEX_RANGE_spec().end as int
+            <= pow2((C::ADDRESS_WIDTH() as int
+                - pte_index_bit_offset_spec::<C::C>(C::NR_LEVELS())) as nat) as int,
+        pte_index_bit_offset_spec::<C::C>(C::NR_LEVELS()) <= C::ADDRESS_WIDTH() as int,
+        pte_index_bit_offset_spec::<C::C>(C::NR_LEVELS()) >= 0,
+        // Non-empty index range: idx.start < idx.end (matches the upstream
+        // `const` assertion).
+        (C::TOP_LEVEL_INDEX_RANGE_spec().start as int)
+            < (C::TOP_LEVEL_INDEX_RANGE_spec().end as int),
+        // 64-bit hardware bound (Rust `usize` is 64 bits on supported targets).
+        C::ADDRESS_WIDTH() as int <= 64;
+
+/// Per-config relationship between `LEADING_BITS_spec` and the sign-ext
+/// branch of `vaddr_range`: a non-zero `LEADING_BITS` requires both
+/// `VA_SIGN_EXT` and that bit `ADDRESS_WIDTH - 1` of `pt_va_range_start`
+/// is set. Equivalently (contrapositive), if either of those fails, then
+/// `LEADING_BITS == 0`.
+///
+/// For `UserPtConfig` (`LB=0`) the conclusion is vacuous; for
+/// `KernelPtConfig` (`LB=0xffff`, `idx.start=256`, `off=39`,
+/// `ADDRESS_WIDTH=48`), `2^47 / 2^47 % 2 == 1` and `VA_SIGN_EXT == true`
+/// — so the implication holds.
+pub axiom fn axiom_leading_bits_only_when_high_half<C: PageTableConfig>()
+    ensures
+        C::LEADING_BITS_spec() != 0usize ==>
+            (C::VA_SIGN_EXT() &&
+                (((C::TOP_LEVEL_INDEX_RANGE_spec().start as int)
+                    * (pow2(pte_index_bit_offset_spec::<C::C>(C::NR_LEVELS()) as nat) as int))
+                    / (pow2((C::ADDRESS_WIDTH() - 1) as nat) as int)) % 2 == 1);
 
 #[verifier::inline]
 pub open spec fn pte_index_bit_offset_spec<C: PagingConstsTrait>(level: PagingLevel) -> int {
@@ -687,34 +798,97 @@ pub open spec fn is_valid_range_spec<C: PageTableConfig>(r: &Range<Vaddr>) -> bo
         || (va_range.start <= r.start && r.end > 0 && r.end - 1 <= va_range.end - 1)
 }
 
-#[verifier::external_body]
-fn vaddr_range<C: PageTableConfig>() -> (ret: Range<Vaddr>)
+/// Gets the managed virtual addresses range for the page table.
+///
+/// Returns a [`RangeInclusive`] because the end address, when the range
+/// reaches the top of the 64-bit address space (e.g. the canonical
+/// high-half kernel range ending at `usize::MAX`), would overflow the
+/// exclusive end of a [`Range<Vaddr>`].
+fn vaddr_range<C: PageTableConfig>() -> (ret: RangeInclusive<Vaddr>)
     ensures
-        ret == vaddr_range_spec::<C>(),
+        ret@.start == vaddr_range_bounds_spec::<C>().0,
+        ret@.end == vaddr_range_bounds_spec::<C>().1,
+        ret@.exhausted == false,
 {
-    /*    const {
-        assert!(C::TOP_LEVEL_INDEX_RANGE().start < C::TOP_LEVEL_INDEX_RANGE().end);
-        assert!(top_level_index_width::<C>() <= nr_pte_index_bits::<C>(),);
-        assert!(C::TOP_LEVEL_INDEX_RANGE().start < 1 << top_level_index_width::<C>());
-        assert!(C::TOP_LEVEL_INDEX_RANGE().end <= 1 << top_level_index_width::<C>());
-    };*/
     let mut start = pt_va_range_start::<C>();
     let mut end = pt_va_range_end::<C>();
 
-    /*    const {
-        assert!(
-            !C::VA_SIGN_EXT()
-                || sign_bit_of_va::<C>(pt_va_range_start::<C>())
-                    == sign_bit_of_va::<C>(pt_va_range_end::<C>()),
-            "The sign bit of both range endpoints must be the same if sign extension is enabled"
-        )
-    }*/
-
-    if C::VA_SIGN_EXT() && sign_bit_of_va::<C>(pt_va_range_start::<C>()) {
-        start |= !0 ^ ((1 << C::ADDRESS_WIDTH()) - 1);
-        end |= !0 ^ ((1 << C::ADDRESS_WIDTH()) - 1);
+    proof {
+        lemma_vaddr_range_bounds_spec_unfold::<C>();
+        axiom_top_level_index_range_bounds::<C>();
+        crate::specs::mm::page_table::vaddr_range_proofs::lemma_idx_times_pow2_bound::<C>(start, end);
     }
-    start..end + 1
+    let pt_start = pt_va_range_start::<C>();
+    let va_sign_ext = C::VA_SIGN_EXT();
+    let sign_bit_set = sign_bit_of_va::<C>(pt_start);
+    if va_sign_ext && sign_bit_set {
+        start = apply_sign_ext::<C>(start);
+        end = apply_sign_ext::<C>(end);
+    } else {
+        proof {
+            // The if-condition was false, so either va_sign_ext is false
+            // or sign_bit_set is false. The contrapositive of
+            // `axiom_leading_bits_only_when_high_half` gives LEADING_BITS == 0.
+            axiom_leading_bits_only_when_high_half::<C>();
+            assert(!va_sign_ext || !sign_bit_set);
+            // Bridge exec bool to spec form. `va_sign_ext == C::VA_SIGN_EXT()`
+            // by `when_used_as_spec`; `sign_bit_set == ((pt_start as int /
+            // 2^(aw-1)) % 2 == 1)` by `sign_bit_of_va`'s ensures.
+            assert(va_sign_ext == C::VA_SIGN_EXT());
+            let off = pte_index_bit_offset_spec::<C::C>(C::NR_LEVELS()) as nat;
+            let aw_m1 = (C::ADDRESS_WIDTH() - 1) as nat;
+            let i_start = C::TOP_LEVEL_INDEX_RANGE_spec().start as int;
+            let p_off = pow2(off) as int;
+            let p_aw_m1 = pow2(aw_m1) as int;
+            assert(pt_start as int == i_start * p_off);
+            assert(sign_bit_set == ((pt_start as int / p_aw_m1) % 2 == 1));
+            assert(sign_bit_set == ((i_start * p_off / p_aw_m1) % 2 == 1));
+            // Now invoke the axiom's contrapositive form explicitly.
+            if C::LEADING_BITS_spec() != 0usize {
+                assert(C::VA_SIGN_EXT()
+                    && ((i_start * p_off / p_aw_m1) % 2 == 1));
+                assert(va_sign_ext);
+                assert(sign_bit_set);
+                assert(false);
+            }
+            assert(C::LEADING_BITS_spec() == 0usize);
+        }
+    }
+    proof {
+        // Both branches now establish the equation
+        //   start as int == lb * 2^48 + idx.start * 2^off
+        //   end as int   == lb * 2^48 + idx.end * 2^off - 1
+        // matching the unfolded `vaddr_range_bounds_spec`.
+        assert(start as int == (C::LEADING_BITS_spec() as int) * 0x1_0000_0000_0000int
+            + (C::TOP_LEVEL_INDEX_RANGE_spec().start as int)
+                * (pow2(pte_index_bit_offset_spec::<C::C>(C::NR_LEVELS()) as nat) as int));
+        assert(end as int == (C::LEADING_BITS_spec() as int) * 0x1_0000_0000_0000int
+            + (C::TOP_LEVEL_INDEX_RANGE_spec().end as int)
+                * (pow2(pte_index_bit_offset_spec::<C::C>(C::NR_LEVELS()) as nat) as int)
+            - 1);
+    }
+    RangeInclusive::new(start, end)
+}
+
+/// Apply the sign-extension OR to a positional value.
+///
+/// For any value `va` in `[0, 2^ADDRESS_WIDTH)` with bit `ADDRESS_WIDTH - 1`
+/// set, the OR with `!0 ^ ((1 << ADDRESS_WIDTH) - 1)` is equivalent to
+/// adding `LEADING_BITS_spec() * 2^48`, because the mask's bits and `va`'s
+/// bits are disjoint.
+///
+/// The helper is `external_body` only so Verus doesn't need to verify the
+/// bit-level OR; the ensures states the arithmetic equivalent.
+#[verifier::external_body]
+fn apply_sign_ext<C: PageTableConfig>(va: Vaddr) -> (ret: Vaddr)
+    requires
+        (va as int) < pow2(C::ADDRESS_WIDTH() as nat) as int,
+    ensures
+        ret as int == va as int
+            + C::LEADING_BITS_spec() as int * 0x1_0000_0000_0000int,
+{
+    let sign_ext_mask = !0 ^ ((1usize << C::ADDRESS_WIDTH()) - 1);
+    va | sign_ext_mask
 }
 
 /// Checks if the given range is covered by the valid range of the page table.
@@ -724,7 +898,8 @@ fn is_valid_range<C: PageTableConfig>(r: &Range<Vaddr>) -> (ret: bool)
         ret == is_valid_range_spec::<C>(r),
 {
     let va_range = vaddr_range::<C>();
-    (r.start == 0 && r.end == 0) || (va_range.start <= r.start && r.end - 1 <= va_range.end)
+    (r.start == 0 && r.end == 0)
+        || (*va_range.start() <= r.start && r.end - 1 <= *va_range.end())
 }
 
 /// Sanity-check: for x86_64 kernel PT, `vaddr_range_spec` evaluates to the
@@ -769,6 +944,23 @@ pub closed spec fn vaddr_range_bounds_spec<C: PageTableConfig>() -> (Vaddr, Vadd
     let start = (base + (idx.start as int) * pow2(off)) as usize;
     let end_inclusive = (base + (idx.end as int) * pow2(off) - 1) as usize;
     (start, end_inclusive)
+}
+
+/// Reveal the body of `vaddr_range_bounds_spec` at a call site without
+/// making the function itself open (which causes z3-context pollution in
+/// cursor invariants).
+pub proof fn lemma_vaddr_range_bounds_spec_unfold<C: PageTableConfig>()
+    ensures
+        vaddr_range_bounds_spec::<C>() == {
+            let idx = C::TOP_LEVEL_INDEX_RANGE_spec();
+            let off = pte_index_bit_offset_spec::<C::C>(C::NR_LEVELS()) as nat;
+            let lb = C::LEADING_BITS_spec() as int;
+            let base = lb * 0x1_0000_0000_0000int;
+            let start = (base + (idx.start as int) * pow2(off)) as usize;
+            let end_inclusive = (base + (idx.end as int) * pow2(off) - 1) as usize;
+            (start, end_inclusive)
+        },
+{
 }
 
 /// Sanity-check: for x86_64 user PT, the bounds are
@@ -964,8 +1156,6 @@ impl PageTable<KernelPtConfig> {
                 = new_pt_owner.tracked_take();
             let tracked mut new_node_owner: NodeOwner<UserPtConfig>
                 = new_pt_owner_val.0.value.node.tracked_take();
-            let tracked mut root_guard_perm: GuardPerm<'static, KernelPtConfig>;
-            let tracked mut new_guard_perm_lock: GuardPerm<'static, UserPtConfig>;
             let tracked mut entry_owner: &EntryOwner<KernelPtConfig>;
         }
 
@@ -976,17 +1166,17 @@ impl PageTable<KernelPtConfig> {
             assert(kernel_owner.0.value.metaregion_sound(*regions));
         }
         let ghost regions_before_self_borrow: MetaRegionOwners = *regions;
-        let root_node = {
+        let mut root_node = {
             #[verus_spec(with Tracked(regions), Tracked(root_perm))]
             let root_ref = self.root.borrow();
-            #[verus_spec(with Tracked(root_owner), Tracked(guards_k) => Tracked(root_guard_perm))]
+            #[verus_spec(with Tracked(root_owner), Tracked(guards_k))]
             root_ref.lock(preempt_guard)
         };
         let ghost regions_after_kroot_borrow: MetaRegionOwners = *regions;
-        let new_node: vstd::simple_pptr::PPtr<PageTableGuard<'static, UserPtConfig>> = {
+        let mut new_node: PageTableGuard<'static, UserPtConfig> = {
             #[verus_spec(with Tracked(regions), Tracked(&new_node_owner.meta_perm))]
             let new_ref = new_root.borrow();
-            #[verus_spec(with Tracked(&new_node_owner), Tracked(guards_u) => Tracked(new_guard_perm_lock))]
+            #[verus_spec(with Tracked(&new_node_owner), Tracked(guards_u))]
             new_ref.lock(preempt_guard)
         };
         proof {
@@ -1109,17 +1299,12 @@ impl PageTable<KernelPtConfig> {
                 KernelPtConfig::TOP_LEVEL_INDEX_RANGE_spec().start <= i,
                 // Lock postcondition for the kernel root.
                 *root_owner == kernel_owner.0.value.node.unwrap(),
-                root_owner.relate_guard_perm(root_guard_perm),
-                root_node.addr() == root_guard_perm.addr(),
+                root_owner.relate_guard(root_node),
                 // Tree-wide soundness of the kernel page table.
                 kernel_owner.metaregion_sound(*regions),
-                // New node permission state: Init at loop top (take/put restores it).
-                new_guard_perm_lock.pptr() == new_node,
-                new_guard_perm_lock.is_init(),
-                // The PointsTo's value still satisfies the new node owner's invariants
-                // and addresses.
+                // The new node owner's invariants and guard relation.
                 new_node_owner.inv(),
-                new_node_owner.relate_guard_perm(new_guard_perm_lock),
+                new_node_owner.relate_guard(new_node),
             decreases KernelPtConfig::TOP_LEVEL_INDEX_RANGE_spec().end - i,
         {
             proof {
@@ -1152,11 +1337,8 @@ impl PageTable<KernelPtConfig> {
                 assert(child_subtree.inv());
                 assert(entry_owner.inv());
                 assert(!entry_owner.in_scope);
-                assert(root_owner.relate_guard_perm(root_guard_perm));
-                assert(root_guard_perm.addr() == root_node.addr());
-                // Derive entry_owner.metaregion_sound(*regions) by extracting it
-                // from kernel_owner.metaregion_sound (loop invariant) at the i-th
-                // child, then unfolding the tree predicate.
+                assert(root_owner.relate_guard(root_node));
+
                 kernel_owner.0.map_unroll_once(
                     kernel_owner.0.value.path,
                     PageTableOwner::<KernelPtConfig>::metaregion_sound_pred(*regions),
@@ -1167,10 +1349,10 @@ impl PageTable<KernelPtConfig> {
                 assert(entry_owner.metaregion_sound(*regions));
             }
 
-            #[verus_spec(with Tracked(root_owner), Tracked(entry_owner), Tracked(&root_guard_perm))]
-            let root_entry = PageTableGuard::entry(root_node, i);
+            #[verus_spec(with Tracked(root_owner), Tracked(entry_owner))]
+            let root_entry = root_node.entry(i);
             let ghost pre_to_ref_regions: MetaRegionOwners = *regions;
-            #[verus_spec(with Tracked(entry_owner), Tracked(root_owner), Tracked(regions), Tracked(&root_guard_perm))]
+            #[verus_spec(with Tracked(entry_owner), Tracked(root_owner), Tracked(regions))]
             let child = root_entry.to_ref();
 
             // Derive `child is PageTable` from entry_owner.is_node() (forced by the
@@ -1217,10 +1399,8 @@ impl PageTable<KernelPtConfig> {
             let pt_addr = pt.start_paddr();
             let pte = PageTableEntry::new_pt(pt_addr);
 
-            let mut new_guard = new_node.take(Tracked(&mut new_guard_perm_lock));
             #[verus_spec(with Tracked(&mut new_node_owner))]
-            new_guard.write_pte(i, pte);
-            new_node.put(Tracked(&mut new_guard_perm_lock), new_guard);
+            new_node.write_pte(i, pte);
 
             i = i + 1;
         }
@@ -1396,21 +1576,24 @@ impl<C: PageTableConfig> PageTable<C> {
     /// previous cursor is dropped.
     #[verus_spec(r =>
         with Tracked(owner): Tracked<PageTableOwner<C>>,
-            Tracked(guard_perm): Tracked<GuardPerm<'rcu, C>>,
+            Ghost(root_guard): Ghost<PageTableGuard<'rcu, C>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards<'rcu, C>>
         requires
+            // Per-config tightening; see `Cursor::new`.
+            va.end as int <= C::LOCKED_END_BOUND_spec(),
         ensures
             Cursor::<C, G>::cursor_new_success_conditions(va) ==> {
                 &&& r is Ok
-                &&& r.unwrap().0.inner.invariants(*r.unwrap().1, *final(regions), *final(guards))
+                &&& r.unwrap().0.0.invariants(*r.unwrap().1, *final(regions), *final(guards))
                 &&& r.unwrap().1.in_locked_range()
-                &&& r.unwrap().0.inner.level < r.unwrap().0.inner.guard_level
-                &&& r.unwrap().0.inner.guard_level == NR_LEVELS as PagingLevel
-                &&& r.unwrap().0.inner.va < r.unwrap().0.inner.barrier_va.end
-                &&& r.unwrap().0.inner.va == va.start
-                &&& r.unwrap().0.inner.barrier_va == *va
+                &&& r.unwrap().0.0.level < r.unwrap().0.0.guard_level
+                &&& r.unwrap().0.0.guard_level == NR_LEVELS as PagingLevel
+                &&& r.unwrap().0.0.va < r.unwrap().0.0.barrier_va.end
+                &&& r.unwrap().0.0.va == va.start
+                &&& r.unwrap().0.0.barrier_va == *va
             },
+            !Cursor::<C, G>::cursor_new_success_conditions(va) ==> r is Err,
             forall |item: C::Item| #![trigger CursorMut::<'rcu, C, G>::item_not_mapped(item, *old(regions))]
                 CursorMut::<'rcu, C, G>::item_not_mapped(item, *old(regions)) ==>
                 CursorMut::<'rcu, C, G>::item_not_mapped(item, *final(regions)),
@@ -1424,7 +1607,7 @@ impl<C: PageTableConfig> PageTable<C> {
         guard: &'rcu G,
         va: &Range<Vaddr>,
     ) -> Result<(CursorMut<'rcu, C, G>, Tracked<CursorOwner<'rcu, C>>), PageTableError> {
-        #[verus_spec(with Tracked(owner), Tracked(guard_perm), Tracked(regions), Tracked(guards))]
+        #[verus_spec(with Tracked(owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
         CursorMut::new(self, guard, va)
     }
 
@@ -1435,17 +1618,19 @@ impl<C: PageTableConfig> PageTable<C> {
     /// block or be overridden by the mapping of another cursor.
     #[verus_spec(r =>
         with Tracked(owner): Tracked<PageTableOwner<C>>,
-            Tracked(guard_perm): Tracked<GuardPerm<'rcu, C>>,
+            Ghost(root_guard): Ghost<PageTableGuard<'rcu, C>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards<'rcu, C>>
         requires
             owner.inv(),
+            // Per-config tightening; see `Cursor::new`.
+            va.end as int <= C::LOCKED_END_BOUND_spec(),
         ensures
             Cursor::<C, G>::cursor_new_success_conditions(va) ==> {
                 &&& r is Ok
                 &&& r.unwrap().0.invariants(*r.unwrap().1, *final(regions), *final(guards))
                 &&& r.unwrap().1.in_locked_range()
-                &&& r.unwrap().0.level < r.unwrap().0.guard_level
+                &&& r.unwrap().0.level == r.unwrap().0.guard_level
                 &&& r.unwrap().0.va < r.unwrap().0.barrier_va.end
                 &&& r.unwrap().0.va == va.start
                 &&& r.unwrap().0.barrier_va == *va
@@ -1475,7 +1660,7 @@ impl<C: PageTableConfig> PageTable<C> {
     )]
     pub fn cursor<'rcu, G: InAtomicMode>(&'rcu self, guard: &'rcu G, va: &Range<Vaddr>)
     -> Result<(Cursor<'rcu, C, G>, Tracked<CursorOwner<'rcu, C>>), PageTableError> {
-        #[verus_spec(with Tracked(owner), Tracked(guard_perm), Tracked(regions), Tracked(guards))]
+        #[verus_spec(with Tracked(owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
         Cursor::new(self, guard, va)
     }
     

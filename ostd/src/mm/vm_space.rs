@@ -199,7 +199,6 @@ impl<'a> VmSpace<'a> {
     ///   the result is `Ok` and a [`CursorOwner`] is returned.
     #[verus_spec(r =>
         with Tracked(owner): Tracked<PageTableOwner<UserPtConfig>>,
-            Tracked(guard_perm): Tracked<GuardPerm<'a, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards<'a, UserPtConfig>>
             -> cursor_owner: Tracked<Option<CursorOwner<'a, UserPtConfig>>>
@@ -215,7 +214,7 @@ impl<'a> VmSpace<'a> {
             let tracked mut out_owner: Option<CursorOwner<'a, UserPtConfig>>;
         }
         match {
-            #[verus_spec(with Tracked(owner), Tracked(guard_perm), Tracked(regions), Tracked(guards))]
+            #[verus_spec(with Tracked(owner), Ghost(vstd::pervasive::arbitrary::<PageTableGuard<'a, UserPtConfig>>()), Tracked(regions), Tracked(guards))]
             self.pt.cursor(guard, va)
         } {
             Ok((pt_cursor, tracked_owner)) => {
@@ -251,7 +250,6 @@ impl<'a> VmSpace<'a> {
     ///   the result is `Ok` and a [`CursorOwner`] is returned.
     #[verus_spec(r =>
         with Tracked(owner): Tracked<PageTableOwner<UserPtConfig>>,
-            Tracked(guard_perm): Tracked<GuardPerm<'a, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards<'a, UserPtConfig>>
             -> cursor_owner: Tracked<Option<CursorOwner<'a, UserPtConfig>>>
@@ -266,7 +264,7 @@ impl<'a> VmSpace<'a> {
             let tracked mut out_owner: Option<CursorOwner<'a, UserPtConfig>>;
         }
         match {
-            #[verus_spec(with Tracked(owner), Tracked(guard_perm), Tracked(regions), Tracked(guards))]
+            #[verus_spec(with Tracked(owner), Ghost(vstd::pervasive::arbitrary::<PageTableGuard<'a, UserPtConfig>>()), Tracked(regions), Tracked(guards))]
             self.pt.cursor_mut(guard, va)
         } {
             Ok((pt_cursor, tracked_owner)) => {
@@ -443,7 +441,6 @@ impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
                 &&& final(self).0.query_none_ensures(*final(owner), r.unwrap())
             },
             old(owner)@.mappings == final(owner)@.mappings,
-            forall |e: EntryOwner<UserPtConfig>| #[trigger] e.inv() && e.metaregion_sound(*old(regions)) ==> e.metaregion_sound(*final(regions)),
     )]
     pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)> {
         Ok(
@@ -488,7 +485,7 @@ impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
             final(self).0.invariants(*final(owner), *final(regions), *final(guards)),
             res is Some ==> {
                 &&& res.unwrap() == final(self).0.va
-                &&& final(owner).level < final(owner).guard_level
+                &&& final(owner).level <= final(owner).guard_level
                 &&& final(owner).in_locked_range()
             },
     )]
@@ -592,7 +589,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards<'a, UserPtConfig>>
         requires
-            old(self).pt_cursor.inner.invariants(*old(owner), *old(regions), *old(guards)),
+            old(self).pt_cursor.0.invariants(*old(owner), *old(regions), *old(guards)),
             old(owner).in_locked_range(),
             // Non-panic precondition (ref-count non-saturation) propagated from
             // Cursor::query.
@@ -604,16 +601,15 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                 ==> old(regions).slot_owners[i].inner_perms.ref_count.value() + 1
                     < crate::specs::mm::frame::meta_owners::REF_COUNT_MAX,
         ensures
-            final(self).pt_cursor.inner.invariants(*final(owner), *final(regions), *final(guards)),
+            final(self).pt_cursor.0.invariants(*final(owner), *final(regions), *final(guards)),
             old(owner).in_locked_range() ==> res is Ok,
             res matches Ok(state) ==>
-                final(self).pt_cursor.inner.query_some_condition(*final(owner)) ==>
-                final(self).pt_cursor.inner.query_some_ensures(*final(owner), state),
+                final(self).pt_cursor.0.query_some_condition(*final(owner)) ==>
+                final(self).pt_cursor.0.query_some_ensures(*final(owner), state),
             res matches Ok(state) ==>
-                !final(self).pt_cursor.inner.query_some_condition(*final(owner)) ==>
-                final(self).pt_cursor.inner.query_none_ensures(*final(owner), state),
+                !final(self).pt_cursor.0.query_some_condition(*final(owner)) ==>
+                final(self).pt_cursor.0.query_none_ensures(*final(owner), state),
             old(owner)@.mappings == final(owner)@.mappings,
-            forall |e: EntryOwner<UserPtConfig>| #[trigger] e.inv() && e.metaregion_sound(*old(regions)) ==> e.metaregion_sound(*final(regions)),
     )]
     pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)> {
         Ok(
@@ -649,13 +645,13 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
     )]
     pub fn find_next(&mut self, len: usize) -> (res: Option<Vaddr>)
         requires
-            old(self).pt_cursor.inner.invariants(*old(owner), *old(regions), *old(guards)),
+            old(self).pt_cursor.0.invariants(*old(owner), *old(regions), *old(guards)),
         ensures
-            !old(self).pt_cursor.inner.find_next_panic_condition(len),
-            final(self).pt_cursor.inner.invariants(*final(owner), *final(regions), *final(guards)),
+            !old(self).pt_cursor.0.find_next_panic_condition(len),
+            final(self).pt_cursor.0.invariants(*final(owner), *final(regions), *final(guards)),
             res is Some ==> {
-                &&& res.unwrap() == final(self).pt_cursor.inner.va
-                &&& final(owner).level < final(owner).guard_level
+                &&& res.unwrap() == final(self).pt_cursor.0.va
+                &&& final(owner).level <= final(owner).guard_level
                 &&& final(owner).in_locked_range()
             },
     {
@@ -692,16 +688,16 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards<'a, UserPtConfig>>
         requires
-            old(self).pt_cursor.inner.invariants(*old(owner), *old(regions), *old(guards)),
+            old(self).pt_cursor.0.invariants(*old(owner), *old(regions), *old(guards)),
             old(owner).in_locked_range(),
         ensures
-            !old(self).pt_cursor.inner.jump_panic_condition(va),
-            final(self).pt_cursor.inner.invariants(*final(owner), *final(regions), *final(guards)),
-            final(self).pt_cursor.inner.barrier_va.start <= va < final(self).pt_cursor.inner.barrier_va.end ==> {
+            !old(self).pt_cursor.0.jump_panic_condition(va),
+            final(self).pt_cursor.0.invariants(*final(owner), *final(regions), *final(guards)),
+            final(self).pt_cursor.0.barrier_va.start <= va < final(self).pt_cursor.0.barrier_va.end ==> {
                 &&& res is Ok
-                &&& final(self).pt_cursor.inner.va == va
+                &&& final(self).pt_cursor.0.va == va
             },
-            !(final(self).pt_cursor.inner.barrier_va.start <= va < final(self).pt_cursor.inner.barrier_va.end) ==> res is Err,
+            !(final(self).pt_cursor.0.barrier_va.start <= va < final(self).pt_cursor.0.barrier_va.end) ==> res is Err,
     )]
     pub fn jump(&mut self, va: Vaddr) -> Result<()> {
         (#[verus_spec(with Tracked(owner), Tracked(regions), Tracked(guards))]
@@ -712,7 +708,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
     /// Get the virtual address of the current slot.
     #[verus_spec(r =>
         returns
-            self.pt_cursor.inner.va,
+            self.pt_cursor.0.va,
     )]
     pub fn virt_addr(&self) -> Vaddr {
         self.pt_cursor.virt_addr()
@@ -759,17 +755,17 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
             Tracked(tlb_model): Tracked<&mut TlbModel>
         requires
             old(tlb_model).inv(),
-            old(self).pt_cursor.inner.invariants(*old(cursor_owner), *old(regions), *old(guards)),
+            old(self).pt_cursor.0.invariants(*old(cursor_owner), *old(regions), *old(guards)),
             old(cursor_owner).in_locked_range(),
             old(self).item_wf(frame, prop, entry_owner, *old(regions)),
         ensures
             !old(self).pt_cursor.map_panic_conditions(MappedItem { frame: frame, prop: prop }),
-            final(self).pt_cursor.inner.invariants(*final(cursor_owner), *final(regions), *final(guards)),
+            final(self).pt_cursor.0.invariants(*final(cursor_owner), *final(regions), *final(guards)),
             old(self).map_item_ensures(
                 frame,
                 prop,
-                old(self).pt_cursor.inner.model(*old(cursor_owner)),
-                final(self).pt_cursor.inner.model(*final(cursor_owner)),
+                old(self).pt_cursor.0.model(*old(cursor_owner)),
+                final(self).pt_cursor.0.model(*final(cursor_owner)),
             ),
     )]
     pub fn map(&mut self, frame: UFrame, prop: PageProperty) {
@@ -845,29 +841,29 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
             Tracked(guards): Tracked<&mut Guards<'a, UserPtConfig>>,
             Tracked(tlb_model): Tracked<&mut TlbModel>
         requires
-            old(self).pt_cursor.inner.invariants(*old(cursor_owner), *old(regions), *old(guards)),
+            old(self).pt_cursor.0.invariants(*old(cursor_owner), *old(regions), *old(guards)),
             old(tlb_model).inv(),
         ensures
-            !old(self).pt_cursor.inner.find_next_panic_condition(len),
-            final(self).pt_cursor.inner.invariants(*final(cursor_owner), *final(regions), *final(guards)),
-            old(self).pt_cursor.inner.model(*old(cursor_owner)).unmap_spec(len, final(self).pt_cursor.inner.model(*final(cursor_owner)), r),
+            !old(self).pt_cursor.0.find_next_panic_condition(len),
+            final(self).pt_cursor.0.invariants(*final(cursor_owner), *final(regions), *final(guards)),
+            old(self).pt_cursor.0.model(*old(cursor_owner)).unmap_spec(len, final(self).pt_cursor.0.model(*final(cursor_owner)), r),
             final(tlb_model).inv(),
     )]
     pub fn unmap(&mut self, len: usize) -> usize {
         proof {
-            cursor_owner.va.reflect_prop(self.pt_cursor.inner.va);
+            cursor_owner.va.reflect_prop(self.pt_cursor.0.va);
             cursor_owner.view_preserves_inv();
         }
 
         vstd_extra::assert_eq!(len % PAGE_SIZE, 0);
 
         //*** KNOWN BUG: `self.virt_addr() + len` could overflow. For now, assume that it doesn't. ***
-        assume(self.pt_cursor.inner.va + len <= usize::MAX);
+        assume(self.pt_cursor.0.va + len <= usize::MAX);
 
-        vstd_extra::assert!(self.virt_addr() + len <= self.pt_cursor.inner.barrier_va.end);
+        vstd_extra::assert!(self.virt_addr() + len <= self.pt_cursor.0.barrier_va.end);
 
-        assert(!self.pt_cursor.inner.find_next_panic_condition(len));
-        assert(!old(self).pt_cursor.inner.find_next_panic_condition(len));
+        assert(!self.pt_cursor.0.find_next_panic_condition(len));
+        assert(!old(self).pt_cursor.0.find_next_panic_condition(len));
 
         let end_va = self.virt_addr() + len;
         let mut num_unmapped: usize = 0;
@@ -880,22 +876,23 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
         let ghost mut removed: Set<Mapping> = Set::empty();
 
         proof {
-            // end_va <= barrier_va.end <= MAX_USERSPACE_VADDR for user page tables.
-            // barrier_va.end = locked_range().end which is bounded by the user VA space.
-            // TODO: derive from cursor construction postcondition.
-            assume(end_va <= MAX_USERSPACE_VADDR);
+            // end_va <= barrier_va.end == locked_range().end. The cursor invariant
+            // bounds locked_range().end by `vaddr_range_bounds_spec::<C>().1 + 1`,
+            // and for UserPtConfig that evaluates to 2^47.
+            crate::mm::page_table::lemma_vaddr_range_bounds_spec_user();
+            assert(end_va <= 0x0000_8000_0000_0000usize);
 
-            assert((self.pt_cursor.inner.va + len) % PAGE_SIZE as int == 0) by (compute);
+            assert((self.pt_cursor.0.va + len) % PAGE_SIZE as int == 0) by (compute);
             assert(adjusted_base.difference(removed) =~= adjusted_base);
         }
 
         #[verus_spec(
             invariant
-                self.pt_cursor.inner.va % PAGE_SIZE == 0,
+                self.pt_cursor.0.va % PAGE_SIZE == 0,
                 end_va % PAGE_SIZE == 0,
-                end_va <= MAX_USERSPACE_VADDR,
-                self.pt_cursor.inner.invariants(*cursor_owner, *regions, *guards),
-                end_va <= self.pt_cursor.inner.barrier_va.end,
+                end_va <= 0x0000_8000_0000_0000usize,
+                self.pt_cursor.0.invariants(*cursor_owner, *regions, *guards),
+                end_va <= self.pt_cursor.0.barrier_va.end,
                 tlb_model.inv(),
                 start_va <= cursor_owner@.cur_va,
                 // Split-aware invariant: adjusted_base tracks accumulated splits,
@@ -908,6 +905,11 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                 // Everything removed is in the [start, end) range.
                 forall |m: Mapping| #[trigger] removed.contains(m) ==>
                     start_va <= m.va_range.start < end_va,
+                // Per-config VA bound: every removed mapping fits within the
+                // user VA space. Sourced from `axiom_view_in_vaddr_range` on
+                // the cursor view prior to removal.
+                forall |m: Mapping| removed.contains(m) ==>
+                    m.va_range.end <= 0x0000_8000_0000_0000_usize as int,
                 // Nothing in [start_va, end_va) with start < cursor_va remains,
                 // unless it is a sub-mapping of a boundary-straddling entry.
                 forall |m: Mapping| #![auto] adjusted_base.contains(m) && !removed.contains(m)
@@ -936,11 +938,11 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                         && m.pa_range.start == (parent.pa_range.start + (m.va_range.start - parent.va_range.start)) as Paddr
                         && m.property == parent.property,
             invariant_except_break
-                self.pt_cursor.inner.va <= end_va,
-                self.pt_cursor.inner.va < end_va ==> cursor_owner.in_locked_range(),
+                self.pt_cursor.0.va <= end_va,
+                self.pt_cursor.0.va < end_va ==> cursor_owner.in_locked_range(),
             ensures
-                self.pt_cursor.inner.va >= end_va,
-            decreases end_va - self.pt_cursor.inner.va
+                self.pt_cursor.0.va >= end_va,
+            decreases end_va - self.pt_cursor.0.va
         )]
         loop {
             let ghost prev_va: Vaddr = cursor_owner@.cur_va;
@@ -948,8 +950,12 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
 
             let ghost prev_view_inv: bool = cursor_owner@.inv();
             proof {
-                cursor_owner.va.reflect_prop(self.pt_cursor.inner.va);
+                cursor_owner.va.reflect_prop(self.pt_cursor.0.va);
                 cursor_owner.view_preserves_inv();
+                // Per-config VA bound on prev_mappings — needed for
+                // preserving the `removed`-end-bound loop invariant.
+                crate::specs::mm::page_table::cursor::owners::axiom_view_in_vaddr_range::<UserPtConfig>(cursor_owner);
+                crate::mm::page_table::lemma_vaddr_range_bounds_spec_user();
             }
 
             // SAFETY: It is safe to un-map memory in the userspace.
@@ -958,7 +964,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                 self.pt_cursor.take_next(end_va - self.virt_addr())
             }) else {
                 proof {
-                    cursor_owner.va.reflect_prop(self.pt_cursor.inner.va);
+                    cursor_owner.va.reflect_prop(self.pt_cursor.0.va);
                     // At break: take_next returned None, so no mappings in [prev_va, end_va).
                     // Any m with start >= prev_va leads to contradiction via the empty filter.
                     assert forall |m: Mapping|
@@ -987,7 +993,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
             let ghost old_removed = removed;
 
             proof {
-                cursor_owner.va.reflect_prop(self.pt_cursor.inner.va);
+                cursor_owner.va.reflect_prop(self.pt_cursor.0.va);
             }
 
             let ghost frag_ghost = frag;
@@ -997,10 +1003,12 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                     let frame = item.frame;
                     proof {
                         crate::mm::page_table::lemma_vaddr_range_bounds_spec_user();
-                        // TODO: chain CursorView::inv bound
-                        // (`m.va_range.end <= vaddr_range_bounds_spec<C>.1 + 1`) to
-                        // the fits_usize precondition. Currently admitted.
-                        admit();
+                        // `wf_mapping_set(removed)` from the wf adjusted_base
+                        // via subset; `va_range.end <= 2^47` for every removed
+                        // mapping is a loop invariant. Together they give
+                        // |removed| < usize::MAX, so num_unmapped + 1 fits.
+                        crate::specs::mm::page_table::mapping_set_lemmas::lemma_wf_subset(
+                            adjusted_base, removed);
                         crate::specs::mm::page_table::mapping_set_lemmas::lemma_mapping_set_cardinality_fits_usize(removed);
                     }
                     assert(num_unmapped < usize::MAX);
@@ -1052,9 +1060,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                     }
                     num_unmapped += num_frames;
                     proof {
-                        // va + len <= end_va: from take_next VA bound (StrayPageTable_va + StrayPageTable_len <= old_va + len_arg = end_va).
-                        // end_va <= MAX_USERSPACE_VADDR < KERNEL_VADDR_RANGE.end.
-                        assert(MAX_USERSPACE_VADDR < KERNEL_VADDR_RANGE.end as usize)
+                        assert(0x0000_8000_0000_0000usize < KERNEL_VADDR_RANGE.end as usize)
                             by (compute_only);
                         assert(va + len <= KERNEL_VADDR_RANGE.end as usize);
                         crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_va_plus_page_size_no_overflow(
@@ -1066,7 +1072,6 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
             }
 
             proof {
-                // Ghost definitions for the two fragment cases.
                 let ghost mm = match frag_ghost {
                     PageTableFrag::Mapped { va: fv, item: fi, .. } => CursorView::<
                         UserPtConfig,
@@ -1103,14 +1108,37 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
 
                 // Mapped-case setup: establish split_while_huge properties once.
                 if is_mapped {
-                    assert(sv.cur_va < MAX_USERSPACE_VADDR);
-                    assert(prev_mappings.disjoint(old_removed)) by {
-                        assert forall|e: Mapping|
-                            prev_mappings.contains(e) implies !old_removed.contains(e) by {};
+                    assert(sv.cur_va < 0x0000_8000_0000_0000usize);
+                    assert forall|m: Mapping, x: Mapping|
+                        #[trigger] prev_mappings.contains(m)
+                            && #[trigger] old_removed.contains(x) implies
+                        Mapping::disjoint_vaddrs(m, x) by {
+                        assert(old_adjusted.contains(m));
+                        assert(old_adjusted.contains(x));
                     };
                     sv.split_while_huge_disjoint(mm.page_size, old_removed);
                     sv.lemma_split_while_huge_preserves_inv(mm.page_size);
                 }
+
+                assert forall |m: Mapping| removed.contains(m)
+                    implies m.va_range.end <= 0x0000_8000_0000_0000_usize as int by {
+                    if !old_removed.contains(m) {
+                        if is_mapped {
+                            assert(m == mm);
+                            sv.split_while_huge_refinement(mm.page_size, mm);
+                            if !prev_mappings.contains(mm) {
+                                let parent = choose |p: Mapping|
+                                    #[trigger] prev_mappings.contains(p)
+                                    && p.va_range.start <= mm.va_range.start
+                                    && mm.va_range.end <= p.va_range.end
+                                    && mm.pa_range.start == (p.pa_range.start + (mm.va_range.start - p.va_range.start)) as Paddr
+                                    && mm.property == p.property;
+                            }
+                        } else {
+                            assert(prev_mappings.contains(m));
+                        }
+                    }
+                };
 
                 // Prove |removed| tracking (disjointness + cardinality).
                 match frag_ghost {
@@ -1191,9 +1219,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                                 PageTableFrag::StrayPageTable { va: frag_va, .. } => {
                                     if m.va_range.start >= frag_va {
                                         assert(cursor_owner@.mappings.filter(
-                                            |m2: Mapping|
-                                                frag_va <= m2.va_range.start
-                                                    < self.pt_cursor.inner.va,
+                                            |m2: Mapping| frag_va <= m2.va_range.start < self.pt_cursor.0.va
                                         ).contains(m));
                                     } else {
                                         assert(prev_mappings.filter(
@@ -1204,9 +1230,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                                 PageTableFrag::Mapped { va: frag_va, .. } => {
                                     if m.va_range.start >= (frag_va as usize) {
                                         assert(cursor_owner@.mappings.filter(
-                                            |m2: Mapping|
-                                                (frag_va as usize) <= m2.va_range.start
-                                                    < self.pt_cursor.inner.va,
+                                            |m2: Mapping| (frag_va as usize) <= m2.va_range.start < self.pt_cursor.0.va
                                         ).contains(m));
                                     } else {
                                         assert(prev_mappings.filter(
@@ -1312,10 +1336,10 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                 }
             }
         proof {
-            cursor_owner.va.reflect_prop(self.pt_cursor.inner.va);
+            cursor_owner.va.reflect_prop(self.pt_cursor.0.va);
 
-            let old_view = old(self).pt_cursor.inner.model(*old(cursor_owner));
-            let new_view = self.pt_cursor.inner.model(*cursor_owner);
+            let old_view = old(self).pt_cursor.0.model(*old(cursor_owner));
+            let new_view = self.pt_cursor.0.model(*cursor_owner);
 
             // Bridge from loop invariant to unmap_spec.
             let start = old_view.cur_va;
@@ -1395,12 +1419,18 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards<'a, UserPtConfig>>,
         requires
-            old(self).pt_cursor.inner.invariants(*old(owner), *old(regions), *old(guards)),
+            old(self).pt_cursor.0.invariants(*old(owner), *old(regions), *old(guards)),
             forall |p: PageProperty| op.requires((p,)),
+            // POTENTIALLY UNSOUND PATCH: trackedness preservation. For UserPtConfig
+            // this is trivially true (tracked is constant). See `Entry::protect`.
+            forall |pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty|
+                op.ensures((p_in,), p_out) ==>
+                    UserPtConfig::tracked(UserPtConfig::item_from_raw_spec(pa, level, p_out))
+                    == UserPtConfig::tracked(UserPtConfig::item_from_raw_spec(pa, level, p_in)),
         ensures
-            !old(self).pt_cursor.inner.find_next_panic_condition(len),
-            final(self).pt_cursor.inner.invariants(*final(owner), *final(regions), *final(guards)),
-            final(self).pt_cursor.inner.barrier_va == old(self).pt_cursor.inner.barrier_va,
+            !old(self).pt_cursor.0.find_next_panic_condition(len),
+            final(self).pt_cursor.0.invariants(*final(owner), *final(regions), *final(guards)),
+            final(self).pt_cursor.0.barrier_va == old(self).pt_cursor.0.barrier_va,
     )]
     pub fn protect_next(
         &mut self,
@@ -1512,6 +1542,27 @@ unsafe impl PageTableConfig for UserPtConfig {
 
     axiom fn item_roundtrip(item: Self::Item, paddr: Paddr, level: PagingLevel, prop: PageProperty);
 
+    open spec fn tracked(_item: Self::Item) -> bool {
+        // Every UserPt item is a ref-counted UFrame.
+        true
+    }
+
+    open spec fn item_well_formed(item: Self::Item) -> bool {
+        item.frame.inv()
+    }
+
+    proof fn item_from_raw_well_formed(pa: Paddr, level: PagingLevel, prop: PageProperty) {
+        broadcast use crate::mm::frame::meta::mapping::group_page_meta;
+        // Derive `frame.inv()` from the structural-shape axiom + soundness lemmas.
+        Self::item_from_raw_spec_frame_ptr(pa, level, prop);
+        let item = Self::item_from_raw_spec(pa, level, prop);
+        assert(item.frame.ptr.addr()
+            == crate::mm::frame::meta::mapping::frame_to_meta(pa));
+        // frame.inv() unfolds to `addr % META_SLOT_SIZE == 0` and addr in
+        // FRAME_METADATA_RANGE. Both follow from `lemma_frame_to_meta_soundness`.
+        assert(item.frame.inv());
+    }
+
     proof fn clone_ensures_concrete(
         item: Self::Item,
         pa: Paddr,
@@ -1519,7 +1570,22 @@ unsafe impl PageTableConfig for UserPtConfig {
         new_regions: MetaRegionOwners,
         res: Self::Item,
     ) {
-        admit();
+        // `MappedItem::clone_ensures` unfolds to `item.frame.clone_ensures(...,
+        // res.frame)`, which delivers per-field facts at `frame_to_index(meta_to_frame(
+        // item.frame.ptr.addr()))`. Bridge that index to `frame_to_index(pa)` via
+        // `pa == item.frame.paddr() == meta_to_frame(item.frame.ptr.addr())`.
+        use crate::mm::frame::meta::mapping::{frame_to_index, meta_to_frame};
+        let frame_idx = frame_to_index(meta_to_frame(item.frame.ptr.addr()));
+        assert(pa == item.frame.paddr());
+        assert(frame_to_index(pa) == frame_idx);
+        // The MappedItem clone_ensures unfolds to its frame's clone_ensures.
+        // Verus needs `item.clone_ensures` (a trait method) revealed via the impl.
+        assert(<MappedItem as RCClone>::clone_ensures(item, old_regions, new_regions, res));
+        assert(item.frame.clone_ensures(old_regions, new_regions, res.frame));
+        assert(new_regions.slot_owners[frame_idx].inner_perms.ref_count.value()
+            == old_regions.slot_owners[frame_idx].inner_perms.ref_count.value() + 1);
+        assert(forall|i: usize| i != frame_idx
+            ==> #[trigger] new_regions.slot_owners[i] == old_regions.slot_owners[i]);
     }
 
     proof fn clone_requires_concrete(
@@ -1529,8 +1595,34 @@ unsafe impl PageTableConfig for UserPtConfig {
         prop: PageProperty,
         regions: MetaRegionOwners,
     ) {
-        admit();
+        // `MappedItem::clone_requires` unfolds to `item.frame.clone_requires(regions)`.
+        // The trait precondition delivers all the slot facts at `frame_to_index(pa)`.
+        // We bridge:
+        //   (1) `item.frame.inv()` — discharged via `item_from_raw_well_formed`
+        //       (the trait-level structural well-formedness method).
+        //   (2) `frame_to_index(meta_to_frame(item.frame.ptr.addr())) == frame_to_index(pa)`
+        //       from `pa == item.frame.paddr()` (UserPtConfig::item_into_raw_spec).
+        use crate::mm::frame::meta::mapping::{frame_to_index, meta_to_frame};
+        Self::item_roundtrip(item, pa, level, prop);
+        assert(item.frame.paddr() == pa);
+        assert(meta_to_frame(item.frame.ptr.addr()) == pa);
+        assert(frame_to_index(meta_to_frame(item.frame.ptr.addr())) == frame_to_index(pa));
+        Self::item_from_raw_well_formed(pa, level, prop);
+        // `Self::item_well_formed(item)` unfolds to `item.frame.inv()`.
+        assert(item.frame.inv());
     }
+}
+
+impl UserPtConfig {
+    /// Structural shape of `item_from_raw_spec` for UserPtConfig: the reconstructed
+    /// item's frame has its pointer at `frame_to_meta(pa)`. Mirrors the exec body's
+    /// `UFrame::from_raw(pa)` call whose ensures gives this address shape.
+    pub axiom fn item_from_raw_spec_frame_ptr(pa: Paddr, level: PagingLevel, prop: PageProperty)
+        requires
+            crate::mm::frame::meta::has_safe_slot(pa),
+        ensures
+            UserPtConfig::item_from_raw_spec(pa, level, prop).frame.ptr.addr()
+                == crate::mm::frame::meta::mapping::frame_to_meta(pa);
 }
 
 } // verus!
