@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 use vstd::atomic_ghost::*;
-use vstd::cell::{self, pcell::{self, *}};
+use vstd::cell::{
+    self,
+    pcell::{self, *},
+};
 use vstd::prelude::*;
 use vstd_extra::prelude::*;
 use vstd_extra::resource::ghost_resource::excl::*;
@@ -247,7 +250,7 @@ impl<T/* : ?Sized */> DerefMut for MutexGuard<'_, T> {
             final(self).view() == *final(ret),
             old(self).view() == *ret,
     )]
-    fn deref_mut(&mut self) -> &mut Self::Target 
+    fn deref_mut(&mut self) -> &mut Self::Target
     {
         proof!{
             use_type_invariant(&*self);
@@ -255,7 +258,7 @@ impl<T/* : ?Sized */> DerefMut for MutexGuard<'_, T> {
         //unsafe { &mut *self.mutex.val.get() }
         self.mutex.val.borrow_mut(Tracked(&mut *self.v_perm))
     }
-} 
+}
 
 /* impl<T  /* : ?Sized */ > Drop for MutexGuard<'_, T> {
     fn drop(&mut self)

@@ -85,7 +85,7 @@ pub closed spec fn wf(&self) -> bool {
             OnceState::Init(points_to) => {
                 &&& v == INITED
                 &&& points_to.id() == cell.id()
-                &&& points_to.value() is Some 
+                &&& points_to.value() is Some
                 &&& f@.inv(points_to.value()->Some_0)
             }
         }
@@ -138,7 +138,7 @@ impl<V, F: Predicate<V>> OnceImpl<V, F> {
         };
 
         if cur_state != UNINIT {
-            return ;
+            return;
         } else {
             let tracked mut points_to = None;
             let res =
@@ -171,10 +171,10 @@ impl<V, F: Predicate<V>> OnceImpl<V, F> {
                         g = OnceState::Init(static_points_to);
                     }
                 }
-                return ;
+                return;
             } else {
                 // wait or abort.
-                return ;
+                return;
             }
         }
     }

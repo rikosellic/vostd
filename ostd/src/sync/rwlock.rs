@@ -3,7 +3,7 @@ use vstd::atomic_ghost::*;
 use vstd::cell::{self, pcell::*, CellId};
 use vstd::prelude::*;
 use vstd::resource::Loc;
-use vstd_extra::resource::ghost_resource::{count::*, csum::*,  excl::*, tokens::*};
+use vstd_extra::resource::ghost_resource::{count::*, csum::*, excl::*, tokens::*};
 use vstd_extra::sum::*;
 use vstd_extra::{prelude::*, resource};
 
@@ -503,7 +503,7 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> RwLock<T, G> {
                 RwLockReadGuard {
                     inner: self,
                     guard,
-                    v_token: Tracked(read_token.tracked_unwrap())
+                    v_token: Tracked(read_token.tracked_unwrap()),
                 },
             )
         } else {
@@ -617,7 +617,7 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> RwLock<T, G> {
                 RwLockUpgradeableGuard {
                     inner: self,
                     guard,
-                    v_token: Tracked(upgrade_guard_token.tracked_unwrap())
+                    v_token: Tracked(upgrade_guard_token.tracked_unwrap()),
                 },
             );
         } else if lock == WRITER {
@@ -715,7 +715,7 @@ unsafe impl<T: Sync, G: SpinGuardian> Sync for RwLockUpgradeableGuard<'_, T, G> 
 #[clippy::has_significant_drop]
 #[must_use]
 #[verus_verify]
-pub struct RwLockReadGuard<'a, T /*: ?Sized*/, G: SpinGuardian> {
+pub struct RwLockReadGuard<'a, T  /*: ?Sized*/ , G: SpinGuardian> {
     guard: G::ReadGuard,
     inner: &'a RwLock<T, G>,
     v_token: Tracked<Count<ReadPerm<T>, MAX_READER_U64>>,
@@ -892,8 +892,7 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> DerefMut for RwLockWriteGuard<'_, T, G> 
             final(self).view() == *final(ret),
             old(self).view() == *ret,
     )]
-    fn deref_mut(&mut self) -> &mut Self::Target 
-    {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         proof!{
             use_type_invariant(&*self);
         }
@@ -1113,7 +1112,7 @@ impl<'a, T  /*: ?Sized*/ , G: SpinGuardian> RwLockUpgradeableGuard<'a, T, G> {
                 },
             )
         } else {
-            Err(       
+            Err(
                 RwLockUpgradeableGuard {
                     inner: this.inner,
                     guard: this.guard,

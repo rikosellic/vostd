@@ -843,7 +843,7 @@ impl<T /*: ?Sized*/ > DerefMut for RwMutexWriteGuard<'_, T> {
             final(self).view() == *final(ret),
             old(self).view() == *ret,
     )]
-    fn deref_mut(&mut self) -> (ret: &mut Self::Target) 
+    fn deref_mut(&mut self) -> (ret: &mut Self::Target)
     {
         proof! {
             use_type_invariant(&*self);

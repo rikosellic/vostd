@@ -208,7 +208,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
             #[cfg(feature = "allow_panic")]
             panic!("mapping an already mapped page in the boot page table");
             #[cfg(not(feature = "allow_panic"))]
-            return;
+             return;
         }
         unsafe { pte_ptr.write(E::new_page(to * C::BASE_PAGE_SIZE(), 1, prop)) };
     }
@@ -273,7 +273,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
             #[cfg(feature = "allow_panic")]
             panic!("protecting an unmapped page in the boot page table");
             #[cfg(not(feature = "allow_panic"))]
-            return;
+             return;
         }
         let mut prop = pte.prop();
         op(&mut prop);
