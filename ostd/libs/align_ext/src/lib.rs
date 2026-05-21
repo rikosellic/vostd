@@ -15,6 +15,7 @@ use vstd::arithmetic::power2::{lemma2_to64, lemma_pow2_strictly_increases};
 use vstd::bits::*;
 use vstd::pervasive::trigger;
 use vstd::prelude::*;
+use vstd_extra::panic::*;
 use vstd_extra::prelude::*;
 
 /// An extension trait for Rust integer types, including `u8`, `u16`, `u32`,
@@ -103,26 +104,29 @@ macro_rules! impl_align_ext {
             #[verus_verify]
             impl AlignExt for $uint_type {
                 /// ## Preconditions
-                /// - `align` is a power of two.
-                /// - `align >= 2`.
                 /// - `self + (align - 1)` does not overflow.
                 /// ## Postconditions
-                /// - The function will not panic.
-                /// - The return value is the smallest number that is greater than or equal to `self` and is a multiple of `align`.
+                /// - `align` is a power of two `>= 2` (panic-enforced; the
+                ///   function panics on invalid `align`, so a returning call
+                ///   guarantees validity).
+                /// - The return value is the smallest number that is greater
+                ///   than or equal to `self` and is a multiple of `align`.
                 #[inline]
                 #[verus_spec(ret =>
                     requires
-                        exists |e:nat| pow2(e) == align,
-                        align >= 2,
                         self + (align - 1) <= $uint_type::MAX,
+                        align >= 2 || may_panic(),
+                        (exists |e:nat| pow2(e) == align) || may_panic(),
                     ensures
+                        align >= 2,
+                        exists |e:nat| pow2(e) == align,
                         ret >= self,
                         ret % align == 0,
                         ret == nat_align_up(self as nat, align as nat),
                         forall |n: nat| !(n>=self && #[trigger] (n % align as nat) == 0) || (ret <= n),
                 )]
                 fn align_up(self, align: Self) -> Self {
-                    //assert!(align.is_power_of_two() && align >= 2);
+                    vstd_extra::assert!(align.is_power_of_two() && align >= 2);
                     proof!{
                         let x_int = self as int + align as int - 1;
                         let x = x_int as Self;
@@ -137,9 +141,12 @@ macro_rules! impl_align_ext {
                             let q = self as int / align as int;
                             let r = self as int % align as int;
                             lemma_fundamental_div_mod(self as int, align as int);
+                            assert(self as int == q * align as int + r) by {
+                                lemma_mul_is_commutative(align as int, q);
+                            }
 
                             assert((q + 1) * align as int == q * align as int + align as int) by {
-                                lemma_mul_is_distributive_add(align as int, q, 1);
+                                lemma_mul_is_distributive_add_other_way(align as int, q, 1);
                             }
                             assert(((q + 1) * align as int) % align as int == 0) by {
                                 lemma_mod_multiples_basic(q + 1, align as int);
@@ -147,6 +154,7 @@ macro_rules! impl_align_ext {
                             assert((r - 1) % align as int == r - 1) by {
                                 lemma_small_mod((r - 1) as nat, align as nat);
                             }
+                            assert(x_int == (q + 1) * align as int + (r - 1));
                             assert(x_int % align as int == (r - 1)) by {
                                 lemma_mod_adds((q + 1) * align as int, r - 1, align as int);
                             }
@@ -171,23 +179,24 @@ macro_rules! impl_align_ext {
                 #[inline]
                 #[verus_spec(ret =>
                     requires
-                        exists |e:nat| pow2(e) == align,
-                        align >= 2,
+                        align >= 2 || may_panic(),
+                        (exists |e:nat| pow2(e) == align) || may_panic(),
                     ensures
+                        align >= 2,
+                        exists |e:nat| pow2(e) == align,
                         ret <= self,
                         ret % align == 0,
                         ret == nat_align_down(self as nat, align as nat),
                         forall |n: nat|  !(n<=self && #[trigger] (n % align as nat) == 0) || (ret >= n),
                 )]
 
-                /// ## Preconditions
-                /// - `align` is a power of two.
-                /// - `align >= 2`.
                 /// ## Postconditions
-                /// - The function will not panic.
+                /// - `align` is a power of two `>= 2` (panic-enforced; the
+                ///   function panics on invalid `align`, so a returning call
+                ///   guarantees validity).
                 /// - The return value is the greatest number that is smaller than or equal to `self` and is a multiple of `align`.
                 fn align_down(self, align: Self) -> Self {
-                    //assert!(align.is_power_of_two() && align >= 2);
+                    vstd_extra::assert!(align.is_power_of_two() && align >= 2);
                     proof!{
                         lemma_low_bits_mask_values();
                         let mask = (align - 1) as Self;

@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 //! A contiguous range of frames.
 use vstd::prelude::*;
-use vstd_extra::seq_extra::seq_tracked_split_at;
 
 use core::{fmt::Debug, ops::Range};
 
 use crate::mm::frame::{has_safe_slot, untyped::AnyUFrameMeta, Frame};
 use crate::mm::page_table::RCClone;
 
+use vstd::simple_pptr;
 use vstd_extra::assert;
 use vstd_extra::cast_ptr::*;
 use vstd_extra::cast_ptr::*;
 use vstd_extra::ownership::*;
+use vstd_extra::panic::may_panic;
+use vstd_extra::seq_extra::seq_tracked_split_at;
 
 use super::meta::mapping::{frame_to_index, frame_to_index_spec, frame_to_meta, meta_addr};
 use super::{AnyFrameMeta, GetFrameError, MetaSlot};
@@ -21,8 +23,7 @@ use crate::specs::arch::mm::{MAX_NR_PAGES, MAX_PADDR, PAGE_SIZE};
 use crate::specs::mm::frame::meta_owners::*;
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::frame::segment::{frame_idx_at, SegmentOwner};
-use crate::specs::mm::virt_mem_newer::MemView;
-use vstd::simple_pptr;
+use crate::specs::mm::virt_mem::MemView;
 use vstd_extra::drop_tracking::*;
 
 verus! {
@@ -189,13 +190,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                     &&& old(regions).slot_owners[frame_to_index(paddr_out)].usage is Unused
                     &&& old(regions).slot_owners[frame_to_index(paddr_out)].inner_perms.in_list.points_to(0)
                 },
+            !(range.end <= MAX_PADDR ==> range.start < range.end) ==> may_panic(),
         ensures
             (range.start % PAGE_SIZE != 0 || range.end % PAGE_SIZE != 0)
                 ==> r == Err::<Self, _>(GetFrameError::NotAligned),
             (range.start % PAGE_SIZE == 0 && range.end % PAGE_SIZE == 0 && range.end > MAX_PADDR)
                 ==> r == Err::<Self, _>(GetFrameError::OutOfBound),
-            (range.start % PAGE_SIZE == 0 && range.end % PAGE_SIZE == 0 && range.end <= MAX_PADDR)
-                ==> range.start < range.end,
+            r is Ok ==> range.end <= MAX_PADDR ==> range.start < range.end,
             r matches Ok(r) ==> {
                 &&& final(regions).inv()
                 &&& r.range.start == range.start
@@ -501,6 +502,32 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         Self { range, _marker: core::marker::PhantomData }
     }
 
+    /// Precise panic condition for [`Self::slice`]. `slice` diverges iff:
+    ///  - the slice range is misaligned, reversed, or out of the segment's
+    ///    bounds (the diverging `assert!`s at the top of `slice`), or
+    ///  - **the specific per-frame slot that `slice` bumps** is already
+    ///    saturated (`inc_ref_count` would overflow). Unlike `query` which
+    ///    clones one item, `slice` bumps one refcount per page in the
+    ///    slice range, so the saturation disjunct is an *exists* over those
+    ///    specific paddrs `self.range.start + j * PAGE_SIZE` for
+    ///    `j ∈ [range.start/PAGE_SIZE, range.end/PAGE_SIZE)`.
+    pub open spec fn slice_panic_condition(
+        self,
+        range: &Range<usize>,
+        regions: MetaRegionOwners,
+    ) -> bool {
+        ||| range.start % PAGE_SIZE != 0
+        ||| range.end % PAGE_SIZE != 0
+        ||| range.start > range.end
+        ||| self.range.start as int + range.end as int > self.range.end as int
+        ||| exists|j: int|
+            #![trigger frame_to_index((self.range.start + j * PAGE_SIZE) as usize)]
+            (range.start as int) / (PAGE_SIZE as int) <= j < (range.end as int) / (PAGE_SIZE as int)
+                && regions.slot_owners[frame_to_index(
+                (self.range.start + j * PAGE_SIZE) as usize,
+            )].inner_perms.ref_count.value() >= REF_COUNT_MAX
+    }
+
     /// Gets an extra handle to the frames in the byte offset range.
     ///
     /// The sliced byte offset range in indexed by the offset from the start of
@@ -526,7 +553,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             owner.inv(),
             old(regions).inv(),
             owner.relate_regions(*old(regions)),
+            self.slice_panic_condition(range, *old(regions)) ==> may_panic(),
         ensures
+            !self.slice_panic_condition(range, *old(regions)),
             r.inv(),
             r.range.start == self.range.start + range.start,
             r.range.end == self.range.start + range.end,
@@ -535,6 +564,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             final(regions).slots =~= old(regions).slots,
             final(regions).slot_owners.dom() =~= old(regions).slot_owners.dom(),
     )]
+    #[verifier::rlimit(8000)]
     pub fn slice(&self, range: &Range<usize>) -> Self {
         assert!(range.start % PAGE_SIZE == 0 && range.end % PAGE_SIZE == 0);
 
@@ -545,7 +575,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         let start = self.range.start + range.start;
         let end = self.range.start + range.end;
         assert!(start <= end && end <= self.range.end);
-
         assert!(start <= end && end <= self.range.end);
 
         let mut i: usize = 0;
@@ -555,10 +584,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         let ghost old_regions = *regions;
         while i < addr_len
             invariant
-        // Pin the snapshot to the function-entry value so that
-        // facts stated against `old_regions` and `*old(regions)`
-        // are interchangeable inside the loop.
-
+                self.slice_panic_condition(range, *old(regions)) ==> may_panic(),
                 old_regions == *old(regions),
                 regions.inv(),
                 regions.slots =~= old_regions.slots,
@@ -590,6 +616,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                     )] == old_regions.slot_owners[frame_to_index(
                         (self.range.start + j * PAGE_SIZE) as usize,
                     )],
+                forall|j: int|
+                    #![trigger frame_to_index((self.range.start + j * PAGE_SIZE) as usize)]
+                    first_perm_idx <= j < first_perm_idx + i as int
+                        ==> old_regions.slot_owners[frame_to_index(
+                        (self.range.start + j * PAGE_SIZE) as usize,
+                    )].inner_perms.ref_count.value() < REF_COUNT_MAX,
             decreases addr_len - i,
         {
             let paddr = start + i * PAGE_SIZE;
@@ -610,6 +642,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             let vaddr: Vaddr = frame_to_meta(paddr);
             let ptr = vstd::simple_pptr::PPtr::<super::MetaSlot>::from_addr(vaddr);
 
+            proof {
+                if inner_perms.ref_count.value() >= REF_COUNT_MAX {
+                    assert(self.slice_panic_condition(range, *old(regions)));
+                    assert(may_panic());
+                }
+            }
+
             // Borrow the slot perm out of `owner.perms` (rather than out of
             // `regions.slots`, where it doesn't live for an active segment),
             // and feed it to `inc_ref_count` via `ptr.borrow`.
@@ -617,6 +656,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             ptr.borrow(Tracked(owner.perms.tracked_borrow(perm_idx))).inc_ref_count();
 
             proof {
+                assert(old_regions.slot_owners[slot_idx].inner_perms.ref_count.value()
+                    < REF_COUNT_MAX);
                 slot_own.sync_inner(&inner_perms);
                 regions.slot_owners.tracked_insert(slot_idx, slot_own);
             }
@@ -624,10 +665,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             i += 1;
 
             proof {
-                // Re-establish the "not yet processed" invariant for the
-                // post-`i += 1` range: distinct-indices (from
-                // `relate_regions`) tells us the just-touched `slot_idx`
-                // can't collide with any remaining `j > perm_idx`.
                 assert forall|j: int|
                     #![trigger frame_to_index((self.range.start + j * PAGE_SIZE) as usize)]
                     first_perm_idx + i as int <= j < last_perm_idx implies (
@@ -641,6 +678,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             }
         }
 
+        proof {
+            assert(!self.slice_panic_condition(range, *old(regions)));
+        }
         Self { range: start..end, _marker: core::marker::PhantomData }
     }
 

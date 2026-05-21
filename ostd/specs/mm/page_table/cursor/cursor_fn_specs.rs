@@ -4,7 +4,7 @@ use crate::mm::page_table::*;
 use crate::mm::{PagingConstsTrait, Vaddr};
 use crate::specs::arch::mm::{NR_LEVELS, PAGE_SIZE};
 use crate::specs::mm::frame::mapping::frame_to_index;
-use crate::specs::mm::frame::meta_owners::{REF_COUNT_MAX, REF_COUNT_UNUSED};
+use crate::specs::mm::frame::meta_owners::{is_mmio_paddr, REF_COUNT_MAX, REF_COUNT_UNUSED};
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::page_table::cursor::owners::*;
 use crate::specs::mm::page_table::*;
@@ -44,6 +44,31 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         self.model(owner).present()
     }
 
+    /// Panic condition for [`Self::query`]. `query` diverges *only* via the
+    /// Arc-style refcount-saturation abort when it clones the **specific**
+    /// frame the cursor resolves to. That happens iff:
+    ///  - the cursor is in range (out-of-range returns `Err` *before* any
+    ///    clone — the early `self.va >= barrier_va.end` exit), and
+    ///  - a mapping is present at the cursor (`owner@.present()`), and
+    ///  - the resolved leaf frame is tracked (non-MMIO, so cloning it bumps
+    ///    its slot's refcount — MMIO/untracked leaves never bump), and
+    ///  - that slot's refcount is already at `REF_COUNT_MAX`, so the
+    ///    `inc_ref_count` in `clone_item` would overflow and abort.
+    /// `owner@.query_mapping().pa_range.start` is exactly the paddr the
+    /// descent lands on (bridged by [`CursorOwner::cur_entry_frame_present`]).
+    pub open spec fn query_panic_condition(
+        self,
+        owner: CursorOwner<'rcu, C>,
+        regions: MetaRegionOwners,
+    ) -> bool {
+        let pa = owner@.query_mapping().pa_range.start;
+        let idx = frame_to_index(pa);
+        &&& self.barrier_va.start <= self.va < self.barrier_va.end
+        &&& owner@.present()
+        &&& !is_mmio_paddr(pa)
+        &&& regions.slot_owners[idx].inner_perms.ref_count.value() >= REF_COUNT_MAX
+    }
+
     pub open spec fn query_some_ensures(
         self,
         owner: CursorOwner<'rcu, C>,
@@ -66,8 +91,34 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         &&& res.1 is None
     }
 
+    /// Whether the level-`lv` node around the cursor's own VA contains `va`
+    /// — exactly the per-iteration test in `jump`'s loop
+    /// (`node_start <= va && va - node_start < node_size`, with
+    /// `node_start == nat_align_down(self.va, page_size(lv + 1))` and
+    /// `node_size == page_size(lv + 1)`).
+    pub open spec fn jump_node_holds(self, lv: PagingLevel, va: Vaddr) -> bool {
+        let nstart =
+            nat_align_down(self.va as nat, page_size((lv + 1) as PagingLevel) as nat);
+        &&& nstart <= va as nat
+        &&& (va as nat) - nstart < page_size((lv + 1) as PagingLevel) as nat
+    }
+
+    /// Structural (reachability) panic condition for `jump`: it diverges on a
+    /// misaligned `va` (the `assert_eq!`), or when `va` is in the barrier
+    /// range but **no** node on the ascending path within the guard levels
+    /// `[level, guard_level]` contains it — exactly the case where the loop
+    /// never finds `va`, pops above the guard, and hits `pop_level`'s
+    /// `None`-slot unwrap. (An out-of-range `va` returns `Err`, no panic.)
+    /// This mirrors the loop's own search, so it neither over- nor
+    /// under-approximates: an out-of-locked-range cursor that *can* still
+    /// reach `va` via a shared ancestor node does **not** satisfy it.
     pub open spec fn jump_panic_condition(self, va: Vaddr) -> bool {
-        va % PAGE_SIZE != 0
+        ||| va % PAGE_SIZE != 0
+        ||| (self.barrier_va.start <= va < self.barrier_va.end
+             && forall|lv: PagingLevel|
+                 #![trigger self.jump_node_holds(lv, va)]
+                 self.level <= lv <= self.guard_level
+                     ==> !self.jump_node_holds(lv, va))
     }
 
     pub open spec fn find_next_panic_condition(self, len: usize) -> bool {
@@ -80,8 +131,12 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
 impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     // TODO: trace the `level >= guard_level` panic to its actual location in `pop_level`
-    // (unwrap of None path entry). Doing so requires tweaking the cursor invariant's
-    // treatment of locks so that `pop_level` can express the panic as a precondition violation.
+    // (unwrap of None path entry). The lock treatment of the invariant has now been
+    // fixed (`Cursor::wf` and `CursorOwner::nodes_locked` are gated on `guard_level`
+    // rather than hardcoding `NR_LEVELS`, so `path[i]`/continuations above
+    // `guard_level` are unlocked/`None`), which is the prerequisite for expressing
+    // the `level >= guard_level` pop as a precondition violation. What remains is
+    // routing that `path[level-1] is None` fact into `pop_level`'s panic precondition.
     pub open spec fn map_panic_conditions(self, item: C::Item) -> bool {
         ||| self.0.va >= self.0.barrier_va.end
         ||| C::item_into_raw(item).1 > C::HIGHEST_TRANSLATION_LEVEL()
