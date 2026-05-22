@@ -16,7 +16,6 @@ use crate::specs::arch::paging_consts::PagingConsts;
 use crate::specs::mm::frame::meta_owners::{MetaSlotOwner, REF_COUNT_UNUSED};
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::page_table::{PageTableOwner, INC_LEVELS};
-use crate::specs::task::InAtomicMode;
 
 use core::marker::PhantomData;
 use core::ops::Deref;
@@ -24,7 +23,7 @@ use core::ops::Deref;
 use crate::{
     mm::{nr_subpage_per_huge, page_prop::PageProperty},
     //    sync::RcuDrop,
-    //    task::atomic_mode::InAtomicMode,
+    task::atomic_mode::InAtomicMode,
 };
 
 use super::*;
@@ -587,7 +586,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             forall |i: usize| old(guards).lock_held(i) ==> final(guards).lock_held(i),
             forall |i: usize| old(guards).unlocked(i) && i != final(owner).value.node.unwrap().meta_perm.addr() ==> final(guards).unlocked(i),
     )]
-    pub(in crate::mm) fn alloc_if_none<A: InAtomicMode>(&mut self, guard: &'rcu A) -> (res: Option<
+    pub(in crate::mm) fn alloc_if_none<A: InAtomicMode>(&mut self, guard: &'rcu DisabledPreemptGuard) -> (res: Option<
         PageTableGuard<'rcu, C>,
     >) {
         let entry_is_present = self.pte.is_present();
@@ -641,7 +640,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
             // Lock before writing the PTE, so no one else can operate on it.
             #[verus_spec(with Tracked(&new_node_owner.value.node.tracked_borrow()), Tracked(guards))]
-            let mut pt_lock_guard = pt_ref.lock(guard);
+            let mut pt_lock_guard = pt_ref.lock(&guard);
 
             proof {
                 parent_owner.nr_children_absent_slot_bound(self.idx);
@@ -847,7 +846,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
         // Lock before writing the PTE, so no one else can operate on it.
         #[verus_spec(with Tracked(&new_owner.value.node.tracked_borrow()), Tracked(guards))]
-        let mut pt_lock_guard = pt_ref.lock(guard);
+        let mut pt_lock_guard = pt_ref.lock(&guard);
 
         let ghost children_perm = new_owner.value.node.unwrap().children_perm;
         let ghost new_owner_path = new_owner.value.path;

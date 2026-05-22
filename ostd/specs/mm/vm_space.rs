@@ -10,6 +10,7 @@ use crate::mm::page_prop::PageProperty;
 use crate::mm::page_table::*;
 use crate::mm::vm_space::{Cursor, CursorMut, MappedItem, UserPtConfig, VmSpace};
 use crate::mm::{Paddr, PagingConstsTrait, PagingLevel, Vaddr, MAX_USERSPACE_VADDR};
+use crate::task::atomic_mode::InAtomicMode;
 use crate::specs::arch::mm::{current_page_table_paddr_spec, NR_LEVELS};
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::io::{VmIoMemView, VmIoOwner};
@@ -19,7 +20,6 @@ use crate::specs::mm::page_table::node::entry_owners::EntryOwner;
 use crate::specs::mm::page_table::{Guards, Mapping, OwnerSubtree, PageTableOwner, PageTableView};
 use crate::specs::mm::tlb::TlbModel;
 use crate::specs::mm::virt_mem::{FrameContents, MemView};
-use crate::specs::task::InAtomicMode;
 
 verus! {
 

@@ -8,7 +8,7 @@ use crate::specs::mm::frame::meta_owners::{is_mmio_paddr, REF_COUNT_MAX, REF_COU
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::page_table::cursor::owners::*;
 use crate::specs::mm::page_table::*;
-use crate::specs::task::InAtomicMode;
+use crate::task::atomic_mode::InAtomicMode;
 
 use core::ops::Range;
 

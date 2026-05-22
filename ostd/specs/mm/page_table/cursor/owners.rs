@@ -33,7 +33,7 @@ use crate::specs::mm::page_table::AbstractVaddr;
 use crate::specs::mm::page_table::Guards;
 use crate::specs::mm::page_table::Mapping;
 use crate::specs::mm::page_table::{nat_align_down, nat_align_up};
-use crate::specs::task::InAtomicMode;
+use crate::task::atomic_mode::InAtomicMode;
 
 verus! {
 

@@ -53,6 +53,7 @@ use crate::specs::mm::frame::meta_owners::{
 };
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::page_table::cursor::page_size_lemmas::*;
+use crate::task::DisabledPreemptGuard;
 
 use core::{fmt::Debug, marker::PhantomData, ops::Range};
 
@@ -60,7 +61,7 @@ use align_ext::AlignExt;
 
 use crate::{
     mm::{page_prop::PageProperty, page_table::is_valid_range},
-    specs::task::InAtomicMode,
+    task::atomic_mode::InAtomicMode,
 };
 
 use super::{
@@ -82,14 +83,14 @@ pub type PagesState<C> = (Range<Vaddr>, Option<<C as PageTableConfig>::Item>);
 ///
 /// A cursor is able to move to the next slot, to read page properties,
 /// and even to jump to a virtual address directly.
-pub struct Cursor<'rcu, C: PageTableConfig, A: InAtomicMode> {
+pub struct Cursor<'rcu, C: PageTableConfig> {
     /// The current path of the cursor.
     ///
     /// The level 1 page table lock guard is at index 0, and the level N page
     /// table lock guard is at index N - 1.
     pub path: [Option<PageTableGuard<'rcu, C>>; NR_LEVELS],
     /// The cursor should be used in a RCU read side critical section.
-    pub rcu_guard: &'rcu A,
+    pub rcu_guard: &'rcu DisabledPreemptGuard,
     /// The level of the page table that the cursor currently points to.
     pub level: PagingLevel,
     /// The top-most level that the cursor is allowed to access.
@@ -109,7 +110,7 @@ pub struct Cursor<'rcu, C: PageTableConfig, A: InAtomicMode> {
 /// page table corresponding to the address range. A virtual address range
 /// in a page table can only be accessed by one cursor, regardless of the
 /// mutability of the cursor.
-pub struct CursorMut<'rcu, C: PageTableConfig, A: InAtomicMode>(pub Cursor<'rcu, C, A>);
+pub struct CursorMut<'rcu, C: PageTableConfig>(pub Cursor<'rcu, C>);
 
 impl<C: PageTableConfig, A: InAtomicMode> Iterator for Cursor<'_, C, A> {
     type Item = PagesState<C>;

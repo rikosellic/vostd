@@ -6,10 +6,13 @@ use vstd::prelude::*;
 
 use vstd_extra::ownership::*;
 
-use crate::mm::{
-    nr_subpage_per_huge, paddr_to_vaddr, page_table::*, Paddr, PagingConsts, PagingConstsTrait,
-    PagingLevel, Vaddr, NR_ENTRIES, NR_LEVELS, PAGE_SIZE,
+use crate::{
+    mm::{
+        nr_subpage_per_huge, paddr_to_vaddr, page_table::*, Paddr, PagingConsts, PagingConstsTrait,
+        PagingLevel, Vaddr, NR_ENTRIES, NR_LEVELS, PAGE_SIZE,},
+    task::atomic_mode::InAtomicMode,
 };
+use crate::task::DisabledPreemptGuard;
 
 use vstd_extra::array_ptr::*;
 
@@ -17,7 +20,6 @@ use crate::mm::page_table::*;
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::page_table::node::entry_owners::EntryOwner;
 use crate::specs::mm::page_table::node::Guards;
-use crate::specs::task::InAtomicMode;
 use vstd_extra::ghost_tree::TreePath;
 
 use align_ext::AlignExt;
@@ -304,14 +306,14 @@ pub fn unlock_range<C: PageTableConfig, A: InAtomicMode>(cursor: &mut Cursor<'_,
         // the paddr range's slots either had non-UNUSED ref_count (preserved
         // per above) or UNUSED ref_count (and freshly-allocated PT nodes go
         // into OTHER slot indices, so frame paddrs' paths_in_pt stays empty).
-        forall|item: C::Item| #![trigger CursorMut::<C, A>::item_not_mapped(item, *old(regions))]
-            CursorMut::<C, A>::item_not_mapped(item, *old(regions)) ==>
-            CursorMut::<C, A>::item_not_mapped(item, *final(regions)),
+        forall|item: C::Item| #![trigger CursorMut::<C>::item_not_mapped(item, *old(regions))]
+            CursorMut::<C>::item_not_mapped(item, *old(regions)) ==>
+            CursorMut::<C>::item_not_mapped(item, *final(regions)),
 )]
 #[verifier::external_body]
-fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>(
+fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig>(
     pt: &PageTable<C>,
-    guard: &'rcu A,
+    guard: &'rcu DisabledPreemptGuard,
     va: &Range<Vaddr>,
 ) -> Option<PageTableGuard<'rcu, C>> {
     let mut cur_node_guard: Option<PageTableGuard<'rcu, C>> = None;
@@ -368,7 +370,7 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
             // SAFETY: The node must be alive for at least `'rcu` since the
             // address is read from the page table node.
             let node_ref = unsafe { PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr) };
-            node_ref.lock(guard)
+            node_ref.lock(&guard)
         };
 
         let tracked mut cont = cursor_own.continuations.tracked_remove(cursor_own.level - 1);
@@ -442,7 +444,7 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
         // SAFETY: The node must be alive for at least `'rcu` since the
         // address is read from the page table node.
         let node_ref = unsafe { PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr) };
-        node_ref.lock(guard)
+        node_ref.lock(&guard)
     };
 
     let tracked mut cont = cursor_own.continuations.tracked_remove(cursor_own.level - 1);
@@ -500,8 +502,8 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
         final(regions).slot_owners =~= old(regions).slot_owners,
 )]
 #[verifier::external_body]
-fn dfs_acquire_lock<'rcu, C: PageTableConfig, A: InAtomicMode>(
-    guard: &A,
+fn dfs_acquire_lock<'rcu, C: PageTableConfig>(
+    guard: &DisabledPreemptGuard,
     cur_node: &mut PageTableGuard<'rcu, C>,
     cur_node_va: Vaddr,
     va_range: Range<Vaddr>,
@@ -515,7 +517,7 @@ fn dfs_acquire_lock<'rcu, C: PageTableConfig, A: InAtomicMode>(
         let child = cur_node.entry(i);
         match child.to_ref() {
             ChildRef::PageTable(pt) => {
-                let mut pt_guard = pt.lock(guard);
+                let mut pt_guard = pt.lock(&guard);
                 let child_node_va = cur_node_va + i * page_size(cur_level);
                 let child_node_va_end = child_node_va + page_size(cur_level);
                 let va_start = va_range.start.max(child_node_va);

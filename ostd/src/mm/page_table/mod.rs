@@ -26,10 +26,9 @@ use crate::specs::mm::page_table::*;
 use crate::specs::arch::mm::*;
 use crate::specs::arch::paging_consts::PagingConsts;
 use crate::specs::mm::page_table::cursor::*;
-use crate::specs::task::InAtomicMode;
 
 use crate::mm::frame::meta::mapping::frame_to_index;
-use crate::mm::kspace::kvirt_area::disable_preempt;
+use crate::task::{atomic_mode::InAtomicMode, disable_preempt};
 use crate::specs::arch::PageTableEntry;
 use crate::specs::mm::frame::meta_owners::MetaPerm;
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
@@ -1122,10 +1121,10 @@ impl PageTable<KernelPtConfig> {
         ensures
             final(regions).inv(),
     )]
-    pub(in crate::mm) fn create_user_page_table<G: InAtomicMode + 'static>(
+    pub(in crate::mm) fn create_user_page_table(
         &'static self,
     ) -> PageTable<UserPtConfig> {
-        let preempt_guard: &G = disable_preempt::<G>();
+        let preempt_guard= disable_preempt();
 
         proof_decl! {
             let tracked mut new_pt_owner: Option<PageTableOwner<UserPtConfig>> = None;
@@ -1188,14 +1187,14 @@ impl PageTable<KernelPtConfig> {
             #[verus_spec(with Tracked(regions), Tracked(root_perm))]
             let root_ref = self.root.borrow();
             #[verus_spec(with Tracked(root_owner), Tracked(guards_k))]
-            root_ref.lock(preempt_guard)
+            root_ref.lock(&preempt_guard)
         };
         let ghost regions_after_kroot_borrow: MetaRegionOwners = *regions;
         let mut new_node: PageTableGuard<'static, UserPtConfig> = {
             #[verus_spec(with Tracked(regions), Tracked(&new_node_owner.meta_perm))]
             let new_ref = new_root.borrow();
             #[verus_spec(with Tracked(&new_node_owner), Tracked(guards_u))]
-            new_ref.lock(preempt_guard)
+            new_ref.lock(&preempt_guard)
         };
         proof {
             // Each `borrow` adjusts raw_count to 1 at one slot index. For the kernel

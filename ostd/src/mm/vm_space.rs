@@ -21,6 +21,7 @@ use crate::mm::frame::MetaSlot;
 use crate::mm::kspace::KernelPtConfig;
 use crate::mm::page_table::*;
 use crate::mm::page_table::{EntryOwner, PageTableFrag, PageTableGuard};
+use crate::task::atomic_mode::InAtomicMode;
 use crate::specs::arch::*;
 use crate::specs::mm::frame::mapping::meta_to_frame;
 use crate::specs::mm::frame::meta_owners::{MetaPerm, MetaSlotStorage, MetadataInnerPerms};
@@ -29,7 +30,6 @@ use crate::specs::mm::io::VmIoMemView;
 use crate::specs::mm::page_table::cursor::owners::CursorOwner;
 use crate::specs::mm::page_table::*;
 use crate::specs::mm::tlb::TlbModel;
-use crate::specs::task::InAtomicMode;
 use core::marker::PhantomData;
 use core::{ops::Range, sync::atomic::Ordering};
 use vstd_extra::ghost_tree::*;
@@ -200,7 +200,7 @@ impl<'a> VmSpace<'a> {
         }
         let pt = {
             #[verus_spec(with Tracked(kernel_owner), Tracked(regions), Tracked(guards_k), Tracked(guards_u))]
-            kpt.create_user_page_table::<crate::specs::task::AnyAtomicGuard>()
+            kpt.create_user_page_table()
         };
         Self { pt, cpus: AtomicCpuSet::new(CpuSet::new_empty()), _marker: PhantomData }
     }
