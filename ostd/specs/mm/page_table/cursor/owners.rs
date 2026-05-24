@@ -2523,7 +2523,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     }
 }
 
-impl<'rcu, C: PageTableConfig, A: InAtomicMode> Inv for Cursor<'rcu, C, A> {
+impl<'rcu, C: PageTableConfig> Inv for Cursor<'rcu, C> {
     open spec fn inv(self) -> bool {
         // `level <= NR_LEVELS + 1` (not `<= NR_LEVELS`), mirroring the
         // `guard_level + 1` slack below: it admits the transient "popped
@@ -2548,7 +2548,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Inv for Cursor<'rcu, C, A> {
     }
 }
 
-impl<'rcu, C: PageTableConfig, A: InAtomicMode> OwnerOf for Cursor<'rcu, C, A> {
+impl<'rcu, C: PageTableConfig> OwnerOf for Cursor<'rcu, C> {
     type Owner = CursorOwner<'rcu, C>;
 
     open spec fn wf(self, owner: Self::Owner) -> bool {
@@ -2603,7 +2603,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> OwnerOf for Cursor<'rcu, C, A> {
     }
 }
 
-impl<'rcu, C: PageTableConfig, A: InAtomicMode> ModelOf for Cursor<'rcu, C, A> {
+impl<'rcu, C: PageTableConfig> ModelOf for Cursor<'rcu, C> {
 
 }
 

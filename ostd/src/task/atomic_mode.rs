@@ -25,6 +25,8 @@
 //! 2. Switching to user space.
 //!
 //! This module provides API to detect such "sleep-like" actions.
+use vstd::prelude::*;
+
 use core::sync::atomic::Ordering;
 /* 
 /// Marks a function as one that might sleep.
@@ -58,7 +60,8 @@ pub fn might_sleep() {
 ///
 /// The implementer must ensure that the atomic mode is maintained while
 /// the guard type is alive.
-pub unsafe trait InAtomicMode: core::fmt::Debug {}
+#[verus_verify]
+pub unsafe trait InAtomicMode/* : core::fmt::Debug*/ {}
 /* 
 /// Abstracts any type from which one can obtain a reference to an atomic-mode guard.
 pub trait AsAtomicModeGuard {

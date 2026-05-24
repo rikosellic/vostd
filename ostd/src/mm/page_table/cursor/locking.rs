@@ -106,15 +106,15 @@ pub assume_specification<Idx: Clone>[ Range::<Idx>::clone ](range: &Range<Idx>) 
             ==> final(regions).slot_owners[idx].inner_perms.ref_count.value()
                     == old(regions).slot_owners[idx].inner_perms.ref_count.value(),
         // Frames that were item_not_mapped before remain so after locking.
-        forall|item: C::Item| #![trigger CursorMut::<C, A>::item_not_mapped(item, *old(regions))]
-            CursorMut::<C, A>::item_not_mapped(item, *old(regions)) ==>
-            CursorMut::<C, A>::item_not_mapped(item, *final(regions)),
+        forall|item: C::Item| #![trigger CursorMut::<C>::item_not_mapped(item, *old(regions))]
+            CursorMut::<C>::item_not_mapped(item, *old(regions)) ==>
+            CursorMut::<C>::item_not_mapped(item, *final(regions)),
 )]
-pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
+pub fn lock_range<'rcu, C: PageTableConfig>(
     pt: &'rcu PageTable<C>,
-    guard: &'rcu A,
+    guard: &'rcu dyn InAtomicMode,
     va: &Range<Vaddr>,
-) -> (Cursor<'rcu, C, A>, Tracked<CursorOwner<'rcu, C>>) {
+) -> (Cursor<'rcu, C>, Tracked<CursorOwner<'rcu, C>>) {
     let ghost start_idx = AbstractVaddr::from_vaddr(va.start).index[NR_LEVELS as int - 1];
 
     let tracked mut cursor_own: CursorOwner<'rcu, C> = CursorOwner::tracked_new(
@@ -161,7 +161,7 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
     path[guard_level as usize - 1] = Some(subtree_root);
 
     let res = (
-        Cursor::<'rcu, C, A> {
+        Cursor::<'rcu, C> {
             path,
             rcu_guard: guard,
             level: guard_level,
@@ -201,7 +201,7 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
 }
 
 #[verifier::external_body]
-pub fn unlock_range<C: PageTableConfig, A: InAtomicMode>(cursor: &mut Cursor<'_, C, A>) {
+pub fn unlock_range<C: PageTableConfig>(cursor: &mut Cursor<'_, C>) {
     unimplemented!()/*    let end = cursor.guard_level as usize - 1;
     for i in (0..end) {
         if let Some(guard) = cursor.path[end - i].take() {
@@ -313,7 +313,7 @@ pub fn unlock_range<C: PageTableConfig, A: InAtomicMode>(cursor: &mut Cursor<'_,
 #[verifier::external_body]
 fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig>(
     pt: &PageTable<C>,
-    guard: &'rcu DisabledPreemptGuard,
+    guard: &'rcu dyn InAtomicMode,
     va: &Range<Vaddr>,
 ) -> Option<PageTableGuard<'rcu, C>> {
     let mut cur_node_guard: Option<PageTableGuard<'rcu, C>> = None;
@@ -370,7 +370,7 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig>(
             // SAFETY: The node must be alive for at least `'rcu` since the
             // address is read from the page table node.
             let node_ref = unsafe { PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr) };
-            node_ref.lock(&guard)
+            node_ref.lock(guard)
         };
 
         let tracked mut cont = cursor_own.continuations.tracked_remove(cursor_own.level - 1);
@@ -444,7 +444,7 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig>(
         // SAFETY: The node must be alive for at least `'rcu` since the
         // address is read from the page table node.
         let node_ref = unsafe { PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr) };
-        node_ref.lock(&guard)
+        node_ref.lock(guard)
     };
 
     let tracked mut cont = cursor_own.continuations.tracked_remove(cursor_own.level - 1);
@@ -503,7 +503,7 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig>(
 )]
 #[verifier::external_body]
 fn dfs_acquire_lock<'rcu, C: PageTableConfig>(
-    guard: &DisabledPreemptGuard,
+    guard: & dyn InAtomicMode,
     cur_node: &mut PageTableGuard<'rcu, C>,
     cur_node_va: Vaddr,
     va_range: Range<Vaddr>,
@@ -517,7 +517,7 @@ fn dfs_acquire_lock<'rcu, C: PageTableConfig>(
         let child = cur_node.entry(i);
         match child.to_ref() {
             ChildRef::PageTable(pt) => {
-                let mut pt_guard = pt.lock(&guard);
+                let mut pt_guard = pt.lock(guard);
                 let child_node_va = cur_node_va + i * page_size(cur_level);
                 let child_node_va_end = child_node_va + page_size(cur_level);
                 let va_start = va_range.start.max(child_node_va);
@@ -631,8 +631,8 @@ unsafe fn dfs_release_lock<'rcu, C: PageTableConfig, A: InAtomicMode>(
         forall |addr: usize| addr != locked_addr && old(guards).lock_held(addr) ==> final(guards).lock_held(addr),
 )]
 #[verifier::external_body]
-pub fn dfs_mark_stray_and_unlock<'a, C: PageTableConfig, A: InAtomicMode>(
-    rcu_guard: &A,
+pub fn dfs_mark_stray_and_unlock<'a, C: PageTableConfig>(
+    rcu_guard: & dyn InAtomicMode,
     sub_tree: &PageTableGuard<'a, C>,
 ) -> usize {
     unimplemented!();

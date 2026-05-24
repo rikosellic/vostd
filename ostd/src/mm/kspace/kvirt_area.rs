@@ -598,7 +598,7 @@ impl KVirtArea {
             Tracked(guards): Tracked<&mut Guards<'a, KernelPtConfig>>
     )]
     #[allow(private_interfaces)]
-    pub fn map_frames<'a, A: InAtomicMode + 'a>(
+    pub fn map_frames<'a>(
         area_size: usize,
         map_offset: usize,
         frames: alloc::vec::Vec<DynFrame>,
@@ -626,7 +626,7 @@ impl KVirtArea {
             // with `rc > 0` in the current regions. The runtime invariant of `Frame<M>`
             // implies this; the caller is responsible for projecting it into spec form.
             forall|i: int|
-                0 <= i < frames.len() ==> CursorMut::<'a, KernelPtConfig, A>::item_slot_in_regions(
+                0 <= i < frames.len() ==> CursorMut::<'a, KernelPtConfig>::item_slot_in_regions(
                     MappedItem::Tracked(#[trigger] frames[i], prop),
                     *old(regions),
                 ),
@@ -1033,7 +1033,7 @@ impl KVirtArea {
             Tracked(guards): Tracked<&mut Guards<'a, KernelPtConfig>>
     )]
     #[allow(private_interfaces)]
-    pub unsafe fn map_untracked_frames<A: InAtomicMode + 'a, 'a>(
+    pub unsafe fn map_untracked_frames<'a>(
         area_size: usize,
         map_offset: usize,
         pa_range: Range<Paddr>,
@@ -1091,10 +1091,7 @@ impl KVirtArea {
                     == 0);
                 assert(va_range.end % <KernelPtConfig as PagingConstsTrait>::BASE_PAGE_SIZE_spec()
                     == 0);
-                assert(crate::mm::page_table::Cursor::<
-                    KernelPtConfig,
-                    A,
-                >::cursor_new_success_conditions(&va_range));
+                assert(crate::mm::page_table::Cursor::<KernelPtConfig>::cursor_new_success_conditions(&va_range));
             }
 
             let page_table = {
@@ -1109,7 +1106,7 @@ impl KVirtArea {
             let ghost pre_cursor_regions: MetaRegionOwners = *regions;
 
             #[verus_spec(with Tracked(owner.pt_owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
-            let cursor_res = page_table.cursor_mut(preempt_guard, &va_range);
+            let cursor_res = page_table.cursor_mut(&preempt_guard, &va_range);
 
             assert!(cursor_res.is_ok());
 
@@ -1225,7 +1222,7 @@ impl KVirtArea {
                     assert(regions.slots.contains_key(idx));
                     assert(regions.slot_owners[idx].inner_perms.ref_count.value()
                         != crate::specs::mm::frame::meta_owners::REF_COUNT_UNUSED);
-                    assert(CursorMut::<'a, KernelPtConfig, A>::item_slot_in_regions(
+                    assert(CursorMut::<'a, KernelPtConfig>::item_slot_in_regions(
                         item,
                         *regions,
                     ));

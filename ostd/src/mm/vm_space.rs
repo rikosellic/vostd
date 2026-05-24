@@ -230,7 +230,7 @@ impl<'a> VmSpace<'a> {
         requires
             owner.inv(),
         ensures
-            crate::mm::page_table::Cursor::<UserPtConfig, G>::cursor_new_success_conditions(va) ==> (r matches Ok(_) && cursor_owner@ matches Some(_)),
+            crate::mm::page_table::Cursor::<UserPtConfig>::cursor_new_success_conditions(va) ==> (r matches Ok(_) && cursor_owner@ matches Some(_)),
             // On the success branch, the returned cursor owner satisfies
             // its invariant. Follows from the underlying PT::cursor's
             // ensures: r is Ok ⇒ cursor_new_success_conditions (by
@@ -238,8 +238,13 @@ impl<'a> VmSpace<'a> {
             // hold ⇒ cursor_owner.inv().
             cursor_owner@ matches Some(c) ==> c.inv(),
     )]
-    pub fn cursor<G: InAtomicMode>(&'a self, guard: &'a G, va: &Range<Vaddr>) -> Result<
-        Cursor<'a, G>,
+    /* pub fn cursor<'rcu, G: AsAtomicModeGuard>(
+        &'rcu self,
+        guard: &'rcu G,
+        va: &Range<Vaddr>,
+    )*/
+    pub fn cursor(&'a self, guard: &'a dyn InAtomicMode, va: &Range<Vaddr>) -> Result<
+        Cursor<'a>,
     > {
         proof_decl! {
             let tracked mut out_owner: Option<CursorOwner<'a, UserPtConfig>>;
@@ -288,12 +293,17 @@ impl<'a> VmSpace<'a> {
         requires
             owner.inv(),
         ensures
-            crate::mm::page_table::Cursor::<UserPtConfig, G>::cursor_new_success_conditions(va) ==> (r matches Ok(_) && cursor_owner@ matches Some(_)),
+            crate::mm::page_table::Cursor::<UserPtConfig>::cursor_new_success_conditions(va) ==> (r matches Ok(_) && cursor_owner@ matches Some(_)),
             // See `cursor` above for the derivation.
             cursor_owner@ matches Some(c) ==> c.inv(),
     )]
-    pub fn cursor_mut<G: InAtomicMode>(&'a self, guard: &'a G, va: &Range<Vaddr>) -> Result<
-        CursorMut<'a, G>,
+    /*pub fn cursor_mut<'rcu, G: AsAtomicModeGuard>(
+        &'rcu self,
+        guard: &'rcu G,
+        va: &Range<Vaddr>,
+    ) -> Result<CursorMut<'rcu, C>, PageTableError> */
+    pub fn cursor_mut(&'a self, guard: &'a dyn InAtomicMode, va: &Range<Vaddr>) -> Result<
+        CursorMut<'a>,
     > {
         proof_decl! {
             let tracked mut out_owner: Option<CursorOwner<'a, UserPtConfig>>;
@@ -437,10 +447,10 @@ impl<'a> VmSpace<'a> {
 /// It exclusively owns a sub-tree of the page table, preventing others from
 /// reading or modifying the same sub-tree. Two read-only cursors can not be
 /// created from the same virtual address range either.
-pub struct Cursor<'a, A: InAtomicMode>(pub crate::mm::page_table::Cursor<'a, UserPtConfig, A>);
+pub struct Cursor<'a>(pub crate::mm::page_table::Cursor<'a, UserPtConfig>);
 
 #[verus_verify]
-impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
+impl<'rcu> Cursor<'rcu> {
     /// Queries the mapping at the current virtual address.
     ///
     /// If the cursor is pointing to a valid virtual address that is locked,
@@ -597,15 +607,15 @@ impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
 ///
 /// It exclusively owns a sub-tree of the page table, preventing others from
 /// reading or modifying the same sub-tree.
-pub struct CursorMut<'a, A: InAtomicMode> {
-    pub pt_cursor: crate::mm::page_table::CursorMut<'a, UserPtConfig, A>,
+pub struct CursorMut<'a> {
+    pub pt_cursor: crate::mm::page_table::CursorMut<'a, UserPtConfig>,
     // We have a read lock so the CPU set in the flusher is always a superset
     // of actual activated CPUs.
     pub flusher: TlbFlusher<'a  /*, DisabledPreemptGuard*/ >,
 }
 
 #[verus_verify]
-impl<'a, A: InAtomicMode> CursorMut<'a, A> {
+impl<'a> CursorMut<'a> {
     /// Queries the mapping at the current virtual address.
     ///
     /// This is the same as [`Cursor::query`].
