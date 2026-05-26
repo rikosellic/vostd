@@ -1347,8 +1347,20 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> Link<M> {
 // the safety is upheld by the one who implements `AnyFrameMeta` for `M`.
 impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> AnyFrameMeta for Link<M>
 {
-    fn on_drop(&mut self, reader: &mut crate::mm::VmReader<crate::mm::Infallible>) {
-        self.meta.on_drop(reader);
+    open spec fn on_drop_pre(
+        &self,
+        reader: crate::mm::VmReader<'_, crate::mm::Infallible>,
+        args: crate::mm::frame::meta::OnDropArgs,
+    ) -> bool {
+        self.meta.on_drop_pre(reader, args)
+    }
+
+    fn on_drop(
+        &mut self,
+        reader: &mut crate::mm::VmReader<crate::mm::Infallible>,
+        args: Tracked<&mut crate::mm::frame::meta::OnDropArgs>,
+    ) {
+        self.meta.on_drop(reader, args);
     }
 
     fn is_untyped(&self) -> bool {

@@ -40,7 +40,7 @@ use vstd_extra::ownership::*;
 use vstd_extra::panic::*;
 use vstd_extra::{assert, assert_eq};
 
-use crate::mm::frame::Frame;
+use crate::mm::frame::{AnyFrameMeta, Frame};
 use crate::mm::page_table::*;
 use crate::mm::{Paddr, Vaddr, MAX_NR_LEVELS, MAX_PADDR};
 use crate::specs::arch::kspace::FRAME_METADATA_RANGE;
@@ -193,12 +193,7 @@ pub enum PageTableFrag<C: PageTableConfig> {
     /// A sub-tree of a page table that is taken out of the page table.
     ///
     /// The caller is responsible for dropping it after TLB coherence.
-    StrayPageTable {
-        pt: Frame<PageTablePageMeta<C>>,  // TODO: this was a dyn AnyFrameMeta, but we can't support that...
-        va: Vaddr,
-        len: usize,
-        num_frames: usize,
-    },
+    StrayPageTable { pt: Frame<dyn AnyFrameMeta>, va: Vaddr, len: usize, num_frames: usize },
 }
 
 impl<C: PageTableConfig> PageTableFrag<C> {
@@ -3404,6 +3399,84 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 assert(m == target);
                 assert(owner_before_replace@.mappings.contains(m));
                 assert(view.split_while_huge(m.page_size).mappings.contains(m));
+
+                // Stage 2 (paths_in_pt refactor): the data frame that
+                // was just unmapped no longer occupies any PTE, so its
+                // tree path must leave `paths_in_pt`. This is the
+                // symmetric counterpart of `map()`'s
+                // `paths_in_pt.insert` (cursor/mod.rs:2613). Keeping it
+                // here makes the eventual exact ref-count accounting
+                // (`ref_count == #handles + paths_in_pt.len()`) a true
+                // system invariant rather than monotonically inflated.
+                let ghost removed_idx = frame_to_index(cur_st.value.frame.unwrap().mapped_pa);
+                let ghost removed_path = cur_st.value.path;
+                let ghost regions_pre_remove = *regions;
+                let tracked mut so_rm = regions.slot_owners.tracked_remove(removed_idx);
+                so_rm.paths_in_pt = so_rm.paths_in_pt.remove(removed_path);
+                regions.slot_owners.tracked_insert(removed_idx, so_rm);
+                let ghost owner_final = *owner;
+                // Maintained cursor invariant just before the edit
+                // (replace_cur_entry ensures `invariants`, move_forward
+                // preserves it): gives metaregion_sound + regions.inv().
+                assert(owner_final.metaregion_sound(regions_pre_remove));
+                assert(regions_pre_remove.inv());
+                assert(regions_pre_remove.slot_owners.contains_key(removed_idx));
+                // (a) no-node-at-`removed_idx`: discharged — a
+                // data-frame slot in the free pool can't host an active
+                // page-table node.
+                assert(regions_pre_remove.slots.contains_key(removed_idx));
+                owner_final.no_node_at_idx_from_slot_key(regions_pre_remove, removed_idx);
+                // (b) No frame entry in the post-replace cursor tree
+                // carries `removed_path`. `replace_cur_entry(Child::None)`
+                // deleted the slot's only mapping (`target`) and inserted
+                // an empty absent subtree; `move_forward` preserves the
+                // mapping set. So no live view mapping starts at
+                // `vaddr_of(removed_path)`, and by tree-path correctness +
+                // structural uniqueness (lifted over the cursor tree by
+                // `no_frame_with_path_from_no_view_mapping`) no frame entry
+                // can carry that path.
+                owner_before_replace.cur_subtree_eq_filtered_mappings_path();
+                let ghost obr_subtree = PageTableOwner(
+                    owner_before_replace.cur_subtree(),
+                )@.mappings;
+                assert(owner_final@.mappings =~= owner_before_replace@.mappings - obr_subtree);
+                assert(obr_subtree == set![target]);
+                let ghost sv = crate::specs::mm::page_table::vaddr_of::<C>(removed_path) as int;
+                let ghost sz = page_size(owner_before_replace.level) as int;
+                assert(obr_subtree =~= owner_before_replace@.mappings.filter(
+                    |mm: Mapping| sv <= mm.va_range.start < sv + sz,
+                ));
+                assert(sz > 0) by {
+                    crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_ge_page_size(
+                    owner_before_replace.level);
+                };
+                assert forall|mm: Mapping|
+                    owner_final@.mappings.contains(mm) implies mm.va_range.start != sv by {
+                    if mm.va_range.start == sv {
+                        assert(owner_before_replace@.mappings.contains(mm));
+                        assert(owner_before_replace@.mappings.filter(
+                            |m2: Mapping| sv <= m2.va_range.start < sv + sz,
+                        ).contains(mm));
+                        assert(obr_subtree.contains(mm));
+                        assert(mm == target);
+                        assert(!owner_final@.mappings.contains(target));
+                    }
+                };
+                owner_final.no_frame_with_path_from_no_view_mapping(removed_path);
+                owner_final.path_removable_from_no_node_and_no_frame_path(
+                    removed_idx,
+                    removed_path,
+                );
+                owner_final.metaregion_preserved_under_path_remove(
+                    regions_pre_remove,
+                    *regions,
+                    removed_idx,
+                    removed_path,
+                );
+                // `regions.inv()` after the paths_in_pt edit:
+                // MetaSlotOwner::inv does not constrain paths_in_pt and
+                // `slots` is unchanged, so it is preserved.
+                assert(regions.inv());
             }
             if frag.unwrap() is StrayPageTable {
                 let va = frag.unwrap()->StrayPageTable_va;
@@ -4186,7 +4259,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
 
                 Some(
                     PageTableFrag::StrayPageTable {
-                        pt: pt.into(),
+                        pt: pt.into_dyn(),
                         va,
                         len: page_size(self.0.level),
                         num_frames,
