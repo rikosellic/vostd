@@ -76,8 +76,8 @@ impl<M: AnyUFrameMeta + OwnerOf> Segment<M> {
             r.inv(),
             owner@.inv(),
             r.wf(owner@),
-            r.cursor.vaddr == paddr_to_vaddr_spec(self.start_paddr_spec()),
-            r.remain_spec() == self.size_spec(),
+            r.cursor.vaddr == paddr_to_vaddr_spec(self.start_paddr()),
+            r.remain_spec() == self.size(),
             owner@.is_kernel,
     )]
     pub fn reader(&self) -> VmReader<'_, Infallible> {
@@ -94,7 +94,7 @@ impl<M: AnyUFrameMeta + OwnerOf> Segment<M> {
         let ghost range = vaddr..(vaddr + len) as usize;
         let ptr = VirtPtr { vaddr, range: Ghost(range) };
         proof {
-            lemma_paddr_to_vaddr_properties(self.start_paddr_spec());
+            lemma_paddr_to_vaddr_properties(self.start_paddr());
             assert(KERNEL_BASE_VADDR > 0) by (compute_only);
             assert(vaddr > 0);
             assert(VMALLOC_BASE_VADDR <= KERNEL_END_VADDR) by (compute_only);
@@ -120,8 +120,8 @@ impl<M: AnyUFrameMeta + OwnerOf> Segment<M> {
             r.inv(),
             owner@.inv(),
             r.wf(owner@),
-            r.cursor.vaddr == paddr_to_vaddr_spec(self.start_paddr_spec()),
-            r.avail_spec() == self.size_spec(),
+            r.cursor.vaddr == paddr_to_vaddr_spec(self.start_paddr()),
+            r.avail_spec() == self.size(),
             owner@.is_kernel,
             !owner@.is_fallible,
     )]
@@ -139,7 +139,7 @@ impl<M: AnyUFrameMeta + OwnerOf> Segment<M> {
         let ghost range = vaddr..(vaddr + len) as usize;
         let ptr = VirtPtr { vaddr, range: Ghost(range) };
         proof {
-            lemma_paddr_to_vaddr_properties(self.start_paddr_spec());
+            lemma_paddr_to_vaddr_properties(self.start_paddr());
             assert(KERNEL_BASE_VADDR > 0) by (compute_only);
             assert(vaddr > 0);
             assert(VMALLOC_BASE_VADDR <= KERNEL_END_VADDR) by (compute_only);
