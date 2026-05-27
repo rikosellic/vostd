@@ -16,7 +16,7 @@ pub type Paddr = usize;
 /// The maximum value of `PagingConstsTrait::NR_LEVELS`.
 pub const MAX_NR_LEVELS: usize = 4;
 
-// pub(crate) mod dma;
+pub(crate) mod dma;
 pub mod frame;
 //pub mod heap;
 pub mod io;
