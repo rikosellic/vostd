@@ -189,22 +189,22 @@ struct RcuInner<P: NonNullPtr> {
 }
 
 closed spec fn wf(self) -> bool {
-        invariant on ptr with (ghost_nullable, _marker) is (
-            v: *mut <P as NonNullPtr>::Target,
-            g: RcuPtrGhost<P>,
-        ) {
-            &&& retired_pools_inv::<P>(g.retired)
-            &&& returned_tokens_inv::<P>(g.returned)
-            &&& match g.current {
-                Some(perm) => {
-                    &&& !v.is_null()
-                    &&& P::ptr_perm_match(v, perm@)
-                    &&& perm@.inv()
-                    &&& perm.wf()
-                    &&& perm.not_empty()
-                },
-                None => ghost_nullable@ && v.is_null(),
-            }
+    invariant on ptr with (ghost_nullable, _marker) is (
+        v: *mut <P as NonNullPtr>::Target,
+        g: RcuPtrGhost<P>,
+    ) {
+        &&& retired_pools_inv::<P>(g.retired)
+        &&& returned_tokens_inv::<P>(g.returned)
+        &&& match g.current {
+            Some(perm) => {
+                &&& !v.is_null()
+                &&& P::ptr_perm_match(v, perm@)
+                &&& perm@.inv()
+                &&& perm.wf()
+                &&& perm.not_empty()
+            },
+            None => ghost_nullable@ && v.is_null(),
+        }
     }
 }
 }
@@ -232,7 +232,6 @@ impl<P: NonNullPtr> RcuInner<P> {
     }
 }
 
-#[verus_verify]
 impl<P: NonNullPtr + Send> RcuInner<P> {
     #[inline(always)]
     const fn new_none() -> (res: Self)
@@ -240,24 +239,26 @@ impl<P: NonNullPtr + Send> RcuInner<P> {
             res.is_nullable(),
             res.wf(),
     {
-        proof_decl! {
-            let tracked ptr_ghost: RcuPtrGhost<P> = RcuPtrGhost {
-                current: None,
-                retired: Map::tracked_empty(),
-                returned: Map::tracked_empty(),
-            };
-        }
         Self {
             ptr: AtomicPtr::new(
                 Ghost((Ghost(true), PhantomData::<*const <P as NonNullPtr>::Target>)),
                 core::ptr::null_mut(),
-                Tracked(ptr_ghost),
+                Tracked(
+                    RcuPtrGhost {
+                        current: None,
+                        retired: Map::tracked_empty(),
+                        returned: Map::tracked_empty(),
+                    },
+                ),
             ),
             _marker: PhantomData::<*const <P as NonNullPtr>::Target>,
             ghost_nullable: Ghost(true),
         }
     }
+}
 
+#[verus_verify]
+impl<P: NonNullPtr + Send> RcuInner<P> {
     /// Creates a new RCU primitive with the given pointer `pointer`.
     #[inline(always)]
     #[verus_spec(r =>
@@ -784,14 +785,6 @@ impl<P: NonNullPtr + Send> RcuOption<P> {
         } else {
             Self(RcuInner::new_none())
         }
-    }
-
-    /// Creates a new RCU primitive that contains nothing.
-    ///
-    /// This is a constant equivalence to [`RcuOption::new(None)`].
-    #[inline(always)]
-    pub const fn new_none() -> Self {
-        Self(RcuInner::new_none())
     }
 
     /// Replaces the current pointer with a null pointer.
