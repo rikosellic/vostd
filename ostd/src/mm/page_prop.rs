@@ -32,27 +32,6 @@ impl Inv for PageProperty {
     }
 }
 
-#[verus_verify]
-impl PageProperty {
-    /// Creates a new `PageProperty` with the given flags and cache policy for the user.
-    #[verus_verify(dual_spec)]
-    #[verus_spec(returns Self::new_user(flags, cache))]
-    pub fn new_user(flags: PageFlags, cache: CachePolicy) -> Self {
-        Self { flags, cache, priv_flags: PrivilegedPageFlags::USER() }
-    }
-
-    /// Creates a page property that implies an invalid page without mappings.
-    #[verus_verify(dual_spec)]
-    #[verus_spec(returns Self::new_absent())]
-    pub fn new_absent() -> Self {
-        Self {
-            flags: PageFlags::empty(),
-            cache: CachePolicy::Writeback,
-            priv_flags: PrivilegedPageFlags::empty(),
-        }
-    }
-}
-
 // TODO: Make it more abstract when supporting other architectures.
 /// A type to control the cacheability of the main memory.
 ///
@@ -198,3 +177,27 @@ impl PrivilegedPageFlags {
 }
 
 } // verus!
+#[verus_verify]
+impl PageProperty {
+    /// Creates a new `PageProperty` with the given flags and cache policy for the user.
+    #[verus_verify(dual_spec)]
+    #[verus_spec(returns Self::new_user(flags, cache))]
+    pub fn new_user(flags: PageFlags, cache: CachePolicy) -> Self {
+        Self {
+            flags,
+            cache,
+            priv_flags: PrivilegedPageFlags::USER(),
+        }
+    }
+
+    /// Creates a page property that implies an invalid page without mappings.
+    #[verus_verify(dual_spec)]
+    #[verus_spec(returns Self::new_absent())]
+    pub fn new_absent() -> Self {
+        Self {
+            flags: PageFlags::empty(),
+            cache: CachePolicy::Writeback,
+            priv_flags: PrivilegedPageFlags::empty(),
+        }
+    }
+}
