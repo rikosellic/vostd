@@ -260,6 +260,9 @@ pub unsafe fn activate_page_table(root_paddr: Paddr, root_pt_cache: CachePolicy)
 
 pub uninterp spec fn current_page_table_paddr_spec() -> Paddr;
 
+} // verus!
+
+#[verus_verify]
 #[verifier::external_body]
 #[verifier::when_used_as_spec(current_page_table_paddr_spec)]
 #[verus_spec(
@@ -268,11 +271,13 @@ pub uninterp spec fn current_page_table_paddr_spec() -> Paddr;
 )]
 pub fn current_page_table_paddr() -> Paddr {
     /* x86_64::registers::control::Cr3::read_raw()
-        .0
-        .start_address()
-        .as_u64() as Paddr*/
+    .0
+    .start_address()
+    .as_u64() as Paddr*/
     unimplemented!()
 }
+
+verus! {
 
 impl PageTableEntry {
     //cfg_if! {
