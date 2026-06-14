@@ -359,7 +359,11 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.push_level_owner(guard)@.mappings == self@.mappings,
     {
-        broadcast use {CursorContinuation::group_lemmas, CursorOwner::group_lemmas};
+        broadcast use {
+            CursorContinuation::group_lemmas,
+            CursorOwner::group_lemmas,
+            PageTableOwner::group_lemmas,
+        };
 
         let new_owner = self.push_level_owner(guard);
         let old_cont = self.continuations[self.level - 1];
@@ -416,13 +420,12 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                     ).contains(m);
                 assert(pto.0.children[j] is Some);
                 assert(pto.0.children[j] == child_cont.children[j]);
-                pto.view_rec_contains_intro(child_path, m, j);
+                assert(pto.view_rec(child_path).contains(m));
             };
             assert forall|m: Mapping|
                 pto.view_rec(child_path).contains(
                     m,
                 ) implies #[trigger] child_cont.view_mappings().contains(m) by {
-                pto.view_rec_contains(child_path, m);
                 let j = choose|j: int|
                     #![trigger pto.0.children[j]]
                     0 <= j < pto.0.children.len() && pto.0.children[j] is Some && PageTableOwner(
@@ -442,7 +445,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             if i == self.level - 1 {
                 if old_cont.view_mappings_take_child_spec().contains(m) {
                     assert(new_owner.continuations[self.level - 2].view_mappings().contains(m));
-                    new_owner.lemma_view_mappings_intro(m, self.level - 2);
                 } else {
                     assert(taken.view_mappings().contains(m));
                     assert(modified_cont.view_mappings().contains(m));
@@ -450,7 +452,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 }
             } else {
                 assert(new_owner.continuations[i] == self.continuations[i]);
-                new_owner.lemma_view_mappings_intro(m, i);
             }
         };
         assert forall|m: Mapping|
@@ -2387,10 +2388,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                         #[trigger] self.continuations[i]).view_mappings().contains(m);
                     if i == self.level - 1 {
                         assert(result.continuations[i].view_mappings().contains(m));
-                        result.lemma_view_mappings_intro(m, i);
                     } else {
                         assert(result.continuations[i] == self.continuations[i]);
-                        result.lemma_view_mappings_intro(m, i);
                     }
                 };
                 assert forall|m: Mapping|
@@ -2425,24 +2424,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             let fwd = self.move_forward_owner_spec();
             assert(fwd.continuations == self.continuations);
             assert(fwd.level == self.level);
-            assert(fwd.view_mappings() == self.view_mappings()) by {
-                assert forall|m: Mapping|
-                    self.view_mappings().contains(m) implies fwd.view_mappings().contains(m) by {
-                    let i = choose|i: int|
-                        self.level - 1 <= i < NR_LEVELS
-                            && #[trigger] self.continuations[i].view_mappings().contains(m);
-                    assert(fwd.continuations[i] == self.continuations[i]);
-                    fwd.lemma_view_mappings_intro(m, i);
-                };
-                assert forall|m: Mapping|
-                    fwd.view_mappings().contains(m) implies self.view_mappings().contains(m) by {
-                    let i = choose|i: int|
-                        fwd.level - 1 <= i < NR_LEVELS
-                            && #[trigger] fwd.continuations[i].view_mappings().contains(m);
-                    assert(self.continuations[i] == fwd.continuations[i]);
-                    self.lemma_view_mappings_intro(m, i);
-                };
-            };
+            assert(fwd.view_mappings() == self.view_mappings());
         }
     }
 }
