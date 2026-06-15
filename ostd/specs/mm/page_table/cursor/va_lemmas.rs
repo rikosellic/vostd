@@ -227,18 +227,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let subtree = self.cur_subtree();
         let path = subtree.value.path;
         let frame = self.cur_entry_owner().frame();
-        let pt_level = INC_LEVELS - path.len();
         let cont = self.continuations[self.level - 1];
 
         cont.path().push_tail_property_len(cont.idx as usize);
-        assert(cont.level() == self.level) by {
-            if self.level == 1 {
-            } else if self.level == 2 {
-            } else if self.level == 3 {
-            } else {
-            }
-        };
-        assert(pt_level == self.level);
 
         let ps = page_size(self.level as PagingLevel);
         let m = Mapping {
@@ -262,10 +253,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let filtered = self@.mappings.filter(
             |m2: Mapping| m2.va_range.start <= self@.cur_va < m2.va_range.end,
         );
-        assert(filtered.contains(m));
         vstd::set::lemma_set_choose_len(filtered);
         let qm = self@.query_mapping();
-        assert(filtered.contains(qm));
         assert(qm == m) by {
             if qm != m {
                 assert(self@.mappings.contains(qm));
@@ -349,13 +338,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
 
         self.va.to_path_len(L - 1);
         cont.path().push_tail_property_len(cont.idx as usize);
-        assert(cont.level() == self.level) by {
-            if L == 1 {
-            } else if L == 2 {
-            } else if L == 3 {
-            } else {
-            }
-        };
 
         assert forall|i: int| 0 <= i < subtree_path.len() implies subtree_path.index(i)
             == va_path.index(i) by {

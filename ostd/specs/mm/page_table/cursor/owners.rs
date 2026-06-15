@@ -1306,18 +1306,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     {
         let path = new_subtree.value.path;
         let ps = page_size(level);
-        let pt_level = INC_LEVELS - path.len();
         let cont = self.continuations[self.level as int - 1];
 
         cont.path().push_tail_property_len(cont.idx as usize);
-        assert(cont.level() == self.level) by {
-            if self.level == 1 {
-            } else if self.level == 2 {
-            } else if self.level == 3 {
-            } else {
-            }
-        };
-        assert(pt_level == self.level);
 
         // Bridge `nat_align_down(cur_va, ps) == vaddr_of::<C>(path) as Vaddr`:
         //   to_path_vaddr_concrete: vaddr(path) + va.leading_bits * 2^48 == nat_align_down(cur_va, ps)
@@ -1388,14 +1379,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         assert(nad <= self@.cur_va as nat) by {
             vstd_extra::arithmetic::lemma_nat_align_down_sound(self@.cur_va as nat, ps as nat);
         };
-        assert(nad <= usize::MAX);
-        assert(nad as int == nad as usize as int);
-        assert(vaddr_of::<C>(path) as int == nad as int);
         assert(target.va_range.start == nad as int);
-        assert(from_view.va_range.start == vaddr_of::<C>(path) as int);
-        assert(target.va_range.start == from_view.va_range.start);
-        assert(target.va_range.end == from_view.va_range.end);
-        assert(target.va_range == from_view.va_range);
         assert(target == from_view);
         assert(PageTableOwner(new_subtree).view_rec(path) == set![from_view]);
         assert(PageTableOwner(new_subtree)@.mappings == set![target]);
@@ -2474,14 +2458,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let cont = self.continuations[self.level - 1];
 
         cont.path().push_tail_property_len(cont.idx as usize);
-        assert(cont.level() == self.level) by {
-            if self.level == 1 {
-            } else if self.level == 2 {
-            } else if self.level == 3 {
-            } else {
-            }
-        };
-        assert(pt_level == self.level);
 
         let m = Mapping {
             va_range: Range {
@@ -2496,10 +2472,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             property: frame.prop,
         };
         assert(PageTableOwner(subtree).view_rec(path) == set![m]);
-        assert(PageTableOwner(subtree).view_rec(path).contains(m));
         cont.lemma_view_mappings_intro(m, cont.idx as int);
         self.lemma_view_mappings_intro(m, (self.level - 1) as int);
-        assert(m.inv());
         assert(m.va_range.start <= self@.cur_va < m.va_range.end) by {
             self.cur_va_in_subtree_range();
             crate::specs::mm::page_table::owners::lemma_vaddr_of_eq_int::<C>(path);

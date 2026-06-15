@@ -95,7 +95,6 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
                 0 <= i < left.children.len() && left.children[i] is Some && PageTableOwner(
                     left.children[i].unwrap(),
                 ).view_rec(left.path().push_tail(i as usize)).contains(m);
-            assert(self.children[wi] == left.children[wi]);
             if self.view_mappings_take_child_spec().contains(m) {
                 assert(PageTableOwner(self.children[self.idx as int].unwrap()).view_rec(
                     self.path().push_tail(self.idx as usize),
@@ -105,7 +104,6 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
                         && PageTableOwner(left.children[i].unwrap()).view_rec(
                         left.path().push_tail(i as usize),
                     ).contains(m);
-                assert(i != self.idx);
                 assert(PageTableOwner(left.children[i as int].unwrap()).view_rec(
                     left.path().push_tail(i as usize),
                 ).contains(m));
@@ -151,7 +149,6 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
                         && PageTableOwner(self.children[i].unwrap()).view_rec(
                         self.path().push_tail(i as usize),
                     ).contains(m);
-                assert(i != self.idx);
                 assert(self.put_child(child).children[i] == self.children[i]);
                 self.put_child(child).lemma_view_mappings_intro(m, i);
             } else {
@@ -290,13 +287,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                     assert(subtree_mappings.contains(m));
                 } else {
                     // Disjointness: sibling j's VA range doesn't overlap [subtree_va, subtree_va + page_size(level))
-                    assert(cont.level() == self.level) by {
-                        if self.level == 1 {
-                        } else if self.level == 2 {
-                        } else if self.level == 3 {
-                        } else {
-                        }
-                    };
                     let sib_size = page_size((INC_LEVELS - cont.path().len() - 1) as PagingLevel);
                     sibling_paths_disjoint::<C>(cont.path(), self.index(), j as usize, sib_size);
                     // Lift positional disjointness to canonical by adding
@@ -311,13 +301,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                     self.subtree_va_in_ancestor_range(i);
 
                     // Sibling j is disjoint from cont_i.idx child
-                    assert(cont_i.level() == (i + 1) as PagingLevel) by {
-                        if i == 0 {
-                        } else if i == 1 {
-                        } else if i == 2 {
-                        } else {
-                        }
-                    };
                     let sib_size = page_size((INC_LEVELS - cont_i.path().len() - 1) as PagingLevel);
                     sibling_paths_disjoint::<C>(cont_i.path(), cont_i.idx, j as usize, sib_size);
                     lemma_vaddr_of_eq_int::<C>(cont_i.path().push_tail(cont_i.idx as usize));
@@ -366,8 +349,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         // nat_align_down(x, _) <= x <= usize::MAX).
         vstd_extra::arithmetic::lemma_nat_align_down_sound(self@.cur_va as nat, ps as nat);
         let nad = nat_align_down(self@.cur_va as nat, ps as nat);
-        assert(nad <= self@.cur_va as nat);
-        assert(nad <= usize::MAX);
         assert((nad as Vaddr) as int == nad as int);
         assert((nad as Vaddr) as int == vaddr_of::<C>(cur_path) as int);
     }
@@ -398,14 +379,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
 
         self.va.to_path_len(lvl);
         cont.path().push_tail_property_len(cont.idx as usize);
-        assert(cont.level() == (lvl + 1) as PagingLevel) by {
-            if lvl == 0 {
-            } else if lvl == 1 {
-            } else if lvl == 2 {
-            } else {
-            }
-        };
-
         assert forall|k: int| 0 <= k < child_path.len() implies child_path.index(k)
             == va_path.index(k) by {
             self.va.to_path_index(lvl, k);
@@ -519,14 +492,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let idx = self.index();
 
         // Establish cont.level() == self.level via case split
-        assert(cont.level() == self.level) by {
-            if self.level == 1 {
-            } else if self.level == 2 {
-            } else if self.level == 3 {
-            } else {
-            }
-        };
-
         // cur_va is within the child at cont[level-1].idx
         self.cur_va_in_cont_child_range(self.level - 1);
 
@@ -555,14 +520,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let cont = self.continuations[i];
 
         // Establish cont.level() == i + 1 via case split
-        assert(cont.level() == (i + 1) as PagingLevel) by {
-            if i == 0 {
-            } else if i == 1 {
-            } else if i == 2 {
-            } else {
-            }
-        };
-
         // cur_va is within the child at cont[i].idx
         self.cur_va_in_cont_child_range(i);
 
@@ -689,14 +646,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                     );
 
                     if j as usize != cont_i.idx as usize {
-                        assert(cont_i.level() == (i + 1) as PagingLevel) by {
-                            if i == 0 {
-                            } else if i == 1 {
-                            } else if i == 2 {
-                            } else {
-                            }
-                        };
-
                         old_self.cur_va_in_cont_child_range(level as int);
                         old_self.va.to_path_vaddr_concrete(level as int);
                         old_self.cur_va_in_cont_child_range(i);
@@ -795,34 +744,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             c3.as_subtree_restore(c2);
 
             let l4 = c3.restore(c2).0;
-            assert(l4.all_some()) by {
-                assert forall|i: int| 0 <= i < NR_ENTRIES implies l4.children[i] is Some by {
-                    if i == c3.idx as int {
-                    } else {
-                        assert(l4.children[i] == c3.children[i]);
-                    }
-                };
-            };
-
             c2.as_page_table_owner_pt_inv();
-            assert(l4.pt_inv_children()) by {
-                assert forall|i: int|
-                    #![trigger l4.children[i]]
-                    !(0 <= i < l4.children.len()) || (l4.children[i] is Some ==> PageTableOwner(
-                        l4.children[i].unwrap(),
-                    ).pt_inv()) by {
-                    if 0 <= i < l4.children.len() {
-                        if i == c3.idx as int {
-                            assert(l4.children[i] == Some(c2.as_subtree()));
-                        } else {
-                            assert(l4.children[i] == c3.children[i]);
-                            c3.pt_inv_children_unroll(i);
-                        }
-                    } else {
-                        assert(!(0 <= i < l4.children.len()));
-                    }
-                };
-            };
 
             c2.inv_children_unroll_all();
             c3.inv_children_unroll_all();
@@ -852,33 +774,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             c2.as_subtree_restore(c1);
 
             let l3 = c2.restore(c1).0;
-            assert(l3.all_some()) by {
-                assert forall|i: int| 0 <= i < NR_ENTRIES implies l3.children[i] is Some by {
-                    if i == c2.idx as int {
-                    } else {
-                        assert(l3.children[i] == c2.children[i]);
-                    }
-                };
-            };
             c1.as_page_table_owner_pt_inv();
-            assert(l3.pt_inv_children()) by {
-                assert forall|i: int|
-                    #![trigger l3.children[i]]
-                    !(0 <= i < l3.children.len()) || (l3.children[i] is Some ==> PageTableOwner(
-                        l3.children[i].unwrap(),
-                    ).pt_inv()) by {
-                    if 0 <= i < l3.children.len() {
-                        if i == c2.idx as int {
-                            assert(l3.children[i] == Some(c1.as_subtree()));
-                        } else {
-                            assert(l3.children[i] == c2.children[i]);
-                            c2.pt_inv_children_unroll(i);
-                        }
-                    } else {
-                        assert(!(0 <= i < l3.children.len()));
-                    }
-                };
-            };
 
             c1.inv_children_unroll_all();
             c2.inv_children_unroll_all();
@@ -888,34 +784,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             c3.view_mappings_put_child(l3.as_subtree());
 
             let l4 = c3.restore(l3).0;
-            assert(l4.all_some()) by {
-                assert forall|i: int| 0 <= i < NR_ENTRIES implies l4.children[i] is Some by {
-                    if i == c3.idx as int {
-                        assert(l4.children[i] == Some(l3.as_subtree()));
-                    } else {
-                        assert(l4.children[i] == c3.children[i]);
-                    }
-                };
-            };
             l3.as_page_table_owner_pt_inv();
-            assert(l4.pt_inv_children()) by {
-                assert forall|i: int|
-                    #![trigger l4.children[i]]
-                    !(0 <= i < l4.children.len()) || (l4.children[i] is Some ==> PageTableOwner(
-                        l4.children[i].unwrap(),
-                    ).pt_inv()) by {
-                    if 0 <= i < l4.children.len() {
-                        if i == c3.idx as int {
-                            assert(l4.children[i] == Some(l3.as_subtree()));
-                        } else {
-                            assert(l4.children[i] == c3.children[i]);
-                            c3.pt_inv_children_unroll(i);
-                        }
-                    } else {
-                        assert(!(0 <= i < l4.children.len()));
-                    }
-                };
-            };
 
             c3.inv_children_unroll_all();
             l4.as_page_table_owner_preserves_view_mappings();
@@ -943,33 +812,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             c1.view_mappings_put_child(c0.as_subtree());
             c1.as_subtree_restore(c0);
             let l2 = c1.restore(c0).0;
-            assert(l2.all_some()) by {
-                assert forall|i: int| 0 <= i < NR_ENTRIES implies l2.children[i] is Some by {
-                    if i == c1.idx as int {
-                    } else {
-                        assert(l2.children[i] == c1.children[i]);
-                    }
-                };
-            };
             c0.as_page_table_owner_pt_inv();
-            assert(l2.pt_inv_children()) by {
-                assert forall|i: int|
-                    #![trigger l2.children[i]]
-                    !(0 <= i < l2.children.len()) || (l2.children[i] is Some ==> PageTableOwner(
-                        l2.children[i].unwrap(),
-                    ).pt_inv()) by {
-                    if 0 <= i < l2.children.len() {
-                        if i == c1.idx as int {
-                            assert(l2.children[i] == Some(c0.as_subtree()));
-                        } else {
-                            assert(l2.children[i] == c1.children[i]);
-                            c1.pt_inv_children_unroll(i);
-                        }
-                    } else {
-                        assert(!(0 <= i < l2.children.len()));
-                    }
-                };
-            };
 
             c0.inv_children_unroll_all();
             c1.inv_children_unroll_all();
@@ -978,33 +821,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             c2.view_mappings_put_child(l2.as_subtree());
             c2.as_subtree_restore(l2);
             let l3 = c2.restore(l2).0;
-            assert(l3.all_some()) by {
-                assert forall|i: int| 0 <= i < NR_ENTRIES implies l3.children[i] is Some by {
-                    if i == c2.idx as int {
-                    } else {
-                        assert(l3.children[i] == c2.children[i]);
-                    }
-                };
-            };
             l2.as_page_table_owner_pt_inv();
-            assert(l3.pt_inv_children()) by {
-                assert forall|i: int|
-                    #![trigger l3.children[i]]
-                    !(0 <= i < l3.children.len()) || (l3.children[i] is Some ==> PageTableOwner(
-                        l3.children[i].unwrap(),
-                    ).pt_inv()) by {
-                    if 0 <= i < l3.children.len() {
-                        if i == c2.idx as int {
-                            assert(l3.children[i] == Some(l2.as_subtree()));
-                        } else {
-                            assert(l3.children[i] == c2.children[i]);
-                            c2.pt_inv_children_unroll(i);
-                        }
-                    } else {
-                        assert(!(0 <= i < l3.children.len()));
-                    }
-                };
-            };
 
             c2.inv_children_unroll_all();
             l3.as_page_table_owner_preserves_view_mappings();
@@ -1012,33 +829,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             c3.view_mappings_put_child(l3.as_subtree());
             c3.as_subtree_restore(l3);
             let l4 = c3.restore(l3).0;
-            assert(l4.all_some()) by {
-                assert forall|i: int| 0 <= i < NR_ENTRIES implies l4.children[i] is Some by {
-                    if i == c3.idx as int {
-                    } else {
-                        assert(l4.children[i] == c3.children[i]);
-                    }
-                };
-            };
             l3.as_page_table_owner_pt_inv();
-            assert(l4.pt_inv_children()) by {
-                assert forall|i: int|
-                    #![trigger l4.children[i]]
-                    !(0 <= i < l4.children.len()) || (l4.children[i] is Some ==> PageTableOwner(
-                        l4.children[i].unwrap(),
-                    ).pt_inv()) by {
-                    if 0 <= i < l4.children.len() {
-                        if i == c3.idx as int {
-                            assert(l4.children[i] == Some(l3.as_subtree()));
-                        } else {
-                            assert(l4.children[i] == c3.children[i]);
-                            c3.pt_inv_children_unroll(i);
-                        }
-                    } else {
-                        assert(!(0 <= i < l4.children.len()));
-                    }
-                };
-            };
 
             c3.inv_children_unroll_all();
             l4.as_page_table_owner_preserves_view_mappings();
@@ -1121,8 +912,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             // continuations[3].tree_level == INC_LEVELS - continuations[3].level() - 1
             // and continuations[3].level() == 4 (root).
         };
-        assert(root_path.len() == 0);
-        assert(pto.0.level == 0);
 
         assert forall|m: Mapping, n: Mapping| #[trigger]
             self@.mappings.contains(m) && #[trigger] self@.mappings.contains(n) && m
