@@ -969,7 +969,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         let end = self.va + len;
 
         let ghost barrier_va = self.barrier_va;
-        assert(barrier_va == old(self).barrier_va);
 
         let rcu_guard = self.rcu_guard;
 
@@ -1320,7 +1319,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     continue;
                 },
                 ChildRef::Frame(_, _, _) => {
-                    assert(owner.max_steps() == owner0.max_steps());
                     if cur_entry_fits_range || !split_huge {
                         assert(!find_unmap_subtree && old(owner).cur_entry_owner().is_frame()
                             ==> owner.cur_entry_owner().frame().prop == old(
@@ -1724,7 +1722,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             decreases self.guard_level - self.level,
         {
             proof {
-                assert(abs_next_va.index[self.level - 1] == 0);
                 abs_va_down.wrapped_unwrap(start_level as int, self.level as int);
                 abs_va_down.use_wrapped(start_level as int, self.level as int);
                 assert(owner0.va.index[self.level - 1] + 1 == NR_ENTRIES);
@@ -1746,7 +1743,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             // level NR_LEVELS). va doesn't change in the pop loop, so owner.va == owner0.va,
             // and owner0 had !popped_too_high && in_locked_range, which forces va below
             // locked_range.end and hence idx[NR_LEVELS-1] < top_end (strict).
-            assert(owner.va == owner0.va);
             if owner.level == NR_LEVELS {
                 owner0.in_locked_range_top_index_lt_top_end();
                 assert(owner0.va.index[NR_LEVELS - 1] < C::TOP_LEVEL_INDEX_RANGE_spec().end);
