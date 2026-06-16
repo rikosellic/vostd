@@ -1604,7 +1604,7 @@ proof fn step_new_vm_space<'rcu>(tracked s: &mut VmStore<'rcu>)
     let ghost s_before = *s;
     let tracked owner = vm_space::new_vm_space_step(&mut s.regions);
     let ghost id = fresh_vm_space_id(s.vm_spaces);
-    axiom_fresh_vm_space_id_not_in_dom(s.vm_spaces);
+    lemma_fresh_vm_space_id_not_in_dom(s.vm_spaces);
     // `VmSpace::new` only allocates fresh PT nodes; accounting carries
     // (every changed slot went UNUSED → non-UNUSED PT node).
     lemma_accounting_preserved_by_pt_alloc(s_before, *s);
@@ -1642,7 +1642,7 @@ proof fn step_open_cursor<'rcu>(tracked s: &mut VmStore<'rcu>, vs: VmSpaceId, va
     match res {
         Option::Some(entry) => {
             let ghost id = fresh_cursor_id(s.cursors);
-            axiom_fresh_cursor_id_not_in_dom(s.cursors);
+            lemma_fresh_cursor_id_not_in_dom(s.cursors);
             s.insert_cursor(id, entry);
         },
         Option::None => {},
@@ -1665,7 +1665,7 @@ proof fn step_open_cursor_mut<'rcu>(tracked s: &mut VmStore<'rcu>, vs: VmSpaceId
     match res {
         Option::Some(entry) => {
             let ghost id = fresh_cursor_id(s.cursors);
-            axiom_fresh_cursor_id_not_in_dom(s.cursors);
+            lemma_fresh_cursor_id_not_in_dom(s.cursors);
             s.insert_cursor(id, entry);
         },
         Option::None => {},
@@ -1708,7 +1708,7 @@ proof fn step_query<'rcu>(tracked s: &mut VmStore<'rcu>, c: CursorId)
             let ghost target_idx = frame_to_index(paddr);
             s.regions.inv_implies_correct_addr(paddr);
             let ghost id = fresh_frame_id(s.frames);
-            axiom_fresh_frame_id_not_in_dom(s.frames);
+            lemma_fresh_frame_id_not_in_dom(s.frames);
             let ghost entry_paddr = paddr;
             let tracked frame_entry = axiom_frame_entry_new(paddr);
             s.insert_frame(id, frame_entry);
@@ -2275,7 +2275,7 @@ proof fn step_new_vm_io<'rcu>(
     match res {
         Option::Some(entry) => {
             let ghost id = fresh_vm_io_id(s.vm_ios);
-            axiom_fresh_vm_io_id_not_in_dom(s.vm_ios);
+            lemma_fresh_vm_io_id_not_in_dom(s.vm_ios);
             s.insert_vm_io(id, entry);
         },
         Option::None => {},
@@ -2295,7 +2295,7 @@ proof fn step_new_kernel_vm_io<'rcu>(
 {
     let tracked entry = io::new_kernel_vm_io_step(vaddr, len, kind);
     let ghost id = fresh_vm_io_id(s.vm_ios);
-    axiom_fresh_vm_io_id_not_in_dom(s.vm_ios);
+    lemma_fresh_vm_io_id_not_in_dom(s.vm_ios);
     s.insert_vm_io(id, entry);
 }
 
@@ -2341,7 +2341,7 @@ proof fn step_read<'rcu>(tracked s: &mut VmStore<'rcu>, source: VmIoId, dest: Vm
     s.insert_vm_io(source, src);
     s.insert_vm_io(dest, dst);
     let ghost id = fresh_vm_io_id(s.vm_ios);
-    axiom_fresh_vm_io_id_not_in_dom(s.vm_ios);
+    lemma_fresh_vm_io_id_not_in_dom(s.vm_ios);
     s.insert_vm_io(id, val);
 }
 
@@ -2387,7 +2387,7 @@ proof fn step_frame_from_unused<'rcu>(tracked s: &mut VmStore<'rcu>, paddr: Padd
     match res {
         Option::Some(entry) => {
             let ghost id = fresh_frame_id(s.frames);
-            axiom_fresh_frame_id_not_in_dom(s.frames);
+            lemma_fresh_frame_id_not_in_dom(s.frames);
             let ghost target_idx = frame_to_index(paddr);
             let ghost entry_paddr = entry.paddr;
             s.insert_frame(id, entry);
@@ -2494,7 +2494,7 @@ proof fn step_frame_from_in_use<'rcu>(tracked s: &mut VmStore<'rcu>, paddr: Padd
     match res {
         Option::Some(entry) => {
             let ghost id = fresh_frame_id(s.frames);
-            axiom_fresh_frame_id_not_in_dom(s.frames);
+            lemma_fresh_frame_id_not_in_dom(s.frames);
             let ghost target_idx = frame_to_index(paddr);
             s.insert_frame(id, entry);
             assert(s.frames[id].paddr == paddr);
@@ -2755,7 +2755,7 @@ proof fn step_segment_from_unused<'rcu>(tracked s: &mut VmStore<'rcu>, range: Ra
     match res {
         Option::Some(entry) => {
             let ghost id = fresh_segment_id(s.segments);
-            axiom_fresh_segment_id_not_in_dom(s.segments);
+            lemma_fresh_segment_id_not_in_dom(s.segments);
             s.insert_segment(id, entry);
             // Discharge accounting_inv on the post-state.
             // Per-slot reasoning:
@@ -3176,11 +3176,11 @@ proof fn step_segment_split<'rcu>(tracked s: &mut VmStore<'rcu>, sid: SegmentId,
     // `s.segments.insert(id_left, _)`-extended domain so they are
     // distinct from each other and from `sid`.
     let ghost id_left = fresh_segment_id(s.segments);
-    axiom_fresh_segment_id_not_in_dom(s.segments);
+    lemma_fresh_segment_id_not_in_dom(s.segments);
     assert(id_left != sid);
     let ghost stub_entry = SegmentEntry { range: range.start..mid };
     let ghost id_right = fresh_segment_id(s.segments.insert(id_left, stub_entry));
-    axiom_fresh_segment_id_not_in_dom(s.segments.insert(id_left, stub_entry));
+    lemma_fresh_segment_id_not_in_dom(s.segments.insert(id_left, stub_entry));
     assert(id_right != sid);
     assert(id_right != id_left);
     // Now extract and insert.
@@ -3389,7 +3389,7 @@ proof fn step_segment_next<'rcu>(tracked s: &mut VmStore<'rcu>, sid: SegmentId)
 
     // Register the new FrameEntry FIRST (s.inv() still holds).
     let ghost fid = fresh_frame_id(s.frames);
-    axiom_fresh_frame_id_not_in_dom(s.frames);
+    lemma_fresh_frame_id_not_in_dom(s.frames);
     let tracked frame_entry = axiom_frame_entry_new(paddr);
     s.insert_frame(fid, frame_entry);
     // Now segment manipulation.
@@ -4003,25 +4003,52 @@ pub open spec fn fresh_frame_id(m: Map<FrameId, FrameEntry>) -> FrameId {
     choose|id: FrameId| !m.dom().contains(id)
 }
 
-pub axiom fn axiom_fresh_vm_space_id_not_in_dom<'a>(m: Map<VmSpaceId, VmSpaceOwner>)
+/// A finite `Set<int>` cannot contain every integer: there always exists
+/// an `int` outside the set. Used to prove the freshness axioms.
+proof fn lemma_finite_int_set_has_unused(s: Set<int>)
+    ensures
+        exists|id: int| !s.contains(id),
+{
+    let n = s.len() as int;
+    vstd::set_lib::lemma_int_range(0, n + 1);
+    if forall|i: int| 0 <= i < n + 1 ==> s.contains(i) {
+        assert(Set::range(0, n + 1).subset_of(s)) by {
+            assert forall|i: int| Set::<int>::range(0, n + 1).contains(i) implies s.contains(i) by {
+                assert(0 <= i < n + 1);
+            }
+        }
+        vstd::set_lib::lemma_len_subset(Set::range(0, n + 1), s);
+        assert(false);
+    }
+}
+
+pub proof fn lemma_fresh_vm_space_id_not_in_dom<'a>(m: Map<VmSpaceId, VmSpaceOwner>)
     ensures
         !m.dom().contains(fresh_vm_space_id(m)),
-;
+{
+    lemma_finite_int_set_has_unused(m.dom());
+}
 
-pub axiom fn axiom_fresh_cursor_id_not_in_dom<'rcu>(m: Map<CursorId, CursorEntry<'rcu>>)
+pub proof fn lemma_fresh_cursor_id_not_in_dom<'rcu>(m: Map<CursorId, CursorEntry<'rcu>>)
     ensures
         !m.dom().contains(fresh_cursor_id(m)),
-;
+{
+    lemma_finite_int_set_has_unused(m.dom());
+}
 
-pub axiom fn axiom_fresh_vm_io_id_not_in_dom<'a>(m: Map<VmIoId, VmIoEntry>)
+pub proof fn lemma_fresh_vm_io_id_not_in_dom<'a>(m: Map<VmIoId, VmIoEntry>)
     ensures
         !m.dom().contains(fresh_vm_io_id(m)),
-;
+{
+    lemma_finite_int_set_has_unused(m.dom());
+}
 
-pub axiom fn axiom_fresh_frame_id_not_in_dom(m: Map<FrameId, FrameEntry>)
+pub proof fn lemma_fresh_frame_id_not_in_dom(m: Map<FrameId, FrameEntry>)
     ensures
         !m.dom().contains(fresh_frame_id(m)),
-;
+{
+    lemma_finite_int_set_has_unused(m.dom());
+}
 
 /// Tracked constructor for [`CursorEntry`].
 pub axiom fn axiom_cursor_entry_new<'rcu>(
@@ -4072,9 +4099,11 @@ pub open spec fn fresh_segment_id(m: Map<SegmentId, SegmentEntry>) -> SegmentId 
     choose|id: SegmentId| !m.dom().contains(id)
 }
 
-pub axiom fn axiom_fresh_segment_id_not_in_dom(m: Map<SegmentId, SegmentEntry>)
+pub proof fn lemma_fresh_segment_id_not_in_dom(m: Map<SegmentId, SegmentEntry>)
     ensures
         !m.dom().contains(fresh_segment_id(m)),
-;
+{
+    lemma_finite_int_set_has_unused(m.dom());
+}
 
 } // verus!
