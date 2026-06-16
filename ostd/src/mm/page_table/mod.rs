@@ -19,16 +19,16 @@ use crate::mm::frame::meta::MetaSlot;
 use super::{
     Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
     kspace::KernelPtConfig,
-    lemma_nr_subpage_per_huge_bounded, nr_subpage_per_huge,
+    nr_subpage_per_huge,
     page_prop::{CachePolicy, PageProperty},
     vm_space::UserPtConfig,
 };
 
 use crate::Pod;
-use crate::specs::mm::page_table::*;
-
 use crate::specs::arch::*;
+use crate::specs::mm::lemma_nr_subpage_per_huge_bounded;
 use crate::specs::mm::page_table::cursor::*;
+use crate::specs::mm::page_table::*;
 use crate::specs::task::InAtomicMode;
 
 use crate::arch::mm::{PageTableEntry, PagingConsts};
@@ -726,7 +726,6 @@ pub open spec fn nr_pte_index_bits_spec<C: PagingConstsTrait>() -> usize {
 }
 
 /// The number of virtual address bits used to index a PTE in a page.
-#[inline(always)]
 #[verifier::when_used_as_spec(nr_pte_index_bits_spec)]
 pub fn nr_pte_index_bits<C: PagingConstsTrait>() -> (res: usize)
     ensures
@@ -922,8 +921,9 @@ fn sign_bit_of_va<C: PageTableConfig>(va: Vaddr) -> (ret: bool)
 }
 
 #[verifier::inline]
-pub open spec fn pte_index_bit_offset_spec<C: PagingConstsTrait>(level: PagingLevel) -> int {
-    (C::BASE_PAGE_SIZE().ilog2() as int) + (nr_pte_index_bits::<C>() as int) * (level as int - 1)
+pub open spec fn pte_index_bit_offset_spec<C: PagingConstsTrait>(level: PagingLevel) -> usize {
+    ((C::BASE_PAGE_SIZE().ilog2() as int) + (nr_pte_index_bits::<C>() as int) * (level as int
+        - 1)) as usize
 }
 
 /// Spec for the managed virtual address range (exclusive end).
@@ -1260,11 +1260,12 @@ fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> (res: usize
 /// This function returns the bit offset of the least significant bit. Take
 /// x86-64 as an example, the `pte_index_bit_offset(2)` should return 21, which
 /// is 12 (the 4KiB in-page offset) plus 9 (index width in the level-1 table).
+#[verifier::when_used_as_spec(pte_index_bit_offset_spec)]
 fn pte_index_bit_offset<C: PagingConstsTrait>(level: PagingLevel) -> (ret: usize)
     requires
         1 <= level <= C::NR_LEVELS(),
-    ensures
-        ret == pte_index_bit_offset_spec::<C>(level),
+    returns
+        pte_index_bit_offset::<C>(level),
 {
     proof {
         C::lemma_paging_consts_properties();

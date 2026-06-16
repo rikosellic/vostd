@@ -2,8 +2,6 @@
 //! Virtual memory (VM).
 use crate::specs::arch::PAGE_SIZE;
 use core::fmt::Debug;
-use vstd::arithmetic::div_mod::group_div_basics;
-use vstd::arithmetic::div_mod::lemma_div_non_zero;
 use vstd::arithmetic::power2::*;
 use vstd::prelude::*;
 
@@ -154,7 +152,6 @@ pub open spec fn nr_subpage_per_huge_spec<C: PagingConstsTrait>() -> usize {
 }
 
 /// The number of sub pages in a huge page.
-#[inline(always)]
 #[verifier::when_used_as_spec(nr_subpage_per_huge_spec)]
 pub fn nr_subpage_per_huge<C: PagingConstsTrait>() -> (res: usize)
     ensures
@@ -164,20 +161,6 @@ pub fn nr_subpage_per_huge<C: PagingConstsTrait>() -> (res: usize)
         C::lemma_paging_consts_properties();
     }
     C::BASE_PAGE_SIZE() / C::PTE_SIZE()
-}
-
-pub proof fn lemma_nr_subpage_per_huge_bounded<C: PagingConstsTrait>()
-    ensures
-        0 < nr_subpage_per_huge::<C>() <= C::BASE_PAGE_SIZE(),
-{
-    C::lemma_paging_consts_properties();
-    broadcast use group_div_basics;
-
-    assert(C::PTE_SIZE() <= C::BASE_PAGE_SIZE());
-    assert(C::BASE_PAGE_SIZE() / C::PTE_SIZE() <= C::BASE_PAGE_SIZE());
-    assert(C::BASE_PAGE_SIZE() / C::PTE_SIZE() > 0) by {
-        lemma_div_non_zero(C::BASE_PAGE_SIZE() as int, C::PTE_SIZE() as int);
-    };
 }
 
 /// The maximum virtual address of user space (non inclusive).

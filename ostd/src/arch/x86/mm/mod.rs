@@ -2,6 +2,8 @@
 #![expect(dead_code)]
 
 use crate::specs::arch::{MAX_PADDR, NR_ENTRIES, NR_LEVELS};
+use vstd::arithmetic::div_mod::group_div_basics;
+use vstd::arithmetic::div_mod::lemma_div_non_zero;
 use vstd::arithmetic::power2::*;
 use vstd::prelude::*;
 use vstd_extra::panic::may_panic;
