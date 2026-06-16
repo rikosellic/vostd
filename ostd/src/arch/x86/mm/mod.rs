@@ -104,13 +104,14 @@ impl PagingConstsTrait for PagingConsts {
         8
     }
 
-    proof fn lemma_paging_consts_properties()
+    proof fn lemma_paging_consts_requirements()
         ensures
             Self::BASE_PAGE_SIZE() == PAGE_SIZE,
             Self::NR_LEVELS() == NR_LEVELS,
             Self::BASE_PAGE_SIZE() / Self::PTE_SIZE() == NR_ENTRIES,
     {
         lemma_pow2_is_pow2_to64();
+        lemma_u64_ilog2_to64();
         assert(Self::BASE_PAGE_SIZE() / Self::PTE_SIZE() == NR_ENTRIES);
     }
 }

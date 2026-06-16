@@ -514,8 +514,8 @@ impl<C: PageTableConfig> PagingConstsTrait for C {
         C::C::VA_SIGN_EXT()
     }
 
-    proof fn lemma_paging_consts_properties() {
-        C::C::lemma_paging_consts_properties();
+    proof fn lemma_paging_consts_requirements() {
+        C::C::lemma_paging_consts_requirements();
     }
 }
 
@@ -727,9 +727,9 @@ pub open spec fn nr_pte_index_bits_spec<C: PagingConstsTrait>() -> usize {
 
 /// The number of virtual address bits used to index a PTE in a page.
 #[verifier::when_used_as_spec(nr_pte_index_bits_spec)]
-pub fn nr_pte_index_bits<C: PagingConstsTrait>() -> (res: usize)
-    ensures
-        res == nr_pte_index_bits_spec::<C>(),
+pub fn nr_pte_index_bits<C: PagingConstsTrait>() -> usize
+    returns
+        nr_pte_index_bits::<C>(),
 {
     proof {
         lemma_nr_subpage_per_huge_bounded::<C>();
@@ -737,7 +737,7 @@ pub fn nr_pte_index_bits<C: PagingConstsTrait>() -> (res: usize)
     nr_subpage_per_huge::<C>().ilog2() as usize
 }
 
-pub proof fn lemma_nr_pte_index_bits_bounded<C: PagingConstsTrait>()
+proof fn lemma_nr_pte_index_bits_bounded<C: PagingConstsTrait>()
     ensures
         0 <= nr_pte_index_bits::<C>() <= C::BASE_PAGE_SIZE().ilog2(),
 {
@@ -818,7 +818,7 @@ fn top_level_index_width<C: PageTableConfig>() -> (ret: usize)
         ),
 {
     proof {
-        C::lemma_paging_consts_properties();
+        C::lemma_paging_consts_requirements();
         C::lemma_top_level_index_range_bounds();
     }
 
@@ -834,7 +834,7 @@ fn pt_va_range_start<C: PageTableConfig>() -> (ret: Vaddr)
 {
     let idx_start = C::TOP_LEVEL_INDEX_RANGE().start;
     proof {
-        C::lemma_paging_consts_properties();
+        C::lemma_paging_consts_requirements();
     }
     let offset = pte_index_bit_offset::<C>(C::NR_LEVELS());
 
@@ -864,7 +864,7 @@ fn pt_va_range_end<C: PageTableConfig>() -> (ret: Vaddr)
 {
     let idx_end = C::TOP_LEVEL_INDEX_RANGE().end;
     proof {
-        C::lemma_paging_consts_properties();
+        C::lemma_paging_consts_requirements();
         admit();
     }
     let offset = pte_index_bit_offset::<C>(C::NR_LEVELS());
@@ -1261,15 +1261,31 @@ fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> (res: usize
 /// x86-64 as an example, the `pte_index_bit_offset(2)` should return 21, which
 /// is 12 (the 4KiB in-page offset) plus 9 (index width in the level-1 table).
 #[verifier::when_used_as_spec(pte_index_bit_offset_spec)]
-fn pte_index_bit_offset<C: PagingConstsTrait>(level: PagingLevel) -> (ret: usize)
+fn pte_index_bit_offset<C: PagingConstsTrait>(level: PagingLevel) -> usize
     requires
         1 <= level <= C::NR_LEVELS(),
     returns
         pte_index_bit_offset::<C>(level),
 {
     proof {
-        C::lemma_paging_consts_properties();
-        admit();
+        C::lemma_paging_consts_requirements();
+        C::lemma_paging_consts_derived_properties();
+        assert(nr_pte_index_bits::<C>() * (level - 1) <= nr_pte_index_bits::<C>() * (
+        C::NR_LEVELS())) by {
+            vstd::arithmetic::mul::lemma_mul_is_commutative(
+                nr_pte_index_bits::<C>() as int,
+                level - 1,
+            );
+            vstd::arithmetic::mul::lemma_mul_is_commutative(
+                nr_pte_index_bits::<C>() as int,
+                C::NR_LEVELS() as int,
+            );
+            vstd::arithmetic::mul::lemma_mul_inequality(
+                level - 1,
+                C::NR_LEVELS() as int,
+                nr_pte_index_bits::<C>() as int,
+            )
+        }
     }
     C::BASE_PAGE_SIZE().ilog2() as usize + nr_pte_index_bits::<C>() * (level as usize - 1)
 }

@@ -141,11 +141,9 @@ pub proof fn lemma_nr_subpage_per_huge_bounded<C: PagingConstsTrait>()
     ensures
         0 < nr_subpage_per_huge::<C>() <= C::BASE_PAGE_SIZE(),
 {
-    C::lemma_paging_consts_properties();
+    C::lemma_paging_consts_requirements();
     broadcast use group_div_basics;
 
-    assert(C::PTE_SIZE() <= C::BASE_PAGE_SIZE());
-    assert(C::BASE_PAGE_SIZE() / C::PTE_SIZE() <= C::BASE_PAGE_SIZE());
     assert(C::BASE_PAGE_SIZE() / C::PTE_SIZE() > 0) by {
         lemma_div_non_zero(C::BASE_PAGE_SIZE() as int, C::PTE_SIZE() as int);
     };

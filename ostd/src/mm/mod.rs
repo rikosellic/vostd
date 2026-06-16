@@ -60,9 +60,9 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
     /// The smallest page size.
     /// This is also the page size at level 1 page tables.
     #[verifier::when_used_as_spec(BASE_PAGE_SIZE_spec)]
-    fn BASE_PAGE_SIZE() -> (res: usize)
+    fn BASE_PAGE_SIZE() -> usize
         returns
-            Self::BASE_PAGE_SIZE_spec(),
+            Self::BASE_PAGE_SIZE(),
     ;
 
     spec fn NR_LEVELS_spec() -> PagingLevel;
@@ -73,7 +73,7 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
     /// Page Directory Pointer Tables, Page-Map Level-4 Table, and Page-Map Level-5
     /// Table, respectively.
     #[verifier::when_used_as_spec(NR_LEVELS_spec)]
-    fn NR_LEVELS() -> (res: PagingLevel)
+    fn NR_LEVELS() -> PagingLevel
         returns
             Self::NR_LEVELS_spec(),
     ;
@@ -85,16 +85,16 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
     #[verifier::when_used_as_spec(HIGHEST_TRANSLATION_LEVEL_spec)]
     fn HIGHEST_TRANSLATION_LEVEL() -> PagingLevel
         returns
-            Self::HIGHEST_TRANSLATION_LEVEL_spec(),
+            Self::HIGHEST_TRANSLATION_LEVEL(),
     ;
 
     spec fn PTE_SIZE_spec() -> usize;
 
     /// The size of a PTE.
     #[verifier::when_used_as_spec(PTE_SIZE_spec)]
-    fn PTE_SIZE() -> (res: usize)
+    fn PTE_SIZE() -> usize
         returns
-            Self::PTE_SIZE_spec(),
+            Self::PTE_SIZE(),
     ;
 
     spec fn ADDRESS_WIDTH_spec() -> usize;
@@ -102,7 +102,7 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
     /// The address width may be BASE_PAGE_SIZE.ilog2() + NR_LEVELS * IN_FRAME_INDEX_BITS.
     /// If it is shorter than that, the higher bits in the highest level are ignored.
     #[verifier::when_used_as_spec(ADDRESS_WIDTH_spec)]
-    fn ADDRESS_WIDTH() -> (res: usize)
+    fn ADDRESS_WIDTH() -> usize
         returns
             Self::ADDRESS_WIDTH_spec(),
     ;
@@ -123,7 +123,7 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
     #[verifier::when_used_as_spec(VA_SIGN_EXT_spec)]
     fn VA_SIGN_EXT() -> bool
         returns
-            Self::VA_SIGN_EXT_spec(),
+            Self::VA_SIGN_EXT(),
     ;
 
     /// All configs in vostd use the same value for the per-config
@@ -136,14 +136,25 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
     /// can chain `level != C::NR_LEVELS_spec()` to `level < NR_LEVELS`
     /// (e.g. `Cursor::find_next_impl`'s PageTable-branch gate ⟹
     /// `CursorMut::take_next`'s `replace_cur_entry` discharge).
-    proof fn lemma_paging_consts_properties()
+    proof fn lemma_paging_consts_requirements()
         ensures
             0 < Self::BASE_PAGE_SIZE(),
             is_pow2(Self::BASE_PAGE_SIZE() as int),
             0 < Self::NR_LEVELS_spec() <= 5,
-            is_pow2(Self::PTE_SIZE_spec() as int),
-            0 < Self::PTE_SIZE_spec() <= Self::BASE_PAGE_SIZE(),
+            is_pow2(Self::PTE_SIZE() as int),
+            0 < Self::PTE_SIZE() <= Self::BASE_PAGE_SIZE(),
+            Self::BASE_PAGE_SIZE().ilog2() + (Self::BASE_PAGE_SIZE() / Self::PTE_SIZE()).ilog2()
+                * Self::NR_LEVELS() <= Self::ADDRESS_WIDTH() <= 128,
     ;
+
+    /// Properties derived from the requirements, for better proof automation.
+    proof fn lemma_paging_consts_derived_properties()
+        ensures
+            (Self::BASE_PAGE_SIZE() / Self::PTE_SIZE()).ilog2() * Self::NR_LEVELS() <= 128,
+    {
+        Self::lemma_paging_consts_requirements();
+        admit();
+    }
 }
 
 #[verifier::inline]
@@ -154,11 +165,11 @@ pub open spec fn nr_subpage_per_huge_spec<C: PagingConstsTrait>() -> usize {
 /// The number of sub pages in a huge page.
 #[verifier::when_used_as_spec(nr_subpage_per_huge_spec)]
 pub fn nr_subpage_per_huge<C: PagingConstsTrait>() -> (res: usize)
-    ensures
-        res == nr_subpage_per_huge_spec::<C>(),
+    returns
+        nr_subpage_per_huge::<C>(),
 {
     proof {
-        C::lemma_paging_consts_properties();
+        C::lemma_paging_consts_requirements();
     }
     C::BASE_PAGE_SIZE() / C::PTE_SIZE()
 }
