@@ -140,14 +140,11 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
     /// `CursorMut::take_next`'s `replace_cur_entry` discharge).
     proof fn lemma_paging_consts_properties()
         ensures
-            0 < Self::BASE_PAGE_SIZE_spec(),
-            is_pow2(Self::BASE_PAGE_SIZE_spec() as int),
-            Self::BASE_PAGE_SIZE_spec() == PAGE_SIZE,
-            Self::NR_LEVELS_spec() > 0,
-            Self::NR_LEVELS_spec() == NR_LEVELS,
+            0 < Self::BASE_PAGE_SIZE(),
+            is_pow2(Self::BASE_PAGE_SIZE() as int),
+            0 < Self::NR_LEVELS_spec() <= 5,
             is_pow2(Self::PTE_SIZE_spec() as int),
-            0 < Self::PTE_SIZE_spec() <= Self::BASE_PAGE_SIZE_spec(),
-            Self::BASE_PAGE_SIZE_spec() / Self::PTE_SIZE_spec() == NR_ENTRIES,
+            0 < Self::PTE_SIZE_spec() <= Self::BASE_PAGE_SIZE(),
     ;
 }
 

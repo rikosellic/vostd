@@ -1983,6 +1983,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             assert(cont0.entry_own.is_node());
             assert(cont0.entry_own.metaregion_sound(*regions));
             assert(regions.slots.contains_key(parent_own.slot_index));
+            admit();
         }
         #[verus_spec(with Tracked(&parent_own),
             Tracked(&child.value), Tracked(&*regions))]

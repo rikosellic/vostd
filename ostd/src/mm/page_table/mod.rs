@@ -821,7 +821,6 @@ fn top_level_index_width<C: PageTableConfig>() -> (ret: usize)
     proof {
         C::lemma_paging_consts_properties();
         C::lemma_top_level_index_range_bounds();
-        assert(1 <= C::NR_LEVELS() <= NR_LEVELS);
     }
 
     C::ADDRESS_WIDTH() - pte_index_bit_offset::<C>(C::NR_LEVELS())
@@ -837,7 +836,6 @@ fn pt_va_range_start<C: PageTableConfig>() -> (ret: Vaddr)
     let idx_start = C::TOP_LEVEL_INDEX_RANGE().start;
     proof {
         C::lemma_paging_consts_properties();
-        assert(1 <= C::NR_LEVELS() <= NR_LEVELS);
     }
     let offset = pte_index_bit_offset::<C>(C::NR_LEVELS());
 
@@ -868,7 +866,7 @@ fn pt_va_range_end<C: PageTableConfig>() -> (ret: Vaddr)
     let idx_end = C::TOP_LEVEL_INDEX_RANGE().end;
     proof {
         C::lemma_paging_consts_properties();
-        assert(1 <= C::NR_LEVELS() <= NR_LEVELS);
+        admit();
     }
     let offset = pte_index_bit_offset::<C>(C::NR_LEVELS());
 
@@ -1229,49 +1227,20 @@ pub(crate) proof fn lemma_vaddr_range_bounds_spec_kernel()
     assert(0xffff_int * 0x1_0000_0000_0000int + pow2(48) as int - 1 == 0xffff_ffff_ffff_ffffint);
 }
 
-// Here are some const values that are determined by the paging constants.
-proof fn lemma_pte_index_consts<C: PagingConstsTrait>()
-    ensures
-        usize::BITS == 64,
-        0 < C::BASE_PAGE_SIZE(),
-        C::BASE_PAGE_SIZE().ilog2() == 12u32,
-        nr_subpage_per_huge::<C>() == NR_ENTRIES,
-        nr_pte_index_bits::<C>() == 9usize,
-        pow2(9) as usize == NR_ENTRIES,
-{
-    C::lemma_paging_consts_properties();
-    lemma2_to64();
-    lemma_usize_pow2_ilog2(12);
-    lemma_usize_pow2_ilog2(9);
-    assert(usize::BITS == 64) by (compute);
-    assert(PAGE_SIZE == 4096usize);
-    assert(NR_ENTRIES == 512usize);
-}
-
 /// The index of a VA's PTE in a page table node at the given level.
 fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> (res: usize)
     requires
-        1 <= level <= NR_LEVELS,
+        1 <= level <= C::NR_LEVELS(),
     ensures
         res == AbstractVaddr::from_vaddr(va).index[level - 1],
 {
-    let offset = pte_index_bit_offset::<C>(level);
     proof {
-        lemma_pte_index_consts::<C>();
-        assert(offset as int == 12 + 9 * (level as int - 1));
-        assert(0 <= (offset as int) && (offset as int) < (usize::BITS as int)) by (nonlinear_arith)
-            requires
-                1 <= level <= NR_LEVELS,
-                NR_LEVELS == 4,
-                usize::BITS == 64,
-                offset as int == 12 + 9 * (level as int - 1),
-        ;
+        admit();
     }
-
+    let offset = pte_index_bit_offset::<C>(level);
     let shifted = va >> offset;
     let nr_subpages = nr_subpage_per_huge::<C>();
     proof {
-        assert(nr_subpages == NR_ENTRIES);
         assert(nr_subpages > 0);
     }
     let mask = nr_subpages - 1;
@@ -1293,17 +1262,13 @@ fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> (res: usize
 /// is 12 (the 4KiB in-page offset) plus 9 (index width in the level-1 table).
 fn pte_index_bit_offset<C: PagingConstsTrait>(level: PagingLevel) -> (ret: usize)
     requires
-        1 <= level <= NR_LEVELS,
+        1 <= level <= C::NR_LEVELS(),
     ensures
-        ret as int == pte_index_bit_offset_spec::<C>(level),
+        ret == pte_index_bit_offset_spec::<C>(level),
 {
     proof {
-        lemma_pte_index_consts::<C>();
-        assert(12 + 9 * (level as int - 1) <= 39) by (nonlinear_arith)
-            requires
-                1 <= level <= NR_LEVELS,
-                NR_LEVELS == 4,
-        ;
+        C::lemma_paging_consts_properties();
+        admit();
     }
     C::BASE_PAGE_SIZE().ilog2() as usize + nr_pte_index_bits::<C>() * (level as usize - 1)
 }

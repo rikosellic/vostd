@@ -189,8 +189,8 @@ pub mod vm_space;
 use core::ops::Range;
 
 use vstd::prelude::*;
-use vstd_extra::prelude::*;
 use vstd_extra::ownership::*;
+use vstd_extra::prelude::*;
 
 use crate::mm::frame::{MetaSlot, UFrame};
 use crate::mm::page_prop::PageProperty;
