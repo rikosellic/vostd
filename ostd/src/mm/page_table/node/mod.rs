@@ -162,9 +162,9 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
         };
 
         proof {
-            C::axiom_pte_walk_fills_page();
-            C::axiom_top_level_index_range_within_nr_entries();
-            C::axiom_nr_subpage_per_huge_eq_nr_entries();
+            C::lemma_pte_walk_fills_page();
+            C::lemma_top_level_index_range_within_nr_entries();
+            C::lemma_nr_subpage_per_huge_eq_nr_entries();
             C::lemma_top_level_index_range_bounds();
             vstd::arithmetic::mul::lemma_mul_inequality(
                 range.start as int,
@@ -211,9 +211,9 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
         let ghost mut removed_indices: vstd::set::Set<usize> = vstd::set::Set::empty();
 
         proof {
-            C::axiom_pte_walk_fills_page();
-            C::axiom_top_level_index_range_within_nr_entries();
-            C::axiom_nr_subpage_per_huge_eq_nr_entries();
+            C::lemma_pte_walk_fills_page();
+            C::lemma_top_level_index_range_within_nr_entries();
+            C::lemma_nr_subpage_per_huge_eq_nr_entries();
             C::lemma_top_level_index_range_bounds();
             vstd::arithmetic::mul::lemma_mul_is_distributive_sub_other_way(
                 size_of_e,

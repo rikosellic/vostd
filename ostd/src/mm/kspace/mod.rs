@@ -296,13 +296,23 @@ unsafe impl PageTableConfig for KernelPtConfig {
         }
     }
 
-    axiom fn axiom_nr_subpage_per_huge_eq_nr_entries();
+    proof fn lemma_nr_subpage_per_huge_eq_nr_entries() {
+        assert(Self::C::BASE_PAGE_SIZE() == 4096usize);
+        assert(Self::C::PTE_SIZE() == 8usize);
+        assert(crate::specs::arch::NR_ENTRIES == 512usize);
+    }
 
     axiom fn axiom_pte_size_eq_size_of();
 
-    axiom fn axiom_pte_walk_fills_page();
+    proof fn lemma_pte_walk_fills_page() {
+        Self::lemma_nr_subpage_per_huge_eq_nr_entries();
+        Self::axiom_pte_size_eq_size_of();
+    }
 
-    axiom fn axiom_top_level_index_range_within_nr_entries();
+    proof fn lemma_top_level_index_range_within_nr_entries() {
+        assert(Self::TOP_LEVEL_INDEX_RANGE_spec().end == 512usize);
+        assert(crate::specs::arch::NR_ENTRIES == 512usize);
+    }
 
     axiom fn axiom_pte_align_divides_size();
 
@@ -492,10 +502,13 @@ impl KernelPtConfig {
     ;
 
     /// For KernelPtConfig (x86_64): HIGHEST_TRANSLATION_LEVEL = 2 < NR_LEVELS = 4.
-    pub axiom fn axiom_kernel_htl_lt_nr_levels()
+    pub proof fn lemma_kernel_htl_lt_nr_levels()
         ensures
             (KernelPtConfig::HIGHEST_TRANSLATION_LEVEL() as int) < NR_LEVELS as int,
-    ;
+    {
+        assert(KernelPtConfig::HIGHEST_TRANSLATION_LEVEL() == 2);
+        assert(NR_LEVELS == 4usize);
+    }
 }
 
 /*

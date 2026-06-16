@@ -872,7 +872,7 @@ impl KVirtArea {
                 // `map_offset + (it.index()+1)*PAGE > area_size`, ⟹
                 // `map_offset + frames.len()*PAGE > area_size` (capacity
                 // disjunct) ⟹ `may_panic()`.
-                KernelPtConfig::axiom_kernel_htl_lt_nr_levels();
+                KernelPtConfig::lemma_kernel_htl_lt_nr_levels();
                 if cursor.map_panic_conditions(item) {
                     assert(it.index() < frames.len());
                     assert(map_offset as int + (frames.len() as int) * (PAGE_SIZE as int)
@@ -1230,7 +1230,7 @@ impl KVirtArea {
                 let ghost pre_map_regions: MetaRegionOwners = *regions;
 
                 proof {
-                    KernelPtConfig::axiom_kernel_htl_lt_nr_levels();
+                    KernelPtConfig::lemma_kernel_htl_lt_nr_levels();
                     assert(!cursor.map_panic_conditions(item));
                     assert(cursor.item_wf(item, entry_owner));
                 }

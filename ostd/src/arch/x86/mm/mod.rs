@@ -210,6 +210,8 @@ pub(crate) fn tlb_flush_all_including_global() {
 #[repr(C)]
 pub struct PageTableEntry(usize);
 
+global layout PageTableEntry is size == 8, align == 8;
+
 #[verus_verify]
 unsafe impl Pod for PageTableEntry {
 

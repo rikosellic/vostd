@@ -221,14 +221,11 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             ) as int)) / (pow2((Self::C::ADDRESS_WIDTH() - 1) as nat) as int)) % 2 == 1),
     ;
 
-    // dubious: why is this an axiom
-    proof fn axiom_nr_subpage_per_huge_eq_nr_entries()
+    proof fn lemma_nr_subpage_per_huge_eq_nr_entries()
         ensures
             Self::C::BASE_PAGE_SIZE() / Self::C::PTE_SIZE() == NR_ENTRIES,
     ;
 
-    // dubious: why is this an axiom
-    //
     /// Layout identity: the PTE type's Rust `size_of` matches the config's
     /// `PTE_SIZE_spec`. Concrete impls satisfy this via their `global
     /// layout` declaration. Exposed for generic code that calls
@@ -238,12 +235,8 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             core::mem::size_of::<Self::E>() == Self::C::PTE_SIZE_spec(),
     ;
 
-    // dubious: why is this an axiom
     /// A full PT-node's worth of PTEs fills exactly one base page.
-    /// `NR_ENTRIES * size_of::<E>() == PAGE_SIZE`. Bundles the
-    /// `pow2-divides-pow2 ⇒ mul-equals-div` arithmetic Verus doesn't
-    /// auto-derive from `axiom_nr_subpage_per_huge` + `axiom_pte_size`.
-    proof fn axiom_pte_walk_fills_page()
+    proof fn lemma_pte_walk_fills_page()
         ensures
             NR_ENTRIES * core::mem::size_of::<Self::E>() == crate::specs::arch::PAGE_SIZE,
     ;
@@ -252,7 +245,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     /// `0..256` (UserPtConfig) or `256..512` (KernelPtConfig); both have
     /// `end <= NR_ENTRIES`. Used by PT-node `on_drop` to bound
     /// `range.start * size_of::<C::E>() <= PAGE_SIZE`.
-    proof fn axiom_top_level_index_range_within_nr_entries()
+    proof fn lemma_top_level_index_range_within_nr_entries()
         ensures
             Self::TOP_LEVEL_INDEX_RANGE_spec().end <= NR_ENTRIES,
     ;
