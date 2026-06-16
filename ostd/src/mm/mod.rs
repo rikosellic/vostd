@@ -144,7 +144,7 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
             is_pow2(Self::PTE_SIZE() as int),
             0 < Self::PTE_SIZE() <= Self::BASE_PAGE_SIZE(),
             Self::BASE_PAGE_SIZE().ilog2() + (Self::BASE_PAGE_SIZE() / Self::PTE_SIZE()).ilog2()
-                * Self::NR_LEVELS() <= Self::ADDRESS_WIDTH() <= 128,
+                * Self::NR_LEVELS() <= Self::ADDRESS_WIDTH() <= 64,
     ;
 }
 
