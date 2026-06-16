@@ -146,15 +146,6 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
             Self::BASE_PAGE_SIZE().ilog2() + (Self::BASE_PAGE_SIZE() / Self::PTE_SIZE()).ilog2()
                 * Self::NR_LEVELS() <= Self::ADDRESS_WIDTH() <= 128,
     ;
-
-    /// Properties derived from the requirements, for better proof automation.
-    proof fn lemma_paging_consts_derived_properties()
-        ensures
-            (Self::BASE_PAGE_SIZE() / Self::PTE_SIZE()).ilog2() * Self::NR_LEVELS() <= 128,
-    {
-        Self::lemma_paging_consts_requirements();
-        admit();
-    }
 }
 
 #[verifier::inline]

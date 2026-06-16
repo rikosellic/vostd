@@ -1269,7 +1269,6 @@ fn pte_index_bit_offset<C: PagingConstsTrait>(level: PagingLevel) -> usize
 {
     proof {
         C::lemma_paging_consts_requirements();
-        C::lemma_paging_consts_derived_properties();
         assert(nr_pte_index_bits::<C>() * (level - 1) <= nr_pte_index_bits::<C>() * (
         C::NR_LEVELS())) by {
             vstd::arithmetic::mul::lemma_mul_is_commutative(
