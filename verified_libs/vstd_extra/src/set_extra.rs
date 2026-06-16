@@ -251,4 +251,23 @@ pub proof fn lemma_set_prop_mutual_exclusion<A>(s: Set<A>, f: spec_fn(A) -> bool
     }
 }
 
+/// A finite `Set<int>` cannot contain every integer: there always exists
+/// an `int` outside the set.
+pub proof fn lemma_finite_int_set_has_unused(s: Set<int>)
+    ensures
+        exists|id: int| !s.contains(id),
+{
+    let n = s.len() as int;
+    vstd::set_lib::lemma_int_range(0, n + 1);
+    if forall|i: int| 0 <= i < n + 1 ==> s.contains(i) {
+        assert(Set::range(0, n + 1).subset_of(s)) by {
+            assert forall|i: int| Set::<int>::range(0, n + 1).contains(i) implies s.contains(i) by {
+                assert(0 <= i < n + 1);
+            }
+        }
+        vstd::set_lib::lemma_len_subset(Set::range(0, n + 1), s);
+        assert(false);
+    }
+}
+
 } // verus!
