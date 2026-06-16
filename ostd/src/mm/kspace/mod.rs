@@ -302,6 +302,10 @@ unsafe impl PageTableConfig for KernelPtConfig {
         assert(crate::specs::arch::NR_ENTRIES == 512usize);
     }
 
+    proof fn lemma_leading_bits_bounded() {
+        assert(Self::LEADING_BITS_spec() == 0xffff_usize);
+    }
+
     axiom fn axiom_pte_size_eq_size_of();
 
     proof fn lemma_pte_walk_fills_page() {

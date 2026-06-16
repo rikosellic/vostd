@@ -221,6 +221,13 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             ) as int)) / (pow2((Self::C::ADDRESS_WIDTH() - 1) as nat) as int)) % 2 == 1),
     ;
 
+    /// The leading-bits field fits in 16 bits. Required for vaddr/Mapping
+    /// arithmetic to stay within bounds.
+    proof fn lemma_leading_bits_bounded()
+        ensures
+            Self::LEADING_BITS_spec() < 0x1_0000_usize,
+    ;
+
     proof fn lemma_nr_subpage_per_huge_eq_nr_entries()
         ensures
             Self::C::BASE_PAGE_SIZE() / Self::C::PTE_SIZE() == NR_ENTRIES,
