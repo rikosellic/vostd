@@ -678,6 +678,8 @@ impl KVirtArea {
         };
         let preempt_guard = disable_preempt::<A>();
 
+        let ghost pre_cursor_regions: MetaRegionOwners = *regions;
+
         #[verus_spec(with Tracked(owner.pt_owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
         let cursor_res = page_table.cursor_mut(preempt_guard, &cursor_range);
 
@@ -707,6 +709,36 @@ impl KVirtArea {
         assert!(cursor_res.is_ok());
         let (mut cursor, Tracked(cursor_owner)) = cursor_res.unwrap();
 
+        proof {
+            assert(pre_cursor_regions == *old(regions));
+            assert forall|i: int| 0 <= i < frames.len() implies CursorMut::<
+                'a,
+                KernelPtConfig,
+                A,
+            >::item_slot_in_regions(MappedItem::Tracked(#[trigger] frames[i], prop), *regions) by {
+                let item_i = MappedItem::Tracked(frames[i], prop);
+                let pa_i = KernelPtConfig::item_into_raw_spec(item_i).0;
+                let idx_i = frame_to_index(pa_i);
+                KernelPtConfig::item_into_raw_spec_tracked_level(item_i);
+                assert(CursorMut::<'a, KernelPtConfig, A>::item_slot_in_regions(
+                    item_i,
+                    pre_cursor_regions,
+                ));
+                assert(pre_cursor_regions.slots.contains_key(idx_i));
+                assert(pre_cursor_regions.inv());
+                assert(pre_cursor_regions.slot_owners.contains_key(idx_i));
+                assert(pre_cursor_regions.slot_owners[idx_i].inner_perms.ref_count.value()
+                    != crate::specs::mm::frame::meta_owners::REF_COUNT_UNUSED);
+                assert(regions.slot_owners[idx_i].inner_perms.ref_count.value()
+                    == pre_cursor_regions.slot_owners[idx_i].inner_perms.ref_count.value());
+                assert(idx_i < crate::specs::mm::frame::mapping::max_meta_slots());
+                assert(regions.inv());
+                assert(regions.slot_owners.contains_key(idx_i));
+                assert(regions.slots.contains_key(idx_i));
+            };
+        }
+
+        let ghost mut mapped_pages: int = 0;
         for frame in it: frames.into_iter()
             invariant
                 cursor.0.invariants(cursor_owner, *regions, *guards),
@@ -722,11 +754,16 @@ impl KVirtArea {
                 // > area_size` derivation that fires `map_frames_bounds_panic_condition`'s
                 // capacity disjunct ⟹ `may_panic()` via the invariant.
                 it.seq().len() == frames.len(),
+                0 <= mapped_pages <= frames.len(),
+                mapped_pages == it.index(),
                 cursor.0.barrier_va.start == range.start + map_offset,
                 cursor.0.barrier_va.end == range.end,
                 cursor.0.guard_level == NR_LEVELS as u8,
+                cursor.0.va <= cursor.0.barrier_va.end,
                 range.end - range.start == area_size,
                 cursor.0.va == range.start + map_offset + it.index() * PAGE_SIZE,
+                cursor.0.va as int == range.start as int + map_offset as int + mapped_pages
+                    * PAGE_SIZE as int,
                 // For each remaining frame, the map contains a wf owner at its paddr.
                 // Duplicates among remaining frames are fine — one key, one owner.
                 forall|i: int|
@@ -991,10 +1028,24 @@ impl KVirtArea {
                 );
                 fresh.in_scope = false;
                 entry_owners.tracked_insert(cur_mapped_pa, fresh);
+                mapped_pages = mapped_pages + 1;
             }
         }
 
         proof {
+            assert(mapped_pages == frames.len());
+            assert(cursor.0.va as int == range.start as int + map_offset as int
+                + frames.len() as int * PAGE_SIZE as int);
+            assert(cursor.0.va <= cursor.0.barrier_va.end);
+            assert(map_offset as int + frames.len() as int * PAGE_SIZE as int <= area_size as int)
+                by (nonlinear_arith)
+                requires
+                    cursor.0.va as int == range.start as int + map_offset as int
+                        + frames.len() as int * PAGE_SIZE as int,
+                    cursor.0.va <= cursor.0.barrier_va.end,
+                    cursor.0.barrier_va.end == range.end,
+                    range.end - range.start == area_size,
+            ;
             // The diverging `assert!`s at the top (`area_size % PAGE_SIZE`
             // and `map_offset % PAGE_SIZE`) did not fire, so the
             // caller-precludable panic condition is false on this path.
@@ -1027,6 +1078,27 @@ impl KVirtArea {
     ) -> bool {
         ||| Self::map_untracked_frames_bounds_panic_condition(area_size, map_offset, pa_range)
         ||| kvirt_alloc_oom_condition(area_size)
+    }
+
+    /// Metadata obligation for mapping untracked physical frames.
+    ///
+    /// `map_untracked_frames` is unsafe: the caller must ensure the physical
+    /// range is managed metadata-wise even though it does not carry `Frame`
+    /// ownership. The page-table cursor only needs page-sized slot facts for
+    /// the MMIO leaves it creates.
+    pub open spec fn untracked_range_slots_in_regions(
+        pa_range: &Range<Paddr>,
+        regions: MetaRegionOwners,
+    ) -> bool {
+        &&& pa_range.end <= MAX_PADDR
+        &&& forall|pa: Paddr|
+            #![trigger crate::mm::frame::meta::mapping::frame_to_index(pa)]
+            pa_range.start <= pa < pa_range.end && pa % PAGE_SIZE == 0 ==> {
+                let idx = crate::mm::frame::meta::mapping::frame_to_index(pa);
+                &&& regions.slots.contains_key(idx)
+                &&& regions.slot_owners[idx].inner_perms.ref_count.value()
+                    != crate::specs::mm::frame::meta_owners::REF_COUNT_UNUSED
+            }
     }
 
     /// Creates a kernel virtual area and maps untracked frames into it.
@@ -1068,6 +1140,7 @@ impl KVirtArea {
             kvirt_alloc_oom_condition(area_size) ==> may_panic(),
             old(regions).inv(),
             owner.inv(),
+            Self::untracked_range_slots_in_regions(&pa_range, *old(regions)),
             map_offset + vstd_extra::external::range::range_usize_len(&pa_range) <= usize::MAX,
         ensures
             final(regions).inv(),
@@ -1135,6 +1208,33 @@ impl KVirtArea {
             assert!(cursor_res.is_ok());
 
             let (mut cursor, Tracked(cursor_owner)) = cursor_res.unwrap();
+
+            proof {
+                assert(pre_cursor_regions == *old(regions));
+                assert(Self::untracked_range_slots_in_regions(&pa_range, pre_cursor_regions));
+                assert(pa_range.end <= MAX_PADDR);
+                assert forall|pa: Paddr|
+                    #![trigger crate::mm::frame::meta::mapping::frame_to_index(pa)]
+                    pa_range.start <= pa < pa_range.end && pa % PAGE_SIZE == 0 implies {
+                    let idx = crate::mm::frame::meta::mapping::frame_to_index(pa);
+                    &&& regions.slots.contains_key(idx)
+                    &&& regions.slot_owners[idx].inner_perms.ref_count.value()
+                        != crate::specs::mm::frame::meta_owners::REF_COUNT_UNUSED
+                } by {
+                    let idx = crate::mm::frame::meta::mapping::frame_to_index(pa);
+                    assert(pre_cursor_regions.slots.contains_key(idx));
+                    assert(pre_cursor_regions.inv());
+                    assert(pre_cursor_regions.slot_owners.contains_key(idx));
+                    assert(pre_cursor_regions.slot_owners[idx].inner_perms.ref_count.value()
+                        != crate::specs::mm::frame::meta_owners::REF_COUNT_UNUSED);
+                    assert(regions.slot_owners[idx].inner_perms.ref_count.value()
+                        == pre_cursor_regions.slot_owners[idx].inner_perms.ref_count.value());
+                    assert(idx < crate::specs::mm::frame::mapping::max_meta_slots());
+                    assert(regions.inv());
+                    assert(regions.slot_owners.contains_key(idx));
+                    assert(regions.slots.contains_key(idx));
+                };
+            }
 
             let pages = collect_largest_pages(va_range.start, pa_range.start, len);
 

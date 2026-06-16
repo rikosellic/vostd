@@ -142,10 +142,12 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
         ensures
             0 < Self::BASE_PAGE_SIZE_spec(),
             is_pow2(Self::BASE_PAGE_SIZE_spec() as int),
+            Self::BASE_PAGE_SIZE_spec() == PAGE_SIZE,
             Self::NR_LEVELS_spec() > 0,
             Self::NR_LEVELS_spec() == NR_LEVELS,
             is_pow2(Self::PTE_SIZE_spec() as int),
             0 < Self::PTE_SIZE_spec() <= Self::BASE_PAGE_SIZE_spec(),
+            Self::BASE_PAGE_SIZE_spec() / Self::PTE_SIZE_spec() == NR_ENTRIES,
     ;
 }
 
