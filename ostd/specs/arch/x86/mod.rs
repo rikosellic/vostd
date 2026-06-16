@@ -1,6 +1,6 @@
 use crate::mm::kspace::FRAME_METADATA_RANGE;
 use crate::mm::kspace::{LINEAR_MAPPING_BASE_VADDR, VMALLOC_BASE_VADDR, paddr_to_vaddr};
-use crate::mm::{Paddr, Vaddr};
+use crate::mm::{Paddr, PagingConsts, Vaddr};
 use crate::specs::mm::frame::mapping::{
     META_SLOT_SIZE, lemma_meta_to_frame_soundness, meta_to_frame,
 };
@@ -101,6 +101,13 @@ pub broadcast proof fn lemma_meta_frame_vaddr_properties(meta: Vaddr)
     assert(va % PAGE_SIZE == 0) by {
         lemma_mod_0_add(pa as int, LINEAR_MAPPING_BASE_VADDR as int, PAGE_SIZE as int);
     };
+}
+
+pub proof fn lemma_nr_subpage_per_huge_eq_nr_entries()
+    ensures
+        crate::mm::nr_subpage_per_huge::<PagingConsts>() == NR_ENTRIES,
+{
+    assert(crate::mm::nr_subpage_per_huge::<PagingConsts>() == 4096usize / 8usize);
 }
 
 } // verus!

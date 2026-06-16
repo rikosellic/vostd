@@ -452,10 +452,10 @@ impl<C: PageTableConfig> EntryOwner<C> {
         let child_pa = (pa + idx * page_size((self.parent_level - 1) as PagingLevel)) as Paddr;
         assert(self.parent_level == 2 || self.parent_level == 3);
         assert(NR_ENTRIES == 512) by {
-            crate::arch::mm::lemma_nr_subpage_per_huge_eq_nr_entries();
+            lemma_nr_subpage_per_huge_eq_nr_entries();
         };
         assert(crate::mm::nr_subpage_per_huge::<PagingConsts>() == 512usize) by {
-            crate::arch::mm::lemma_nr_subpage_per_huge_eq_nr_entries();
+            lemma_nr_subpage_per_huge_eq_nr_entries();
         };
         vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
         crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_spec_level1();

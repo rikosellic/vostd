@@ -23,7 +23,7 @@ use crate::mm::page_table::*;
 use crate::mm::{
     MAX_USERSPACE_VADDR, Paddr, PagingConstsTrait, PagingLevel, Vaddr, nr_subpage_per_huge,
 };
-use crate::specs::arch::{MAX_PADDR, NR_ENTRIES, NR_LEVELS, PAGE_SIZE, has_safe_slot};
+use crate::specs::arch::*;
 use crate::specs::mm::frame::meta_owners::{REF_COUNT_MAX, REF_COUNT_UNUSED};
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::page_table::AbstractVaddr;
@@ -2206,7 +2206,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         // usize::MAX + 1 == 2^64.
         let tvi = self.prefix.to_vaddr_indices(gl as int) as int;
         assert(pow2((12 + 9 * gl) as nat) as int == NR_ENTRIES * ps) by {
-            crate::arch::mm::lemma_nr_subpage_per_huge_eq_nr_entries();
+            lemma_nr_subpage_per_huge_eq_nr_entries();
             crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_nr_entries_times_sub_page_size(
             (gl + 1) as PagingLevel);
         };
@@ -2288,7 +2288,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             }
         };
         assert(pow2((12 + 9 * gl) as nat) as int == NR_ENTRIES * ps) by {
-            crate::arch::mm::lemma_nr_subpage_per_huge_eq_nr_entries();
+            lemma_nr_subpage_per_huge_eq_nr_entries();
             crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_nr_entries_times_sub_page_size(
             (gl + 1) as PagingLevel);
         };
@@ -2348,7 +2348,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.prefix.to_vaddr_indices_gap_bound(0);
         vstd::arithmetic::power2::lemma2_to64();
         vstd::arithmetic::power2::lemma2_to64_rest();
-        crate::arch::mm::lemma_nr_subpage_per_huge_eq_nr_entries();
+        lemma_nr_subpage_per_huge_eq_nr_entries();
         vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
         page_size_monotonic(gl as PagingLevel, NR_LEVELS as PagingLevel);
         vstd::arithmetic::power2::lemma_pow2_adds(12nat, 27nat);

@@ -5,7 +5,7 @@ use crate::arch::mm::PagingConsts;
 use crate::mm::PagingLevel;
 use crate::mm::page_table::{page_size, page_size_spec};
 use crate::mm::{KERNEL_VADDR_RANGE, MAX_PADDR, Paddr, Vaddr, nr_subpage_per_huge};
-use crate::specs::arch::{NR_LEVELS, PAGE_SIZE};
+use crate::specs::arch::*;
 
 verus! {
 
@@ -160,7 +160,7 @@ pub proof fn lemma_nr_entries_times_sub_page_size(level: PagingLevel)
             == page_size_spec(level) as int,
 {
     lemma_page_size_spec_values();
-    crate::arch::mm::lemma_nr_subpage_per_huge_eq_nr_entries();
+    lemma_nr_subpage_per_huge_eq_nr_entries();
 }
 
 /// Used by `Entry::split_if_mapped_huge` to instantiate the 4KB sub-page

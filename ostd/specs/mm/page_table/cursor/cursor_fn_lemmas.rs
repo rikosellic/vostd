@@ -19,7 +19,7 @@ use vstd_extra::arithmetic::{
 
 use crate::mm::page_table::*;
 use crate::mm::{PagingLevel, Vaddr};
-use crate::specs::arch::{NR_ENTRIES, NR_LEVELS};
+use crate::specs::arch::*;
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::page_table::AbstractVaddr;
 use crate::specs::mm::page_table::Mapping;
@@ -367,7 +367,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             page_size_spec(5) == pow2(48nat) as usize,
     {
-        crate::arch::mm::lemma_nr_subpage_per_huge_eq_nr_entries();
+        lemma_nr_subpage_per_huge_eq_nr_entries();
         vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
         vstd::arithmetic::power2::lemma2_to64();
         vstd::arithmetic::power2::lemma2_to64_rest();
