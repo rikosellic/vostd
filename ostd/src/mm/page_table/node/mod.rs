@@ -505,7 +505,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
              Ghost(idx): Ghost<usize>,
                  -> owner: Tracked<OwnerSubtree<C>>,
         requires
-            1 <= level < NR_LEVELS,
+            1 <= level < C::NR_LEVELS(),
             idx < NR_ENTRIES,
             old(regions).inv(),
             old(parent_owner).inv(),

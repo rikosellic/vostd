@@ -16,12 +16,12 @@ use super::{
     VMALLOC_VADDR_RANGE,
 };
 use crate::mm::{
-    PAGE_SIZE, Paddr, Vaddr,
+    PAGE_SIZE, Paddr, Vaddr, page_size,
     frame::{Frame, Segment, untyped::AnyUFrameMeta},
     kspace::{KernelPtConfig, MappedItem},
     largest_pages,
     page_prop::PageProperty,
-    page_table::{Child, CursorMut, PageTable, PageTableConfig, is_valid_range_spec, page_size},
+    page_table::{Child, CursorMut, PageTable, PageTableConfig, is_valid_range_spec},
 };
 
 use crate::arch::mm::PagingConsts;

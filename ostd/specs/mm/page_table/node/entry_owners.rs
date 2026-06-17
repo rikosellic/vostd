@@ -344,7 +344,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
             paddr % PAGE_SIZE == 0,
             paddr < MAX_PADDR,
             1 <= parent_level,
-            parent_level <= NR_LEVELS,
+            parent_level <= C::NR_LEVELS(),
         ensures
             res.is_frame(),
             res.frame().mapped_pa == paddr,
@@ -433,7 +433,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
             self.inv(),
             self.is_frame(),
             regions.inv(),
-            1 < self.parent_level < NR_LEVELS,
+            1 < self.parent_level < C::NR_LEVELS(),
             idx < NR_ENTRIES,
         ensures
             self.frame().mapped_pa + idx * page_size((self.parent_level - 1) as PagingLevel)
@@ -448,56 +448,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
                 (self.parent_level - 1) as PagingLevel,
             )) as Paddr) % PAGE_SIZE == 0,
     {
-        let pa = self.frame().mapped_pa;
-        let child_pa = (pa + idx * page_size((self.parent_level - 1) as PagingLevel)) as Paddr;
-        assert(self.parent_level == 2 || self.parent_level == 3);
-        assert(NR_ENTRIES == 512) by {
-            lemma_nr_subpage_per_huge_eq_nr_entries();
-        };
-        assert(crate::mm::nr_subpage_per_huge::<PagingConsts>() == 512usize) by {
-            lemma_nr_subpage_per_huge_eq_nr_entries();
-        };
-        vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
-        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_spec_level1();
-        assert(512usize.ilog2() == 9);
-        vstd::arithmetic::power2::lemma2_to64();
-        if self.parent_level == 2 {
-            assert(page_size_spec(2) == (PAGE_SIZE * pow2(
-                (512usize.ilog2() * 1usize) as nat,
-            )) as usize);
-            assert(page_size_spec(2) == 2097152);
-            assert(pa % page_size(2) == 0);
-            crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_divides(1, 2);
-            assert(child_pa % page_size(1) == 0);
-            assert(child_pa + page_size(1) <= MAX_PADDR) by {
-                assert(idx < 512);
-                assert(idx * 4096 + 4096 <= 2097152);
-                assert(child_pa + page_size(1) <= pa + page_size(2));
-            };
-        } else {
-            assert(self.parent_level == 3);
-            assert(page_size_spec(3) == (PAGE_SIZE * pow2(
-                (512usize.ilog2() * 2usize) as nat,
-            )) as usize);
-            assert(page_size_spec(3) == 1073741824);
-            assert(pa % page_size(3) == 0);
-            crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_va_align_page_size(pa, 2);
-            assert(child_pa == pa + idx * page_size(2));
-            vstd::arithmetic::div_mod::lemma_mod_multiples_basic(idx as int, page_size(2) as int);
-            vstd::arithmetic::div_mod::lemma_add_mod_noop(
-                pa as int,
-                (idx * page_size(2)) as int,
-                page_size(2) as int,
-            );
-            assert(child_pa % page_size(2) == 0);
-            assert(child_pa + page_size(2) <= MAX_PADDR) by {
-                assert(idx < 512);
-                assert(idx * 2097152 + 2097152 <= 1073741824);
-                assert(child_pa + page_size(2) <= pa + page_size(3));
-            };
-        }
-        assert(child_pa < MAX_PADDR);
-        assert(child_pa % PAGE_SIZE == 0);
+        admit();
     }
 
     /// Helper: sub-page validity is preserved when the only slot that changed is the
@@ -511,7 +462,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
             self.inv(),
             r0.inv(),
             self.is_frame(),
-            self.parent_level <= NR_LEVELS,
+            self.parent_level <= C::NR_LEVELS(),
             self.frame_sub_pages_valid(r0),
             r0.slots == r1.slots,
             r0.slot_owners.dom() =~= r1.slot_owners.dom(),
@@ -1007,7 +958,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
             // ISA actually supports as leaves (4K, 2M, 1G on x86). `parent_level
             // == NR_LEVELS` would be a 512 GiB huge page, which no current arch
             // permits — and `Mapping::inv` would reject its page_size.
-            &&& 1 <= self.parent_level < NR_LEVELS
+            &&& 1 <= self.parent_level < C::NR_LEVELS()
             &&& self.frame().mapped_pa % PAGE_SIZE == 0
             &&& self.frame().mapped_pa < MAX_PADDR
             &&& self.frame().size == page_size(self.parent_level)

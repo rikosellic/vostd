@@ -137,12 +137,32 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
         ensures
             0 < Self::BASE_PAGE_SIZE(),
             is_pow2(Self::BASE_PAGE_SIZE() as int),
-            0 < Self::NR_LEVELS() <= 4,
+            3 <= Self::NR_LEVELS() <= 4,
             is_pow2(Self::PTE_SIZE() as int),
             0 < Self::PTE_SIZE() <= Self::BASE_PAGE_SIZE(),
             0 < Self::BASE_PAGE_SIZE().ilog2() + (Self::BASE_PAGE_SIZE() / Self::PTE_SIZE()).ilog2()
                 * Self::NR_LEVELS() <= Self::ADDRESS_WIDTH() <= 64,
     ;
+}
+
+pub open spec fn page_size_spec<C: PagingConstsTrait>(level: PagingLevel) -> usize {
+    (PAGE_SIZE * pow2(
+        (nr_subpage_per_huge::<C>().ilog2() * (level - 1)) as nat,
+    )) as usize
+}
+
+/// The page size at a given level.
+#[verifier::when_used_as_spec(page_size_spec)]
+#[verifier::external_body]
+pub fn page_size<C: PagingConstsTrait>(level: PagingLevel) -> (ret: usize)
+    requires
+        1 <= level <= C::NR_LEVELS() + 1,
+    ensures
+        ret == page_size_spec(level),
+        is_pow2(ret as int),
+        ret >= PAGE_SIZE,
+{
+    PAGE_SIZE << (nr_subpage_per_huge::<C>().ilog2() as usize * (level as usize - 1))
 }
 
 #[verifier::inline]

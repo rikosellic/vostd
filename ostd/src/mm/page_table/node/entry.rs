@@ -11,7 +11,7 @@ use crate::arch::mm::PagingConsts;
 use crate::mm::frame::meta::mapping::{frame_to_index, frame_to_meta, meta_to_frame};
 use crate::mm::frame::{Frame, FrameRef};
 use crate::mm::page_table::*;
-use crate::mm::{Paddr, PagingConstsTrait, PagingLevel, Vaddr};
+use crate::mm::{Paddr, PagingConstsTrait, PagingLevel, Vaddr, page_size};
 use crate::specs::arch::{NR_ENTRIES, NR_LEVELS, PAGE_SIZE};
 use crate::specs::mm::frame::meta_owners::{MetaSlotOwner, REF_COUNT_UNUSED};
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
@@ -983,7 +983,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 EntryOwner::huge_frame_split_child_at(owner.value, *regions, i as usize);
             }
 
-            let small_pa = pa + i * page_size(level - 1);
+            let small_pa = pa + i * page_size::<C>(level - 1);
 
             let tracked child_owner = EntryOwner::tracked_new_frame(
                 small_pa,
@@ -1025,7 +1025,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 };
 
                 if level - 1 > 1 {
-                    let nr_subpages = page_size((level - 1) as PagingLevel) / PAGE_SIZE;
+                    let nr_subpages = page_size::<C>((level - 1) as PagingLevel) / PAGE_SIZE;
                     crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_div_mul_eq(
                     (level - 1) as PagingLevel);
                     crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_div_mul_eq(
@@ -1044,7 +1044,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                             &&& regions.slot_owners[sub_idx].inner_perms.ref_count.value() > 0
                         }
                     } by {
-                        let sub_pages_per_subframe = page_size((level - 1) as PagingLevel)
+                        let sub_pages_per_subframe = page_size::<C>((level - 1) as PagingLevel)
                             / PAGE_SIZE;
                         let big_j_int: int = i as int * sub_pages_per_subframe as int
                             + j_prime as int;
@@ -1095,9 +1095,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 // metaregion_sound frame arm shape.
                 if i == 0 {
                     // small_pa == pa + 0 * page_size(level-1) == pa.
-                    assert(i as int * page_size((level - 1) as PagingLevel) as int == 0) by {
+                    assert(i as int * page_size::<C>((level - 1) as PagingLevel) as int == 0) by {
                         vstd::arithmetic::mul::lemma_mul_by_zero_is_zero(
-                            page_size((level - 1) as PagingLevel) as int,
+                            page_size::<C>((level - 1) as PagingLevel) as int,
                         );
                     }
                 } else {

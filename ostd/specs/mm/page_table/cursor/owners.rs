@@ -21,14 +21,12 @@ use crate::mm::frame::meta::mapping::frame_to_index;
 use crate::mm::page_prop::PageProperty;
 use crate::mm::page_table::*;
 use crate::mm::{
-    MAX_USERSPACE_VADDR, Paddr, PagingConstsTrait, PagingLevel, Vaddr, nr_subpage_per_huge,
+    MAX_USERSPACE_VADDR, Paddr, PagingConstsTrait, PagingLevel, Vaddr, nr_subpage_per_huge, page_size,
 };
 use crate::specs::arch::*;
 use crate::specs::mm::frame::meta_owners::{REF_COUNT_MAX, REF_COUNT_UNUSED};
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
-use crate::specs::mm::page_table::AbstractVaddr;
-use crate::specs::mm::page_table::Guards;
-use crate::specs::mm::page_table::Mapping;
+use crate::specs::mm::page_table::{AbstractVaddr, Guards, Mapping, lemma_page_size_monotone};
 use crate::specs::mm::page_table::cursor::page_size_lemmas::{
     lemma_page_size_divides, lemma_page_size_ge_page_size, lemma_page_size_spec_level1,
 };
@@ -735,7 +733,7 @@ impl<'rcu, C: PageTableConfig> Inv for CursorOwner<'rcu, C> {
         &&& !self.popped_too_high && self.guard_level >= 1 && self.level < self.guard_level
             ==> self.va.index[self.guard_level - 1] == self.prefix.index[self.guard_level - 1]
         &&& forall|i: int|
-            #![trigger self.continuations[i]]
+            #![trigger self.continuations.contains_key(i)]
             self.level - 1 <= i < C::NR_LEVELS() ==> {
                 &&& self.continuations.contains_key(i)
                 &&& self.continuations[i].inv()
@@ -744,7 +742,7 @@ impl<'rcu, C: PageTableConfig> Inv for CursorOwner<'rcu, C> {
                 &&& self.in_locked_range() ==> self.va.index[i] == self.continuations[i].idx
             }
         &&& forall|i: int|
-            #![trigger self.continuations[i]]
+            #![trigger self.continuations[i].path()]
             self.level - 1 <= i < C::NR_LEVELS() - 1 ==> {
                 // Path consistency: child path = parent path pushed with parent's index
                 &&& self.continuations[i].path() == self.continuations[i + 1].path().push_tail(
@@ -1507,7 +1505,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
 
             lemma_page_size_ge_page_size(1 as PagingLevel);
             lemma_page_size_ge_page_size(2 as PagingLevel);
-            page_size_monotonic(1 as PagingLevel, 2 as PagingLevel);
+            lemma_page_size_monotone(1 as PagingLevel, 2 as PagingLevel);
             lemma_page_size_divides(1 as PagingLevel, 2 as PagingLevel);
             lemma_nat_align_down_sound(pv, ps2);
             lemma_nat_align_down_sound(pv, ps1);
@@ -1789,14 +1787,14 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.inv(),
             self.in_locked_range(),
             self.va.reflect(self_va),
-            node_size == page_size_spec((self.guard_level + 1) as PagingLevel),
+            node_size == page_size::<C>((self.guard_level + 1) as PagingLevel),
             self.locked_range().start <= va < self.locked_range().end,
         ensures
             nat_align_down(self_va as nat, node_size as nat) <= va as nat,
             (va as nat) - nat_align_down(self_va as nat, node_size as nat) < node_size as nat,
     {
         let gl = self.guard_level;
-        let pg = page_size(gl as PagingLevel) as nat;
+        let pg = page_size::<C>(gl as PagingLevel) as nat;
         let pg1 = node_size as nat;
         let ls = self.locked_range().start as nat;
 
@@ -2025,7 +2023,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.inv(),
             self.va.reflect(self_va),
             self.guard_level == C::NR_LEVELS(),
-            node_size == page_size_spec((C::NR_LEVELS() + 1) as PagingLevel),
+            node_size == page_size::<C>((C::NR_LEVELS() + 1) as PagingLevel),
             self.locked_range().start <= va < self.locked_range().end,
         ensures
             nat_align_down(self_va as nat, node_size as nat) <= va as nat,
@@ -2036,7 +2034,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let big = 0x1_0000_0000_0000int;  // 2^48 == page_size(NR_LEVELS+1)
         let ps_nr = page_size(C::NR_LEVELS() as PagingLevel) as int;
 
-        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_spec_values();
         // node_size == page_size_spec(5) == 2^48; page_size(NR_LEVELS) == 2^39 < 2^48.
 
         // ---- prefix.to_vaddr() == lb * 2^48 -------------------------------
@@ -2112,7 +2109,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.prefix.to_vaddr_indices_gap_bound(0);
         vstd::arithmetic::power2::lemma2_to64();
         vstd::arithmetic::power2::lemma2_to64_rest();
-        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_spec_values();
 
         // prefix's lower indices are zero (i < gl), so
         // to_vaddr_indices(0) == to_vaddr_indices(gl).
@@ -2192,7 +2188,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let gl = self.guard_level;
         lemma_page_size_ge_page_size(gl as PagingLevel);
         lemma_page_size_ge_page_size(level as PagingLevel);
-        page_size_monotonic(level as PagingLevel, gl as PagingLevel);
+        lemma_page_size_monotone(level as PagingLevel, gl as PagingLevel);
 
         // Pin down locked_range().end == prefix.to_vaddr() + page_size(gl).
         self.prefix_aligned_to_guard_level();
@@ -2205,7 +2201,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.prefix.to_vaddr_indices_gap_bound(0);
         vstd::arithmetic::power2::lemma2_to64();
         vstd::arithmetic::power2::lemma2_to64_rest();
-        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_spec_values();
 
         assert forall|i: int| 0 <= i < gl implies self.prefix.index[i] == 0 by {
             assert(self.prefix.index.contains_key(i));
@@ -2298,9 +2293,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         vstd::arithmetic::power2::lemma2_to64_rest();
         lemma_nr_subpage_per_huge_eq_nr_entries();
         vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
-        page_size_monotonic(gl as PagingLevel, NR_LEVELS as PagingLevel);
+        lemma_page_size_monotone(gl as PagingLevel, NR_LEVELS as PagingLevel);
         vstd::arithmetic::power2::lemma_pow2_adds(12nat, 27nat);
-        assert(page_size(NR_LEVELS as PagingLevel) == pow2(39nat));
+        assert(page_size::<C>(NR_LEVELS as PagingLevel) == pow2(39nat));
         vstd::arithmetic::power2::lemma_pow2_adds(1nat, 48nat);
         vstd_extra::external::ilog2::lemma_pow2_increases(49nat, 64nat);
 
@@ -2411,13 +2406,13 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let m = Mapping {
             va_range: Range {
                 start: vaddr_of::<C>(path) as int,
-                end: vaddr_of::<C>(path) as int + page_size(pt_level as PagingLevel) as int,
+                end: vaddr_of::<C>(path) as int + page_size::<C>(pt_level as PagingLevel) as int,
             },
             pa_range: Range {
                 start: frame.mapped_pa,
-                end: (frame.mapped_pa + page_size(pt_level as PagingLevel)) as Paddr,
+                end: (frame.mapped_pa + page_size::<C>(pt_level as PagingLevel)) as Paddr,
             },
-            page_size: page_size(pt_level as PagingLevel),
+            page_size: page_size::<C>(pt_level as PagingLevel),
             property: frame.prop,
         };
         assert(PageTableOwner(subtree).view_rec(path) == set![m]);

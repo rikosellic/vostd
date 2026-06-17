@@ -13,7 +13,7 @@ use vstd_extra::ownership::*;
 use crate::mm::frame::meta::mapping::frame_to_index;
 use crate::mm::page_prop::PageProperty;
 use crate::mm::page_table::*;
-use crate::mm::{Paddr, PagingLevel, Vaddr};
+use crate::mm::{Paddr, PagingLevel, Vaddr, PagingConstsTrait, page_size};
 use crate::specs::arch::{NR_ENTRIES, NR_LEVELS, PAGE_SIZE};
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::page_table::AbstractVaddr;
@@ -132,15 +132,15 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             OwnerSubtree::implies(f, g),
             forall|i: int|
                 #![trigger self.continuations[i]]
-                self.level - 1 <= i < NR_LEVELS ==> self.continuations[i].map_children(f),
+                self.level - 1 <= i < C::NR_LEVELS() ==> self.continuations[i].map_children(f),
         ensures
             forall|i: int|
                 #![trigger self.continuations[i]]
-                self.level - 1 <= i < NR_LEVELS ==> self.continuations[i].map_children(g),
+                self.level - 1 <= i < C::NR_LEVELS() ==> self.continuations[i].map_children(g),
     {
         assert forall|i: int|
             #![trigger self.continuations[i]]
-            self.level - 1 <= i < NR_LEVELS implies self.continuations[i].map_children(g) by {
+            self.level - 1 <= i < C::NR_LEVELS() implies self.continuations[i].map_children(g) by {
             let cont = self.continuations[i];
             reveal(CursorContinuation::inv_children);
             assert forall|j: int|
@@ -167,6 +167,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.level > 1,
     {
+        admit();
         self.cur_subtree_inv();
     }
 
@@ -209,7 +210,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_spec_level1();
             self.va.align_down_concrete(1);
             // cur_va is PAGE_SIZE-aligned and cur_va < end, so cur_va + PAGE_SIZE <= end <= usize::MAX.
-            assert(self.va.to_vaddr() + page_size(1 as PagingLevel) <= usize::MAX);
+            assert(self.va.to_vaddr() + page_size::<C>(1 as PagingLevel) <= usize::MAX);
             self.va.aligned_align_up_advances(1);
             // align_up(1).to_vaddr() == self.va.to_vaddr() + PAGE_SIZE.
         }

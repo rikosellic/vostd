@@ -10,7 +10,7 @@ use crate::mm::io::{VmReader, VmWriter};
 use crate::mm::page_prop::PageProperty;
 use crate::mm::page_table::*;
 use crate::mm::vm_space::{Cursor, CursorMut, MappedItem, UserPtConfig, VmSpace};
-use crate::mm::{MAX_USERSPACE_VADDR, Paddr, PagingConstsTrait, PagingLevel, Vaddr};
+use crate::mm::{MAX_USERSPACE_VADDR, Paddr, PagingConstsTrait, PagingLevel, Vaddr, page_size};
 use crate::specs::arch::NR_LEVELS;
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::io::{VmIoMemView, VmIoOwner};
@@ -745,9 +745,9 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
         &&& 1 <= level <= NR_LEVELS
         &&& level < self.pt_cursor.0.guard_level
         &&& Child::Frame(paddr, level, prop0).wf(entry_owner)
-        &&& self.pt_cursor.0.va + page_size(level) <= self.pt_cursor.0.barrier_va.end
+        &&& self.pt_cursor.0.va + page_size::<UserPtConfig>(level) <= self.pt_cursor.0.barrier_va.end
         &&& entry_owner.inv()
-        &&& self.pt_cursor.0.va % page_size(level) == 0
+        &&& self.pt_cursor.0.va % page_size::<UserPtConfig>(level) == 0
         &&& crate::mm::page_table::CursorMut::<'a, UserPtConfig, A>::item_slot_in_regions(
             item,
             regions,

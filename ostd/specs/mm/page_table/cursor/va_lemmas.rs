@@ -16,7 +16,7 @@ use vstd_extra::ghost_tree::*;
 use vstd_extra::ownership::*;
 
 use crate::mm::page_table::*;
-use crate::mm::{Paddr, PagingLevel, Vaddr};
+use crate::mm::{Paddr, PagingLevel, Vaddr, page_size};
 use crate::specs::arch::{NR_ENTRIES, NR_LEVELS};
 use crate::specs::mm::page_table::AbstractVaddr;
 use crate::specs::mm::page_table::Mapping;
@@ -167,7 +167,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 }
             };
         };
-        let ps = page_size(self.level as PagingLevel) as nat;
+        let ps = page_size::<C>(self.level as PagingLevel) as nat;
         let self_va = self.va.to_vaddr() as nat;
         lemma_page_size_ge_page_size(self.level as PagingLevel);
 
@@ -325,7 +325,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             vaddr(self.cur_subtree().value.path) as int + self.va.leading_bits
                 * 0x1_0000_0000_0000int <= self.cur_va() as int,
             (self.cur_va() as int) < vaddr(self.cur_subtree().value.path) as int
-                + self.va.leading_bits * 0x1_0000_0000_0000int + page_size(
+                + self.va.leading_bits * 0x1_0000_0000_0000int + page_size::<C>(
                 self.level as PagingLevel,
             ) as int,
     {

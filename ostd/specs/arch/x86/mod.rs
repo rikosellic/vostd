@@ -1,6 +1,7 @@
 use crate::mm::kspace::FRAME_METADATA_RANGE;
 use crate::mm::kspace::{LINEAR_MAPPING_BASE_VADDR, VMALLOC_BASE_VADDR, paddr_to_vaddr};
-use crate::mm::{Paddr, PagingConsts, Vaddr};
+use crate::mm::{Paddr, Vaddr, page_size, KERNEL_VADDR_RANGE};
+use crate::arch::mm::PagingConsts;
 use crate::specs::mm::frame::mapping::{
     META_SLOT_SIZE, lemma_meta_to_frame_soundness, meta_to_frame,
 };
@@ -109,5 +110,20 @@ pub proof fn lemma_nr_subpage_per_huge_eq_nr_entries()
 {
     assert(crate::mm::nr_subpage_per_huge::<PagingConsts>() == 4096usize / 8usize);
 }
+
+pub proof fn lemma_page_size_spec_values()
+    ensures
+        page_size::<PagingConsts>(1) == 4096,
+        page_size::<PagingConsts>(2) == 2097152,
+        page_size::<PagingConsts>(3) == 1073741824,
+        page_size::<PagingConsts>(4) == 549755813888,
+        page_size::<PagingConsts>(5) == 281474976710656,
+{
+    vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
+    vstd::arithmetic::power2::lemma2_to64();
+    vstd::arithmetic::power2::lemma2_to64_rest();
+    vstd::bits::lemma_usize_pow2_no_overflow(48);
+}
+
 
 } // verus!

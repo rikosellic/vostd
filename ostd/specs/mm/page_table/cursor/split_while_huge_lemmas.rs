@@ -8,15 +8,13 @@ use vstd_extra::ownership::*;
 use crate::arch::mm::PagingConsts;
 use crate::mm::page_prop::PageProperty;
 use crate::mm::page_table::*;
-use crate::mm::{Paddr, PagingConstsTrait, PagingLevel, Vaddr};
+use crate::mm::{Paddr, PagingConstsTrait, PagingLevel, Vaddr, page_size};
 use crate::specs::arch::MAX_PADDR;
 use crate::specs::arch::{NR_ENTRIES, NR_LEVELS, PAGE_SIZE};
 use crate::specs::mm::page_table::Mapping;
 use crate::specs::mm::page_table::cursor::owners::*;
 use crate::specs::mm::page_table::owners::PageTableOwner;
 use vstd_extra::arithmetic::*;
-
-use crate::mm::page_table::page_size_spec as page_size;
 
 verus! {
 
@@ -1253,7 +1251,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         // page_size(L) >= PAGE_SIZE; page_size(L) > page_size(L-1);
         // page_size(L) / NR_ENTRIES == page_size(L-1); page_size(L) % page_size(L-1) == 0;
         // page_size(L-1) ∈ {4K, 2M, 1G}.
-        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_spec_values();
         crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_ge_page_size(
             level_before_frame as PagingLevel,
         );
@@ -1297,7 +1294,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         vstd::set::lemma_set_choose_len(f);
         assert(m.inv());
         assert(NR_ENTRIES == 512usize) by (compute_only);
-        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_spec_values();
         assert(set![4096usize, 2097152, 1073741824].contains(ps)) by {
             if m.page_size == 2097152 {
                 assert(2097152usize / 512 == 4096usize);

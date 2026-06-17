@@ -5,7 +5,7 @@
 ///   (`protect_preserves_cursor_inv_metaregion`, `map_branch_none_*`)
 /// - **Theme 14**: Cursor path structure & jump utilities
 ///   (`cursor_path_nesting`, `jump_above_locked_range_va_in_node`,
-///    `jump_not_in_node_level_lt_guard_minus_one`, `lemma_page_size_spec_5_eq_pow2_48`)
+///    `jump_not_in_node_level_lt_guard_minus_one`)
 use vstd::arithmetic::power2::pow2;
 use vstd::prelude::*;
 
@@ -18,7 +18,7 @@ use vstd_extra::arithmetic::{
 };
 
 use crate::mm::page_table::*;
-use crate::mm::{PagingConstsTrait, PagingLevel, Vaddr};
+use crate::mm::{PagingConstsTrait, PagingLevel, Vaddr, page_size};
 use crate::specs::arch::*;
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::page_table::AbstractVaddr;
@@ -162,7 +162,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.inv(),
     {
         let L = self.level as int;
-        assert(self.continuations[L - 1].level() == self.level);
         assert(self.continuations.contains_key(L - 1));
         admit();
     }
@@ -305,17 +304,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         admit();
     }
 
-    pub proof fn lemma_page_size_spec_5_eq_pow2_48()
-        ensures
-            page_size_spec(5) == pow2(48nat) as usize,
-    {
-        lemma_nr_subpage_per_huge_eq_nr_entries();
-        vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
-        vstd::arithmetic::power2::lemma2_to64();
-        vstd::arithmetic::power2::lemma2_to64_rest();
-        vstd::arithmetic::power2::lemma_pow2_adds(12nat, 36nat);
-    }
-
     pub proof fn jump_not_in_node_level_lt_guard_minus_one(
         self,
         level: PagingLevel,
@@ -328,14 +316,14 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             1 <= level,
             level + 1 <= self.guard_level,
             self.locked_range().start <= node_start,
-            node_start + page_size((level + 1) as PagingLevel) <= self.locked_range().end,
-            !(node_start <= va && va < node_start + page_size((level + 1) as PagingLevel)),
+            node_start + page_size::<C>((level + 1) as PagingLevel) <= self.locked_range().end,
+            !(node_start <= va && va < node_start + page_size::<C>((level + 1) as PagingLevel)),
         ensures
             level + 1 < self.guard_level,
     {
         if level + 1 == self.guard_level {
             let pv = self.prefix.to_vaddr() as nat;
-            let ps = page_size(self.guard_level as PagingLevel) as nat;
+            let ps = page_size::<C>(self.guard_level as PagingLevel) as nat;
             self.prefix.align_down_concrete(self.guard_level as int);
             self.prefix_aligned_to_guard_level();
             self.prefix_plus_ps_no_overflow();

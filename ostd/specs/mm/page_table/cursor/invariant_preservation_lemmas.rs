@@ -19,6 +19,7 @@ use vstd_extra::ownership::*;
 
 use crate::mm::frame::meta::mapping::frame_to_index;
 use crate::mm::page_table::*;
+use crate::mm::page_size;
 use crate::specs::arch::PAGE_SIZE;
 use crate::specs::arch::{NR_ENTRIES, NR_LEVELS};
 use crate::specs::mm::frame::meta_owners::REF_COUNT_UNUSED;
@@ -202,7 +203,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                         // r0 facts (from frame_sub_pages_valid) carry to r1.
                         assert(entry.is_frame() && entry.parent_level > 1 ==> {
                             let pa = entry.frame().mapped_pa;
-                            let nr_pages = page_size(entry.parent_level) / PAGE_SIZE;
+                            let nr_pages = page_size::<C>(entry.parent_level) / PAGE_SIZE;
                             forall|j: usize|
                                 0 < j < nr_pages ==> {
                                     let sub_idx = #[trigger] frame_to_index(
@@ -500,7 +501,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                         // r0 sub-page facts carry to r1.
                         assert(entry.is_frame() && entry.parent_level > 1 ==> {
                             let pa = entry.frame().mapped_pa;
-                            let nr_pages = page_size(entry.parent_level) / PAGE_SIZE;
+                            let nr_pages = page_size::<C>(entry.parent_level) / PAGE_SIZE;
                             forall|j: usize|
                                 0 < j < nr_pages ==> {
                                     let sub_idx = #[trigger] frame_to_index(
@@ -553,7 +554,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 if eidx != changed_idx {
                     assert(cont_entry.is_frame() && cont_entry.parent_level > 1 ==> {
                         let pa = cont_entry.frame().mapped_pa;
-                        let nr_pages = page_size(cont_entry.parent_level) / PAGE_SIZE;
+                        let nr_pages = page_size::<C>(cont_entry.parent_level) / PAGE_SIZE;
                         forall|j: usize|
                             0 < j < nr_pages ==> {
                                 let sub_idx = #[trigger] frame_to_index(
