@@ -17,6 +17,7 @@ use vstd_extra::arithmetic::{
     lemma_nat_align_up_sound,
 };
 
+use crate::mm::nr_subpage_per_huge;
 use crate::mm::page_table::*;
 use crate::mm::{PagingConstsTrait, PagingLevel, Vaddr, page_size};
 use crate::specs::arch::*;
@@ -191,7 +192,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.continuations[self.level - 1].path() == owner0.continuations[owner0.level
                 - 1].path(),
             forall|j: int|
-                0 <= j < C::NR_LEVELS() && j != owner0.continuations[owner0.level - 1].idx as int
+                0 <= j < nr_subpage_per_huge::<C>() && j != owner0.continuations[owner0.level - 1].idx as int
                     ==> #[trigger] self.continuations[self.level - 1].children[j]
                     == owner0.continuations[owner0.level - 1].children[j],
             // The new node's subtree has empty view_rec (from alloc_if_none postcondition)
@@ -284,7 +285,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.inv(),
             // All children of the current continuation are absent (from the empty node)
             forall|i: int|
-                0 <= i < C::NR_LEVELS() ==> #[trigger] self.continuations[self.level
+                0 <= i < nr_subpage_per_huge::<C>() ==> #[trigger] self.continuations[self.level
                     - 1].children[i] is Some && self.continuations[self.level
                     - 1].children[i]->0.value.is_absent(),
         ensures
