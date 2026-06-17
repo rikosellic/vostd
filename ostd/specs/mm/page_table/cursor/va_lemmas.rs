@@ -53,17 +53,17 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.va.to_vaddr()
     }
 
-    pub open spec fn cur_va_range(self) -> Range<AbstractVaddr> {
+    pub open spec fn cur_va_range(self) -> Range<AbstractVaddr<C>> {
         let start = self.va.align_down(self.level as int);
         let end = self.va.align_up(self.level as int);
         Range { start, end }
     }
 
-    pub open spec fn set_va(self, new_va: AbstractVaddr) -> Self {
+    pub open spec fn set_va(self, new_va: AbstractVaddr<C>) -> Self {
         Self { va: new_va, ..self }
     }
 
-    pub open spec fn set_va_in_node(self, new_va: AbstractVaddr) -> Self {
+    pub open spec fn set_va_in_node(self, new_va: AbstractVaddr<C>) -> Self {
         let old_cont = self.continuations[self.level - 1];
         Self {
             va: new_va,
@@ -169,7 +169,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         };
         let ps = page_size::<C>(self.level as PagingLevel) as nat;
         let self_va = self.va.to_vaddr() as nat;
-        lemma_page_size_ge_page_size(self.level as PagingLevel);
+        lemma_page_size_ge_page_size::<C>(self.level as PagingLevel);
 
         // Step 1: inc_index adds page_size to the vaddr.
         self.va.index_increment_adds_page_size(self.level as int);
@@ -180,7 +180,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         // align_down_concrete gives .reflect(nat_align_down(inc_va, ps)).
         inc.va.align_down_concrete(self.level as int);
         let new_va = vstd_extra::arithmetic::nat_align_down(inc_va, ps);
-        AbstractVaddr::from_vaddr_to_vaddr_roundtrip(new_va as Vaddr);
+        AbstractVaddr::<C>::from_vaddr_to_vaddr_roundtrip(new_va as Vaddr);
         // Now inc.zero_below_level().va.to_vaddr() == new_va.
 
         // Step 3: align_down(self_va + ps, ps) = align_down(self_va, ps) + ps.
@@ -229,7 +229,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
 
         cont.path().push_tail_property_len(cont.idx as usize);
 
-        let ps = page_size(self.level as PagingLevel);
+        let ps = page_size::<C>(self.level as PagingLevel);
         let m = Mapping {
             va_range: Range {
                 start: vaddr_of::<C>(path) as int,
@@ -265,7 +265,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let cur_va = self.va.to_vaddr() as nat;
         let ps_nat = ps as nat;
         self.va.align_down_concrete(self.level as int);
-        lemma_page_size_ge_page_size(self.level as PagingLevel);
+        lemma_page_size_ge_page_size::<C>(self.level as PagingLevel);
         vstd_extra::arithmetic::lemma_nat_align_down_sound(cur_va, ps_nat);
 
         // Bridge: `cur_va == vaddr_of::<C>(path)` for paths aligned with the
@@ -308,8 +308,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         assert(self.va.align_up(self.level as int).to_vaddr() as nat == (vaddr_of::<C>(path)
             + ps) as nat);
 
-        AbstractVaddr::from_vaddr_to_vaddr_roundtrip(nat_align_down(cur_va, ps_nat) as Vaddr);
-        AbstractVaddr::from_vaddr_to_vaddr_roundtrip((vaddr_of::<C>(path) + ps) as Vaddr);
+        AbstractVaddr::<C>::from_vaddr_to_vaddr_roundtrip(nat_align_down(cur_va, ps_nat) as Vaddr);
+        AbstractVaddr::<C>::from_vaddr_to_vaddr_roundtrip((vaddr_of::<C>(path) + ps) as Vaddr);
 
         self.va.align_up(self.level as int).reflect_to_vaddr();
     }
@@ -322,9 +322,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.inv(),
             self.in_locked_range(),
         ensures
-            vaddr(self.cur_subtree().value.path) as int + self.va.leading_bits
+            vaddr::<C>(self.cur_subtree().value.path) as int + self.va.leading_bits
                 * 0x1_0000_0000_0000int <= self.cur_va() as int,
-            (self.cur_va() as int) < vaddr(self.cur_subtree().value.path) as int
+            (self.cur_va() as int) < vaddr::<C>(self.cur_subtree().value.path) as int
                 + self.va.leading_bits * 0x1_0000_0000_0000int + page_size::<C>(
                 self.level as PagingLevel,
             ) as int,
@@ -371,12 +371,12 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
 
         self.va.to_path_inv(L - 1);
         self.cur_subtree_inv();
-        AbstractVaddr::rec_vaddr_eq_if_indices_eq(subtree_path, va_path, 0);
+        AbstractVaddr::<C>::rec_vaddr_eq_if_indices_eq(subtree_path, va_path, 0);
         self.va.vaddr_range_from_path(L - 1);
     }
 
     // ─── Axioms: VA mutation ─────────────────────────────────────────────
-    pub axiom fn tracked_set_va(tracked &mut self, new_va: AbstractVaddr)
+    pub axiom fn tracked_set_va(tracked &mut self, new_va: AbstractVaddr<C>)
         requires
             forall|i: int|
                 #![auto]
@@ -393,7 +393,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     /// When jumping within the same page-table node, only indices at levels
     /// >= level are guaranteed to match. The entry-within-node index (level - 1)
     /// may change, so we update continuations[level-1].idx along with va.
-    pub axiom fn tracked_set_va_in_node(tracked &mut self, new_va: AbstractVaddr)
+    pub axiom fn tracked_set_va_in_node(tracked &mut self, new_va: AbstractVaddr<C>)
         requires
             old(self).inv(),
             new_va.inv(),

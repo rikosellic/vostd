@@ -13,7 +13,7 @@ use vstd::prelude::*;
 use vstd_extra::ownership::*;
 
 use crate::mm::vm_space::UserPtConfig;
-use crate::mm::{Paddr, PagingConstsTrait, Vaddr, nr_subpage_per_huge, KERNEL_VADDR_RANGE};
+use crate::mm::{KERNEL_VADDR_RANGE, Paddr, PagingConstsTrait, Vaddr, nr_subpage_per_huge};
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::page_table::{Guards, INC_LEVELS, Mapping, PageTableOwner, PageTableView};
 use crate::specs::mm::tlb::TlbModel;

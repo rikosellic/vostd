@@ -114,7 +114,7 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
     guard: &'rcu A,
     va: &Range<Vaddr>,
 ) -> (Cursor<'rcu, C, A>, Tracked<CursorOwner<'rcu, C>>) {
-    let ghost start_idx = AbstractVaddr::from_vaddr(va.start).index[C::NR_LEVELS() as int - 1];
+    let ghost start_idx = AbstractVaddr::<C>::from_vaddr(va.start).index[C::NR_LEVELS() as int - 1];
 
     let tracked mut cursor_own: CursorOwner<'rcu, C> = CursorOwner::tracked_new(
         pt_own.0,
@@ -153,7 +153,7 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
     proof {
         cursor_own.guard_level = guard_level;
     }
-    let cur_node_va = va.start.align_down(page_size(guard_level + 1));
+    let cur_node_va = va.start.align_down(page_size::<C>(guard_level + 1));
 
     #[verus_spec(with Tracked(cont.entry_own), Tracked(&cont.guard), Tracked(guards), Tracked(regions))]
     dfs_acquire_lock(guard, &mut subtree_root, cur_node_va, va.clone());
@@ -211,7 +211,7 @@ pub fn unlock_range<C: PageTableConfig, A: InAtomicMode>(cursor: &mut Cursor<'_,
         }
     }
     let guard_node = cursor.path[cursor.guard_level as usize - 1].take().unwrap();
-    let cur_node_va = cursor.barrier_va.start.align_down(page_size(cursor.guard_level + 1));
+    let cur_node_va = cursor.barrier_va.start.align_down(page_size::<C>(cursor.guard_level + 1));
 
     // SAFETY: A cursor maintains that its corresponding sub-tree is locked.
     dfs_release_lock(
@@ -690,13 +690,13 @@ pub open spec fn ceil_div(x: int, d: int) -> int
     (x + d - 1) / d
 }
 
-pub open spec fn idx_range_spec(
+pub open spec fn idx_range_spec<C: PagingConstsTrait>(
     cur_node_level: PagingLevel,
     cur_node_va: Vaddr,
     va_start: Vaddr,
     va_end: Vaddr,
 ) -> (usize, usize) {
-    let ps = page_size(cur_node_level) as int;
+    let ps = page_size::<C>(cur_node_level) as int;
     let start_idx = ((va_start - cur_node_va) as int) / ps;
     let end_idx = ceil_div((va_end - cur_node_va) as int, ps);
     (start_idx as usize, end_idx as usize)
@@ -711,8 +711,8 @@ pub open spec fn idx_range_spec(
         cur_node_va % page_size::<C>((cur_node_level + 1) as PagingLevel) == 0,
         va_range.start % page_size::<C>(cur_node_level) == 0,
     ensures
-        ret.start == idx_range_spec(cur_node_level, cur_node_va, va_range.start, va_range.end).0,
-        ret.end == idx_range_spec(cur_node_level, cur_node_va, va_range.start, va_range.end).1,
+        ret.start == idx_range_spec::<C>(cur_node_level, cur_node_va, va_range.start, va_range.end).0,
+        ret.end == idx_range_spec::<C>(cur_node_level, cur_node_va, va_range.start, va_range.end).1,
         ret.start < ret.end,
         ret.end <= NR_ENTRIES,
 )]
@@ -727,9 +727,9 @@ fn dfs_get_idx_range<C: PagingConstsTrait>(
     proof {
         use crate::specs::mm::page_table::cursor::page_size_lemmas::*;
         use vstd::arithmetic::div_mod::*;
-        lemma_page_size_ge_page_size(cur_node_level);
+        lemma_page_size_ge_page_size::<C>(cur_node_level);
         lemma_page_size_spec_values();
-        lemma_nr_entries_times_sub_page_size((cur_node_level + 1) as PagingLevel);
+        lemma_nr_entries_times_sub_page_size::<C>((cur_node_level + 1) as PagingLevel);
 
         // diff + ps - 1 fits in usize: both <= page_size(5) = 2^48
         assert(diff as int + ps as int - 1 < usize::MAX as int);
@@ -758,7 +758,7 @@ fn dfs_get_idx_range<C: PagingConstsTrait>(
         // Actually the simplest route: si/ai * ai = si < xi <= end_idx * ai.
         assert(start_idx < end_idx) by {
             // si = start_idx * ai (exact division since si % ai == 0)
-            lemma_page_size_divides(cur_node_level, (cur_node_level + 1) as PagingLevel);
+            lemma_page_size_divides::<C>(cur_node_level, (cur_node_level + 1) as PagingLevel);
             // Prove si % ai == 0: va_range.start and cur_node_va are both multiples of ps.
             // cur_node_va % ps == 0: cur_node_va % page_size(level+1) == 0 and ps | page_size(level+1).
             let psu = page_size::<C>((cur_node_level + 1) as PagingLevel) as int;
@@ -828,7 +828,7 @@ fn dfs_get_idx_range<C: PagingConstsTrait>(
         // -- end_idx <= NR_ENTRIES --
         // diff <= page_size(level+1) = NR_ENTRIES * ps
         // So ceil_div(diff, ps) <= NR_ENTRIES.
-        let psu = page_size((cur_node_level + 1) as PagingLevel) as int;
+        let psu = page_size::<C>((cur_node_level + 1) as PagingLevel) as int;
         assert(psu == NR_ENTRIES as int * ai);
         assert(xi <= psu);
         // (psu + ai - 1) / ai == NR_ENTRIES (since psu = NR_ENTRIES * ai)

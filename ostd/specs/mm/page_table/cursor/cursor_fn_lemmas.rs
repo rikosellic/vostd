@@ -100,7 +100,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
 
         assert forall|i: int|
             #![trigger other.continuations[i]]
-            other.level - 1 <= i < C::NR_LEVELS() implies other.continuations[i].map_children(f) by {
+            other.level - 1 <= i < C::NR_LEVELS() implies other.continuations[i].map_children(
+            f,
+        ) by {
             if i > L - 1 {
                 assert(other.continuations[i] == self.continuations[i]);
                 assert(self.continuations[i].map_children(f));
@@ -125,7 +127,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         assert forall|i: int|
             #![trigger other.continuations[i]]
             other.level - 1 <= i
-                < C::NR_LEVELS() implies other.continuations[i].entry_own.metaregion_sound(regions) by {
+                < C::NR_LEVELS() implies other.continuations[i].entry_own.metaregion_sound(
+            regions,
+        ) by {
             if i > L - 1 {
                 assert(other.continuations[i] == self.continuations[i]);
                 self.inv_continuation(i);
@@ -192,8 +196,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.continuations[self.level - 1].path() == owner0.continuations[owner0.level
                 - 1].path(),
             forall|j: int|
-                0 <= j < nr_subpage_per_huge::<C>() && j != owner0.continuations[owner0.level - 1].idx as int
-                    ==> #[trigger] self.continuations[self.level - 1].children[j]
+                0 <= j < nr_subpage_per_huge::<C>() && j != owner0.continuations[owner0.level
+                    - 1].idx as int ==> #[trigger] self.continuations[self.level - 1].children[j]
                     == owner0.continuations[owner0.level - 1].children[j],
             // The new node's subtree has empty view_rec (from alloc_if_none postcondition)
             PageTableOwner(
@@ -329,7 +333,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.prefix_aligned_to_guard_level();
             self.prefix_plus_ps_no_overflow();
             self.prefix.aligned_align_up_advances(self.guard_level as int);
-            AbstractVaddr::from_vaddr_to_vaddr_roundtrip(nat_align_down(pv, ps) as Vaddr);
+            AbstractVaddr::<C>::from_vaddr_to_vaddr_roundtrip(nat_align_down(pv, ps) as Vaddr);
         }
     }
 }

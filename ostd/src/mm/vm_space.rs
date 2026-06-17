@@ -1156,8 +1156,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                         assert(0x0000_8000_0000_0000usize < KERNEL_VADDR_RANGE.end as usize)
                             by (compute_only);
                         assert(va + len <= KERNEL_VADDR_RANGE.end as usize);
-                        crate::specs::mm::lemma_va_plus_page_size_no_overflow(
-                        va, len);
+                        crate::specs::mm::lemma_va_plus_page_size_no_overflow(va, len);
                     }
                     #[verus_spec(with Tracked(tlb_model))]
                     self.flusher.issue_tlb_flush_with(TlbFlushOp::Range(va..va + len), pt);

@@ -114,7 +114,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
             kind: EntryOwnerKind::Frame(
                 FrameEntryOwner {
                     mapped_pa: paddr,
-                    size: page_size(parent_level),
+                    size: page_size::<C>(parent_level),
                     prop,
                     is_tracked,
                 },
@@ -349,7 +349,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
             res.is_frame(),
             res.frame().mapped_pa == paddr,
             res.frame().prop == prop,
-            res.frame().size == page_size(parent_level),
+            res.frame().size == page_size::<C>(parent_level),
             res.frame().is_tracked == false,
             res.parent_level == parent_level,
             res.path.inv(),
@@ -436,15 +436,15 @@ impl<C: PageTableConfig> EntryOwner<C> {
             1 < self.parent_level < C::NR_LEVELS(),
             idx < NR_ENTRIES,
         ensures
-            self.frame().mapped_pa + idx * page_size((self.parent_level - 1) as PagingLevel)
+            self.frame().mapped_pa + idx * page_size::<C>((self.parent_level - 1) as PagingLevel)
                 < MAX_PADDR,
-            ((self.frame().mapped_pa + idx * page_size(
+            ((self.frame().mapped_pa + idx * page_size::<C>(
                 (self.parent_level - 1) as PagingLevel,
-            )) as Paddr) % page_size((self.parent_level - 1) as PagingLevel) == 0,
-            ((self.frame().mapped_pa + idx * page_size(
+            )) as Paddr) % page_size::<C>((self.parent_level - 1) as PagingLevel) == 0,
+            ((self.frame().mapped_pa + idx * page_size::<C>(
                 (self.parent_level - 1) as PagingLevel,
-            )) as Paddr) + page_size((self.parent_level - 1) as PagingLevel) <= MAX_PADDR,
-            ((self.frame().mapped_pa + idx * page_size(
+            )) as Paddr) + page_size::<C>((self.parent_level - 1) as PagingLevel) <= MAX_PADDR,
+            ((self.frame().mapped_pa + idx * page_size::<C>(
                 (self.parent_level - 1) as PagingLevel,
             )) as Paddr) % PAGE_SIZE == 0,
     {
@@ -475,7 +475,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
     {
         if self.parent_level > 1 {
             let pa = self.frame().mapped_pa;
-            let nr_pages = page_size(self.parent_level) / PAGE_SIZE;
+            let nr_pages = page_size::<C>(self.parent_level) / PAGE_SIZE;
             let self_idx = frame_to_index(self.meta_slot_paddr().unwrap());
             assert forall|j: usize|
                 #![trigger frame_to_index((pa + j * PAGE_SIZE) as usize)]
@@ -495,8 +495,9 @@ impl<C: PageTableConfig> EntryOwner<C> {
                 // self_idx = pa / PAGE_SIZE, and sub_idx = (pa + j*PAGE_SIZE) / PAGE_SIZE
                 //         = pa/PAGE_SIZE + j = self_idx + j > self_idx (since j >= 1).
                 let pa_plus_int: int = pa as int + (j as int) * (PAGE_SIZE as int);
-                crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_ge_page_size(
-                self.parent_level);
+                crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_ge_page_size::<
+                    C,
+                >(self.parent_level);
                 assert((j as int) * (PAGE_SIZE as int) < (nr_pages as int) * (PAGE_SIZE as int))
                     by {
                     vstd::arithmetic::mul::lemma_mul_strict_inequality(
@@ -505,9 +506,9 @@ impl<C: PageTableConfig> EntryOwner<C> {
                         PAGE_SIZE as int,
                     );
                 };
-                crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_div_mul_eq(
-                    self.parent_level,
-                );
+                crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_div_mul_eq::<
+                    C,
+                >(self.parent_level);
                 assert(pa_plus_int < MAX_PADDR);
                 vstd::arithmetic::div_mod::lemma_div_multiples_vanish_quotient(
                     j as int,
@@ -526,7 +527,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
     /// Sub-page slot validity for huge frames (fine-grained: all 4KB pages within).
     ///
     /// When a frame at this entry has `parent_level > 1`, it is a huge page covering
-    /// `page_size(parent_level)` bytes. Every 4KB sub-page within this range (excluding
+    /// `page_size::<C>(parent_level)` bytes. Every 4KB sub-page within this range (excluding
     /// the j = 0 case which coincides with the frame's own slot) must be allocated
     /// (in the free pool) with `rc != UNUSED`.
     ///
@@ -538,7 +539,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
     pub open spec fn frame_sub_pages_valid(self, regions: MetaRegionOwners) -> bool {
         self.is_frame() && self.parent_level > 1 ==> {
             let pa = self.frame().mapped_pa;
-            let nr_pages = page_size(self.parent_level) / PAGE_SIZE;
+            let nr_pages = page_size::<C>(self.parent_level) / PAGE_SIZE;
             forall|j: usize|
                 #![trigger frame_to_index((pa + j * PAGE_SIZE) as usize)]
                 0 < j < nr_pages ==> {
@@ -674,7 +675,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
             // hold in r1. MMIO sub-pages keep `usage == MMIO` and `rc == UNUSED`.
             self.is_frame() && self.parent_level > 1 ==> {
                 let pa = self.frame().mapped_pa;
-                let nr_pages = page_size(self.parent_level) / PAGE_SIZE;
+                let nr_pages = page_size::<C>(self.parent_level) / PAGE_SIZE;
                 forall|j: usize|
                     0 < j < nr_pages ==> {
                         let sub_idx = #[trigger] frame_to_index((pa + j * PAGE_SIZE) as usize);
@@ -737,7 +738,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
                 forall|j: usize|
                     0 < j < NR_ENTRIES ==> {
                         let sub_idx = #[trigger] frame_to_index(
-                            (pa + j * page_size(sub_level)) as usize,
+                            (pa + j * page_size::<C>(sub_level)) as usize,
                         );
                         sub_idx != changed_idx || r1.slot_owners[changed_idx].paths_in_pt.is_empty()
                     }
@@ -759,7 +760,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
                 // plus `rc` bookkeeping when tracked.
                 if self.parent_level > 1 {
                     let pa = self.frame().mapped_pa;
-                    let nr_pages = page_size(self.parent_level) / PAGE_SIZE;
+                    let nr_pages = page_size::<C>(self.parent_level) / PAGE_SIZE;
                     let self_idx = frame_to_index(self.meta_slot_paddr().unwrap());
                     assert forall|j: usize|
                         #![trigger frame_to_index((pa + j * PAGE_SIZE) as usize)]
@@ -843,7 +844,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
     {
         if self.is_frame() && self.parent_level > 1 {
             let pa = self.frame().mapped_pa;
-            let nr_pages = page_size(self.parent_level) / PAGE_SIZE;
+            let nr_pages = page_size::<C>(self.parent_level) / PAGE_SIZE;
             let self_idx = frame_to_index(self.meta_slot_paddr().unwrap());
             assert forall|j: usize|
                 #![trigger frame_to_index((pa + j * PAGE_SIZE) as usize)]
@@ -859,8 +860,9 @@ impl<C: PageTableConfig> EntryOwner<C> {
                 let sub_idx = frame_to_index((pa + j * PAGE_SIZE) as usize);
                 assert(r0.slots.contains_key(sub_idx));
                 let pa_plus_int: int = pa as int + (j as int) * (PAGE_SIZE as int);
-                crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_ge_page_size(
-                self.parent_level);
+                crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_ge_page_size::<
+                    C,
+                >(self.parent_level);
                 assert((j as int) * (PAGE_SIZE as int) < (nr_pages as int) * (PAGE_SIZE as int))
                     by {
                     vstd::arithmetic::mul::lemma_mul_strict_inequality(
@@ -869,9 +871,9 @@ impl<C: PageTableConfig> EntryOwner<C> {
                         PAGE_SIZE as int,
                     );
                 };
-                crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_div_mul_eq(
-                    self.parent_level,
-                );
+                crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_div_mul_eq::<
+                    C,
+                >(self.parent_level);
                 assert(pa_plus_int < MAX_PADDR);
                 // sub_idx = (pa + j*PAGE_SIZE) / PAGE_SIZE = pa/PAGE_SIZE + j (since pa % PAGE_SIZE == 0).
                 vstd::arithmetic::div_mod::lemma_div_multiples_vanish_quotient(
@@ -961,9 +963,9 @@ impl<C: PageTableConfig> EntryOwner<C> {
             &&& 1 <= self.parent_level < C::NR_LEVELS()
             &&& self.frame().mapped_pa % PAGE_SIZE == 0
             &&& self.frame().mapped_pa < MAX_PADDR
-            &&& self.frame().size == page_size(self.parent_level)
-            &&& self.frame().mapped_pa % page_size(self.parent_level) == 0
-            &&& self.frame().mapped_pa + page_size(self.parent_level) <= MAX_PADDR
+            &&& self.frame().size == page_size::<C>(self.parent_level)
+            &&& self.frame().mapped_pa % page_size::<C>(self.parent_level) == 0
+            &&& self.frame().mapped_pa + page_size::<C>(self.parent_level) <= MAX_PADDR
         }
         &&& self.is_locked() ==> { true }
         &&& self.is_borrowed() ==> { true }
@@ -990,7 +992,7 @@ impl<C: PageTableConfig> View for EntryOwner<C> {
             let frame = self.frame();
             EntryView::Leaf {
                 leaf: LeafPageTableEntryView {
-                    map_va: vaddr(self.path) as int,
+                    map_va: vaddr::<C>(self.path) as int,
                     //                    frame_pa: self.base_addr as int,
                     //                    in_frame_index: self.index as int,
                     map_to_pa: frame.mapped_pa as int,
@@ -1003,7 +1005,7 @@ impl<C: PageTableConfig> View for EntryOwner<C> {
             let node = self.node();
             EntryView::Intermediate {
                 node: IntermediatePageTableEntryView {
-                    map_va: vaddr(self.path) as int,
+                    map_va: vaddr::<C>(self.path) as int,
                     //                    frame_pa: self.base_addr as int,
                     //                    in_frame_index: self.index as int,
                     map_to_pa: meta_to_frame(node.meta_addr_self()) as int,

@@ -146,9 +146,7 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
 }
 
 pub open spec fn page_size_spec<C: PagingConstsTrait>(level: PagingLevel) -> usize {
-    (PAGE_SIZE * pow2(
-        (nr_subpage_per_huge::<C>().ilog2() * (level - 1)) as nat,
-    )) as usize
+    (PAGE_SIZE * pow2((nr_subpage_per_huge::<C>().ilog2() * (level - 1)) as nat)) as usize
 }
 
 /// The page size at a given level.
@@ -158,7 +156,7 @@ pub fn page_size<C: PagingConstsTrait>(level: PagingLevel) -> (ret: usize)
     requires
         1 <= level <= C::NR_LEVELS() + 1,
     ensures
-        ret == page_size_spec(level),
+        ret == page_size_spec::<C>(level),
         is_pow2(ret as int),
         ret >= PAGE_SIZE,
 {

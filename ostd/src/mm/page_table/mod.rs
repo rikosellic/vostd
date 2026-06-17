@@ -14,8 +14,8 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use crate::mm::page_size;
 use crate::mm::frame::meta::MetaSlot;
+use crate::mm::page_size;
 
 use super::{
     Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
@@ -792,8 +792,8 @@ pub fn largest_pages<C: PageTableConfig>(
                     return None;
                 }
                 let mut level = C::HIGHEST_TRANSLATION_LEVEL();
-                while page_size::<C>(level) > len || va % page_size::<C>(level) != 0 || pa % page_size::<C>(level)
-                    != 0 {
+                while page_size::<C>(level) > len || va % page_size::<C>(level) != 0 || pa
+                    % page_size::<C>(level) != 0 {
                     level -= 1;
                 }
 
@@ -1226,7 +1226,7 @@ fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> (res: usize
     requires
         1 <= level <= C::NR_LEVELS(),
     ensures
-        res == AbstractVaddr::from_vaddr(va).index[level - 1],
+        res == AbstractVaddr::<C>::from_vaddr(va).index[level - 1],
 {
     proof {
         admit();

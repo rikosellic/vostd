@@ -18,8 +18,8 @@ use vstd_extra::ghost_tree::*;
 use vstd_extra::ownership::*;
 
 use crate::mm::frame::meta::mapping::frame_to_index;
-use crate::mm::page_table::*;
 use crate::mm::page_size;
+use crate::mm::page_table::*;
 use crate::specs::arch::PAGE_SIZE;
 use crate::specs::arch::{NR_ENTRIES, NR_LEVELS};
 use crate::specs::mm::frame::meta_owners::REF_COUNT_UNUSED;
@@ -242,7 +242,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 // Same sub-page bridge as above (continuations branch).
                 assert(cont_entry.is_frame() && cont_entry.parent_level > 1 ==> {
                     let pa = cont_entry.frame().mapped_pa;
-                    let nr_pages = page_size(cont_entry.parent_level) / PAGE_SIZE;
+                    let nr_pages = page_size::<C>(cont_entry.parent_level) / PAGE_SIZE;
                     forall|j: usize|
                         0 < j < nr_pages ==> {
                             let sub_idx = #[trigger] frame_to_index((pa + j * PAGE_SIZE) as usize);

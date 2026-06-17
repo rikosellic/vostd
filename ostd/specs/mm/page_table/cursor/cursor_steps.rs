@@ -1577,7 +1577,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     /// 1. The new va satisfies va.inv()
     /// 2. The indices at levels >= level match the continuation indices
     /// 3. in_locked_range/above_locked_range depend on va but the preconditions ensure consistency
-    pub proof fn set_va_preserves_inv(self, new_va: AbstractVaddr)
+    pub proof fn set_va_preserves_inv(self, new_va: AbstractVaddr<C>)
         requires
             self.inv(),
             self.in_locked_range(),
@@ -1607,28 +1607,28 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 self.prefix_aligned_to_guard_level();
                 self.prefix_plus_ps_no_overflow();
                 r.prefix.aligned_align_up_advances(gl as int);
-                AbstractVaddr::from_vaddr_to_vaddr_roundtrip(
+                AbstractVaddr::<C>::from_vaddr_to_vaddr_roundtrip(
                     nat_align_down(
                         r.va.to_vaddr() as nat,
-                        page_size(gl as PagingLevel) as nat,
+                        page_size::<C>(gl as PagingLevel) as nat,
                     ) as Vaddr,
                 );
-                AbstractVaddr::from_vaddr_to_vaddr_roundtrip(
+                AbstractVaddr::<C>::from_vaddr_to_vaddr_roundtrip(
                     nat_align_down(
                         r.prefix.to_vaddr() as nat,
-                        page_size(gl as PagingLevel) as nat,
+                        page_size::<C>(gl as PagingLevel) as nat,
                     ) as Vaddr,
                 );
-                lemma_page_size_ge_page_size(gl as PagingLevel);
+                lemma_page_size_ge_page_size::<C>(gl as PagingLevel);
                 lemma_nat_align_down_sound(
                     r.va.to_vaddr() as nat,
-                    page_size(gl as PagingLevel) as nat,
+                    page_size::<C>(gl as PagingLevel) as nat,
                 );
                 r.prefix.align_down_shape(gl as int);
                 r.prefix.align_down(gl as int).reflect_prop(
                     nat_align_down(
                         r.prefix.to_vaddr() as nat,
-                        page_size(gl as PagingLevel) as nat,
+                        page_size::<C>(gl as PagingLevel) as nat,
                     ) as Vaddr,
                 );
             }
@@ -2048,9 +2048,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                     };
                 };
                 inc.va.align_down_concrete(self.level as int);
-                let ps = page_size(self.level as PagingLevel) as nat;
+                let ps = page_size::<C>(self.level as PagingLevel) as nat;
                 let self_va = self.va.to_vaddr() as nat;
-                lemma_page_size_ge_page_size(self.level as PagingLevel);
+                lemma_page_size_ge_page_size::<C>(self.level as PagingLevel);
                 assert(self.va.index[self.level - 1] == self.continuations[self.level - 1].idx);
                 self.va.index_increment_adds_page_size(self.level as int);
                 let inc_va = inc.va.to_vaddr() as nat;
@@ -2071,8 +2071,12 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 self.va.align_up_advances_general(self.level as int);
                 inc.va.align_down_shape(self.level as int);
                 self.va.align_down_shape(self.level as int);
-                AbstractVaddr::to_vaddr_from_vaddr_roundtrip(inc.va.align_down(self.level as int));
-                AbstractVaddr::to_vaddr_from_vaddr_roundtrip(self.va.align_up(self.level as int));
+                AbstractVaddr::<C>::to_vaddr_from_vaddr_roundtrip(
+                    inc.va.align_down(self.level as int),
+                );
+                AbstractVaddr::<C>::to_vaddr_from_vaddr_roundtrip(
+                    self.va.align_up(self.level as int),
+                );
             }
             // The wrap (`index+1 == NR_ENTRIES`) at `level == guard_level` is
             // precluded by the strengthened precondition.
@@ -2092,9 +2096,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 };
             };
             inc.va.align_down_concrete(self.level as int);
-            let ps = page_size(self.level as PagingLevel) as nat;
+            let ps = page_size::<C>(self.level as PagingLevel) as nat;
             let self_va = self.va.to_vaddr() as nat;
-            lemma_page_size_ge_page_size(self.level as PagingLevel);
+            lemma_page_size_ge_page_size::<C>(self.level as PagingLevel);
             assert(self.va.index[self.level - 1] == self.continuations[self.level - 1].idx);
             self.va.index_increment_adds_page_size(self.level as int);
             let inc_va = inc.va.to_vaddr() as nat;
@@ -2118,8 +2122,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             // Equal to_vaddr + both satisfy inv ⇒ both equal via from_vaddr uniqueness.
             inc.va.align_down_shape(self.level as int);
             self.va.align_down_shape(self.level as int);
-            AbstractVaddr::to_vaddr_from_vaddr_roundtrip(inc.va.align_down(self.level as int));
-            AbstractVaddr::to_vaddr_from_vaddr_roundtrip(self.va.align_up(self.level as int));
+            AbstractVaddr::<C>::to_vaddr_from_vaddr_roundtrip(inc.va.align_down(self.level as int));
+            AbstractVaddr::<C>::to_vaddr_from_vaddr_roundtrip(self.va.align_up(self.level as int));
         } else if self.level < NR_LEVELS {
             self.in_locked_range_level_le_guard_level();
             self.pop_level_owner_preserves_inv();
@@ -2139,10 +2143,10 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                     };
                 };
                 inc_p.va.align_down_concrete(popped.level as int);
-                let ps_p = page_size(popped.level as PagingLevel) as nat;
+                let ps_p = page_size::<C>(popped.level as PagingLevel) as nat;
                 let popped_va = popped.va.to_vaddr() as nat;
                 let inc_p_va = inc_p.va.to_vaddr() as nat;
-                lemma_page_size_ge_page_size(popped.level as PagingLevel);
+                lemma_page_size_ge_page_size::<C>(popped.level as PagingLevel);
                 assert(popped.va.index[popped.level as int - 1]
                     == popped.continuations[popped.level as int - 1].idx);
                 popped.va.index_increment_adds_page_size(popped.level as int);
@@ -2167,10 +2171,10 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 ) + ps_p);
                 inc_p.va.align_down_shape(popped.level as int);
                 popped.va.align_down_shape(popped.level as int);
-                AbstractVaddr::to_vaddr_from_vaddr_roundtrip(
+                AbstractVaddr::<C>::to_vaddr_from_vaddr_roundtrip(
                     inc_p.va.align_down(popped.level as int),
                 );
-                AbstractVaddr::to_vaddr_from_vaddr_roundtrip(
+                AbstractVaddr::<C>::to_vaddr_from_vaddr_roundtrip(
                     popped.va.align_up(popped.level as int),
                 );
                 assert(inc_p.va.align_down(popped.level as int) == popped.va.align_up(

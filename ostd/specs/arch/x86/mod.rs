@@ -1,7 +1,7 @@
+use crate::arch::mm::PagingConsts;
 use crate::mm::kspace::FRAME_METADATA_RANGE;
 use crate::mm::kspace::{LINEAR_MAPPING_BASE_VADDR, VMALLOC_BASE_VADDR, paddr_to_vaddr};
-use crate::mm::{Paddr, Vaddr, page_size, KERNEL_VADDR_RANGE};
-use crate::arch::mm::PagingConsts;
+use crate::mm::{KERNEL_VADDR_RANGE, Paddr, Vaddr, page_size};
 use crate::specs::mm::frame::mapping::{
     META_SLOT_SIZE, lemma_meta_to_frame_soundness, meta_to_frame,
 };
@@ -124,6 +124,5 @@ pub proof fn lemma_page_size_spec_values()
     vstd::arithmetic::power2::lemma2_to64_rest();
     vstd::bits::lemma_usize_pow2_no_overflow(48);
 }
-
 
 } // verus!

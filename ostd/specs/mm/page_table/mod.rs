@@ -18,8 +18,10 @@ use vstd_extra::arithmetic::*;
 use vstd_extra::ghost_tree::TreePath;
 use vstd_extra::ownership::*;
 
+use core::marker::PhantomData;
+
 use crate::mm::page_table::PageTableConfig;
-use crate::mm::{PagingConstsTrait, PagingLevel, Vaddr, page_size, nr_subpage_per_huge};
+use crate::mm::{PagingConstsTrait, PagingLevel, Vaddr, nr_subpage_per_huge, page_size};
 use crate::specs::arch::*;
 
 use align_ext::AlignExt;
@@ -37,15 +39,18 @@ verus! {
 ///   carries into `leading_bits` on overflow at `NR_LEVELS`, so `align_up`
 ///   preserves `inv()` for any cursor state that stays inside the 64-bit
 ///   address space.
-pub struct AbstractVaddr<C:PagingConstsTrait> {
+pub struct AbstractVaddr<C: PagingConstsTrait> {
     pub offset: int,
     pub index: Map<int, int>,
     pub leading_bits: int,
+    pub _marker: PhantomData<C>,
 }
 
-impl<C:PagingConstsTrait> Inv for AbstractVaddr<C> {
+impl<C: PagingConstsTrait> Inv for AbstractVaddr<C> {
     open spec fn inv(self) -> bool {
-        &&& 0 <= self.offset < nr_subpage_per_huge::<C>()
+        &&& 0 <= self.offset < nr_subpage_per_huge::<
+            C,
+        >()
         // `index` has exactly `[0, NR_LEVELS)` as its domain.
         &&& self.index.dom() =~= Set::<int>::range(0, C::NR_LEVELS() as int)
         &&& forall|i: int|
@@ -59,7 +64,7 @@ impl<C:PagingConstsTrait> Inv for AbstractVaddr<C> {
     }
 }
 
-impl<C:PagingConstsTrait> AbstractVaddr<C> {
+impl<C: PagingConstsTrait> AbstractVaddr<C> {
     /// Extract the AbstractVaddr components from a concrete virtual address.
     /// - offset = lowest 12 bits
     /// - index[i] = bits (12 + 9*i) to (12 + 9*(i+1) - 1) for each level
@@ -69,18 +74,22 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
             offset: (va % C::BASE_PAGE_SIZE()) as int,
             index: Map::new(
                 Set::<int>::range(0, C::NR_LEVELS() as int),
-                |i: int| ((va / pow2((12 + 9 * i) as nat) as usize) % nr_subpage_per_huge::<C>()) as int,
+                |i: int|
+                    ((va / pow2((12 + 9 * i) as nat) as usize) % nr_subpage_per_huge::<C>()) as int,
             ),
             leading_bits: (va as int / 0x1_0000_0000_0000int),
+            _marker: PhantomData,
         }
     }
 
     pub proof fn from_vaddr_wf(va: Vaddr)
         ensures
-            AbstractVaddr::from_vaddr(va).inv(),
+            AbstractVaddr::<C>::from_vaddr(va).inv(),
     {
-        let abs = AbstractVaddr::from_vaddr(va);
-        assert forall|i: int| #![trigger abs.index.contains_key(i)] 0 <= i < C::NR_LEVELS() as int implies {
+        let abs = AbstractVaddr::<C>::from_vaddr(va);
+        assert forall|i: int|
+            #![trigger abs.index.contains_key(i)]
+            0 <= i < C::NR_LEVELS() as int implies {
             &&& abs.index.contains_key(i)
             &&& 0 <= abs.index[i]
             &&& abs.index[i] < nr_subpage_per_huge::<C>()
@@ -108,9 +117,9 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
         if start >= C::NR_LEVELS() {
             0
         } else {
-            self.index[start] * pow2((C::BASE_PAGE_SIZE().ilog2() + nr_subpage_per_huge::<C>().ilog2() * start) as nat) as int + self.to_vaddr_indices(
-                start + 1,
-            )
+            self.index[start] * pow2(
+                (C::BASE_PAGE_SIZE().ilog2() + nr_subpage_per_huge::<C>().ilog2() * start) as nat,
+            ) as int + self.to_vaddr_indices(start + 1)
         }
     }
 
@@ -220,7 +229,9 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
             self.align_down_inv(level - 1);
             let new = self.align_down(level);
             assert(new.index.dom() == Set::<int>::range(0, C::NR_LEVELS() as int));
-            assert forall|i: int| #![trigger new.index.contains_key(i)] 0 <= i < C::NR_LEVELS() implies {
+            assert forall|i: int|
+                #![trigger new.index.contains_key(i)]
+                0 <= i < C::NR_LEVELS() implies {
                 &&& new.index.contains_key(i)
                 &&& 0 <= new.index[i]
                 &&& new.index[i] < nr_subpage_per_huge::<C>()
@@ -264,7 +275,9 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
             self.align_down_shape(level - 1);
             let new = self.align_down(level);
             assert(new.index.dom() == Set::<int>::range(0, C::NR_LEVELS() as int));
-            assert forall|i: int| #![trigger new.index.contains_key(i)] 0 <= i < C::NR_LEVELS() implies {
+            assert forall|i: int|
+                #![trigger new.index.contains_key(i)]
+                0 <= i < C::NR_LEVELS() implies {
                 &&& new.index.contains_key(i)
                 &&& 0 <= new.index[i]
                 &&& new.index[i] < nr_subpage_per_huge::<C>()
@@ -344,7 +357,8 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
             self.inv(),
             1 <= level <= C::NR_LEVELS(),
         ensures
-            self.align_down(level).to_vaddr() as int % page_size::<C>(level as PagingLevel) as int == 0,
+            self.align_down(level).to_vaddr() as int % page_size::<C>(level as PagingLevel) as int
+                == 0,
             0 <= self.to_vaddr() as int - self.align_down(level).to_vaddr() as int,
             (self.to_vaddr() as int - self.align_down(level).to_vaddr() as int) < page_size::<C>(
                 level as PagingLevel,
@@ -363,14 +377,14 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
         ensures
             self.align_down(level).to_vaddr() as nat == nat_align_down(
                 self.to_vaddr() as nat,
-                page_size(level as PagingLevel) as nat,
+                page_size::<C>(level as PagingLevel) as nat,
             ),
     {
         self.align_down_to_vaddr_arith(level);
 
         let va = self.to_vaddr() as int;
         let av = self.align_down(level).to_vaddr() as int;
-        let ps = page_size(level as PagingLevel) as int;
+        let ps = page_size::<C>(level as PagingLevel) as int;
 
         assert(av % ps == 0);
         assert(0 <= va - av);
@@ -400,7 +414,7 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
             self.align_down(level).reflect(
                 nat_align_down(
                     self.to_vaddr() as nat,
-                    page_size(level as PagingLevel) as nat,
+                    page_size::<C>(level as PagingLevel) as nat,
                 ) as Vaddr,
             ),
     {
@@ -410,7 +424,10 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
         aligned.reflect_to_vaddr();
         // aligned.reflect(aligned.to_vaddr()) ∧ aligned.to_vaddr() == nat_align_down(...) as Vaddr
         // ⇒ aligned.reflect(nat_align_down(...) as Vaddr).
-        let nad = nat_align_down(self.to_vaddr() as nat, page_size(level as PagingLevel) as nat);
+        let nad = nat_align_down(
+            self.to_vaddr() as nat,
+            page_size::<C>(level as PagingLevel) as nat,
+        );
         self.to_vaddr_bounded();
         assert(nad as Vaddr == aligned.to_vaddr());
     }
@@ -437,8 +454,9 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
         ensures
             forall|i: int|
                 #![auto]
-                level <= i < C::NR_LEVELS() ==> Self::from_vaddr(va1).index[i]
-                    == Self::from_vaddr(va2).index[i],
+                level <= i < C::NR_LEVELS() ==> Self::from_vaddr(va1).index[i] == Self::from_vaddr(
+                    va2,
+                ).index[i],
     {
         vstd::arithmetic::power2::lemma2_to64();
         vstd::arithmetic::power2::lemma2_to64_rest();
@@ -515,7 +533,7 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
 
         self.align_down_shape(level);
         self.align_down_to_vaddr_nat_align_down(level);
-        lemma_page_size_ge_page_size(level as PagingLevel);
+        lemma_page_size_ge_page_size::<C>(level as PagingLevel);
         assert(ps > 0);
         vstd_extra::arithmetic::lemma_nat_align_down_sound(va, ps);
         self.to_vaddr_bounded();
@@ -550,7 +568,9 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
             self.to_vaddr() + page_size::<C>(level as PagingLevel) <= usize::MAX,
         ensures
             self.align_up(level).inv(),
-            self.align_up(level).to_vaddr() == self.to_vaddr() + page_size::<C>(level as PagingLevel),
+            self.align_up(level).to_vaddr() == self.to_vaddr() + page_size::<C>(
+                level as PagingLevel,
+            ),
         decreases C::NR_LEVELS() + 1 - level,
     {
         admit();
@@ -569,21 +589,21 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
             // Overflow bound stated on the aligned base. This is a tighter / more natural
             // condition than `self.to_vaddr() + ps <= usize::MAX` because the aligned base
             // is the actual "starting point" of the advance.
-            nat_align_down(self.to_vaddr() as nat, page_size(level as PagingLevel) as nat)
-                + page_size(level as PagingLevel) as nat <= usize::MAX as nat,
+            nat_align_down(self.to_vaddr() as nat, page_size::<C>(level as PagingLevel) as nat)
+                + page_size::<C>(level as PagingLevel) as nat <= usize::MAX as nat,
         ensures
             self.align_up(level).inv(),
             self.align_up(level).to_vaddr() as nat == nat_align_down(
                 self.to_vaddr() as nat,
-                page_size(level as PagingLevel) as nat,
-            ) + page_size(level as PagingLevel) as nat,
+                page_size::<C>(level as PagingLevel) as nat,
+            ) + page_size::<C>(level as PagingLevel) as nat,
     {
         let aligned = self.align_down(level);
-        let ps = page_size(level as PagingLevel) as nat;
+        let ps = page_size::<C>(level as PagingLevel) as nat;
 
         self.align_down_shape(level);
         self.align_down_to_vaddr_nat_align_down(level);
-        lemma_page_size_ge_page_size(level as PagingLevel);
+        lemma_page_size_ge_page_size::<C>(level as PagingLevel);
         self.to_vaddr_bounded();
         aligned.to_vaddr_bounded();
         vstd_extra::arithmetic::lemma_nat_align_down_sound(self.to_vaddr() as nat, ps);
@@ -593,7 +613,7 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
         assert(aligned.to_vaddr() as nat % ps == 0);
 
         // aligned.to_vaddr() + ps <= usize::MAX (from precondition).
-        assert(aligned.to_vaddr() + page_size(level as PagingLevel) <= usize::MAX);
+        assert(aligned.to_vaddr() + page_size::<C>(level as PagingLevel) <= usize::MAX);
 
         // Reduce to aligned case.
         aligned.aligned_align_up_advances(level);
@@ -614,8 +634,10 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
             self.to_vaddr() as nat % page_size::<C>(level as PagingLevel) as nat != 0,
         ensures
             nat_align_up(self.to_vaddr() as nat, page_size::<C>(level as PagingLevel) as nat)
-                == nat_align_down(self.to_vaddr() as nat, page_size::<C>(level as PagingLevel) as nat)
-                + page_size::<C>(level as PagingLevel),
+                == nat_align_down(
+                self.to_vaddr() as nat,
+                page_size::<C>(level as PagingLevel) as nat,
+            ) + page_size::<C>(level as PagingLevel),
     {
         // Follows directly from the definition of `nat_align_up`.
     }
@@ -627,7 +649,7 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
             self.inv(),
             1 <= level,
             level < C::NR_LEVELS(),
-            self.index[level - 1] == C::NR_ENTRIES() - 1,
+            self.index[level - 1] == nr_subpage_per_huge::<C>() - 1,
         ensures
             self.align_up(level) == self.align_up(level + 1),
         decreases C::NR_LEVELS() - level,
@@ -648,7 +670,7 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
         if next_index == nr_subpage_per_huge::<C>() && level < C::NR_LEVELS() {
             let next_va = Self { index: self.index.insert(level - 1, 0), ..self };
             next_va.next_index(level + 1)
-        } else if next_index == C::NR_ENTRIES() && level == C::NR_LEVELS() {
+        } else if next_index == nr_subpage_per_huge::<C>() && level == C::NR_LEVELS() {
             // Top-level carry: wrap the top index and bump `leading_bits`.
             Self {
                 index: self.index.insert(level - 1, 0),
@@ -900,7 +922,7 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
             self.inv(),
             0 <= level < C::NR_LEVELS(),
         ensures
-            vaddr(self.to_path(level)) == self.align_down(level + 1).compute_vaddr(),
+            vaddr::<C>(self.to_path(level)) == self.align_down(level + 1).compute_vaddr(),
     {
         admit();
     }
@@ -943,7 +965,8 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
         ensures
             0 <= self.to_vaddr_indices(start),
             self.to_vaddr_indices(start) + pow2((12 + 9 * start) as nat) as int <= pow2(
-                (C::BASE_PAGE_SIZE().ilog2() + nr_subpage_per_huge::<C>().ilog2() * C::NR_LEVELS()) as nat,
+                (C::BASE_PAGE_SIZE().ilog2() + nr_subpage_per_huge::<C>().ilog2()
+                    * C::NR_LEVELS()) as nat,
             ) as int,
         decreases C::NR_LEVELS() - start,
     {
@@ -973,7 +996,7 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
             (Self {
                 index: self.index.insert(level - 1, self.index[level - 1] + 1),
                 ..self
-            }).to_vaddr() == self.to_vaddr() + page_size(level as PagingLevel),
+            }).to_vaddr() == self.to_vaddr() + page_size::<C>(level as PagingLevel),
     {
         admit();
     }
@@ -1028,8 +1051,8 @@ impl<C:PagingConstsTrait> AbstractVaddr<C> {
 
 /// Connection between TreePath's vaddr and AbstractVaddr
 impl<C: PagingConstsTrait> AbstractVaddr<C> {
-    // NOTE: We can assume `NR_ENTRIES == nr_subpage_per_huge::<C>()` in the following proofs, 
-    // but do not use the actual value of `NR_ENTRIES` in the proof, 
+    // NOTE: We can assume `NR_ENTRIES == nr_subpage_per_huge::<C>()` in the following proofs,
+    // but do not use the actual value of `NR_ENTRIES` in the proof,
     // because it is architecturally dependent！
     proof fn rec_vaddr_eq_if_indices_eq(
         path1: TreePath<NR_ENTRIES>,
@@ -1043,14 +1066,14 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
             0 <= idx <= path1.len(),
             forall|i: int| idx <= i < path1.len() ==> path1.index(i) == path2.index(i),
         ensures
-            rec_vaddr(path1, idx) == rec_vaddr(path2, idx),
+            rec_vaddr::<C>(path1, idx) == rec_vaddr::<C>(path2, idx),
         decreases path1.len() - idx,
     {
         assume(NR_ENTRIES == nr_subpage_per_huge::<C>());
     }
 
     /// If a TreePath matches this abstract vaddr's indices at all levels covered by the path,
-    /// then vaddr(path) equals the aligned compute_vaddr at the corresponding level.
+    /// then vaddr::<C>(path) equals the aligned compute_vaddr at the corresponding level.
     pub proof fn path_matches_vaddr(self, path: TreePath<NR_ENTRIES>)
         requires
             self.inv(),
@@ -1058,7 +1081,7 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
             path.len() <= NR_LEVELS,
             forall|i: int| 0 <= i < path.len() ==> path.index(i) == self.index[NR_LEVELS - 1 - i],
         ensures
-            vaddr(path) == self.align_down((NR_LEVELS - path.len() + 1) as int).compute_vaddr()
+            vaddr::<C>(path) == self.align_down((NR_LEVELS - path.len() + 1) as int).compute_vaddr()
                 - self.align_down((NR_LEVELS - path.len() + 1) as int).offset,
     {
         assume(NR_ENTRIES == nr_subpage_per_huge::<C>());
@@ -1114,10 +1137,10 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
             self.inv(),
             0 <= level < C::NR_LEVELS(),
         ensures
-            vaddr(self.to_path(level)) as int + self.leading_bits * 0x1_0000_0000_0000int
+            vaddr::<C>(self.to_path(level)) as int + self.leading_bits * 0x1_0000_0000_0000int
                 == nat_align_down(
                 self.to_vaddr() as nat,
-                page_size((level + 1) as PagingLevel) as nat,
+                page_size::<C>((level + 1) as PagingLevel) as nat,
             ) as int,
     {
         self.to_path_vaddr(level);
@@ -1128,7 +1151,7 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
         aligned.reflect_prop(
             nat_align_down(
                 self.to_vaddr() as nat,
-                page_size((level + 1) as PagingLevel) as nat,
+                page_size::<C>((level + 1) as PagingLevel) as nat,
             ) as Vaddr,
         );
         self.align_down_leading_bits(level + 1);
@@ -1139,19 +1162,19 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
         //   aligned.leading_bits == self.leading_bits                    (align_down_leading_bits)
         let nad = nat_align_down(
             self.to_vaddr() as nat,
-            page_size((level + 1) as PagingLevel) as nat,
+            page_size::<C>((level + 1) as PagingLevel) as nat,
         );
         // nad fits in usize: nat_align_down is bounded by its argument,
         // which is `self.to_vaddr() as nat <= usize::MAX`.
-        lemma_page_size_ge_page_size((level + 1) as PagingLevel);
+        lemma_page_size_ge_page_size::<C>((level + 1) as PagingLevel);
         vstd_extra::arithmetic::lemma_nat_align_down_sound(
             self.to_vaddr() as nat,
-            page_size((level + 1) as PagingLevel) as nat,
+            page_size::<C>((level + 1) as PagingLevel) as nat,
         );
         assert(nad <= self.to_vaddr() as nat);
         assert(nad <= usize::MAX);
         assert(aligned.leading_bits == self.leading_bits);
-        assert(vaddr(self.to_path(level)) as int == aligned.compute_vaddr() as int);
+        assert(vaddr::<C>(self.to_path(level)) as int == aligned.compute_vaddr() as int);
         assert(aligned.to_vaddr() as int == aligned.compute_vaddr() as int + aligned.leading_bits
             * 0x1_0000_0000_0000int);
         assert(aligned.to_vaddr() == nad as Vaddr);
@@ -1159,25 +1182,25 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
         assert(aligned.to_vaddr() as int == nad as int);
     }
 
-    /// Key property: `vaddr(path) + leading_bits * 2^48` (i.e. the canonical
+    /// Key property: `vaddr::<C>(path) + leading_bits * 2^48` (i.e. the canonical
     /// form of the path's VA) bounds the range containing `cur_va`.
     pub proof fn vaddr_range_from_path(self, level: int)
         requires
             self.inv(),
             0 <= level < C::NR_LEVELS(),
         ensures
-            vaddr(self.to_path(level)) as int + self.leading_bits * 0x1_0000_0000_0000int
+            vaddr::<C>(self.to_path(level)) as int + self.leading_bits * 0x1_0000_0000_0000int
                 <= self.to_vaddr() as int,
-            (self.to_vaddr() as int) < vaddr(self.to_path(level)) as int + self.leading_bits
-                * 0x1_0000_0000_0000int + page_size((level + 1) as PagingLevel) as int,
+            (self.to_vaddr() as int) < vaddr::<C>(self.to_path(level)) as int + self.leading_bits
+                * 0x1_0000_0000_0000int + page_size::<C>((level + 1) as PagingLevel) as int,
     {
         self.to_path_vaddr_concrete(level);
-        let size = page_size((level + 1) as PagingLevel);
+        let size = page_size::<C>((level + 1) as PagingLevel);
         let cur = self.to_vaddr() as nat;
-        let start = vaddr(self.to_path(level));
+        let start = vaddr::<C>(self.to_path(level));
 
-        assert(page_size((level + 1) as PagingLevel) >= PAGE_SIZE) by {
-            lemma_page_size_ge_page_size((level + 1) as PagingLevel);
+        assert(page_size::<C>((level + 1) as PagingLevel) >= PAGE_SIZE) by {
+            lemma_page_size_ge_page_size::<C>((level + 1) as PagingLevel);
         };
         lemma_nat_align_down_sound(cur, size as nat);
     }

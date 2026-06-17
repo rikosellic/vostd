@@ -753,7 +753,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 forall |j: usize| #![trigger frame_to_index(
                     (old(owner).value.frame().mapped_pa
                         + j * PAGE_SIZE) as usize)]
-                    0 < j < page_size(old(parent_owner).level) / PAGE_SIZE ==> {
+                    0 < j < page_size::<C>(old(parent_owner).level) / PAGE_SIZE ==> {
                     let sub_idx = frame_to_index(
                         (old(owner).value.frame().mapped_pa
                             + j * PAGE_SIZE) as usize);
@@ -893,8 +893,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 owner.value.frame().prop == prop,
                 pa == old(owner).value.frame().mapped_pa,
                 level == old(parent_owner).level,
-                pa % page_size(level) == 0,
-                pa + page_size(level) <= MAX_PADDR,
+                pa % page_size::<C>(level) == 0,
+                pa + page_size::<C>(level) <= MAX_PADDR,
                 regions.inv(),
                 // Canonical model: the freshly-allocated node carries its
                 // pending-Drop obligation across the per-child `replace`
@@ -943,7 +943,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 forall|j: usize|
                     #![trigger frame_to_index(
                     (pa + j * PAGE_SIZE) as usize)]
-                    0 < j < page_size(level) / PAGE_SIZE ==> {
+                    0 < j < page_size::<C>(level) / PAGE_SIZE ==> {
                         let sub_idx = frame_to_index((pa + j * PAGE_SIZE) as usize);
                         &&& regions.slots.contains_key(sub_idx)
                         &&& regions.slot_owners[sub_idx].usage
@@ -1010,8 +1010,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 let idx = frame_to_index(small_pa);
                 if i != 0 {
                     let ghost big_j =
-                        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_split_sub_page_big_j(
-                    pa, level, i);
+                        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_split_sub_page_big_j::<
+                        C,
+                    >(pa, level, i);
                 }
                 assert(entry.node_matching(new_owner_child.value, new_owner_node, *entry.node)) by {
                     let pte = new_owner_node.children_perm.value()[i as int];
@@ -1026,12 +1027,15 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
                 if level - 1 > 1 {
                     let nr_subpages = page_size::<C>((level - 1) as PagingLevel) / PAGE_SIZE;
-                    crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_div_mul_eq(
-                    (level - 1) as PagingLevel);
-                    crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_div_mul_eq(
-                    level);
-                    crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_nr_entries_times_sub_page_size(
-                    level);
+                    crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_div_mul_eq::<
+                        C,
+                    >((level - 1) as PagingLevel);
+                    crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_div_mul_eq::<
+                        C,
+                    >(level);
+                    crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_nr_entries_times_sub_page_size::<
+                        C,
+                    >(level);
                     assert forall|j_prime: usize|
                         #![trigger frame_to_index((small_pa + j_prime * PAGE_SIZE) as usize)]
                         0 < j_prime < nr_subpages implies {
@@ -1102,8 +1106,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                     }
                 } else {
                     let ghost big_j =
-                        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_split_sub_page_big_j(
-                    pa, level, i);
+                        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_split_sub_page_big_j::<
+                        C,
+                    >(pa, level, i);
                     assert(small_pa == (pa + big_j * PAGE_SIZE) as usize);
                     // Trigger the sub-page forall at j = big_j.
                     assert(regions.slots.contains_key(
@@ -1130,8 +1135,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 let ghost target_idx = frame_to_index(small_pa);
                 if i != 0 {
                     let ghost big_j =
-                        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_split_sub_page_big_j(
-                    pa, level, i);
+                        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_split_sub_page_big_j::<
+                        C,
+                    >(pa, level, i);
                     assert(small_pa == (pa + big_j * PAGE_SIZE) as usize);
                     assert(target_idx == frame_to_index((pa + big_j * PAGE_SIZE) as usize));
                     assert(regions.slots.contains_key(target_idx));
