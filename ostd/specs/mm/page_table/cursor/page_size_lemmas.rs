@@ -120,7 +120,7 @@ pub proof fn lemma_page_size_div_mul_eq<C: PagingConstsTrait>(level: PagingLevel
     requires
         1 <= level <= C::NR_LEVELS() + 1,
     ensures
-        (page_size::<C>(level) / PAGE_SIZE) * PAGE_SIZE == page_size::<C>(level),
+        (page_size::<C>(level) / C::BASE_PAGE_SIZE()) * C::BASE_PAGE_SIZE() == page_size::<C>(level),
 {
     admit();
 }
