@@ -893,9 +893,8 @@ fn sign_bit_of_va<C: PageTableConfig>(va: Vaddr) -> (ret: bool)
 {
     let address_width = C::ADDRESS_WIDTH();
     proof {
+        C::lemma_paging_consts_requirements();
         C::lemma_top_level_index_range_bounds();
-        assert(C::C::ADDRESS_WIDTH() == address_width);
-        assert(0 < address_width as int <= 64);
     }
 
     let shift = address_width - 1;

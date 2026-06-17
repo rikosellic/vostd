@@ -42,7 +42,7 @@ use vstd_extra::{assert, assert_eq};
 
 use crate::mm::frame::{AnyFrameMeta, Frame};
 use crate::mm::page_table::*;
-use crate::mm::{MAX_NR_LEVELS, MAX_PADDR, Paddr, Vaddr};
+use crate::mm::{MAX_PADDR, Paddr, Vaddr};
 use crate::specs::mm::frame::mapping::{
     META_SLOT_SIZE, frame_to_index, frame_to_meta, max_meta_slots, meta_addr, meta_to_frame,
 };
@@ -85,7 +85,7 @@ pub struct Cursor<'rcu, C: PageTableConfig, A: InAtomicMode> {
     ///
     /// The level 1 page table lock guard is at index 0, and the level N page
     /// table lock guard is at index N - 1.
-    pub path: [Option<PageTableGuard<'rcu, C>>; NR_LEVELS],
+    pub path: [Option<PageTableGuard<'rcu, C>>; MAX_NR_LEVELS],
     /// The cursor should be used in a RCU read side critical section.
     pub rcu_guard: &'rcu A,
     /// The level of the page table that the cursor currently points to.
@@ -100,6 +100,9 @@ pub struct Cursor<'rcu, C: PageTableConfig, A: InAtomicMode> {
     pub barrier_va: Range<Vaddr>,
     pub _phantom: PhantomData<&'rcu PageTable<C>>,
 }
+
+/// The maximum value of `PagingConstsTrait::NR_LEVELS`.
+const MAX_NR_LEVELS: usize = 4;
 
 /// The cursor of a page table that is capable of map, unmap or protect pages.
 ///
@@ -4135,7 +4138,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 assert forall|i: int|
                     #![trigger owner.continuations[i]]
                     owner.level - 1 <= i
-                        < NR_LEVELS implies owner.continuations[i].entry_own.metaregion_sound(
+                        < C::NR_LEVELS() implies owner.continuations[i].entry_own.metaregion_sound(
                     *regions,
                 ) by {
                     if i >= owner.level as int {
@@ -4212,7 +4215,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             },
             Child::PageTable(pt) => {
                 // debug_assert_eq!(pt.level(), level - 1);
-                if !C::TOP_LEVEL_CAN_UNMAP() && level as usize == NR_LEVELS {
+                if !C::TOP_LEVEL_CAN_UNMAP() && level == C::NR_LEVELS() {
                     proof {
                         // The PT-node model tracks `raw_count`, not the
                         // per-frame ledger; mint the entry that `MD::new`
@@ -4312,7 +4315,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                     let f = PageTableOwner::<C>::metaregion_sound_pred(*regions);
 
                     owner_before_dfs.cont_entries_metaregion(*regions);
-                    assert forall|i: int| #![auto] owner.level - 1 <= i < NR_LEVELS implies {
+                    assert forall|i: int| #![auto] owner.level - 1 <= i < C::NR_LEVELS() implies {
                         &&& f(owner.continuations[i].entry_own, owner.continuations[i].path())
                         &&& owner.continuations[i].map_children(f)
                     } by {
@@ -4331,7 +4334,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                     assert forall|i: int|
                         #![auto]
                         owner.level - 1 <= i
-                            < NR_LEVELS implies owner.continuations[i].view_mappings()
+                            < C::NR_LEVELS() implies owner.continuations[i].view_mappings()
                         == owner_before_dfs.continuations[i].view_mappings() by {
                         assert(owner.continuations[i].children
                             == owner_before_dfs.continuations[i].children);
@@ -4383,7 +4386,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                                 m,
                             ) implies #[trigger] owner_before_dfs.view_mappings().contains(m) by {
                             let i = choose|i: int|
-                                owner.level - 1 <= i < NR_LEVELS
+                                owner.level - 1 <= i < C::NR_LEVELS()
                                     && #[trigger] owner.continuations[i].view_mappings().contains(
                                     m,
                                 );
@@ -4393,7 +4396,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                                 m,
                             ) implies owner.view_mappings().contains(m) by {
                             let i = choose|i: int|
-                                owner_before_dfs.level - 1 <= i < NR_LEVELS
+                                owner_before_dfs.level - 1 <= i < C::NR_LEVELS()
                                     && #[trigger] owner_before_dfs.continuations[i].view_mappings().contains(
                                 m);
                         };

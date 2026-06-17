@@ -11,9 +11,6 @@ pub type Vaddr = usize;
 /// Physical addresses.
 pub type Paddr = usize;
 
-/// The maximum value of `PagingConstsTrait::NR_LEVELS`.
-pub const MAX_NR_LEVELS: usize = 4;
-
 pub(crate) mod dma;
 pub mod frame;
 //pub mod heap;
@@ -140,10 +137,10 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
         ensures
             0 < Self::BASE_PAGE_SIZE(),
             is_pow2(Self::BASE_PAGE_SIZE() as int),
-            0 < Self::NR_LEVELS_spec() <= 5,
+            0 < Self::NR_LEVELS() <= 4,
             is_pow2(Self::PTE_SIZE() as int),
             0 < Self::PTE_SIZE() <= Self::BASE_PAGE_SIZE(),
-            Self::BASE_PAGE_SIZE().ilog2() + (Self::BASE_PAGE_SIZE() / Self::PTE_SIZE()).ilog2()
+            0 < Self::BASE_PAGE_SIZE().ilog2() + (Self::BASE_PAGE_SIZE() / Self::PTE_SIZE()).ilog2()
                 * Self::NR_LEVELS() <= Self::ADDRESS_WIDTH() <= 64,
     ;
 }
