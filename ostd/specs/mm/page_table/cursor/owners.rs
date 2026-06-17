@@ -2918,15 +2918,13 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> OwnerOf for Cursor<'rcu, C, A> {
         // continuation guard.
         &&& forall|i: int|
             #![trigger self.path[i]]
-            0 <= i < C::NR_LEVELS() ==> {
-                self.level <= i + 1 ==> {
-                    if self.guard_level >= i + 1 {
-                        &&& self.path[i] is Some
-                        &&& owner.continuations.contains_key(i)
-                        &&& owner.continuations[i].guard == self.path[i]->0
-                    } else {
-                        self.path[i] is None
-                    }
+            self.level - 1 <= i < C::NR_LEVELS() ==> {
+                if self.guard_level >= i + 1 {
+                    &&& self.path[i] is Some
+                    &&& owner.continuations.contains_key(i)
+                    &&& owner.continuations[i].guard == self.path[i]->0
+                } else {
+                    self.path[i] is None
                 }
             }
         &&& self.barrier_va.start == owner.locked_range().start
