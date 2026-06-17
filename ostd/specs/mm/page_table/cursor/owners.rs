@@ -610,7 +610,7 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
     ) -> (tracked res: OwnerSubtree<C>)
         requires
             self.inv(),
-            self.level() < NR_LEVELS,
+            self.level() < C::NR_LEVELS(),
             old(regions).slots.contains_key(frame_to_index(paddr)),
             paddr % PAGE_SIZE == 0,
             paddr < MAX_PADDR,
@@ -663,11 +663,13 @@ impl<'rcu, C: PageTableConfig> Inv for CursorOwner<'rcu, C> {
         &&& self.va.inv()
         &&& self.va.offset == 0
         &&& 1 <= self.level <= C::NR_LEVELS()
-        &&& 1 <= self.guard_level <= C::NR_LEVELS()
+        &&& 1 <= self.guard_level
+            <= C::NR_LEVELS()
         // The top-level index of the cursor's VA must be within the page table config's
         // managed range. This ensures cursors for UserPtConfig and KernelPtConfig operate
         // on disjoint portions of the virtual address space.
-        &&& C::TOP_LEVEL_INDEX_RANGE_spec().start <= self.va.index[C::NR_LEVELS() - 1]
+        &&& C::TOP_LEVEL_INDEX_RANGE_spec().start <= self.va.index[C::NR_LEVELS()
+            - 1]
         // The top index may equal TOP_LEVEL_INDEX_RANGE.end as a "one-past-end"
         // sentinel meaning the cursor has been advanced past the very last in-range
         // top-level slot. In this state the cursor is `above_locked_range`.
@@ -732,31 +734,36 @@ impl<'rcu, C: PageTableConfig> Inv for CursorOwner<'rcu, C> {
             self.guard_level <= i < C::NR_LEVELS() ==> self.va.index[i] == self.prefix.index[i]
         &&& !self.popped_too_high && self.guard_level >= 1 && self.level < self.guard_level
             ==> self.va.index[self.guard_level - 1] == self.prefix.index[self.guard_level - 1]
-        &&& forall |i: int| #![trigger self.continuations[i]]
-                self.level - 1 <= i < C::NR_LEVELS() ==> {
-                    &&& self.continuations.contains_key(i)
-                    &&& self.continuations[i].inv()
-                    &&& self.continuations[i].level() == i + 1
-                    &&& self.continuations[i].entry_own.parent_level == i + 2
-                    &&& self.in_locked_range() ==> self.va.index[i] == self.continuations[i].idx
-                }
-        &&& forall |i: int| #![trigger self.continuations[i]]
+        &&& forall|i: int|
+            #![trigger self.continuations[i]]
+            self.level - 1 <= i < C::NR_LEVELS() ==> {
+                &&& self.continuations.contains_key(i)
+                &&& self.continuations[i].inv()
+                &&& self.continuations[i].level() == i + 1
+                &&& self.continuations[i].entry_own.parent_level == i + 2
+                &&& self.in_locked_range() ==> self.va.index[i] == self.continuations[i].idx
+            }
+        &&& forall|i: int|
+            #![trigger self.continuations[i]]
             self.level - 1 <= i < C::NR_LEVELS() - 1 ==> {
                 // Path consistency: child path = parent path pushed with parent's index
                 &&& self.continuations[i].path() == self.continuations[i + 1].path().push_tail(
                     self.continuations[i + 1].idx as usize,
                 )
                 // PTE consistency
-                &&& self.continuations[i].entry_own.path.len()
-                    == self.continuations[i + 1].entry_own.node().tree_level + 1
+                &&& self.continuations[i].entry_own.path.len() == self.continuations[i
+                    + 1].entry_own.node().tree_level + 1
                 &&& self.continuations[i].entry_own.match_pte(
-                    self.continuations[i + 1].entry_own.node().children_perm.value()[self.continuations[i + 1].idx as int],
+                    self.continuations[i
+                        + 1].entry_own.node().children_perm.value()[self.continuations[i
+                        + 1].idx as int],
                     self.continuations[i + 1].entry_own.node().level,
                 )
-                &&& self.continuations[i].entry_own.parent_level
-                    == self.continuations[i + 1].entry_own.node().level
+                &&& self.continuations[i].entry_own.parent_level == self.continuations[i
+                    + 1].entry_own.node().level
             }
-        &&& forall |i: int, j:int| #![trigger self.continuations[i].guard, self.continuations[j].guard]
+        &&& forall|i: int, j: int|
+            #![trigger self.continuations[i].guard, self.continuations[j].guard]
             self.level - 1 <= i < j < C::NR_LEVELS() ==> {
                 self.continuations[i].guard.inner.inner@.ptr.addr()
                     != self.continuations[j].guard.inner.inner@.ptr.addr()
@@ -923,8 +930,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             old(self).level <= old(self).guard_level,
             old(self).in_locked_range(),
             old(self).continuations[old(self).level - 1].idx + 1 < NR_ENTRIES,
-            old(self).level == C::NR_LEVELS() ==> (old(self).continuations[old(self).level - 1].idx + 1)
-                <= C::TOP_LEVEL_INDEX_RANGE_spec().end,
+            old(self).level == C::NR_LEVELS() ==> (old(self).continuations[old(self).level - 1].idx
+                + 1) <= C::TOP_LEVEL_INDEX_RANGE_spec().end,
         ensures
             final(self).inv(),
             *final(self) == old(self).inc_index(),
@@ -2432,9 +2439,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     pub open spec fn path_metaregion_sound(self, regions: MetaRegionOwners) -> bool {
         forall|i: int|
             #![trigger self.continuations[i]]
-            self.level - 1 <= i < NR_LEVELS ==> self.continuations[i].entry_own.metaregion_sound(
-                regions,
-            )
+            self.level - 1 <= i < C::NR_LEVELS()
+                ==> self.continuations[i].entry_own.metaregion_sound(regions)
     }
 
     pub open spec fn metaregion_sound(self, regions: MetaRegionOwners) -> bool {
@@ -2466,7 +2472,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let f = PageTableOwner::metaregion_sound_pred(regions0);
         let g = PageTableOwner::metaregion_sound_pred(regions1);
 
-        assert forall|i: int| #![auto] self.level - 1 <= i < NR_LEVELS implies {
+        assert forall|i: int| #![auto] self.level - 1 <= i < C::NR_LEVELS() implies {
             other.continuations[i].map_children(g)
         } by {
             let cont = self.continuations[i];
@@ -2485,7 +2491,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             assert forall|i: int|
                 #![trigger other.continuations[i]]
                 self.level - 1 <= i
-                    < NR_LEVELS implies other.continuations[i].entry_own.metaregion_sound(
+                    < C::NR_LEVELS() implies other.continuations[i].entry_own.metaregion_sound(
                 regions1,
             ) by {
                 self.inv_continuation(i);
@@ -2639,7 +2645,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
 
         assert forall|i: int|
             #![trigger self.continuations[i]]
-            self.level - 1 <= i < NR_LEVELS implies { self.continuations[i].map_children(g) } by {
+            self.level - 1 <= i < C::NR_LEVELS() implies { self.continuations[i].map_children(g)
+        } by {
             let cont = self.continuations[i];
             reveal(CursorContinuation::inv_children);
             assert forall|j: int|
@@ -2670,7 +2677,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             assert forall|i: int|
                 #![trigger self.continuations[i]]
                 self.level - 1 <= i
-                    < NR_LEVELS implies self.continuations[i].entry_own.metaregion_sound(
+                    < C::NR_LEVELS() implies self.continuations[i].entry_own.metaregion_sound(
                 regions1,
             ) by {
                 self.inv_continuation(i);
@@ -2899,7 +2906,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> OwnerOf for Cursor<'rcu, C, A> {
     open spec fn wf(self, owner: Self::Owner) -> bool {
         &&& owner.va.reflect(self.va)
         &&& self.level == owner.level
-        &&& owner.guard_level == self.guard_level
+        &&& owner.guard_level
+            == self.guard_level
         //        &&& owner.index() == self.va % page_size(self.level)
         // `path` holds lock guards only for levels in `[self.level,
         // self.guard_level]` (see the `Cursor.path` doc comment and
@@ -2908,17 +2916,19 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> OwnerOf for Cursor<'rcu, C, A> {
         // `guard_level` up to the root, but those ancestor nodes are NOT
         // locked, so their `path` slots are `None` and are not tied to a
         // continuation guard.
-        &&& forall |i: int| #![trigger self.path[i]] 0 <= i < C::NR_LEVELS() ==> {
-            self.level <= i + 1 ==> {
-                if self.guard_level >= i + 1 {
-                    &&& self.path[i] is Some
-                    &&& owner.continuations.contains_key(i)
-                    &&& owner.continuations[i].guard == self.path[i]->0
-                } else {
-                    self.path[i] is None
+        &&& forall|i: int|
+            #![trigger self.path[i]]
+            0 <= i < C::NR_LEVELS() ==> {
+                self.level <= i + 1 ==> {
+                    if self.guard_level >= i + 1 {
+                        &&& self.path[i] is Some
+                        &&& owner.continuations.contains_key(i)
+                        &&& owner.continuations[i].guard == self.path[i]->0
+                    } else {
+                        self.path[i] is None
+                    }
                 }
             }
-        }
         &&& self.barrier_va.start == owner.locked_range().start
         &&& self.barrier_va.end == owner.locked_range().end
     }

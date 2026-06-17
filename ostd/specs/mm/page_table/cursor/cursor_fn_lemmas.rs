@@ -18,7 +18,7 @@ use vstd_extra::arithmetic::{
 };
 
 use crate::mm::page_table::*;
-use crate::mm::{PagingLevel, Vaddr, PagingConstsTrait};
+use crate::mm::{PagingConstsTrait, PagingLevel, Vaddr};
 use crate::specs::arch::*;
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::page_table::AbstractVaddr;

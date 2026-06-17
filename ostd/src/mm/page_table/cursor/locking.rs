@@ -114,7 +114,7 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
     guard: &'rcu A,
     va: &Range<Vaddr>,
 ) -> (Cursor<'rcu, C, A>, Tracked<CursorOwner<'rcu, C>>) {
-    let ghost start_idx = AbstractVaddr::from_vaddr(va.start).index[NR_LEVELS as int - 1];
+    let ghost start_idx = AbstractVaddr::from_vaddr(va.start).index[C::NR_LEVELS() as int - 1];
 
     let tracked mut cursor_own: CursorOwner<'rcu, C> = CursorOwner::tracked_new(
         pt_own.0,
@@ -236,8 +236,8 @@ pub fn unlock_range<C: PageTableConfig, A: InAtomicMode>(cursor: &mut Cursor<'_,
         Tracked(regions): Tracked<&mut MetaRegionOwners>,
         Tracked(guards): Tracked<&mut Guards<'rcu>>
     requires
-        old(cursor_own).level == NR_LEVELS,
-        old(cursor_own).continuations[(NR_LEVELS - 1) as int].all_some(),
+        old(cursor_own).level == C::NR_LEVELS(),
+        old(cursor_own).continuations[C::NR_LEVELS() - 1].all_some(),
     ensures
         // Phase 6: the retry loop in the commented-out body would handle the
         // stray-node race; the external_body shipped here is the post-retry
@@ -249,14 +249,14 @@ pub fn unlock_range<C: PageTableConfig, A: InAtomicMode>(cursor: &mut Cursor<'_,
             &&& final(cursor_own).prefix == old(cursor_own).prefix
             &&& final(cursor_own).view_mappings() == old(cursor_own).view_mappings()
             &&& final(cursor_own).popped_too_high == false
-            &&& 1 <= final(cursor_own).level <= NR_LEVELS
+            &&& 1 <= final(cursor_own).level <= C::NR_LEVELS()
             &&& final(cursor_own).continuations.dom().contains(final(cursor_own).level - 1)
-            &&& final(cursor_own).continuations[(final(cursor_own).level - 1) as int].inv()
-            &&& final(cursor_own).continuations[(final(cursor_own).level - 1) as int].guard == r->0
+            &&& final(cursor_own).continuations[final(cursor_own).level - 1].inv()
+            &&& final(cursor_own).continuations[final(cursor_own).level - 1].guard == r->0
         },
         // The subtree root's entry_own is a valid node with matching guard.
         {
-            let cont = final(cursor_own).continuations[(final(cursor_own).level - 1) as int];
+            let cont = final(cursor_own).continuations[final(cursor_own).level - 1];
             &&& cont.entry_own.is_node()
             &&& cont.entry_own.inv()
             &&& cont.entry_own.node().relate_guard(cont.guard)
@@ -264,7 +264,7 @@ pub fn unlock_range<C: PageTableConfig, A: InAtomicMode>(cursor: &mut Cursor<'_,
         },
         // The subtree root is lock_held in guards.
         final(guards).lock_held(
-            final(cursor_own).continuations[(final(cursor_own).level - 1) as int]
+            final(cursor_own).continuations[final(cursor_own).level - 1]
                 .entry_own.node().meta_addr_self()),
         // regions invariant preserved
         final(regions).inv(),
@@ -628,7 +628,7 @@ unsafe fn dfs_release_lock<'rcu, C: PageTableConfig, A: InAtomicMode>(
             final(owner).continuations[final(owner).level - 1].children[i] == old(owner).continuations[old(owner).level - 1].children[i],
         // Continuations at higher levels are completely preserved
         forall |lvl: int| #![trigger final(owner).continuations[lvl]]
-            final(owner).level <= lvl < NR_LEVELS ==> final(owner).continuations[lvl] == old(owner).continuations[lvl],
+            final(owner).level <= lvl < C::NR_LEVELS() ==> final(owner).continuations[lvl] == old(owner).continuations[lvl],
         // Guards postconditions:
         // 1. Everything that was unlocked before is still unlocked (no new locks added)
         forall |addr: usize| old(guards).unlocked(addr) ==> final(guards).unlocked(addr),
@@ -703,7 +703,7 @@ pub open spec fn idx_range_spec(
 
 #[verus_spec(ret =>
     requires
-        1 <= cur_node_level <= NR_LEVELS,
+        1 <= cur_node_level <= C::NR_LEVELS(),
         cur_node_va <= va_range.start,
         va_range.start < va_range.end,
         va_range.end <= cur_node_va + page_size((cur_node_level + 1) as PagingLevel),

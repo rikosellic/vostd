@@ -188,27 +188,24 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     /// positional virtual-address width.
     proof fn lemma_top_level_index_range_bounds()
         ensures
-            (Self::TOP_LEVEL_INDEX_RANGE_spec().start as int) < (pow2(
+            Self::TOP_LEVEL_INDEX_RANGE_spec().start < pow2(
                 (Self::C::ADDRESS_WIDTH() as int - pte_index_bit_offset_spec::<Self::C>(
                     Self::C::NR_LEVELS(),
                 )) as nat,
-            ) as int),
+            ),
             Self::TOP_LEVEL_INDEX_RANGE_spec().end as int <= pow2(
                 (Self::C::ADDRESS_WIDTH() as int - pte_index_bit_offset_spec::<Self::C>(
                     Self::C::NR_LEVELS(),
                 )) as nat,
-            ) as int,
-            pte_index_bit_offset_spec::<Self::C>(Self::C::NR_LEVELS())
-                <= Self::C::ADDRESS_WIDTH() as int,
-            pte_index_bit_offset_spec::<Self::C>(Self::C::NR_LEVELS()) < usize::BITS as int,
+            ),
+            pte_index_bit_offset_spec::<Self::C>(Self::C::NR_LEVELS()) <= Self::C::ADDRESS_WIDTH(),
+            pte_index_bit_offset_spec::<Self::C>(Self::C::NR_LEVELS()) < usize::BITS,
             pte_index_bit_offset_spec::<Self::C>(Self::C::NR_LEVELS()) >= 0,
-            0 < Self::C::ADDRESS_WIDTH() as int,
-            (Self::TOP_LEVEL_INDEX_RANGE_spec().start as int) < (
-            Self::TOP_LEVEL_INDEX_RANGE_spec().end as int),
-            Self::C::ADDRESS_WIDTH() as int <= 64,
+            Self::TOP_LEVEL_INDEX_RANGE_spec().start < Self::TOP_LEVEL_INDEX_RANGE_spec().end,
+            Self::C::ADDRESS_WIDTH() <= 64,
             (Self::TOP_LEVEL_INDEX_RANGE_spec().end as int) * (pow2(
                 pte_index_bit_offset_spec::<Self::C>(Self::C::NR_LEVELS()) as nat,
-            ) as int) <= usize::MAX as int,
+            ) as int) <= usize::MAX,
     ;
 
     /// A non-zero high-bit prefix is only valid for configs whose managed
@@ -223,7 +220,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
                 pte_index_bit_offset_spec::<Self::C>(Self::C::NR_LEVELS()) as nat,
             ) as int)) / (pow2((Self::C::ADDRESS_WIDTH() - 1) as nat) as int)) % 2 == 1)) ==> {
                 &&& 48 <= Self::C::ADDRESS_WIDTH() as int
-                &&& Self::C::ADDRESS_WIDTH() < usize::BITS
+                &&& Self::C::ADDRESS_WIDTH() < 64
                 &&& Self::LEADING_BITS_spec() as int * 0x1_0000_0000_0000int
                     == 0x1_0000_0000_0000_0000int - pow2(Self::C::ADDRESS_WIDTH() as nat) as int
             },
@@ -303,11 +300,10 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         ensures
             1 <= res.1 <= Self::C::NR_LEVELS(),
             res == Self::item_into_raw_spec(item),
-            res.0 % crate::specs::arch::PAGE_SIZE == 0,
-            res.0 < crate::specs::arch::MAX_PADDR,
+            res.0 % PAGE_SIZE == 0,
+            res.0 < MAX_PADDR,
             res.0 % crate::mm::page_table::cursor::page_size(res.1) == 0,
-            res.0 + crate::mm::page_table::cursor::page_size(res.1)
-                <= crate::specs::arch::MAX_PADDR,
+            res.0 + crate::mm::page_table::cursor::page_size(res.1) <= MAX_PADDR,
     ;
 
     /// Restores the item from the physical address and the paging level.
@@ -813,9 +809,7 @@ pub fn largest_pages<C: PageTableConfig>(
 /// Gets the top-level index width, in bits, for the page table.
 fn top_level_index_width<C: PageTableConfig>() -> (ret: usize)
     ensures
-        ret == C::C::ADDRESS_WIDTH() as int - pte_index_bit_offset_spec::<C::C>(
-            C::C::NR_LEVELS(),
-        ),
+        ret == C::C::ADDRESS_WIDTH() as int - pte_index_bit_offset_spec::<C::C>(C::C::NR_LEVELS()),
 {
     proof {
         C::lemma_paging_consts_requirements();
@@ -828,7 +822,7 @@ fn top_level_index_width<C: PageTableConfig>() -> (ret: usize)
 /// Concrete positional start of the VA range: `idx_range.start * 2^offset`.
 fn pt_va_range_start<C: PageTableConfig>() -> (ret: Vaddr)
     ensures
-        ret as int == C::TOP_LEVEL_INDEX_RANGE_spec().start as int * pow2(
+        ret == C::TOP_LEVEL_INDEX_RANGE_spec().start as int * pow2(
             pte_index_bit_offset_spec::<C::C>(C::NR_LEVELS()) as nat,
         ) as int,
 {
