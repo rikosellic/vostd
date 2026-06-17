@@ -301,7 +301,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     #[verifier::when_used_as_spec(item_into_raw_spec)]
     fn item_into_raw(item: Self::Item) -> (res: (Paddr, PagingLevel, PageProperty))
         ensures
-            1 <= res.1 <= NR_LEVELS,
+            1 <= res.1 <= Self::C::NR_LEVELS(),
             res == Self::item_into_raw_spec(item),
             res.0 % crate::specs::arch::PAGE_SIZE == 0,
             res.0 < crate::specs::arch::MAX_PADDR,
@@ -813,7 +813,7 @@ pub fn largest_pages<C: PageTableConfig>(
 /// Gets the top-level index width, in bits, for the page table.
 fn top_level_index_width<C: PageTableConfig>() -> (ret: usize)
     ensures
-        ret as int == C::C::ADDRESS_WIDTH() as int - pte_index_bit_offset_spec::<C::C>(
+        ret == C::C::ADDRESS_WIDTH() as int - pte_index_bit_offset_spec::<C::C>(
             C::C::NR_LEVELS(),
         ),
 {
@@ -1831,7 +1831,7 @@ impl<C: PageTableConfig> PageTable<C> {
                 &&& r.unwrap().0.0.invariants(*r.unwrap().1, *final(regions), *final(guards))
                 &&& r.unwrap().1.in_locked_range()
                 &&& r.unwrap().0.0.level == r.unwrap().0.0.guard_level
-                &&& r.unwrap().0.0.guard_level == NR_LEVELS as PagingLevel
+                &&& r.unwrap().0.0.guard_level == C::NR_LEVELS() as PagingLevel
                 &&& r.unwrap().0.0.va < r.unwrap().0.0.barrier_va.end
                 &&& r.unwrap().0.0.va == va.start
                 &&& r.unwrap().0.0.barrier_va == *va

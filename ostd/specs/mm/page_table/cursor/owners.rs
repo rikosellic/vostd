@@ -662,18 +662,16 @@ impl<'rcu, C: PageTableConfig> Inv for CursorOwner<'rcu, C> {
     open spec fn inv(self) -> bool {
         &&& self.va.inv()
         &&& self.va.offset == 0
-        &&& 1 <= self.level <= NR_LEVELS
-        &&& 1 <= self.guard_level
-            <= NR_LEVELS
+        &&& 1 <= self.level <= C::NR_LEVELS()
+        &&& 1 <= self.guard_level <= C::NR_LEVELS()
         // The top-level index of the cursor's VA must be within the page table config's
         // managed range. This ensures cursors for UserPtConfig and KernelPtConfig operate
         // on disjoint portions of the virtual address space.
-        &&& C::TOP_LEVEL_INDEX_RANGE_spec().start <= self.va.index[NR_LEVELS
-            - 1]
+        &&& C::TOP_LEVEL_INDEX_RANGE_spec().start <= self.va.index[C::NR_LEVELS() - 1]
         // The top index may equal TOP_LEVEL_INDEX_RANGE.end as a "one-past-end"
         // sentinel meaning the cursor has been advanced past the very last in-range
         // top-level slot. In this state the cursor is `above_locked_range`.
-        &&& self.va.index[NR_LEVELS - 1]
+        &&& self.va.index[C::NR_LEVELS() - 1]
             <= C::TOP_LEVEL_INDEX_RANGE_spec().end
         // The cursor's VA is always at or above the start of the locked range.
         &&& self.in_locked_range()
@@ -684,7 +682,7 @@ impl<'rcu, C: PageTableConfig> Inv for CursorOwner<'rcu, C> {
         &&& !self.popped_too_high ==> self.level <= self.guard_level || self.above_locked_range()
         &&& self.continuations[self.level - 1].all_some()
         &&& forall|i: int|
-            self.level <= i < NR_LEVELS ==> {
+            self.level <= i < C::NR_LEVELS() ==> {
                 (#[trigger] self.continuations[i]).all_but_index_some()
             }
         &&& self.prefix.inv()
@@ -695,11 +693,11 @@ impl<'rcu, C: PageTableConfig> Inv for CursorOwner<'rcu, C> {
             // The prefix's top-level index is within the configured page-table range.
             // This is established at construction (when prefix == va, which itself starts
             // strictly in-range) and preserved by all cursor operations (none touch prefix).
-        &&& self.prefix.index[NR_LEVELS - 1]
+        &&& self.prefix.index[C::NR_LEVELS() - 1]
             < C::TOP_LEVEL_INDEX_RANGE_spec().end
         // Top-of-address-space sentinel reservation: none of our `PtConfig`s actually use
         // the very last index. The first half of the address space
-        &&& self.prefix.index[NR_LEVELS - 1] + 1
+        &&& self.prefix.index[C::NR_LEVELS() - 1] + 1
             < NR_ENTRIES
         // Locked range stays within the config's managed VA space. Established at
         // cursor construction (barrier_va == *va with is_valid_range_spec(va)) and
@@ -731,95 +729,38 @@ impl<'rcu, C: PageTableConfig> Inv for CursorOwner<'rcu, C> {
         // from this clause.
         &&& !self.popped_too_high && (self.in_locked_range() || self.level < self.guard_level)
             ==> forall|i: int|
-            self.guard_level <= i < NR_LEVELS ==> self.va.index[i] == self.prefix.index[i]
+            self.guard_level <= i < C::NR_LEVELS() ==> self.va.index[i] == self.prefix.index[i]
         &&& !self.popped_too_high && self.guard_level >= 1 && self.level < self.guard_level
             ==> self.va.index[self.guard_level - 1] == self.prefix.index[self.guard_level - 1]
-        &&& self.level <= 4 ==> {
-            &&& self.continuations.contains_key(3)
-            &&& self.continuations[3].inv()
-            &&& self.continuations[3].level()
-                == 4
-            // Obviously there is no level 5 pt, but that would be the level of the parent of the root pt.
-            &&& self.continuations[3].entry_own.parent_level
-                == 5
-            // `va.index[i] == cont[i].idx` is meaningful only while the
-            // cursor is in_locked_range. Above-locked-range cursors keep
-            // their continuations as-is (stale w.r.t. the wrapped va) and
-            // never read from them.
-            &&& self.in_locked_range() ==> self.va.index[3] == self.continuations[3].idx
-        }
-        &&& self.level <= 3 ==> {
-            &&& self.continuations.contains_key(2)
-            &&& self.continuations[2].inv()
-            &&& self.continuations[2].level() == 3
-            &&& self.continuations[2].entry_own.parent_level == 4
-            &&& self.in_locked_range() ==> self.va.index[2] == self.continuations[2].idx
-            &&& self.continuations[2].guard.inner.inner@.ptr.addr()
-                != self.continuations[3].guard.inner.inner@.ptr.addr()
-            // Path consistency: child path = parent path pushed with parent's index
-            &&& self.continuations[2].path() == self.continuations[3].path().push_tail(
-                self.continuations[3].idx as usize,
-            )
-            // PTE consistency
-            &&& self.continuations[2].entry_own.path.len()
-                == self.continuations[3].entry_own.node().tree_level + 1
-            &&& self.continuations[2].entry_own.match_pte(
-                self.continuations[3].entry_own.node().children_perm.value()[self.continuations[3].idx as int],
-                self.continuations[3].entry_own.node().level,
-            )
-            &&& self.continuations[2].entry_own.parent_level
-                == self.continuations[3].entry_own.node().level
-        }
-        &&& self.level <= 2 ==> {
-            &&& self.continuations.contains_key(1)
-            &&& self.continuations[1].inv()
-            &&& self.continuations[1].level() == 2
-            &&& self.continuations[1].entry_own.parent_level == 3
-            &&& self.in_locked_range() ==> self.va.index[1] == self.continuations[1].idx
-            &&& self.continuations[1].guard.inner.inner@.ptr.addr()
-                != self.continuations[2].guard.inner.inner@.ptr.addr()
-            &&& self.continuations[1].guard.inner.inner@.ptr.addr()
-                != self.continuations[3].guard.inner.inner@.ptr.addr()
-            // Path consistency: child path = parent path pushed with parent's index
-            &&& self.continuations[1].path() == self.continuations[2].path().push_tail(
-                self.continuations[2].idx as usize,
-            )
-            // PTE consistency
-            &&& self.continuations[1].entry_own.path.len()
-                == self.continuations[2].entry_own.node().tree_level + 1
-            &&& self.continuations[1].entry_own.match_pte(
-                self.continuations[2].entry_own.node().children_perm.value()[self.continuations[2].idx as int],
-                self.continuations[2].entry_own.node().level,
-            )
-            &&& self.continuations[1].entry_own.parent_level
-                == self.continuations[2].entry_own.node().level
-        }
-        &&& self.level == 1 ==> {
-            &&& self.continuations.contains_key(0)
-            &&& self.continuations[0].inv()
-            &&& self.continuations[0].level() == 1
-            &&& self.continuations[0].entry_own.parent_level == 2
-            &&& self.in_locked_range() ==> self.va.index[0] == self.continuations[0].idx
-            &&& self.continuations[0].guard.inner.inner@.ptr.addr()
-                != self.continuations[1].guard.inner.inner@.ptr.addr()
-            &&& self.continuations[0].guard.inner.inner@.ptr.addr()
-                != self.continuations[2].guard.inner.inner@.ptr.addr()
-            &&& self.continuations[0].guard.inner.inner@.ptr.addr()
-                != self.continuations[3].guard.inner.inner@.ptr.addr()
-            // Path consistency: child path = parent path pushed with parent's index
-            &&& self.continuations[0].path() == self.continuations[1].path().push_tail(
-                self.continuations[1].idx as usize,
-            )
-            // PTE consistency
-            &&& self.continuations[0].entry_own.path.len()
-                == self.continuations[1].entry_own.node().tree_level + 1
-            &&& self.continuations[0].entry_own.match_pte(
-                self.continuations[1].entry_own.node().children_perm.value()[self.continuations[1].idx as int],
-                self.continuations[1].entry_own.node().level,
-            )
-            &&& self.continuations[0].entry_own.parent_level
-                == self.continuations[1].entry_own.node().level
-        }
+        &&& forall |i: int| #![trigger self.continuations[i]]
+                self.level - 1 <= i < C::NR_LEVELS() ==> {
+                    &&& self.continuations.contains_key(i)
+                    &&& self.continuations[i].inv()
+                    &&& self.continuations[i].level() == i + 1
+                    &&& self.continuations[i].entry_own.parent_level == i + 2
+                    &&& self.in_locked_range() ==> self.va.index[i] == self.continuations[i].idx
+                }
+        &&& forall |i: int| #![trigger self.continuations[i]]
+            self.level - 1 <= i < C::NR_LEVELS() - 1 ==> {
+                // Path consistency: child path = parent path pushed with parent's index
+                &&& self.continuations[i].path() == self.continuations[i + 1].path().push_tail(
+                    self.continuations[i + 1].idx as usize,
+                )
+                // PTE consistency
+                &&& self.continuations[i].entry_own.path.len()
+                    == self.continuations[i + 1].entry_own.node().tree_level + 1
+                &&& self.continuations[i].entry_own.match_pte(
+                    self.continuations[i + 1].entry_own.node().children_perm.value()[self.continuations[i + 1].idx as int],
+                    self.continuations[i + 1].entry_own.node().level,
+                )
+                &&& self.continuations[i].entry_own.parent_level
+                    == self.continuations[i + 1].entry_own.node().level
+            }
+        &&& forall |i: int, j:int| #![trigger self.continuations[i].guard, self.continuations[j].guard]
+            self.level - 1 <= i < j < C::NR_LEVELS() ==> {
+                self.continuations[i].guard.inner.inner@.ptr.addr()
+                    != self.continuations[j].guard.inner.inner@.ptr.addr()
+            }
     }
 }
 
@@ -848,7 +789,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     ) -> bool {
         forall|i: int|
             #![trigger self.continuations[i]]
-            self.level - 1 <= i < NR_LEVELS ==> { self.continuations[i].map_children(f) }
+            self.level - 1 <= i < C::NR_LEVELS() ==> { self.continuations[i].map_children(f) }
     }
 
     pub open spec fn map_only_children(
@@ -857,7 +798,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     ) -> bool {
         forall|i: int|
             #![trigger self.continuations[i]]
-            self.level - 1 <= i < NR_LEVELS ==> self.continuations[i].map_children(f)
+            self.level - 1 <= i < C::NR_LEVELS() ==> self.continuations[i].map_children(f)
     }
 
     pub open spec fn children_not_locked(self, guards: Guards<'rcu>) -> bool {
@@ -922,7 +863,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             ),
             forall|i: int|
                 #![trigger self.continuations[i]]
-                self.level - 1 <= i < NR_LEVELS
+                self.level - 1 <= i < C::NR_LEVELS()
                     ==> self.continuations[i].guard.inner.inner@.ptr.addr()
                     != guard.inner.inner@.ptr.addr(),
         ensures
@@ -982,7 +923,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             old(self).level <= old(self).guard_level,
             old(self).in_locked_range(),
             old(self).continuations[old(self).level - 1].idx + 1 < NR_ENTRIES,
-            old(self).level == NR_LEVELS ==> (old(self).continuations[old(self).level - 1].idx + 1)
+            old(self).level == C::NR_LEVELS() ==> (old(self).continuations[old(self).level - 1].idx + 1)
                 <= C::TOP_LEVEL_INDEX_RANGE_spec().end,
         ensures
             final(self).inv(),
@@ -995,7 +936,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.va.index.tracked_insert(self.level - 1, cont.idx as int);
         self.continuations.tracked_insert(self.level - 1, cont);
         assert(self.continuations == old(self).continuations.insert(self.level - 1, cont));
-        assert(self.va.index.dom() == Set::<int>::range(0, NR_LEVELS as int));
+        assert(self.va.index.dom() == Set::<int>::range(0, C::NR_LEVELS() as int));
 
         old(self).va.index_increment_adds_page_size(old(self).level as int);
         lemma_page_size_ge_page_size(old(self).level as PagingLevel);
@@ -1017,14 +958,14 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         assert(self.va.index[self.level as int - 1] == self.continuations[self.level as int
             - 1].idx);
         assert(self.prefix == old(self).prefix);
-        assert(self.prefix.index[NR_LEVELS - 1] < C::TOP_LEVEL_INDEX_RANGE_spec().end);
+        assert(self.prefix.index[C::NR_LEVELS() - 1] < C::TOP_LEVEL_INDEX_RANGE_spec().end);
         // inc_index doesn't change children, so pt_inv_children transfers.
         assert(cont.children == old(self).continuations[self.level - 1].children);
         assert(cont.pt_inv_children());
         assert(self.va.inv()) by {
             assert(0 <= self.va.offset < PAGE_SIZE);
-            assert(self.va.index.dom() == Set::<int>::range(0, NR_LEVELS as int));
-            assert forall|i: int| 0 <= i < NR_LEVELS implies self.va.index.contains_key(i) && 0
+            assert(self.va.index.dom() == Set::<int>::range(0, C::NR_LEVELS() as int));
+            assert forall|i: int| 0 <= i < C::NR_LEVELS() implies self.va.index.contains_key(i) && 0
                 <= self.va.index[i] < NR_ENTRIES by {
                 assert(self.va.index.contains_key(i));
             };
@@ -1036,7 +977,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     pub proof fn inv_continuation(self, i: int)
         requires
             self.inv(),
-            self.level - 1 <= i <= NR_LEVELS - 1,
+            self.level - 1 <= i <= C::NR_LEVELS() - 1,
         ensures
             self.continuations.contains_key(i),
             self.continuations[i].inv(),
@@ -1046,20 +987,20 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     }
 
     pub open spec fn view_mappings(self) -> Set<Mapping> {
-        self.continuations.filter_keys(|k| self.level - 1 <= k < NR_LEVELS).map_values(
+        self.continuations.filter_keys(|k| self.level - 1 <= k < C::NR_LEVELS()).map_values(
             |cont: CursorContinuation<'rcu, C>| cont.view_mappings(),
         ).values().flatten()
     }
 
     pub broadcast proof fn lemma_view_mappings_contains(self)
         requires
-            1 <= self.level <= NR_LEVELS,
+            1 <= self.level <= C::NR_LEVELS(),
         ensures
             #![trigger self.view_mappings()]
             forall|m: Mapping| #[trigger]
                 self.view_mappings().contains(m) ==> exists|i: int|
                     #![trigger self.continuations[i]]
-                    self.level - 1 <= i < NR_LEVELS
+                    self.level - 1 <= i < C::NR_LEVELS()
                         && self.continuations[i].view_mappings().contains(m),
     {
         broadcast use vstd::map_lib::group_map_properties;
@@ -1067,10 +1008,10 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         assert forall|m: Mapping| #[trigger] self.view_mappings().contains(m) implies exists|i: int|
 
             #![trigger self.continuations[i]]
-            self.level - 1 <= i < NR_LEVELS && self.continuations[i].view_mappings().contains(
+            self.level - 1 <= i < C::NR_LEVELS() && self.continuations[i].view_mappings().contains(
                 m,
             ) by {
-            let filtered = self.continuations.filter_keys(|k| self.level - 1 <= k < NR_LEVELS);
+            let filtered = self.continuations.filter_keys(|k| self.level - 1 <= k < C::NR_LEVELS());
             let mapped = filtered.map_values(
                 |cont: CursorContinuation<'rcu, C>| cont.view_mappings(),
             );
@@ -1081,7 +1022,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             assert(exists|i: int| #[trigger] mapped.dom().contains(i) && mapped[i] == elem_s);
             let i = choose|i: int| #[trigger] mapped.dom().contains(i) && mapped[i] == elem_s;
             assert(filtered.dom().contains(i));
-            assert(self.level - 1 <= i < NR_LEVELS);
+            assert(self.level - 1 <= i < C::NR_LEVELS());
             assert(filtered[i] == self.continuations[i]);
             assert(mapped[i] == self.continuations[i].view_mappings());
         }
@@ -1089,8 +1030,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
 
     pub broadcast proof fn lemma_view_mappings_intro(self, m: Mapping, i: int)
         requires
-            1 <= self.level <= NR_LEVELS,
-            self.level - 1 <= i < NR_LEVELS,
+            1 <= self.level <= C::NR_LEVELS(),
+            self.level - 1 <= i < C::NR_LEVELS(),
             self.continuations.contains_key(i),
             #[trigger] self.continuations[i].view_mappings().contains(m),
         ensures
@@ -1098,7 +1039,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     {
         broadcast use vstd::map_lib::group_map_properties;
 
-        let filtered = self.continuations.filter_keys(|k| self.level - 1 <= k < NR_LEVELS);
+        let filtered = self.continuations.filter_keys(|k| self.level - 1 <= k < C::NR_LEVELS());
         let mapped = filtered.map_values(|cont: CursorContinuation<'rcu, C>| cont.view_mappings());
         let values = mapped.values();
         assert(filtered.dom().contains(i));
@@ -1411,7 +1352,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         requires
             old_va.inv(),
             prefix.inv(),
-            1 <= guard_level <= NR_LEVELS,
+            1 <= guard_level <= C::NR_LEVELS(),
             level == guard_level,
             new_va_val == old_va.to_vaddr() + page_size(level as PagingLevel),
             prefix.align_down(guard_level as int).to_vaddr() <= old_va.to_vaddr(),
@@ -1460,7 +1401,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.in_locked_range(),
     {
         let gl = self.guard_level;
-        if gl >= 1 && gl <= NR_LEVELS {
+        if gl >= 1 && gl <= C::NR_LEVELS() {
             // va.index[gl-1] == prefix.index[gl-1] from invariant (level < guard_level)
             // Combined with line 488 (upper indices match), all indices at gl-1
             // and above are equal, so align_down(gl) matches.
@@ -1503,11 +1444,11 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         requires
             self.inv(),
             self.prefix.inv(),
-            1 <= self.guard_level <= NR_LEVELS,
+            1 <= self.guard_level <= C::NR_LEVELS(),
             self.in_locked_range(),
         ensures
             forall|i: int|
-                self.guard_level <= i < NR_LEVELS ==> self.va.index[i] == self.prefix.index[i],
+                self.guard_level <= i < C::NR_LEVELS() ==> self.va.index[i] == self.prefix.index[i],
     {
         let gl = self.guard_level;
         let start = self.prefix.align_down(gl as int).to_vaddr();
@@ -1535,7 +1476,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.prefix_plus_ps_no_overflow();
         self.prefix.aligned_align_up_advances(gl as int);
 
-        if gl as int >= 2 && (gl as int) < NR_LEVELS as int {
+        if gl as int >= 2 && (gl as int) < C::NR_LEVELS() as int {
             // Both va and prefix are in [start, start + page_size(gl)).
             // same_node_indices_match with level = gl - 1 >= 1
             AbstractVaddr::same_node_indices_match(
@@ -1586,7 +1527,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         requires
             self.inv(),
             self.prefix.inv(),
-            1 <= self.guard_level <= NR_LEVELS,
+            1 <= self.guard_level <= C::NR_LEVELS(),
             self.in_locked_range(),
         ensures
             self.va.index[self.guard_level - 1] == self.prefix.index[self.guard_level - 1],
@@ -1711,7 +1652,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.in_locked_range(),
             !self.popped_too_high,
         ensures
-            self.level <= NR_LEVELS,
+            self.level <= C::NR_LEVELS(),
     {
         self.in_locked_range_level_le_guard_level();
     }
@@ -1725,13 +1666,13 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.in_locked_range(),
             !self.popped_too_high,
         ensures
-            self.va.index[NR_LEVELS - 1] < C::TOP_LEVEL_INDEX_RANGE_spec().end,
+            self.va.index[C::NR_LEVELS() - 1] < C::TOP_LEVEL_INDEX_RANGE_spec().end,
     {
         self.in_locked_range_level_le_guard_level();
-        if self.guard_level as int == NR_LEVELS as int {
+        if self.guard_level as int == C::NR_LEVELS() as int {
             if self.level < self.guard_level {
                 // va.index[guard_level-1] == prefix.index[guard_level-1] < TOP_LEVEL_INDEX_RANGE.end
-                assert(self.va.index[NR_LEVELS - 1] == self.prefix.index[NR_LEVELS - 1]);
+                assert(self.va.index[C::NR_LEVELS() - 1] == self.prefix.index[C::NR_LEVELS() - 1]);
             } else {
                 // level == guard_level == NR_LEVELS:
                 // va.index[NR_LEVELS-1] <= TOP_LEVEL_INDEX_RANGE.end (from inv).
@@ -1744,10 +1685,10 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 // index[NR_LEVELS-1] at most prefix.index[NR_LEVELS-1] + 1, any VA
                 // at the top_end sentinel overshoots.
                 self.in_locked_range_guard_index_eq_prefix();
-                assert(self.va.index[NR_LEVELS - 1] == self.prefix.index[NR_LEVELS - 1]);
+                assert(self.va.index[C::NR_LEVELS() - 1] == self.prefix.index[C::NR_LEVELS() - 1]);
             }
         } else {
-            assert(self.va.index[NR_LEVELS - 1] == self.prefix.index[NR_LEVELS - 1]);
+            assert(self.va.index[C::NR_LEVELS() - 1] == self.prefix.index[C::NR_LEVELS() - 1]);
         }
     }
 
@@ -1782,8 +1723,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.inv(),
             self.in_locked_range(),
             !self.popped_too_high,
-            self.level == NR_LEVELS,
-            self.guard_level == NR_LEVELS,
+            self.level == C::NR_LEVELS(),
+            self.guard_level == C::NR_LEVELS(),
         ensures
             self.continuations[self.level - 1].idx + 1 < NR_ENTRIES,
     {
@@ -2042,7 +1983,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.prefix.align_down_leading_bits(gl as int);
         let aligned = self.prefix.align_down(gl as int);
 
-        assert forall|i: int| 0 <= i < NR_LEVELS implies #[trigger] aligned.index[i]
+        assert forall|i: int| 0 <= i < C::NR_LEVELS() implies #[trigger] aligned.index[i]
             == self.prefix.index[i] by {
             assert(self.prefix.index.contains_key(i));
             assert(aligned.index.contains_key(i));
@@ -2076,8 +2017,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         requires
             self.inv(),
             self.va.reflect(self_va),
-            self.guard_level == NR_LEVELS,
-            node_size == page_size_spec((NR_LEVELS + 1) as PagingLevel),
+            self.guard_level == C::NR_LEVELS(),
+            node_size == page_size_spec((C::NR_LEVELS() + 1) as PagingLevel),
             self.locked_range().start <= va < self.locked_range().end,
         ensures
             nat_align_down(self_va as nat, node_size as nat) <= va as nat,
@@ -2086,18 +2027,18 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let gl = self.guard_level;
         let lb = self.prefix.leading_bits;
         let big = 0x1_0000_0000_0000int;  // 2^48 == page_size(NR_LEVELS+1)
-        let ps_nr = page_size(NR_LEVELS as PagingLevel) as int;
+        let ps_nr = page_size(C::NR_LEVELS() as PagingLevel) as int;
 
         crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_spec_values();
         // node_size == page_size_spec(5) == 2^48; page_size(NR_LEVELS) == 2^39 < 2^48.
 
         // ---- prefix.to_vaddr() == lb * 2^48 -------------------------------
         // offset == 0 and every positional index is 0 (i < gl == NR_LEVELS).
-        assert forall|i: int| 0 <= i < NR_LEVELS implies self.prefix.index[i] == 0 by {
+        assert forall|i: int| 0 <= i < C::NR_LEVELS() implies self.prefix.index[i] == 0 by {
             assert(self.prefix.index.contains_key(i));
         };
-        self.prefix.to_vaddr_indices_drop_zero_range(0, NR_LEVELS as int);
-        assert(self.prefix.to_vaddr_indices(NR_LEVELS as int) == 0);
+        self.prefix.to_vaddr_indices_drop_zero_range(0, C::NR_LEVELS() as int);
+        assert(self.prefix.to_vaddr_indices(C::NR_LEVELS() as int) == 0);
         assert(self.prefix.to_vaddr() as int == lb * big);
 
         // ---- locked_range().start == prefix.to_vaddr(); end == start + ps_nr
@@ -2108,7 +2049,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.prefix.align_down_shape(gl as int);
         self.prefix.align_down_leading_bits(gl as int);
         let aligned = self.prefix.align_down(gl as int);
-        assert forall|i: int| 0 <= i < NR_LEVELS implies #[trigger] aligned.index[i]
+        assert forall|i: int| 0 <= i < C::NR_LEVELS() implies #[trigger] aligned.index[i]
             == self.prefix.index[i] by {
             assert(self.prefix.index.contains_key(i));
             assert(aligned.index.contains_key(i));
@@ -2759,7 +2700,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             forall|i: int|
                 #![trigger self.continuations[i]]
-                self.level - 1 <= i < NR_LEVELS
+                self.level - 1 <= i < C::NR_LEVELS()
                     ==> self.continuations[i].entry_own.metaregion_sound(regions),
     {
         // Follows directly from path_metaregion_sound,
@@ -2773,8 +2714,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     ) -> Self {
         let va = AbstractVaddr {
             offset: 0,
-            index: Map::new(Set::<int>::range(0, NR_LEVELS as int), |i: int| 0).insert(
-                NR_LEVELS - 1,
+            index: Map::new(Set::<int>::range(0, C::NR_LEVELS() as int), |i: int| 0).insert(
+                C::NR_LEVELS() - 1,
                 idx as int,
             ),
             // Canonical-high-half shift for this config. `UserPtConfig` has
@@ -2785,13 +2726,13 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             leading_bits: C::LEADING_BITS_spec() as int,
         };
         Self {
-            level: NR_LEVELS as PagingLevel,
+            level: C::NR_LEVELS() as PagingLevel,
             continuations: Map::empty().insert(
-                NR_LEVELS - 1 as int,
+                C::NR_LEVELS() - 1 as int,
                 CursorContinuation::new(owner_subtree, idx, guard),
             ),
             va,
-            guard_level: NR_LEVELS as PagingLevel,
+            guard_level: C::NR_LEVELS() as PagingLevel,
             prefix: va,
             popped_too_high: false,
         }
@@ -2934,7 +2875,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Inv for Cursor<'rcu, C, A> {
         // cursor that ascends past the root would, on the next
         // `pop_level`, read `self.path[NR_LEVELS]` — out of bounds, a
         // real Rust panic — which `jump` models as a sound divergence.
-        &&& 1 <= self.level <= NR_LEVELS
+        &&& 1 <= self.level <= C::NR_LEVELS()
             + 1
         // `level <= guard_level + 1` (not `<= guard_level`) admits the
         // transient "popped one above the guard" state: `pop_level` at
@@ -2945,7 +2886,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Inv for Cursor<'rcu, C, A> {
         // so the state never propagates further.
         &&& self.level <= self.guard_level + 1
         &&& self.guard_level
-            <= NR_LEVELS
+            <= C::NR_LEVELS()
         //        &&& forall|i: int| 0 <= i < self.guard_level - self.level ==> self.path[i] is Some
         &&& self.va >= self.barrier_va.start
         &&& self.va % PAGE_SIZE == 0
@@ -2958,8 +2899,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> OwnerOf for Cursor<'rcu, C, A> {
     open spec fn wf(self, owner: Self::Owner) -> bool {
         &&& owner.va.reflect(self.va)
         &&& self.level == owner.level
-        &&& owner.guard_level
-            == self.guard_level
+        &&& owner.guard_level == self.guard_level
         //        &&& owner.index() == self.va % page_size(self.level)
         // `path` holds lock guards only for levels in `[self.level,
         // self.guard_level]` (see the `Cursor.path` doc comment and
@@ -2968,40 +2908,16 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> OwnerOf for Cursor<'rcu, C, A> {
         // `guard_level` up to the root, but those ancestor nodes are NOT
         // locked, so their `path` slots are `None` and are not tied to a
         // continuation guard.
-        &&& self.level <= 4 ==> {
-            &&& 4 <= self.guard_level ==> {
-                &&& self.path[3] is Some
-                &&& owner.continuations.contains_key(3)
-                &&& owner.continuations[3].guard == self.path[3]->0
+        &&& forall |i: int| #![trigger self.path[i]] 0 <= i < C::NR_LEVELS() ==> {
+            self.level <= i + 1 ==> {
+                if self.guard_level >= i + 1 {
+                    &&& self.path[i] is Some
+                    &&& owner.continuations.contains_key(i)
+                    &&& owner.continuations[i].guard == self.path[i]->0
+                } else {
+                    self.path[i] is None
+                }
             }
-            &&& 4 > self.guard_level ==> self.path[3] is None
-        }
-        &&& self.level <= 3 ==> {
-            &&& 3 <= self.guard_level ==> {
-                &&& self.path[2] is Some
-                &&& owner.continuations.contains_key(2)
-                &&& owner.continuations[2].guard == self.path[2]->0
-            }
-            &&& 3 > self.guard_level ==> self.path[2] is None
-        }
-        &&& self.level <= 2 ==> {
-            &&& 2 <= self.guard_level ==> {
-                &&& self.path[1] is Some
-                &&& owner.continuations.contains_key(1)
-                &&& owner.continuations[1].guard == self.path[1]->0
-            }
-            &&& 2 > self.guard_level ==> self.path[1] is None
-        }
-        &&& self.level == 1 ==> {
-            // `1 <= self.guard_level` always holds (`inv` gives
-            // `guard_level >= 1`), so this clause is equivalent to the
-            // original level-1 case; the `None` branch is vacuous.
-            &&& 1 <= self.guard_level ==> {
-                &&& self.path[0] is Some
-                &&& owner.continuations.contains_key(0)
-                &&& owner.continuations[0].guard == self.path[0]->0
-            }
-            &&& 1 > self.guard_level ==> self.path[0] is None
         }
         &&& self.barrier_va.start == owner.locked_range().start
         &&& self.barrier_va.end == owner.locked_range().end

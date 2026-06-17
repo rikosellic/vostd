@@ -18,7 +18,7 @@ use vstd_extra::arithmetic::{
 };
 
 use crate::mm::page_table::*;
-use crate::mm::{PagingLevel, Vaddr};
+use crate::mm::{PagingLevel, Vaddr, PagingConstsTrait};
 use crate::specs::arch::*;
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::page_table::AbstractVaddr;
@@ -59,7 +59,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.popped_too_high == other.popped_too_high,
             // higher-level continuations unchanged
             forall|i: int|
-                self.level <= i < NR_LEVELS ==> #[trigger] self.continuations[i]
+                self.level <= i < C::NR_LEVELS() ==> #[trigger] self.continuations[i]
                     == other.continuations[i],
             // bottom continuation well-formed after protect
             other.continuations[self.level - 1].inv(),
@@ -142,7 +142,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.popped_too_high == owner0.popped_too_high,
             // Higher-level continuations unchanged
             forall|i: int|
-                self.level <= i < NR_LEVELS ==> #[trigger] self.continuations[i]
+                self.level <= i < C::NR_LEVELS() ==> #[trigger] self.continuations[i]
                     == owner0.continuations[i],
             // Bottom continuation is well-formed
             self.continuations[self.level - 1].inv(),

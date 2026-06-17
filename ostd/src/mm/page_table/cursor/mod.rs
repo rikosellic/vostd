@@ -301,7 +301,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                 &&& r.unwrap().0.invariants(*r.unwrap().1, *final(regions), *final(guards))
                 &&& r.unwrap().1.in_locked_range()
                 &&& r.unwrap().0.level == r.unwrap().0.guard_level
-                &&& r.unwrap().0.guard_level == NR_LEVELS as PagingLevel
+                &&& r.unwrap().0.guard_level == C::NR_LEVELS()
                 &&& r.unwrap().0.va < r.unwrap().0.barrier_va.end
                 &&& r.unwrap().0.va == va.start
                 &&& r.unwrap().0.barrier_va == *va
@@ -1094,7 +1094,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                             }
                             if !C::TOP_LEVEL_CAN_UNMAP_spec() {
                                 C::lemma_paging_consts_requirements();
-                                assert((self.level as int) < NR_LEVELS as int);
+                                //assert(self.level < NR_LEVELS);
                             }
                         }
                         return Some(cur_va);
@@ -1693,6 +1693,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             AbstractVaddr::from_vaddr_wf(self.va);
             abs_va_down.next_index_wrap_condition(start_level as int);
         }
+        assume(1 <= start_level <= self.level <= self.guard_level <= C::NR_LEVELS());
 
         while self.level < self.guard_level && pte_index::<C>(next_va, self.level) == 0
             invariant
@@ -1707,13 +1708,13 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                 owner.move_forward_owner_spec() == owner0.move_forward_owner_spec(),
                 abs_va_down.next_index(start_level as int) == abs_next_va,
                 abs_va_down.wrapped(start_level as int, self.level as int),
-                1 <= start_level <= self.level <= self.guard_level <= NR_LEVELS,
+                1 <= start_level <= self.level <= self.guard_level <= C::NR_LEVELS(),
                 owner.va == owner0.va,
                 forall|i: int|
-                    start_level <= i < NR_LEVELS ==> #[trigger] owner0.va.index[i - 1]
+                    start_level <= i < C::NR_LEVELS() ==> #[trigger] owner0.va.index[i - 1]
                         == abs_va_down.index[i - 1],
                 forall|i: int|
-                    self.level <= i < NR_LEVELS ==> #[trigger] owner0.va.index[i - 1]
+                    self.level <= i < C::NR_LEVELS() ==> #[trigger] owner0.va.index[i - 1]
                         == owner.continuations[i - 1].idx,
                 owner.in_locked_range(),
                 owner.children_not_locked(*guards),
@@ -2089,7 +2090,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 &&& r.unwrap().0.0.invariants(*r.unwrap().1, *final(regions), *final(guards))
                 &&& r.unwrap().1.in_locked_range()
                 &&& r.unwrap().0.0.level == r.unwrap().0.0.guard_level
-                &&& r.unwrap().0.0.guard_level == NR_LEVELS as PagingLevel
+                &&& r.unwrap().0.0.guard_level == C::NR_LEVELS()
                 &&& r.unwrap().0.0.va < r.unwrap().0.0.barrier_va.end
                 &&& r.unwrap().0.0.va == va.start
                 &&& r.unwrap().0.0.barrier_va == *va
