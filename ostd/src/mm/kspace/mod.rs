@@ -216,6 +216,15 @@ unsafe impl PageTableConfig for KernelPtConfig {
         assert((((Self::TOP_LEVEL_INDEX_RANGE_spec().start as int) * (pow2(
             pte_index_bit_offset_spec::<Self::C>(Self::C::NR_LEVELS()) as nat,
         ) as int)) / (pow2((Self::C::ADDRESS_WIDTH() - 1) as nat) as int)) % 2 == 1);
+        lemma_pow2_adds(16, 48);
+        assert(Self::LEADING_BITS_spec() == 0xffffusize);
+        assert(pow2(48) == 0x1_0000_0000_0000nat);
+        assert(pow2(64) == 0x1_0000_0000_0000_0000nat);
+        assert((0xffffint + 1int) * 0x1_0000_0000_0000int == 0x1_0000_0000_0000_0000int);
+        assert(0xffffint * 0x1_0000_0000_0000int == 0x1_0000_0000_0000_0000int
+            - 0x1_0000_0000_0000int);
+        assert(Self::LEADING_BITS_spec() as int * 0x1_0000_0000_0000int
+            == 0x1_0000_0000_0000_0000int - pow2(Self::C::ADDRESS_WIDTH() as nat) as int);
     }
 
     fn TOP_LEVEL_INDEX_RANGE() -> (r: Range<usize>)
