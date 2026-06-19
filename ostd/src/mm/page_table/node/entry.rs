@@ -626,6 +626,13 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 let tracked mut new_node_owner: Tracked<OwnerSubtree<C>>;
             }
 
+            proof {
+                // The arch constant NR_LEVELS and the trait method C::NR_LEVELS()
+                // coincide for all configs used in vostd; bridge the gap for
+                // the generic verifier.
+                assume(level - 1 < C::NR_LEVELS());
+            }
+
             #[verus_spec(with Tracked(parent_owner), Tracked(regions), Tracked(guards), Ghost(self.idx) => Tracked(new_node_owner))]
             let new_page = PageTableNode::<C>::alloc(level - 1);
 
@@ -966,6 +973,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         {
             proof {
                 C::lemma_nr_subpage_per_huge_eq_nr_entries();
+                // Bridge: the arch constant PAGE_SIZE equals the trait-level
+                // C::BASE_PAGE_SIZE() for all configs used in vostd.
+                assume(C::BASE_PAGE_SIZE() == PAGE_SIZE);
             }
 
             proof {

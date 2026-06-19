@@ -1633,6 +1633,14 @@ unsafe impl PageTableConfig for UserPtConfig {
         lemma_usize_pow2_ilog2(12);
         lemma_usize_pow2_ilog2(9);
         lemma_pow2_adds(9, 39);
+        assert(nr_subpage_per_huge::<PagingConsts>() == 512_usize);
+        assert(nr_pte_index_bits::<PagingConsts>() == 9_usize);
+        assert(PagingConsts::BASE_PAGE_SIZE().ilog2() == 12u32);
+        assert(pte_index_bit_offset_spec::<PagingConsts>(4) == 39);
+        assert(pte_index_bit_offset_spec::<Self::C>(Self::C::NR_LEVELS()) == 39);
+        assert(Self::C::ADDRESS_WIDTH() == 48usize);
+        assert(Self::TOP_LEVEL_INDEX_RANGE_spec().start == 0_usize);
+        assert(Self::TOP_LEVEL_INDEX_RANGE_spec().end == 256_usize);
     }
 
     proof fn lemma_leading_bits_only_when_high_half() {

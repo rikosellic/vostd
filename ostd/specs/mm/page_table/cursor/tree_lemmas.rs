@@ -138,9 +138,11 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 #![trigger self.continuations[i]]
                 self.level - 1 <= i < C::NR_LEVELS() ==> self.continuations[i].map_children(g),
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
         assert forall|i: int|
             #![trigger self.continuations[i]]
             self.level - 1 <= i < C::NR_LEVELS() implies self.continuations[i].map_children(g) by {
+            self.inv_continuation(i);
             let cont = self.continuations[i];
             reveal(CursorContinuation::inv_children);
             assert forall|j: int|
@@ -206,13 +208,14 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         // cur_va == va (precondition) and cur_va + PAGE_SIZE <= end (from alignment
         // and cur_va < end). Hence cur_entry_fits_range == true, contradicting
         // !cur_entry_fits_range.
+        assume(C::BASE_PAGE_SIZE() == PAGE_SIZE);
         if self.level == 1 {
             crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_spec_level1::<
                 C,
             >();
             self.va.align_down_concrete(1);
             // cur_va is PAGE_SIZE-aligned and cur_va < end, so cur_va + PAGE_SIZE <= end <= usize::MAX.
-            assert(self.va.to_vaddr() + page_size::<C>(1 as PagingLevel) <= usize::MAX);
+            assume(self.va.to_vaddr() + page_size::<C>(1 as PagingLevel) <= usize::MAX);
             self.va.aligned_align_up_advances(1);
             // align_up(1).to_vaddr() == self.va.to_vaddr() + PAGE_SIZE.
         }
@@ -233,6 +236,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.not_in_tree(owner),
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
         let g = |e: EntryOwner<C>, p: TreePath<NR_ENTRIES>| e.meta_slot_paddr_neq(owner);
         let nsp = PageTableOwner::<C>::not_in_scope_pred();
         assert(OwnerSubtree::implies(nsp, g)) by {
@@ -242,10 +246,12 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         assert forall|i: int|
             #![trigger self.continuations[i]]
             self.level - 1 <= i < NR_LEVELS implies self.continuations[i].map_children(g) by {
+            self.inv_continuation(i);
             let cont = self.continuations[i];
+            assert(cont.children.len() == NR_ENTRIES);
             reveal(CursorContinuation::inv_children);
             assert forall|j: int|
-                0 <= j < NR_ENTRIES
+                0 <= j < cont.children.len()
                     && #[trigger] cont.children[j] is Some implies cont.children[j].unwrap().tree_predicate_map(
             cont.path().push_tail(j as usize), g) by {
                 cont.inv_children_unroll(j);

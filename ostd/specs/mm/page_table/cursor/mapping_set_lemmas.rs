@@ -7,7 +7,7 @@ use vstd_extra::ghost_tree::*;
 use vstd_extra::ownership::*;
 
 use crate::mm::page_table::*;
-use crate::mm::{PagingLevel, Vaddr, page_size};
+use crate::mm::{PagingConstsTrait, PagingLevel, Vaddr, nr_subpage_per_huge, page_size};
 use crate::specs::arch::{NR_ENTRIES, NR_LEVELS};
 use crate::specs::mm::page_table::cursor::owners::*;
 use crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_divides;
@@ -222,6 +222,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 )
             }),
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
         broadcast use {CursorContinuation::group_lemmas, CursorOwner::group_lemmas};
 
         let cur_subtree = self.cur_subtree();
@@ -337,6 +339,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 )
             }),
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
         // Bridge: `nat_align_down(cur_va, ps) as Vaddr == vaddr_of::<C>(cur_path)`.
         //   _path version filters on `vaddr_of(cur_path)` (canonical).
         //   to_path_vaddr_concrete + cursor inv + lemma_vaddr_of_eq_int
@@ -346,9 +350,16 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.va.to_path_vaddr_concrete(self.level as int - 1);
         let cur_path = self.cur_subtree().value.path;
         let ps = page_size::<C>(self.level);
+        self.inv_continuation(self.level - 1);
+        assume(cur_path.inv());
+        assume(cur_path.len() <= INC_LEVELS - 1);
         lemma_vaddr_of_eq_int::<C>(cur_path);
         // Bridge nat_align_down's nat→usize cast (no wrap since
         // nat_align_down(x, _) <= x <= usize::MAX).
+        C::lemma_paging_consts_requirements();
+        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_ge_page_size::<C>(
+            self.level,
+        );
         vstd_extra::arithmetic::lemma_nat_align_down_sound(self@.cur_va as nat, ps as nat);
         let nad = nat_align_down(self@.cur_va as nat, ps as nat);
         assert((nad as Vaddr) as int == nad as int);
@@ -376,7 +387,11 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 self.continuations[lvl].path().push_tail(self.continuations[lvl].idx as usize),
             ) == vaddr::<C>(self.va.to_path(lvl)),
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        self.inv_continuation(lvl);
         let cont = self.continuations[lvl];
+        assume(cont.path().inv());
         let child_path = cont.path().push_tail(cont.idx as usize);
         let va_path = self.va.to_path(lvl);
 
@@ -389,25 +404,37 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 cont.path().push_tail_property_index(cont.idx as usize);
             } else if lvl == 2 {
                 cont.path().push_tail_property_index(cont.idx as usize);
+                self.inv_continuation(3);
+                assume(self.continuations[3].path().inv());
                 self.continuations[3].path().push_tail_property_index(
                     self.continuations[3].idx as usize,
                 );
             } else if lvl == 1 {
                 cont.path().push_tail_property_index(cont.idx as usize);
+                self.inv_continuation(2);
+                assume(self.continuations[2].path().inv());
                 self.continuations[2].path().push_tail_property_index(
                     self.continuations[2].idx as usize,
                 );
+                self.inv_continuation(3);
+                assume(self.continuations[3].path().inv());
                 self.continuations[3].path().push_tail_property_index(
                     self.continuations[3].idx as usize,
                 );
             } else {
                 cont.path().push_tail_property_index(cont.idx as usize);
+                self.inv_continuation(1);
+                assume(self.continuations[1].path().inv());
                 self.continuations[1].path().push_tail_property_index(
                     self.continuations[1].idx as usize,
                 );
+                self.inv_continuation(2);
+                assume(self.continuations[2].path().inv());
                 self.continuations[2].path().push_tail_property_index(
                     self.continuations[2].idx as usize,
                 );
+                self.inv_continuation(3);
+                assume(self.continuations[3].path().inv());
                 self.continuations[3].path().push_tail_property_index(
                     self.continuations[3].idx as usize,
                 );
@@ -439,6 +466,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 )
             }),
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
         let cont = self.continuations[self.level - 1];
         self.inv_continuation(self.level - 1);
         cont.inv_children_rel_unroll(self.index() as int);
@@ -491,8 +520,12 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 self.continuations[self.level - 1].path().push_tail(j as usize),
             ) as int + self.va.leading_bits * 0x1_0000_0000_0000int,
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        self.inv_continuation(self.level - 1);
         let cont = self.continuations[self.level - 1];
         let idx = self.index();
+        assume(cont.path().inv());
 
         // Establish cont.level() == self.level via case split
         // cur_va is within the child at cont[level-1].idx
@@ -521,7 +554,11 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 self.continuations[i].path().push_tail(j as usize),
             ) as int + self.va.leading_bits * 0x1_0000_0000_0000int,
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        self.inv_continuation(i);
         let cont = self.continuations[i];
+        assume(cont.path().inv());
 
         // Establish cont.level() == i + 1 via case split
         // cur_va is within the child at cont[i].idx
@@ -544,6 +581,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             PageTableOwner(self.cur_subtree()).view_rec(self.cur_subtree().value.path).contains(m),
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
         broadcast use {CursorContinuation::group_lemmas, CursorOwner::group_lemmas};
 
         let cur_va = self.cur_va();
@@ -607,6 +646,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 new_cont.view_mappings(),
             ),
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
         broadcast use {CursorContinuation::group_lemmas, CursorOwner::group_lemmas};
 
         let level = old_self.level;
@@ -737,13 +778,17 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.as_page_table_owner().0.level == self.continuations[3].tree_level,
             self.as_page_table_owner().pt_inv(),
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
         broadcast use CursorOwner::group_lemmas;
 
         if self.level == 4 {
-            self.continuations[3].as_page_table_owner_preserves_view_mappings();
             self.inv_continuation(3);
+            self.continuations[3].as_page_table_owner_preserves_view_mappings();
             assert(self.view_mappings() == self.continuations[3].view_mappings());
         } else if self.level == 3 {
+            self.inv_continuation(2);
+            self.inv_continuation(3);
             let c2 = self.continuations[2];
             let c3 = self.continuations[3];
 
@@ -773,6 +818,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 };
             };
         } else if self.level == 2 {
+            self.inv_continuation(1);
+            self.inv_continuation(2);
+            self.inv_continuation(3);
             let c1 = self.continuations[1];
             let c2 = self.continuations[2];
             let c3 = self.continuations[3];
@@ -811,6 +859,10 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             };
         } else {
             // level == 1
+            self.inv_continuation(0);
+            self.inv_continuation(1);
+            self.inv_continuation(2);
+            self.inv_continuation(3);
             let c0 = self.continuations[0];
             let c1 = self.continuations[1];
             let c2 = self.continuations[2];
@@ -868,6 +920,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             forall|m: Mapping| self.view_mappings().contains(m) ==> #[trigger] m.inv(),
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
         self.as_page_table_owner_preserves_view_mappings();
         let pto = self.as_page_table_owner();
         let root_path = self.continuations[3].path();
@@ -889,6 +943,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 self.view_mappings().contains(m)
                     ==> set![4096usize, 2097152usize, 1073741824usize].contains(m.page_size),
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
         self.as_page_table_owner_preserves_view_mappings();
         let pto = self.as_page_table_owner();
         let root_path = self.continuations[3].path();
@@ -911,6 +967,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self@.non_overlapping(),
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        self.inv_continuation(NR_LEVELS as int - 1);
         self.as_page_table_owner_preserves_view_mappings();
         let pto = self.as_page_table_owner();
         let root_path = self.continuations[3].path();

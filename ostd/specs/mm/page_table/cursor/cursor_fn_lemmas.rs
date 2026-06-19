@@ -92,10 +92,19 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             other.inv(),
             other.metaregion_sound(regions),
     {
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        let L = self.level as int;
+        // Establish the precondition for map_branch_none_inv_holds:
+        // other.va.index[other.level - 1] == other.continuations[other.level - 1].idx
+        assert(self.continuations.contains_key(L - 1));
+        assert(self.va.index[L - 1] == self.continuations[L - 1].idx) by {
+            self.inv_continuation(L - 1);
+        };
+        assert(other.va.index[other.level - 1] == other.continuations[other.level - 1].idx);
+
         other.map_branch_none_inv_holds(self);
 
         let f = PageTableOwner::<C>::metaregion_sound_pred(regions);
-        let L = self.level as int;
         let idx = self.continuations[L - 1].idx as int;
 
         assert forall|i: int|
@@ -110,6 +119,11 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 assert(i == L - 1);
                 let o_cont = other.continuations[L - 1];
                 let s_cont = self.continuations[L - 1];
+                assert(s_cont.inv()) by {
+                    assert(self.continuations.contains_key(L - 1));
+                };
+                assert(s_cont.inv_children());
+                assert(s_cont.children.len() == NR_ENTRIES);
                 reveal(CursorContinuation::inv_children);
                 assert forall|j: int|
                     #![trigger o_cont.children[j]]
@@ -118,6 +132,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 o_cont.path().push_tail(j as usize), f) by {
                     if j != idx {
                         assert(o_cont.children[j] == s_cont.children[j]);
+                        assert(0 <= j < s_cont.children.len());
                         s_cont.inv_children_unroll(j);
                     }
                 };
@@ -211,12 +226,18 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.view_mappings() == owner0.view_mappings(),
     {
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
         broadcast use {CursorContinuation::group_lemmas, CursorOwner::group_lemmas};
 
         let L = self.level as int;
+        owner0.inv_continuation(L - 1);
+        self.inv_continuation(L - 1);
         let cont = self.continuations[L - 1];
         let cont0 = owner0.continuations[L - 1];
         let idx = cont0.idx as int;
+
+        assert(cont0.inv_children());
+        assert(cont.inv_children());
 
         assert(cont.view_mappings() == cont0.view_mappings()) by {
             cont0.inv_children_unroll(idx);
@@ -295,6 +316,13 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.cur_entry_owner().is_absent(),
     {
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        self.inv_continuation(self.level - 1);
+        let idx = self.continuations[self.level - 1].idx as int;
+        assert(0 <= idx < NR_ENTRIES);
+        assert(0 <= idx < nr_subpage_per_huge::<C>());
+        assert(self.continuations[self.level - 1].children[idx] is Some);
+        assert(self.continuations[self.level - 1].children[idx]->0.value.is_absent());
     }
 
     pub proof fn cursor_path_nesting(self, i: int, j: int)

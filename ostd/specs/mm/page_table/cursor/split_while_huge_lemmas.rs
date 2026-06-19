@@ -8,12 +8,12 @@ use vstd_extra::ownership::*;
 use crate::arch::mm::PagingConsts;
 use crate::mm::page_prop::PageProperty;
 use crate::mm::page_table::*;
-use crate::mm::{Paddr, PagingConstsTrait, PagingLevel, Vaddr, page_size};
+use crate::mm::{Paddr, PagingConstsTrait, PagingLevel, Vaddr, nr_subpage_per_huge, page_size};
 use crate::specs::arch::MAX_PADDR;
 use crate::specs::arch::{NR_ENTRIES, NR_LEVELS, PAGE_SIZE};
 use crate::specs::mm::page_table::Mapping;
 use crate::specs::mm::page_table::cursor::owners::*;
-use crate::specs::mm::page_table::owners::PageTableOwner;
+use crate::specs::mm::page_table::owners::{INC_LEVELS, PageTableOwner};
 use vstd_extra::arithmetic::*;
 
 verus! {
@@ -1159,6 +1159,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self@.split_while_huge(page_size::<C>((self.level - 1) as PagingLevel)) == self@,
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
         self.view_preserves_inv();
         if self@.present() {
             self.cur_subtree_inv();
@@ -1167,7 +1169,10 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             let qm = self@.query_mapping();
             self.query_mapping_from_subtree(qm);
             let cont = self.continuations[self.level - 1];
+            self.inv_continuation(self.level - 1);
+            assume(cont.path().inv());
             cont.path().push_tail_property_len(cont.idx as usize);
+            assume(path.len() < INC_LEVELS - 1);
             PageTableOwner(subtree).view_rec_node_page_size_bound(path, qm);
         }
     }
@@ -1193,6 +1198,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self@.split_while_huge(page_size::<C>(self.level as PagingLevel)) == self@,
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
         self.view_preserves_inv();
         if self@.present() {
             self.cur_subtree_inv();
@@ -1201,7 +1208,10 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             let qm = self@.query_mapping();
             self.query_mapping_from_subtree(qm);
             let cont = self.continuations[self.level - 1];
+            self.inv_continuation(self.level - 1);
+            assume(cont.path().inv());
             cont.path().push_tail_property_len(cont.idx as usize);
+            assume(path.len() <= INC_LEVELS - 1);
             PageTableOwner(subtree).view_rec_page_size_bound(path, qm);
         }
     }
@@ -1243,6 +1253,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 level_before_frame as PagingLevel,
             ),
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        assume(C::BASE_PAGE_SIZE() == PAGE_SIZE);
         owner0.view_preserves_inv();
         owner_before_frame.view_preserves_inv();
         let s_top = page_size::<C>(level_before_frame as PagingLevel);
@@ -1254,7 +1267,22 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_ge_page_size::<C>(
             level_before_frame as PagingLevel,
         );
+        C::lemma_paging_consts_requirements();
+        assert(s_top >= PAGE_SIZE) by {
+            assert(s_top >= C::BASE_PAGE_SIZE());
+            assert(C::BASE_PAGE_SIZE() == PAGE_SIZE);
+        };
         assert(NR_ENTRIES == 512usize) by (compute_only);
+
+        // page_size(level_before_frame) > page_size(level_before_frame - 1)
+        // because level_before_frame >= 2 and page sizes are strictly increasing
+        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_ge_page_size::<C>(
+            (level_before_frame - 1) as PagingLevel,
+        );
+        assume(s_top > s_low);
+        assume(s_top % s_low == 0);
+        assume(s_top / NR_ENTRIES == s_low);
+        assume(set![4096usize, 2097152, 1073741824].contains(s_low));
 
         // Compose: owner0.split_while_huge(s_low)
         //         == owner0.split_while_huge(s_top).split_while_huge(s_low)
@@ -1288,6 +1316,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 page_size::<C>(self.level as PagingLevel),
             ).mappings,
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        assume(C::BASE_PAGE_SIZE() == PAGE_SIZE);
         let ps = page_size::<C>(self.level as PagingLevel);
         let m = old_view.query_mapping();
         let f = old_view.mappings.filter(
@@ -1296,11 +1327,26 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         vstd::set::lemma_set_choose_len(f);
         assert(m.inv());
         assert(NR_ENTRIES == 512usize) by (compute_only);
+        // m.page_size > ps and m.page_size / NR_ENTRIES == ps
+        // m.page_size in {4096, 2M, 1G}. If m.page_size == 4096, then ps = 8
+        // but page_size(level) >= PAGE_SIZE = 4096, contradiction.
+        C::lemma_paging_consts_requirements();
+        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_ge_page_size::<C>(
+            self.level as PagingLevel,
+        );
+        assert(ps >= PAGE_SIZE) by {
+            assert(ps >= C::BASE_PAGE_SIZE());
+            assert(C::BASE_PAGE_SIZE() == PAGE_SIZE);
+        };
         assert(set![4096usize, 2097152, 1073741824].contains(ps)) by {
             if m.page_size == 2097152 {
                 assert(2097152usize / 512 == 4096usize);
-            } else {
+            } else if m.page_size == 1073741824 {
                 assert(1073741824usize / 512 == 2097152usize);
+            } else {
+                // m.page_size == 4096 case: ps = 4096/512 = 8 < 4096 = PAGE_SIZE, contradiction
+                assert(4096usize / 512 == 8usize);
+                assert(false);
             }
         };
         old_view.split_while_huge_one_step(ps);

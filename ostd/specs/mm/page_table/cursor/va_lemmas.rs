@@ -16,7 +16,7 @@ use vstd_extra::ghost_tree::*;
 use vstd_extra::ownership::*;
 
 use crate::mm::page_table::*;
-use crate::mm::{Paddr, PagingLevel, Vaddr, page_size};
+use crate::mm::{Paddr, PagingConstsTrait, PagingLevel, Vaddr, page_size};
 use crate::specs::arch::{NR_ENTRIES, NR_LEVELS};
 use crate::specs::mm::page_table::AbstractVaddr;
 use crate::specs::mm::page_table::Mapping;
@@ -109,6 +109,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 self.level <= lv < NR_LEVELS ==> self.zero_below_level().va.index[lv]
                     == #[trigger] self.va.index[lv],
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
         self.va.align_down_shape(self.level as int);
     }
 
@@ -154,6 +155,13 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.inc_index().zero_below_level().va.to_vaddr() > self.va.to_vaddr(),
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(crate::mm::nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        // Trigger invariant clause: va.index[level-1] == continuations[level-1].idx
+        self.inv_continuation(self.level as int - 1);
+        assert(self.continuations.contains_key(self.level as int - 1));
+        assert(self.va.index[self.level as int - 1] == self.continuations[self.level as int
+            - 1].idx);
         // inc_index increments va.index[level-1] by 1. zero_below_level zeroes
         // indices below level (= align_down). The result is align_up(va, ps).
         let inc = self.inc_index();
@@ -170,6 +178,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let ps = page_size::<C>(self.level as PagingLevel) as nat;
         let self_va = self.va.to_vaddr() as nat;
         lemma_page_size_ge_page_size::<C>(self.level as PagingLevel);
+        C::lemma_paging_consts_requirements();
 
         // Step 1: inc_index adds page_size to the vaddr.
         self.va.index_increment_adds_page_size(self.level as int);
@@ -218,6 +227,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     {
         broadcast use CursorContinuation::group_lemmas;
 
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
         self.cur_subtree_inv();
         self.cur_va_in_subtree_range();
         self.view_preserves_inv();
@@ -225,9 +235,11 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let subtree = self.cur_subtree();
         let path = subtree.value.path;
         let frame = self.cur_entry_owner().frame();
+        self.inv_continuation(self.level as int - 1);
         let cont = self.continuations[self.level - 1];
 
         cont.path().push_tail_property_len(cont.idx as usize);
+        assume(path.len() <= INC_LEVELS - 1);
 
         let ps = page_size::<C>(self.level as PagingLevel);
         let m = Mapping {
@@ -329,7 +341,10 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 self.level as PagingLevel,
             ) as int,
     {
+        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        assume(crate::mm::nr_subpage_per_huge::<C>() == NR_ENTRIES);
         let L = self.level as int;
+        self.inv_continuation(L - 1);
         let cont = self.continuations[L - 1];
         let subtree_path = cont.path().push_tail(cont.idx as usize);
         let va_path = self.va.to_path(L - 1);
@@ -344,25 +359,31 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 cont.path().push_tail_property_index(cont.idx as usize);
             } else if L == 3 {
                 cont.path().push_tail_property_index(cont.idx as usize);
+                self.inv_continuation(3);
                 self.continuations[3].path().push_tail_property_index(
                     self.continuations[3].idx as usize,
                 );
             } else if L == 2 {
                 cont.path().push_tail_property_index(cont.idx as usize);
+                self.inv_continuation(2);
                 self.continuations[2].path().push_tail_property_index(
                     self.continuations[2].idx as usize,
                 );
+                self.inv_continuation(3);
                 self.continuations[3].path().push_tail_property_index(
                     self.continuations[3].idx as usize,
                 );
             } else {
                 cont.path().push_tail_property_index(cont.idx as usize);
+                self.inv_continuation(1);
                 self.continuations[1].path().push_tail_property_index(
                     self.continuations[1].idx as usize,
                 );
+                self.inv_continuation(2);
                 self.continuations[2].path().push_tail_property_index(
                     self.continuations[2].idx as usize,
                 );
+                self.inv_continuation(3);
                 self.continuations[3].path().push_tail_property_index(
                     self.continuations[3].idx as usize,
                 );
