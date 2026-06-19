@@ -135,6 +135,11 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
         }
     };
     */
+    // all_some() now quantifies over nr_subpage_per_huge::<C>(); the precondition
+    // of lock_range quantifies over NR_ENTRIES.  Bridge the two.
+    proof {
+        C::lemma_nr_subpage_per_huge_eq_nr_entries();
+    }
     #[verus_spec(with Tracked(&mut cursor_own), Tracked(regions), Tracked(guards))]
     let subtree_root = try_traverse_and_lock_subtree_root(pt, guard, va);
 

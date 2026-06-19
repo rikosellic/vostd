@@ -131,8 +131,8 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
     ) -> (tracked res: Self)
         requires
             old(self).all_some(),
-            old(self).idx < NR_ENTRIES,
-            idx < NR_ENTRIES,
+            old(self).idx < nr_subpage_per_huge::<C>(),
+            idx < nr_subpage_per_huge::<C>(),
         ensures
             res == old(self).make_cont(idx, guard).0,
             *final(self) == old(self).make_cont(idx, guard).1,
@@ -290,8 +290,8 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
     }
 
     pub open spec fn inv(self) -> bool {
-        &&& self.children.len() == NR_ENTRIES
-        &&& 0 <= self.idx < NR_ENTRIES
+        &&& self.children.len() == nr_subpage_per_huge::<C>()
+        &&& 0 <= self.idx < nr_subpage_per_huge::<C>()
         &&& self.inv_children()
         &&& self.inv_children_rel()
         &&& self.pt_inv_children()
@@ -299,18 +299,18 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
         &&& self.entry_own.inv()
         &&& !self.entry_own.in_scope
         &&& self.entry_own.node().relate_guard(self.guard)
-        &&& self.tree_level == INC_LEVELS - self.level() - 1
-        &&& self.tree_level < INC_LEVELS - 1
+        &&& self.tree_level == C::NR_LEVELS() - self.level()
+        &&& self.tree_level < C::NR_LEVELS()
         &&& self.path().len() == self.tree_level
     }
 
     pub open spec fn all_some(self) -> bool {
-        forall|i: int| 0 <= i < NR_ENTRIES ==> self.children[i] is Some
+        forall|i: int| 0 <= i < nr_subpage_per_huge::<C>() ==> self.children[i] is Some
     }
 
     pub open spec fn all_but_index_some(self) -> bool {
         &&& forall|i: int| 0 <= i < self.idx ==> self.children[i] is Some
-        &&& forall|i: int| self.idx < i < NR_ENTRIES ==> self.children[i] is Some
+        &&& forall|i: int| self.idx < i < nr_subpage_per_huge::<C>() ==> self.children[i] is Some
         &&& self.children[self.idx as int] is None
     }
 
@@ -631,6 +631,7 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
             res.level == self.tree_level + 1,
             res == OwnerSubtree::new_val(res.value, res.level as nat),
     {
+        C::lemma_paging_consts_requirements();
         let tracked mut owner = EntryOwner::<C>::tracked_new_frame(
             paddr,
             self.path().push_tail(self.idx as usize),
@@ -996,7 +997,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.continuations.contains_key(i),
             self.continuations[i].inv(),
-            self.continuations[i].children.len() == NR_ENTRIES,
+            self.continuations[i].children.len() == nr_subpage_per_huge::<C>(),
     {
         assert(self.continuations.contains_key(i));
     }

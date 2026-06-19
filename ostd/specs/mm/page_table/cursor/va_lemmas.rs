@@ -16,7 +16,7 @@ use vstd_extra::ghost_tree::*;
 use vstd_extra::ownership::*;
 
 use crate::mm::page_table::*;
-use crate::mm::{Paddr, PagingConstsTrait, PagingLevel, Vaddr, page_size};
+use crate::mm::{Paddr, PagingConstsTrait, PagingLevel, Vaddr, nr_subpage_per_huge, page_size};
 use crate::specs::arch::{NR_ENTRIES, NR_LEVELS};
 use crate::specs::mm::page_table::AbstractVaddr;
 use crate::specs::mm::page_table::Mapping;
@@ -238,6 +238,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.inv_continuation(self.level as int - 1);
         let cont = self.continuations[self.level - 1];
 
+        // TreePath<NR_ENTRIES> push_tail requires val < NR_ENTRIES;
+        // inv now provides idx < nr_subpage_per_huge::<C>().
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
         cont.path().push_tail_property_len(cont.idx as usize);
         assume(path.len() <= INC_LEVELS - 1);
 

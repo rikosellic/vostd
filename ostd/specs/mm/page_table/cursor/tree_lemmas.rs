@@ -13,7 +13,7 @@ use vstd_extra::ownership::*;
 use crate::mm::frame::meta::mapping::frame_to_index;
 use crate::mm::page_prop::PageProperty;
 use crate::mm::page_table::*;
-use crate::mm::{Paddr, PagingConstsTrait, PagingLevel, Vaddr, page_size};
+use crate::mm::{Paddr, PagingConstsTrait, PagingLevel, Vaddr, nr_subpage_per_huge, page_size};
 use crate::specs::arch::{NR_ENTRIES, NR_LEVELS, PAGE_SIZE};
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::page_table::AbstractVaddr;
@@ -85,6 +85,9 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
         ensures
             self.map_children(g),
     {
+        // TreePath<NR_ENTRIES> push_tail requires val < NR_ENTRIES;
+        // inv now provides children.len() == nr_subpage_per_huge::<C>().
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
         assert forall|j: int|
             #![auto]
             0 <= j < self.children.len()
@@ -248,7 +251,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.level - 1 <= i < NR_LEVELS implies self.continuations[i].map_children(g) by {
             self.inv_continuation(i);
             let cont = self.continuations[i];
-            assert(cont.children.len() == NR_ENTRIES);
+            assert(cont.children.len() == nr_subpage_per_huge::<C>());
             reveal(CursorContinuation::inv_children);
             assert forall|j: int|
                 0 <= j < cont.children.len()

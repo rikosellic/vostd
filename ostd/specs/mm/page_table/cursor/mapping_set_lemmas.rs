@@ -69,7 +69,10 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
                 - self.view_mappings_take_child_spec(),
     {
         broadcast use CursorContinuation::group_lemmas;
+        // TreePath<NR_ENTRIES> operations and sibling_paths_disjoint require < NR_ENTRIES;
+        // inv now provides children.len() == nr_subpage_per_huge::<C>().
 
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
         self.inv_children_unroll_all();
         let def = self.take_child().1.view_mappings();
         let diff = self.view_mappings() - self.view_mappings_take_child_spec();
@@ -181,6 +184,12 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
         ensures
             self.as_subtree().inv(),
     {
+        // OwnerSubtree::inv_node() requires children.len() == NR_ENTRIES
+        // but CursorContinuation::inv() now provides children.len() == nr_subpage_per_huge::<C>().
+        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        // la_inv requires tree_level < INC_LEVELS - 1; inv gives tree_level < C::NR_LEVELS().
+        // C::lemma_paging_consts_requirements gives C::NR_LEVELS() <= NR_LEVELS = INC_LEVELS - 1.
+        C::lemma_paging_consts_requirements();
         self.inv_children_unroll_all();
     }
 
