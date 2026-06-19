@@ -14,7 +14,7 @@ use vstd_extra::ownership::*;
 use vstd_extra::prelude::TreeNodeValue;
 
 use crate::mm::{
-    MAX_NR_LEVELS, Paddr, PagingLevel, Vaddr, page_size,
+    MAX_NR_LEVELS, Paddr, PagingConstsTrait, PagingLevel, Vaddr, page_size,
     page_table::{EntryOwner, EntryOwnerKind},
 };
 
@@ -101,18 +101,6 @@ pub open spec fn vaddr_at(path: TreePath<NR_ENTRIES>, leading_bits: int) -> usiz
 pub open spec fn vaddr_of<C: PageTableConfig>(path: TreePath<NR_ENTRIES>) -> usize {
     vaddr_at(path, C::LEADING_BITS_spec() as int)
 }
-
-/// Runtime bound on `LEADING_BITS_spec`: every valid config uses at most the
-/// 16 high bits.
-///
-/// Axiomatized because the trait doesn't enforce it structurally — the two
-/// configs in this codebase (`UserPtConfig` with `0` and `KernelPtConfig`
-/// with `0xffff`) both satisfy it, and any future config that wants the
-/// `vaddr_of` / `Mapping` arithmetic to work without wrap must too.
-pub axiom fn axiom_leading_bits_bounded<C: PageTableConfig>()
-    ensures
-        C::LEADING_BITS_spec() < 0x1_0000_usize,
-;
 
 /// `vaddr(path) < 2^48` for every valid path: each term in the positional
 /// sum is `i_k * 2^(12 + 9·k)` with `i_k < 512 = 2^9`, so the sum is
@@ -229,7 +217,7 @@ pub proof fn lemma_vaddr_of_eq_int<C: PageTableConfig>(path: TreePath<NR_ENTRIES
         vaddr_of::<C>(path) as int == vaddr(path) as int + C::LEADING_BITS_spec() as int
             * 0x1_0000_0000_0000int,
 {
-    axiom_leading_bits_bounded::<C>();
+    C::lemma_page_table_config_constant_requirements();
     lemma_vaddr_strict_bound(path);
     let lb = C::LEADING_BITS_spec() as int;
     let v = vaddr(path) as int;
@@ -1475,7 +1463,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             ;
             // Bridge `vaddr_of(path) as int == vaddr(path) + LB * 2^48`.
             lemma_vaddr_of_eq_int::<C>(path);
-            axiom_leading_bits_bounded::<C>();
+            C::lemma_page_table_config_constant_requirements();
             lemma_vaddr_strict_bound(path);
             let lb = C::LEADING_BITS_spec() as int;
             vstd::arithmetic::power2::lemma2_to64();

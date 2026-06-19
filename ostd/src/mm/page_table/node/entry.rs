@@ -965,10 +965,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 new_owner.value.node().metaregion_sound_node(*regions),
         {
             proof {
-                C::axiom_nr_subpage_per_huge_eq_nr_entries();
-            }
-
-            proof {
+                C::lemma_page_table_config_constant_requirements();
+                C::lemma_paging_consts_properties();
                 // Prove required facts while we still have new_owner.value.node available.
                 let ghost the_node = new_owner.value.node();
                 assert(new_owner.children[i as int].unwrap().value.match_pte(

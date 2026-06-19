@@ -1620,7 +1620,7 @@ unsafe impl PageTableConfig for UserPtConfig {
 
     type C = PagingConsts;
 
-    proof fn lemma_top_level_index_range_bounds() {
+    proof fn lemma_page_table_config_constant_requirements() {
         use crate::mm::nr_subpage_per_huge;
         use crate::mm::page_table::{nr_pte_index_bits, pte_index_bit_offset_spec};
         use vstd::arithmetic::power2::{lemma2_to64, lemma2_to64_rest, lemma_pow2_adds, pow2};
@@ -1633,20 +1633,7 @@ unsafe impl PageTableConfig for UserPtConfig {
         lemma_usize_pow2_ilog2(12);
         lemma_usize_pow2_ilog2(9);
         lemma_pow2_adds(9, 39);
-    }
-
-    proof fn lemma_leading_bits_only_when_high_half() {
-        use crate::mm::page_table::pte_index_bit_offset_spec;
-        use vstd::arithmetic::power2::{lemma_pow2_pos, pow2};
-
-        Self::lemma_top_level_index_range_bounds();
         assert(Self::LEADING_BITS_spec() == 0usize);
-        assert(Self::TOP_LEVEL_INDEX_RANGE_spec().start == 0_usize);
-        let numerator = (Self::TOP_LEVEL_INDEX_RANGE_spec().start as int) * (pow2(
-            pte_index_bit_offset_spec::<Self::C>(Self::C::NR_LEVELS()) as nat,
-        ) as int);
-        let denominator = pow2((Self::C::ADDRESS_WIDTH() - 1) as nat) as int;
-        lemma_pow2_pos((Self::C::ADDRESS_WIDTH() - 1) as nat);
     }
 
     type Item = MappedItem;
@@ -1675,13 +1662,12 @@ unsafe impl PageTableConfig for UserPtConfig {
         MappedItem { frame, prop }
     }
 
-    axiom fn axiom_nr_subpage_per_huge_eq_nr_entries();
-
     axiom fn axiom_pte_size_eq_size_of();
 
-    axiom fn axiom_pte_walk_fills_page();
-
-    axiom fn axiom_top_level_index_range_within_nr_entries();
+    proof fn lemma_pte_walk_fills_page() {
+        Self::lemma_page_table_config_constant_requirements();
+        Self::axiom_pte_size_eq_size_of();
+    }
 
     axiom fn axiom_pte_align_divides_size();
 
