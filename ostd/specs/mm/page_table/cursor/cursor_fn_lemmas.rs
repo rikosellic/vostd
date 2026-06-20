@@ -153,6 +153,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         };
     }
 
+    #[verifier::spinoff_prover]
     pub proof fn map_branch_none_inv_holds(self, owner0: Self)
         requires
             owner0.inv(),
@@ -184,7 +185,130 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     {
         let L = self.level as int;
         assert(self.continuations.contains_key(L - 1));
-        admit();
+        // Most CursorOwner::inv() clauses depend only on fields preserved by
+        // the preconditions (va, level, guard_level, prefix, popped_too_high,
+        // and continuations at i >= level), plus the explicitly-given
+        // well-formedness of self.continuations[L-1]. We discharge the
+        // continuation quantifiers by splitting on i == L - 1 vs i > L - 1.
+        let s_bot = self.continuations[L - 1];
+        let o_bot = owner0.continuations[L - 1];
+
+        // Per-continuation invariant block (lines 765-773 of CursorOwner::inv).
+        assert forall|i: int|
+            #![trigger self.continuations.contains_key(i)]
+            self.level - 1 <= i < C::NR_LEVELS() implies {
+            &&& self.continuations.contains_key(i)
+            &&& self.continuations[i].inv()
+            &&& self.continuations[i].level() == i + 1
+            &&& self.continuations[i].entry_own.parent_level == i + 2
+            &&& self.in_locked_range() ==> self.va.index[i] == self.continuations[i].idx
+        } by {
+            assert(owner0.continuations.contains_key(i)) by {
+                owner0.inv_continuation(i);
+            };
+            assert(self.continuations.contains_key(i));
+            if i == L - 1 {
+                // From preconditions: self.continuations[L-1].inv() and
+                // entry_own.parent_level == owner0's, which is L + 1 = i + 2.
+                owner0.inv_continuation(L - 1);
+                assert(o_bot.entry_own.parent_level == L + 1);
+                assert(s_bot.entry_own.parent_level == L + 1);
+                // level() == entry_own.node().level == parent_level - 1 (from EntryOwner::inv_base
+                // since s_bot.entry_own.is_node() via s_bot.inv()).
+                assert(s_bot.entry_own.is_node());
+                assert(s_bot.entry_own.parent_level == s_bot.entry_own.node().level + 1);
+                assert(s_bot.level() == L);
+                assert(self.in_locked_range() ==> self.va.index[L - 1] == s_bot.idx);
+            } else {
+                assert(i > L - 1);
+                assert(self.continuations[i] == owner0.continuations[i]);
+                owner0.inv_continuation(i);
+                assert(self.in_locked_range() == owner0.in_locked_range());
+            }
+        };
+
+        // Path / PTE consistency between consecutive continuations (lines 774-792).
+        assert forall|i: int|
+            #![trigger self.continuations[i].path()]
+            self.level - 1 <= i < C::NR_LEVELS() - 1 implies {
+            &&& self.continuations[i].path() == self.continuations[i + 1].path().push_tail(
+                self.continuations[i + 1].idx as usize,
+            )
+            &&& self.continuations[i].entry_own.path.len() == self.continuations[i
+                + 1].entry_own.node().tree_level + 1
+            &&& self.continuations[i].entry_own.match_pte(
+                self.continuations[i
+                    + 1].entry_own.node().children_perm.value()[self.continuations[i
+                    + 1].idx as int],
+                self.continuations[i + 1].entry_own.node().level,
+            )
+            &&& self.continuations[i].entry_own.parent_level == self.continuations[i
+                + 1].entry_own.node().level
+        } by {
+            // For all i in this range, self.continuations[i+1] == owner0.continuations[i+1]
+            // (since i + 1 > L - 1, i.e. i + 1 >= L).
+            assert(self.continuations[i + 1] == owner0.continuations[i + 1]);
+            if i == L - 1 {
+                // Bottom continuation's path equals owner0's (precondition).
+                assert(s_bot.path() == o_bot.path());
+                assert(s_bot.entry_own.parent_level == o_bot.entry_own.parent_level);
+                let parent = self.continuations[i + 1];
+                // From owner0.inv(): the analogous clauses hold for owner0.
+                // The parent continuation is identical (i + 1 >= L).
+                assert(parent == owner0.continuations[i + 1]);
+                let pte = parent.entry_own.node().children_perm.value()[parent.idx as int];
+                let plevel = parent.entry_own.node().level;
+                // owner0 gives: o_bot.entry_own.match_pte(pte, plevel)
+                assert(o_bot.entry_own.match_pte(pte, plevel));
+                // s_bot.inv() ⇒ s_bot.entry_own.is_node() and relate_guard, hence
+                // s_bot.entry_own.node().meta_addr_self() == s_bot.guard.addr()
+                //                                       == o_bot.guard.addr()
+                //                                       == o_bot.entry_own.node().meta_addr_self()
+                assert(s_bot.entry_own.is_node());
+                owner0.inv_continuation(L - 1);
+                assert(o_bot.entry_own.is_node());
+                assert(s_bot.entry_own.node().meta_addr_self()
+                    == s_bot.guard.inner.inner@.ptr.addr());
+                assert(o_bot.entry_own.node().meta_addr_self()
+                    == o_bot.guard.inner.inner@.ptr.addr());
+                assert(s_bot.entry_own.node().meta_addr_self()
+                    == o_bot.entry_own.node().meta_addr_self());
+                // Therefore s_bot.entry_own.match_pte(pte, plevel) holds:
+                // pte properties (paddr alignment, < MAX_PADDR) come from owner0's match_pte;
+                // the kind selection is is_node (matching o_bot's node branch);
+                // and meta_to_frame(meta_addr_self) is identical.
+                assert(s_bot.entry_own.match_pte(pte, plevel));
+                // path.len: path() == entry_own.path, so s_bot.entry_own.path == o_bot.entry_own.path.
+                assert(s_bot.entry_own.path == o_bot.entry_own.path);
+                assert(o_bot.entry_own.path.len() == parent.entry_own.node().tree_level + 1);
+                assert(s_bot.entry_own.path.len() == parent.entry_own.node().tree_level + 1);
+            } else {
+                assert(self.continuations[i] == owner0.continuations[i]);
+            }
+        };
+
+        // Guard address distinctness (lines 793-798).
+        assert forall|i: int, j: int|
+            #![trigger self.continuations[i].guard, self.continuations[j].guard]
+            self.level - 1 <= i < j < C::NR_LEVELS() implies {
+            self.continuations[i].guard.inner.inner@.ptr.addr()
+                != self.continuations[j].guard.inner.inner@.ptr.addr()
+        } by {
+            // Owner0 has the distinctness; substitute preserved guards.
+            let s_i_addr = self.continuations[i].guard.inner.inner@.ptr.addr();
+            let s_j_addr = self.continuations[j].guard.inner.inner@.ptr.addr();
+            let o_i_addr = owner0.continuations[i].guard.inner.inner@.ptr.addr();
+            let o_j_addr = owner0.continuations[j].guard.inner.inner@.ptr.addr();
+            if i == L - 1 {
+                assert(s_i_addr == o_i_addr);
+                assert(self.continuations[j] == owner0.continuations[j]);
+                assert(s_j_addr == o_j_addr);
+            } else {
+                assert(self.continuations[i] == owner0.continuations[i]);
+                assert(self.continuations[j] == owner0.continuations[j]);
+            }
+            assert(o_i_addr != o_j_addr);
+        };
     }
 
     /// After alloc_if_none (absent->node), `view_mappings` is unchanged (both contribute zero mappings).

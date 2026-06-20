@@ -250,4 +250,22 @@ pub proof fn lemma_page_size_divides<C: PagingConstsTrait>(l1: PagingLevel, l2: 
     }
 }
 
+pub proof fn lemma_page_size_sum_no_overflow<C: PagingConstsTrait>(level: PagingLevel)
+    requires
+        1 <= level <= C::NR_LEVELS(),
+    ensures
+        page_size::<C>(level) as int + page_size::<C>((level + 1) as PagingLevel) as int - 1
+            < usize::MAX as int,
+{
+    C::lemma_paging_consts_properties();
+    crate::specs::arch::lemma_page_size_values::<C>();
+    lemma_page_size_monotone::<C>(level, (level + 1) as PagingLevel);
+    lemma_page_size_monotone::<C>((level + 1) as PagingLevel, 5 as PagingLevel);
+    // page_size(5) == 0x1_0000_0000_0000 == 2^48
+    // sum <= 2 * 2^48 = 2^49 < 2^64 - 1
+    assert(page_size::<C>(5) as int == 0x1_0000_0000_0000int);
+    assert(page_size::<C>((level + 1) as PagingLevel) as int <= 0x1_0000_0000_0000int);
+    assert(page_size::<C>(level) as int <= 0x1_0000_0000_0000int);
+}
+
 } // verus!

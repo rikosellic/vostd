@@ -171,7 +171,11 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.level > 1,
     {
-        admit();
+        let i = self.level as int - 1;
+        self.inv_continuation(i);
+        let cont = self.continuations[i];
+        let idx = cont.idx as int;
+        cont.inv_children_rel_unroll(idx);
         self.cur_subtree_inv();
     }
 
@@ -217,7 +221,46 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             >();
             self.va.align_down_concrete(1);
             // cur_va is PAGE_SIZE-aligned and cur_va < end, so cur_va + PAGE_SIZE <= end <= usize::MAX.
-            assume(self.va.to_vaddr() + page_size::<C>(1 as PagingLevel) <= usize::MAX);
+            // page_size(1) == PAGE_SIZE (from lemma_page_size_spec_level1 above).
+            // Both cur_va and end are PAGE_SIZE-aligned, and cur_va < end,
+            // so cur_va + PAGE_SIZE <= end <= usize::MAX.
+            assert(page_size::<C>(1 as PagingLevel) == PAGE_SIZE);
+            assert(cur_va as nat % PAGE_SIZE as nat == 0);
+            assert(end as nat % PAGE_SIZE as nat == 0);
+            assert(cur_va < end);
+            assert(PAGE_SIZE > 0) by {
+                C::lemma_paging_consts_requirements();
+            };
+            assert(self.va.to_vaddr() + page_size::<C>(1 as PagingLevel) <= usize::MAX) by {
+                // cur_va == self.va.to_vaddr(), both aligned to PAGE_SIZE, cur_va < end
+                // so cur_va + PAGE_SIZE <= end (next aligned value)
+                vstd::arithmetic::div_mod::lemma_fundamental_div_mod(
+                    cur_va as int,
+                    PAGE_SIZE as int,
+                );
+                vstd::arithmetic::div_mod::lemma_fundamental_div_mod(end as int, PAGE_SIZE as int);
+                let q_cur = cur_va as int / PAGE_SIZE as int;
+                let q_end = end as int / PAGE_SIZE as int;
+                vstd::arithmetic::div_mod::lemma_div_is_ordered(
+                    cur_va as int,
+                    end as int - 1,
+                    PAGE_SIZE as int,
+                );
+                assert(q_cur < q_end) by (nonlinear_arith)
+                    requires
+                        cur_va as int == q_cur * PAGE_SIZE as int,
+                        end as int == q_end * PAGE_SIZE as int,
+                        cur_va < end,
+                        PAGE_SIZE > 0usize,
+                ;
+                assert(cur_va as int + PAGE_SIZE as int <= end as int) by (nonlinear_arith)
+                    requires
+                        cur_va as int == q_cur * PAGE_SIZE as int,
+                        end as int == q_end * PAGE_SIZE as int,
+                        q_cur < q_end,
+                        PAGE_SIZE > 0usize,
+                ;
+            };
             self.va.aligned_align_up_advances(1);
             // align_up(1).to_vaddr() == self.va.to_vaddr() + PAGE_SIZE.
         }

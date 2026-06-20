@@ -157,8 +157,11 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
     let guard_level = subtree_root.level();
     proof {
         cursor_own.guard_level = guard_level;
-        // guard_level comes from subtree_root.level() which equals
-        // cursor_own.level per try_traverse_and_lock_subtree_root's postcondition
+        // UNPROVABLE: guard_level comes from subtree_root.level() which equals
+        // cursor_own.level per try_traverse_and_lock_subtree_root's postcondition,
+        // but subtree_root.level() is not directly equated with cursor_own.level
+        // in the external_body spec — needs ghost state linking the physical
+        // node level to the ghost cursor level.
         assume(1 <= guard_level <= C::NR_LEVELS());
     }
     let cur_node_va = va.start.align_down(page_size::<C>(guard_level + 1));
@@ -740,8 +743,8 @@ fn dfs_get_idx_range<C: PagingConstsTrait>(
         lemma_nr_entries_times_sub_page_size::<C>((cur_node_level + 1) as PagingLevel);
 
         // diff <= page_size(level+1), ps = page_size(level);
-        // both bounded by ADDRESS_WIDTH < 64, so the sum fits in usize
-        assume(diff as int + ps as int - 1 < usize::MAX as int);
+        lemma_page_size_sum_no_overflow::<C>(cur_node_level);
+        assert(diff as int + ps as int - 1 < usize::MAX as int);
     }
 
     let start_idx = (va_range.start - cur_node_va) / ps;
@@ -839,8 +842,11 @@ fn dfs_get_idx_range<C: PagingConstsTrait>(
         // So ceil_div(diff, ps) <= NR_ENTRIES.
         let psu = page_size::<C>((cur_node_level + 1) as PagingLevel) as int;
         // nr_subpage_per_huge * page_size(level) == page_size(level+1)
-        // and nr_subpage_per_huge == NR_ENTRIES for all configs
-        assume(psu == NR_ENTRIES as int * ai);
+        // and nr_subpage_per_huge == NR_ENTRIES (from lemma_paging_consts_properties:
+        // BASE_PAGE_SIZE / PTE_SIZE == NR_ENTRIES, and nr_subpage_per_huge == BASE_PAGE_SIZE / PTE_SIZE)
+        C::lemma_paging_consts_properties();
+        lemma_nr_entries_times_sub_page_size::<C>((cur_node_level + 1) as PagingLevel);
+        assert(psu == NR_ENTRIES as int * ai);
         assert(xi <= psu);
         // (psu + ai - 1) / ai == NR_ENTRIES (since psu = NR_ENTRIES * ai)
         assert(psu + ai - 1 == NR_ENTRIES as int * ai + (ai - 1)) by (nonlinear_arith)

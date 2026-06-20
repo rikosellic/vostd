@@ -1307,7 +1307,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
     /// Proved by case analysis on `path.len() ∈ {0, 1, 2, 3, 4}`, unrolling
     /// `rec_vaddr` and using concrete `pow2` values.
     #[verifier::rlimit(400)]
-    proof fn lemma_vaddr_path_alignment_and_bound(path: TreePath<NR_ENTRIES>)
+    pub proof fn lemma_vaddr_path_alignment_and_bound(path: TreePath<NR_ENTRIES>)
         requires
             path.inv(),
             path.len() <= INC_LEVELS - 1,

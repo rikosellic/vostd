@@ -1266,13 +1266,21 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     {
         C::lemma_paging_consts_requirements();
         assert(self.va.index.contains_key(self.level - 2));
-        assume((self.va.index[self.level - 2] as usize) < nr_subpage_per_huge::<C>());
+        assert(self.va.inv());
+        assert(0 <= self.level - 2);
+        assert(self.level - 2 < C::NR_LEVELS());
+        assert(0 <= self.va.index[self.level - 2] < nr_subpage_per_huge::<C>());
+        assert((self.va.index[self.level - 2] as usize) < nr_subpage_per_huge::<C>());
 
         let ghost self0 = *self;
+        self.inv_continuation(self.level - 1);
+        assert(self.continuations[self.level - 1].all_some());
+        assert(self.continuations[self.level - 1].inv());
         let tracked mut cont = self.continuations.tracked_remove(self.level - 1);
         let ghost cont0 = cont;
-        assume(cont.all_some());
-        assume(cont.idx < nr_subpage_per_huge::<C>());
+        assert(cont == self0.continuations[self0.level - 1]);
+        assert(cont.all_some());
+        assert(cont.idx < nr_subpage_per_huge::<C>());
         let tracked child = cont.tracked_make_cont(self.va.index[self.level - 2] as usize, guard);
 
         assert((child, cont) == cont0.make_cont(self.va.index[self.level - 2] as usize, guard));
@@ -1926,7 +1934,20 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             let popped = self.pop_level_owner().0;
             assert(self.move_forward_owner_spec() == popped.move_forward_owner_spec());
             if k + 1 < nr_subpage_per_huge::<C>() {
-                assume(popped.index() == k);
+                self.inv_continuation(self.level as int);
+                assert(self.va.index[self.level as int]
+                    == self.continuations[self.level as int].idx);
+                assert(popped.continuations[self.level as int]
+                    == self.continuations[self.level as int].restore(
+                    self.continuations[self.level - 1],
+                ).0);
+                assert(popped.continuations[self.level as int].idx
+                    == self.continuations[self.level as int].idx);
+                assert(popped.level == (self.level + 1) as u8);
+                assert(popped.continuations[popped.level - 1]
+                    == popped.continuations[self.level as int]);
+                assert(popped.index() == self.continuations[self.level as int].idx);
+                assert(popped.index() == k);
                 assert(popped.move_forward_owner_spec() == popped.inc_index().zero_below_level());
                 popped.inc_and_zero_increases_va();
             } else {
@@ -2002,7 +2023,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             Self::max_steps_subtree_positive(lp1);
 
             // Bookkeeping (mirrors the main lemma at lines 1683-1695):
-            assume(self.continuations[self.level - 1].idx + 1 == nr_subpage_per_huge::<C>());
+            self.inv_continuation(self.level - 1);
+            assert(self.index() == self.continuations[self.level - 1].idx);
+            assert(self.continuations[self.level - 1].idx + 1 == nr_subpage_per_huge::<C>());
             assert((nr_subpage_per_huge::<C>() - self.continuations[self.level - 1].idx - 1) as nat
                 == 0nat);
             assert(Self::max_steps_subtree(l) * 0nat == 0) by (nonlinear_arith);
@@ -2097,7 +2120,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             popped.max_steps_partial_eq(self, lp1);
             Self::max_steps_subtree_positive(lp1);
 
-            assume(self.continuations[self.level - 1].idx + 1 == nr_subpage_per_huge::<C>());
+            assert(self.index() == self.continuations[self.level - 1].idx);
+            assert(self.continuations[self.level - 1].idx + 1 == nr_subpage_per_huge::<C>());
             assert((nr_subpage_per_huge::<C>() - self.continuations[self.level - 1].idx - 1) as nat
                 == 0nat);
             assert(Self::max_steps_subtree(l) * 0nat == 0) by (nonlinear_arith);
@@ -2343,7 +2367,17 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 lemma_page_size_ge_page_size::<C>(popped.level as PagingLevel);
                 C::lemma_paging_consts_requirements();
                 assert(ps_p > 0nat);
-                assume(popped.va.index[popped.level as int - 1]
+                assert(popped.va == self.va);
+                assert(popped.level as int - 1 == self.level as int);
+                assert(popped.continuations[popped.level as int - 1]
+                    == popped.continuations[self.level as int]);
+                assert(popped.continuations[self.level as int]
+                    == self.continuations[self.level as int].restore(
+                    self.continuations[self.level - 1],
+                ).0);
+                assert(popped.continuations[self.level as int].idx
+                    == self.continuations[self.level as int].idx);
+                assert(popped.va.index[popped.level as int - 1]
                     == popped.continuations[popped.level as int - 1].idx);
                 popped.va.index_increment_adds_page_size(popped.level as int);
                 assert(inc_p_va == popped_va + ps_p);

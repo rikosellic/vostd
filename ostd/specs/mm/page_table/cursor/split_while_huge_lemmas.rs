@@ -1282,10 +1282,50 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_ge_page_size::<C>(
             (level_before_frame - 1) as PagingLevel,
         );
-        assume(s_top > s_low);
-        assume(s_top % s_low == 0);
-        assume(s_top / NR_ENTRIES == s_low);
-        assume(set![4096usize, 2097152, 1073741824].contains(s_low));
+        // s_top = NR_ENTRIES * s_low (from lemma_nr_entries_times_sub_page_size)
+        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_nr_entries_times_sub_page_size::<
+            C,
+        >(level_before_frame as PagingLevel);
+        assert(nr_subpage_per_huge::<C>() as int * s_low as int == s_top as int);
+        // nr_subpage_per_huge == NR_ENTRIES for all configs
+        assert(nr_subpage_per_huge::<C>() == NR_ENTRIES) by {
+            C::lemma_paging_consts_properties();
+        };
+        // s_top == NR_ENTRIES * s_low, and s_low >= BASE_PAGE_SIZE > 0, NR_ENTRIES == 512 > 1
+        // so s_top > s_low
+        assert(s_low > 0) by {
+            assert(s_low >= C::BASE_PAGE_SIZE());
+            assert(C::BASE_PAGE_SIZE() > 0);
+        };
+        assert(s_top > s_low) by (nonlinear_arith)
+            requires
+                NR_ENTRIES as int * s_low as int == s_top as int,
+                NR_ENTRIES == 512usize,
+                s_low > 0usize,
+        ;
+        // s_top % s_low == 0
+        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_divides::<C>(
+            (level_before_frame - 1) as PagingLevel,
+            level_before_frame as PagingLevel,
+        );
+        // s_top / NR_ENTRIES == s_low follows from NR_ENTRIES * s_low == s_top
+        assert(s_top / NR_ENTRIES == s_low) by {
+            vstd::arithmetic::div_mod::lemma_fundamental_div_mod(s_top as int, NR_ENTRIES as int);
+            vstd::arithmetic::div_mod::lemma_div_by_multiple(s_low as int, NR_ENTRIES as int);
+        };
+        // page_size(level_before_frame - 1) is in {4096, 2097152, 1073741824}
+        // because 1 <= level_before_frame - 1 <= NR_LEVELS - 1 == 3
+        crate::specs::arch::lemma_page_size_values::<C>();
+        assert(set![4096usize, 2097152, 1073741824].contains(s_low)) by {
+            if level_before_frame - 1 == 1 {
+                assert(s_low == 4096usize);
+            } else if level_before_frame - 1 == 2 {
+                assert(s_low == 2097152usize);
+            } else {
+                assert(level_before_frame - 1 == 3);
+                assert(s_low == 1073741824usize);
+            }
+        };
 
         // Compose: owner0.split_while_huge(s_low)
         //         == owner0.split_while_huge(s_top).split_while_huge(s_low)

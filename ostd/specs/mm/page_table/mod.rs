@@ -837,6 +837,104 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
         }
     }
 
+    /// `next_index` preserves `inv()` when the leading_bits has room to grow.
+    /// At the top-level wrap case, `leading_bits` is incremented, so we need
+    /// `leading_bits < 0xFFFF` to stay within `< 0x10000` after the bump.
+    #[verifier::spinoff_prover]
+    pub proof fn next_index_preserves_inv(self, level: int)
+        requires
+            self.inv(),
+            1 <= level <= C::NR_LEVELS(),
+            self.leading_bits < 0xFFFF,
+        ensures
+            self.next_index(level).inv(),
+        decreases C::NR_LEVELS() - level,
+    {
+        let index = self.index[level - 1];
+        let next_index = index + 1;
+        if next_index == nr_subpage_per_huge::<C>() && level < C::NR_LEVELS() {
+            let next_va = Self { index: self.index.insert(level - 1, 0), ..self };
+            assert(next_va.inv()) by {
+                assert(next_va.index.dom() == Set::<int>::range(0, C::NR_LEVELS() as int));
+                assert forall|i: int|
+                    #![trigger next_va.index.contains_key(i)]
+                    0 <= i < C::NR_LEVELS() as int implies {
+                    &&& next_va.index.contains_key(i)
+                    &&& 0 <= next_va.index[i]
+                    &&& next_va.index[i] < nr_subpage_per_huge::<C>()
+                } by {
+                    assert(self.index.contains_key(i));
+                }
+            };
+            next_va.next_index_preserves_inv(level + 1);
+        } else if next_index == nr_subpage_per_huge::<C>() && level == C::NR_LEVELS() {
+            // Top-level wrap: index[level-1] = 0, leading_bits incremented.
+            let result = Self {
+                index: self.index.insert(level - 1, 0),
+                leading_bits: self.leading_bits + 1,
+                ..self
+            };
+            assert(result.inv()) by {
+                assert(result.index.dom() == Set::<int>::range(0, C::NR_LEVELS() as int));
+                assert forall|i: int|
+                    #![trigger result.index.contains_key(i)]
+                    0 <= i < C::NR_LEVELS() as int implies {
+                    &&& result.index.contains_key(i)
+                    &&& 0 <= result.index[i]
+                    &&& result.index[i] < nr_subpage_per_huge::<C>()
+                } by {
+                    assert(self.index.contains_key(i));
+                };
+                assert(0 <= result.leading_bits < 0x1_0000int);
+            }
+        } else {
+            // Non-wrap: index[level-1] = next_index < nr_subpage_per_huge, other indices unchanged.
+            let result = Self { index: self.index.insert(level - 1, next_index), ..self };
+            assert(result.inv()) by {
+                assert(result.index.dom() == Set::<int>::range(0, C::NR_LEVELS() as int));
+                assert forall|i: int|
+                    #![trigger result.index.contains_key(i)]
+                    0 <= i < C::NR_LEVELS() as int implies {
+                    &&& result.index.contains_key(i)
+                    &&& 0 <= result.index[i]
+                    &&& result.index[i] < nr_subpage_per_huge::<C>()
+                } by {
+                    assert(self.index.contains_key(i));
+                }
+            }
+        }
+    }
+
+    /// `align_down` preserves the offset (which it sets to 0) and the higher
+    /// indices and `leading_bits`. This is a useful structural fact.
+    pub proof fn align_down_preserves_leading_bits(self, level: int)
+        requires
+            level >= 1,
+        ensures
+            self.align_down(level).leading_bits == self.leading_bits,
+        decreases level,
+    {
+        if level > 1 {
+            self.align_down_preserves_leading_bits(level - 1);
+        }
+    }
+
+    /// `align_up = align_down . next_index`; both preserve `inv()` under
+    /// suitable preconditions, so `align_up(level).inv()` follows.
+    pub proof fn align_up_preserves_inv(self, level: int)
+        requires
+            1 <= level <= C::NR_LEVELS(),
+            self.inv(),
+            self.leading_bits < 0xFFFF,
+        ensures
+            self.align_up(level).inv(),
+    {
+        self.align_down_inv(level);
+        self.align_down_preserves_leading_bits(level);
+        let lower_aligned = self.align_down(level);
+        lower_aligned.next_index_preserves_inv(level);
+    }
+
     pub proof fn next_index_wrap_condition(self, level: int)
         requires
             self.inv(),

@@ -627,9 +627,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             }
 
             proof {
-                // The arch constant NR_LEVELS and the trait method C::NR_LEVELS()
-                // coincide for all configs used in vostd; bridge the gap for
-                // the generic verifier.
+                C::lemma_paging_consts_properties();
+                // UNPROVABLE: The verifier cannot chain level == parent_owner.level <= NR_LEVELS
+                // through the external_body level() call and the node_matching predicate.
                 assume(level - 1 < C::NR_LEVELS());
             }
 

@@ -1173,8 +1173,21 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.cur_subtree_inv();
         assert(self.path_metaregion_sound(regions));
         // cur_entry_owner is a child of the bottom continuation, covered by map_full_tree
-        assume(self.cur_entry_owner().metaregion_sound(regions));
-        assume(self.cur_entry_owner().inv_base());
+        let f_mr = |e: EntryOwner<C>, p: TreePath<NR_ENTRIES>| e.metaregion_sound(regions);
+        let cont = self.continuations[self.level - 1];
+        self.inv_continuation(self.level as int - 1);
+        cont.inv_implies_idx_bound();
+        assert(cont.map_children(f_mr));
+        assert(cont.children.len() == nr_subpage_per_huge::<C>());
+        assert(cont.children[cont.idx as int] is Some);
+        assert(cont.children[cont.idx as int]->0.tree_predicate_map(
+            cont.path().push_tail(cont.idx as usize),
+            f_mr,
+        ));
+        // tree_predicate_map unfolds to include f(self.value, path), which is:
+        assert(self.cur_entry_owner().metaregion_sound(regions));
+        // inv_base follows from cur_subtree().inv() ==> value.inv() ==> inv_base()
+        assert(self.cur_entry_owner().inv_base());
         let entry = self.cur_entry_owner();
         let idx = frame_to_index(pa);
         // Bridge `C::tracked(item)` to `usage != MMIO`: the entry's `is_tracked`
@@ -1312,7 +1325,72 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         // The path-to-vaddr correspondence for generic C follows the same structure as the
         // PagingConsts-specific proof but requires connecting generic ilog2/page_size values.
         self.cur_va_in_subtree_range();
-        assume(vaddr_of::<C>(path) == nat_align_down(self@.cur_va as nat, ps as nat) as Vaddr);
+        // path == cur_subtree().value.path (from precondition + inv_children_rel)
+        cont.inv_children_rel_unroll(cont.idx as int);
+        assert(self.cur_subtree().value.path == cont.path().push_tail(cont.idx as usize));
+        assert(path == self.cur_subtree().value.path);
+        // Bridge vaddr to vaddr_of via leading_bits
+        assert(path.len() <= INC_LEVELS - 1);
+        crate::specs::mm::page_table::owners::lemma_vaddr_of_eq_int::<C>(path);
+        // vaddr_of(path) <= cur_va < vaddr_of(path) + ps
+        assert(vaddr_of::<C>(path) as int <= self@.cur_va as int);
+        assert((self@.cur_va as int) < vaddr_of::<C>(path) as int + ps as int);
+        // vaddr_of(path) is page_size-aligned
+        crate::specs::arch::lemma_page_size_values::<C>();
+        crate::specs::mm::page_table::owners::lemma_vaddr_strict_bound::<C>(path);
+        crate::specs::mm::page_table::owners::lemma_leading_bits_bounded::<C>();
+        C::lemma_page_table_config_constant_requirements();
+        let lb = C::LEADING_BITS_spec() as int;
+        vstd::arithmetic::power2::lemma2_to64();
+        vstd::arithmetic::power2::lemma2_to64_rest();
+        // vaddr(path) % ps == 0 (from tree structure via lemma_vaddr_path_alignment_and_bound)
+        // INC_LEVELS - path.len() == self.level, and 1 <= self.level <= NR_LEVELS
+        assert(1 <= INC_LEVELS - path.len() <= NR_LEVELS);
+        PageTableOwner::<C>::lemma_vaddr_path_alignment_and_bound(path);
+        assert(vaddr::<C>(path) as int % ps as int == 0);
+        // lb * 2^48 % ps == 0 (since ps divides 2^48 for all valid page sizes)
+        assert(lb * 0x1_0000_0000_0000int % ps as int == 0) by (nonlinear_arith)
+            requires
+                lb >= 0,
+                (ps == 0x1000int || ps == 0x20_0000int || ps == 0x4000_0000int || ps
+                    == 0x80_0000_0000int),
+        ;
+        vstd::arithmetic::div_mod::lemma_mod_adds(
+            vaddr::<C>(path) as int,
+            lb * 0x1_0000_0000_0000int,
+            ps as int,
+        );
+        assert(vaddr_of::<C>(path) as int % ps as int == 0);
+        // Now prove nat_align_down(cur_va, ps) == vaddr_of(path) by uniqueness
+        let cur_va_nat = self@.cur_va as nat;
+        let ps_nat = ps as nat;
+        lemma_page_size_ge_page_size::<C>(level);
+        vstd_extra::arithmetic::lemma_nat_align_down_sound(cur_va_nat, ps_nat);
+        assert(vaddr_of::<C>(path) == nat_align_down(cur_va_nat, ps_nat) as Vaddr) by {
+            vstd::arithmetic::div_mod::lemma_fundamental_div_mod(cur_va_nat as int, ps as int);
+            vstd::arithmetic::div_mod::lemma_fundamental_div_mod(
+                vaddr_of::<C>(path) as int,
+                ps as int,
+            );
+            vstd::arithmetic::div_mod::lemma_div_is_ordered(
+                vaddr_of::<C>(path) as int,
+                cur_va_nat as int,
+                ps as int,
+            );
+            let q_cur = cur_va_nat as int / ps as int;
+            let q_path = vaddr_of::<C>(path) as int / ps as int;
+            assert(q_path * ps as int == vaddr_of::<C>(path) as int);
+            vstd::arithmetic::mul::lemma_mul_inequality(q_path, q_cur, ps as int);
+            if q_path < q_cur {
+                vstd::arithmetic::mul::lemma_mul_inequality(q_path + 1, q_cur, ps as int);
+                vstd::arithmetic::mul::lemma_mul_is_distributive_add_other_way(
+                    ps as int,
+                    q_path,
+                    1int,
+                );
+                assert(false);
+            }
+        };
         // Show the singleton equality. view_rec at a frame produces a
         // singleton with va_range built from vaddr_of(path). cur_slot_range
         // produces start..start+ps with start = nat_align_down(cur_va, ps).
@@ -1777,6 +1855,12 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         if top_end >= NR_ENTRIES as int {
             // For configs with TOP_LEVEL_INDEX_RANGE.end == NR_ENTRIES (e.g. KernelPtConfig),
             // the LOCKED_END_BOUND constraint forces prefix.index[NR_LEVELS-1] + 1 < NR_ENTRIES.
+            // UNPROVABLE: requires a config-specific trait method guaranteeing that
+            // LOCKED_END_BOUND_spec() is tight enough to exclude the last top-level index
+            // when TOP_LEVEL_INDEX_RANGE.end == NR_ENTRIES. The default LOCKED_END_BOUND (2^64)
+            // provides no tightening; only KernelPtConfig (with FRAME_METADATA_BASE_VADDR)
+            // actually enters this branch, and its bound suffices, but the generic proof
+            // cannot discharge this without an additional PageTableConfig trait obligation.
             assume(self.continuations[self.level - 1].idx + 1 < NR_ENTRIES);
         }
     }
@@ -2512,10 +2596,14 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             page_size: page_size::<C>(pt_level as PagingLevel),
             property: frame.prop,
         };
-        assume(PageTableOwner(subtree).view_rec(path) == set![m]);
+        assert(path.len() <= INC_LEVELS - 1);
+        assert(subtree.value.is_frame());
+        assert(PageTableOwner(subtree).view_rec(path) == set![m]);
         cont.lemma_view_mappings_intro(m, cont.idx as int);
         self.lemma_view_mappings_intro(m, (self.level - 1) as int);
-        assume(m.va_range.start <= self@.cur_va < m.va_range.end);
+        cont.inv_children_rel_unroll(cont.idx as int);
+        crate::specs::mm::page_table::owners::lemma_vaddr_of_eq_int::<C>(path);
+        assert(m.va_range.start <= self@.cur_va < m.va_range.end);
 
         let filtered = self@.mappings.filter(
             |m2: Mapping| m2.va_range.start <= self@.cur_va < m2.va_range.end,
