@@ -958,8 +958,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.va.index[self.level - 2] as usize,
             guard,
         );
-        assume(child_cont.inv());
-        assume(child_cont.all_some());
 
         let cur_entry = self.cur_entry_owner();
         let cur_entry_addr = cur_entry.node().meta_addr_self();
@@ -1001,6 +999,15 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             }
         };
         self.push_level_owner_preserves_inv(guard);
+
+        // child_cont.inv() and child_cont.all_some() follow from new_owner.inv():
+        // push_level_owner_preserves_inv establishes new_owner.inv(), which includes
+        // new_owner.continuations[new_owner.level - 1].inv() and .all_some().
+        // new_owner.level - 1 == self.level - 2, and new_owner.continuations[self.level - 2] == child_cont.
+        new_owner.inv_continuation(new_owner.level as int - 1);
+        assert(new_owner.continuations[new_owner.level - 1] == child_cont);
+        assert(child_cont.inv());
+        assert(child_cont.all_some());
 
         let excepted_idx = frame_to_index(meta_to_frame(cur_entry_addr));
         assert(regions.slot_owners[excepted_idx].paths_in_pt == set![cur_entry_path]) by {
@@ -2174,7 +2181,22 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 let inc = self.inc_index();
                 inc.zero_preserves_all_but_va();
                 inc.zero_below_level_va();
-                assume(inc.va.inv());
+                // inc.va.inv(): offset, leading_bits unchanged; index domain unchanged;
+                // inc.va.index[level-1] == self.index()+1 < nr_subpage_per_huge.
+                assert(inc.va.inv()) by {
+                    assert(inc.va.offset == self.va.offset);
+                    assert(inc.va.leading_bits == self.va.leading_bits);
+                    assert(inc.va.index.dom() =~= Set::<int>::range(0, C::NR_LEVELS() as int));
+                    assert forall|i: int| 0 <= i < C::NR_LEVELS() implies inc.va.index.contains_key(
+                        i,
+                    ) && 0 <= #[trigger] inc.va.index[i] && inc.va.index[i] < nr_subpage_per_huge::<
+                        C,
+                    >() by {
+                        if i != self.level as int - 1 {
+                            assert(inc.va.index[i] == self.va.index[i]);
+                        }
+                    };
+                };
                 inc.va.align_down_concrete(self.level as int);
                 let ps = page_size::<C>(self.level as PagingLevel) as nat;
                 let self_va = self.va.to_vaddr() as nat;
@@ -2218,6 +2240,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             inc.zero_preserves_all_but_va();
             inc.zero_below_level_va();
             assert(inc.va.inv()) by {
+                assert(inc.va.offset == self.va.offset);
+                assert(inc.va.leading_bits == self.va.leading_bits);
+                assert(inc.va.index.dom() =~= Set::<int>::range(0, C::NR_LEVELS() as int));
                 assert forall|i: int| 0 <= i < C::NR_LEVELS() implies inc.va.index.contains_key(i)
                     && 0 <= #[trigger] inc.va.index[i] && inc.va.index[i] < nr_subpage_per_huge::<
                     C,
@@ -2227,7 +2252,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                     }
                 };
             };
-            assume(inc.va.inv());
             inc.va.align_down_concrete(self.level as int);
             let ps = page_size::<C>(self.level as PagingLevel) as nat;
             let self_va = self.va.to_vaddr() as nat;
@@ -2266,10 +2290,52 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             if !popped.popped_too_high {
                 popped.move_forward_va_is_align_up();
             } else {
+                // popped_too_high: popped.level == self.guard_level (one above guard).
+                // From cursor inv: self.level < self.guard_level (returned from first branch),
+                // so self.level == self.guard_level - 1.
+                // Then prefix.index[guard_level - 1] == 0 (below guard), and
+                // va.index[guard_level - 1] == prefix.index[guard_level - 1] == 0.
+                // popped.index() == self.continuations[self.level].idx == 0, so 0 + 1 < 512.
+                assert(self.level < self.guard_level);
+                assert(popped.level == (self.level + 1) as u8);
+                // popped_too_high means popped.level >= popped.guard_level
+                // i.e. self.level + 1 >= self.guard_level, combined with self.level < self.guard_level:
+                assert(self.level as int == self.guard_level as int - 1);
+                // From cursor inv: prefix.index[i] == 0 for i < guard_level
+                assert(self.prefix.index[self.guard_level as int - 1] == 0);
+                // From cursor inv (!popped_too_high && level < guard_level):
+                // va.index[guard_level - 1] == prefix.index[guard_level - 1]
+                assert(self.va.index[self.guard_level as int - 1]
+                    == self.prefix.index[self.guard_level as int - 1]);
+                // So va.index[self.level] == 0
+                assert(self.va.index[self.level as int] == 0);
+                // in_locked_range: va.index[self.level] == self.continuations[self.level].idx
+                self.inv_continuation(self.level as int);
+                assert(self.va.index[self.level as int]
+                    == self.continuations[self.level as int].idx);
+                // popped.index() == self.continuations[self.level].idx (from pop_level_owner)
+                assert(popped.index() == self.continuations[self.level as int].idx);
+                assert(popped.index() == 0);
+                assert(popped.index() + 1 < nr_subpage_per_huge::<C>());
+
                 let inc_p = popped.inc_index();
                 inc_p.zero_preserves_all_but_va();
                 inc_p.zero_below_level_va();
-                assume(inc_p.va.inv());
+                // inc_p.va.inv(): offset, leading_bits unchanged; index domain unchanged;
+                // inc_p.va.index[popped.level-1] == popped.index()+1 < nr_subpage_per_huge.
+                assert(inc_p.va.inv()) by {
+                    assert(inc_p.va.offset == popped.va.offset);
+                    assert(inc_p.va.leading_bits == popped.va.leading_bits);
+                    assert(inc_p.va.index.dom() =~= Set::<int>::range(0, C::NR_LEVELS() as int));
+                    assert forall|i: int|
+                        0 <= i < C::NR_LEVELS() implies inc_p.va.index.contains_key(i) && 0
+                        <= #[trigger] inc_p.va.index[i] && inc_p.va.index[i]
+                        < nr_subpage_per_huge::<C>() by {
+                        if i != popped.level as int - 1 {
+                            assert(inc_p.va.index[i] == popped.va.index[i]);
+                        }
+                    };
+                };
                 inc_p.va.align_down_concrete(popped.level as int);
                 let ps_p = page_size::<C>(popped.level as PagingLevel) as nat;
                 let popped_va = popped.va.to_vaddr() as nat;

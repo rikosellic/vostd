@@ -239,8 +239,12 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         // TreePath<NR_ENTRIES> push_tail requires val < NR_ENTRIES;
         // inv now provides idx < nr_subpage_per_huge::<C>().
         C::lemma_paging_consts_properties();
+        cont.inv_implies_path_inv();
+        cont.inv_children_rel_unroll(cont.idx as int);
         cont.path().push_tail_property_len(cont.idx as usize);
-        assume(path.len() <= INC_LEVELS - 1);
+        // path.len() <= INC_LEVELS - 1:
+        //   cont.tree_level < NR_LEVELS, path.len() == cont.tree_level + 1 <= NR_LEVELS = INC_LEVELS - 1
+        assert(path.len() <= INC_LEVELS - 1);
 
         let ps = page_size::<C>(self.level as PagingLevel);
         let m = Mapping {

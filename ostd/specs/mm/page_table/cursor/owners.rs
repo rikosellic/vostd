@@ -328,6 +328,33 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
         self.idx = (self.idx + 1) as usize;
     }
 
+    /// `cont.inv()` implies `cont.path().inv()`.
+    ///
+    /// Proof chain: `cont.inv()` ⟹ `cont.entry_own.inv()` ⟹
+    /// `cont.entry_own.inv_base()` ⟹ `cont.entry_own.path.inv()`,
+    /// and `cont.path() == cont.entry_own.path`.
+    pub proof fn inv_implies_path_inv(self)
+        requires
+            self.inv(),
+        ensures
+            self.path().inv(),
+    {
+    }
+
+    /// `cont.inv()` implies `0 <= cont.idx < NR_ENTRIES`.
+    ///
+    /// From `cont.inv()`: `0 <= self.idx < nr_subpage_per_huge::<C>()`,
+    /// and `nr_subpage_per_huge::<C>() == NR_ENTRIES` by
+    /// `lemma_paging_consts_properties`.
+    pub proof fn inv_implies_idx_bound(self)
+        requires
+            self.inv(),
+        ensures
+            0 <= self.idx < NR_ENTRIES,
+    {
+        C::lemma_paging_consts_properties();
+    }
+
     pub open spec fn node_locked(self, guards: Guards<'rcu>) -> bool {
         guards.lock_held(self.guard.inner.inner@.ptr.addr())
     }
@@ -1278,8 +1305,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let cont = self.continuations[self.level as int - 1];
 
         self.inv_continuation(self.level as int - 1);
-        assume(cont.path().inv());
-        assume(0 <= cont.idx < NR_ENTRIES);
+        cont.inv_implies_path_inv();
+        cont.inv_implies_idx_bound();
         cont.path().push_tail_property_len(cont.idx as usize);
 
         // The path-to-vaddr correspondence for generic C follows the same structure as the
@@ -2382,7 +2409,15 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let cur_va = self.cur_va();
         let cur_subtree = self.cur_subtree();
         let cur_path = cur_subtree.value.path;
-        assume(cur_path.len() <= INC_LEVELS - 1);
+        // cur_path.len() <= INC_LEVELS - 1:
+        //   cont.tree_level < NR_LEVELS, cur_path.len() == cont.tree_level + 1 <= NR_LEVELS = INC_LEVELS - 1
+        C::lemma_paging_consts_properties();
+        self.inv_continuation(self.level as int - 1);
+        let cont = self.continuations[self.level - 1];
+        cont.inv_children_rel_unroll(cont.idx as int);
+        cont.inv_implies_path_inv();
+        cont.path().push_tail_property_len(cont.idx as usize);
+        assert(cur_path.len() <= INC_LEVELS - 1);
         PageTableOwner(cur_subtree).view_rec_absent_empty(cur_path);
 
         assert forall|m: Mapping| self.view_mappings().contains(m) implies !(m.va_range.start
@@ -2461,8 +2496,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let cont = self.continuations[self.level - 1];
 
         self.inv_continuation(self.level as int - 1);
-        assume(cont.path().inv());
-        assume(0 <= cont.idx < NR_ENTRIES);
+        cont.inv_implies_path_inv();
+        cont.inv_implies_idx_bound();
         cont.path().push_tail_property_len(cont.idx as usize);
 
         let m = Mapping {

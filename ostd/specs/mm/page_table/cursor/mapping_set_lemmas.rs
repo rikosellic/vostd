@@ -358,8 +358,16 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let cur_path = self.cur_subtree().value.path;
         let ps = page_size::<C>(self.level);
         self.inv_continuation(self.level - 1);
-        assume(cur_path.inv());
-        assume(cur_path.len() <= INC_LEVELS - 1);
+        let cont = self.continuations[self.level - 1];
+        // cur_path.inv(): cont.inv() → children inv → cur_subtree().inv() → value.inv() → path.inv()
+        self.cur_subtree_inv();
+        // cur_path.len() <= INC_LEVELS - 1:
+        //   cont.path().len() == cont.tree_level < C::NR_LEVELS() == NR_LEVELS == INC_LEVELS - 1
+        //   cur_path == cont.path().push_tail(cont.idx), so cur_path.len() == cont.tree_level + 1 <= INC_LEVELS - 1
+        cont.inv_implies_path_inv();
+        cont.inv_children_rel_unroll(cont.idx as int);
+        cont.path().push_tail_property_len(cont.idx as usize);
+        assert(cur_path.len() <= INC_LEVELS - 1);
         lemma_vaddr_of_eq_int::<C>(cur_path);
         // Bridge nat_align_down's nat→usize cast (no wrap since
         // nat_align_down(x, _) <= x <= usize::MAX).
@@ -397,7 +405,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         C::lemma_paging_consts_properties();
         self.inv_continuation(lvl);
         let cont = self.continuations[lvl];
-        assume(cont.path().inv());
+        cont.inv_implies_path_inv();
         let child_path = cont.path().push_tail(cont.idx as usize);
         let va_path = self.va.to_path(lvl);
 
@@ -411,36 +419,36 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             } else if lvl == 2 {
                 cont.path().push_tail_property_index(cont.idx as usize);
                 self.inv_continuation(3);
-                assume(self.continuations[3].path().inv());
+                self.continuations[3].inv_implies_path_inv();
                 self.continuations[3].path().push_tail_property_index(
                     self.continuations[3].idx as usize,
                 );
             } else if lvl == 1 {
                 cont.path().push_tail_property_index(cont.idx as usize);
                 self.inv_continuation(2);
-                assume(self.continuations[2].path().inv());
+                self.continuations[2].inv_implies_path_inv();
                 self.continuations[2].path().push_tail_property_index(
                     self.continuations[2].idx as usize,
                 );
                 self.inv_continuation(3);
-                assume(self.continuations[3].path().inv());
+                self.continuations[3].inv_implies_path_inv();
                 self.continuations[3].path().push_tail_property_index(
                     self.continuations[3].idx as usize,
                 );
             } else {
                 cont.path().push_tail_property_index(cont.idx as usize);
                 self.inv_continuation(1);
-                assume(self.continuations[1].path().inv());
+                self.continuations[1].inv_implies_path_inv();
                 self.continuations[1].path().push_tail_property_index(
                     self.continuations[1].idx as usize,
                 );
                 self.inv_continuation(2);
-                assume(self.continuations[2].path().inv());
+                self.continuations[2].inv_implies_path_inv();
                 self.continuations[2].path().push_tail_property_index(
                     self.continuations[2].idx as usize,
                 );
                 self.inv_continuation(3);
-                assume(self.continuations[3].path().inv());
+                self.continuations[3].inv_implies_path_inv();
                 self.continuations[3].path().push_tail_property_index(
                     self.continuations[3].idx as usize,
                 );
@@ -529,7 +537,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.inv_continuation(self.level - 1);
         let cont = self.continuations[self.level - 1];
         let idx = self.index();
-        assume(cont.path().inv());
+        cont.inv_implies_path_inv();
 
         // Establish cont.level() == self.level via case split
         // cur_va is within the child at cont[level-1].idx
@@ -561,7 +569,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         C::lemma_paging_consts_properties();
         self.inv_continuation(i);
         let cont = self.continuations[i];
-        assume(cont.path().inv());
+        cont.inv_implies_path_inv();
 
         // Establish cont.level() == i + 1 via case split
         // cur_va is within the child at cont[i].idx

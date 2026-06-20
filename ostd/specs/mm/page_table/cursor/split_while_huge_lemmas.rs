@@ -1169,9 +1169,13 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.query_mapping_from_subtree(qm);
             let cont = self.continuations[self.level - 1];
             self.inv_continuation(self.level - 1);
-            assume(cont.path().inv());
+            cont.inv_implies_path_inv();
             cont.path().push_tail_property_len(cont.idx as usize);
-            assume(path.len() < INC_LEVELS - 1);
+            // path.len() < INC_LEVELS - 1:
+            //   cont.tree_level == NR_LEVELS - self.level, self.level > 1
+            //   path.len() == cont.tree_level + 1 = NR_LEVELS - self.level + 1 < NR_LEVELS = INC_LEVELS - 1
+            cont.inv_children_rel_unroll(cont.idx as int);
+            assert(path.len() < INC_LEVELS - 1);
             PageTableOwner(subtree).view_rec_node_page_size_bound(path, qm);
         }
     }
@@ -1207,9 +1211,12 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.query_mapping_from_subtree(qm);
             let cont = self.continuations[self.level - 1];
             self.inv_continuation(self.level - 1);
-            assume(cont.path().inv());
+            cont.inv_implies_path_inv();
             cont.path().push_tail_property_len(cont.idx as usize);
-            assume(path.len() <= INC_LEVELS - 1);
+            // path.len() <= INC_LEVELS - 1:
+            //   cont.tree_level < NR_LEVELS, path.len() == cont.tree_level + 1 <= NR_LEVELS = INC_LEVELS - 1
+            cont.inv_children_rel_unroll(cont.idx as int);
+            assert(path.len() <= INC_LEVELS - 1);
             PageTableOwner(subtree).view_rec_page_size_bound(path, qm);
         }
     }
