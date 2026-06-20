@@ -126,7 +126,104 @@ pub proof fn lemma_vaddr_strict_bound<C: PagingConstsTrait>(path: TreePath<NR_EN
     ensures
         (vaddr::<C>(path) as int) < 0x1_0000_0000_0000int,
 {
-    admit();
+    broadcast use TreePath::index_satisfies_elem_inv;
+
+    lemma_page_size_values::<C>();
+    vstd::arithmetic::power2::lemma2_to64();
+    vstd::arithmetic::power2::lemma2_to64_rest();
+
+    if path.len() == 0 {
+        assert(rec_vaddr::<C>(path, 0) == 0);
+    } else if path.len() == 1 {
+        let i0 = path.index(0);
+        lemma_vaddr_make_values::<C>(0, i0);
+        assert(rec_vaddr::<C>(path, 1) == 0);
+        assert(rec_vaddr::<C>(path, 0) == (vaddr_make::<C, NR_LEVELS>(0, i0) + 0) as usize);
+        assert(vaddr::<C>(path) == 0x80_0000_0000usize * i0);
+        assert((0x80_0000_0000usize * i0 as int) < 0x1_0000_0000_0000int) by (nonlinear_arith)
+            requires
+                i0 < 512,
+        ;
+    } else if path.len() == 2 {
+        let i0 = path.index(0);
+        let i1 = path.index(1);
+        lemma_vaddr_make_values::<C>(0, i0);
+        lemma_vaddr_make_values::<C>(1, i1);
+        assert(rec_vaddr::<C>(path, 2) == 0);
+        assert(rec_vaddr::<C>(path, 1) == (vaddr_make::<C, NR_LEVELS>(1, i1) + 0) as usize);
+        assert(rec_vaddr::<C>(path, 0) == (vaddr_make::<C, NR_LEVELS>(0, i0) + vaddr_make::<
+            C,
+            NR_LEVELS,
+        >(1, i1)) as usize);
+        assert(vaddr::<C>(path) as int == (0x80_0000_0000int * (i0 as int) + 0x4000_0000int * (
+        i1 as int)));
+        assert((0x80_0000_0000int * (i0 as int) + 0x4000_0000int * (i1 as int))
+            < 0x1_0000_0000_0000int) by (nonlinear_arith)
+            requires
+                i0 < 512,
+                i1 < 512,
+        ;
+    } else if path.len() == 3 {
+        let i0 = path.index(0);
+        let i1 = path.index(1);
+        let i2 = path.index(2);
+        lemma_vaddr_make_values::<C>(0, i0);
+        lemma_vaddr_make_values::<C>(1, i1);
+        lemma_vaddr_make_values::<C>(2, i2);
+        assert(rec_vaddr::<C>(path, 3) == 0);
+        assert(rec_vaddr::<C>(path, 2) == (vaddr_make::<C, NR_LEVELS>(2, i2) + 0) as usize);
+        assert(rec_vaddr::<C>(path, 1) == (vaddr_make::<C, NR_LEVELS>(1, i1) + vaddr_make::<
+            C,
+            NR_LEVELS,
+        >(2, i2)) as usize);
+        assert(rec_vaddr::<C>(path, 0) == (vaddr_make::<C, NR_LEVELS>(0, i0) + vaddr_make::<
+            C,
+            NR_LEVELS,
+        >(1, i1) + vaddr_make::<C, NR_LEVELS>(2, i2)) as usize);
+        assert(vaddr::<C>(path) as int == (0x80_0000_0000int * (i0 as int) + 0x4000_0000int * (
+        i1 as int) + 0x20_0000int * (i2 as int)));
+        assert((0x80_0000_0000int * (i0 as int) + 0x4000_0000int * (i1 as int) + 0x20_0000int * (
+        i2 as int)) < 0x1_0000_0000_0000int) by (nonlinear_arith)
+            requires
+                i0 < 512,
+                i1 < 512,
+                i2 < 512,
+        ;
+    } else {
+        assert(path.len() == 4);
+        let i0 = path.index(0);
+        let i1 = path.index(1);
+        let i2 = path.index(2);
+        let i3 = path.index(3);
+        lemma_vaddr_make_values::<C>(0, i0);
+        lemma_vaddr_make_values::<C>(1, i1);
+        lemma_vaddr_make_values::<C>(2, i2);
+        lemma_vaddr_make_values::<C>(3, i3);
+        assert(rec_vaddr::<C>(path, 4) == 0);
+        assert(rec_vaddr::<C>(path, 3) == (vaddr_make::<C, NR_LEVELS>(3, i3) + 0) as usize);
+        assert(rec_vaddr::<C>(path, 2) == (vaddr_make::<C, NR_LEVELS>(2, i2) + vaddr_make::<
+            C,
+            NR_LEVELS,
+        >(3, i3)) as usize);
+        assert(rec_vaddr::<C>(path, 1) == (vaddr_make::<C, NR_LEVELS>(1, i1) + vaddr_make::<
+            C,
+            NR_LEVELS,
+        >(2, i2) + vaddr_make::<C, NR_LEVELS>(3, i3)) as usize);
+        assert(rec_vaddr::<C>(path, 0) == (vaddr_make::<C, NR_LEVELS>(0, i0) + vaddr_make::<
+            C,
+            NR_LEVELS,
+        >(1, i1) + vaddr_make::<C, NR_LEVELS>(2, i2) + vaddr_make::<C, NR_LEVELS>(3, i3)) as usize);
+        assert(vaddr::<C>(path) as int == (0x80_0000_0000int * (i0 as int) + 0x4000_0000int * (
+        i1 as int) + 0x20_0000int * (i2 as int) + 0x1000int * (i3 as int)));
+        assert((0x80_0000_0000int * (i0 as int) + 0x4000_0000int * (i1 as int) + 0x20_0000int * (
+        i2 as int) + 0x1000int * (i3 as int)) < 0x1_0000_0000_0000int) by (nonlinear_arith)
+            requires
+                i0 < 512,
+                i1 < 512,
+                i2 < 512,
+                i3 < 512,
+        ;
+    }
 }
 
 /// `vaddr_of::<C>(path)` in `int` equals the unconditional sum — no usize
@@ -729,10 +826,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
         broadcast use TreePath::push_tail_property;
         broadcast use TreePath::index_satisfies_elem_inv;
 
-        assume(page_size::<C>(4) == 0x80_0000_0000usize);
-        assume(page_size::<C>(3) == 0x4000_0000usize);
-        assume(page_size::<C>(2) == 0x20_0000usize);
-        assume(page_size::<C>(1) == 0x1000usize);
+        lemma_page_size_values::<C>();
         vstd::arithmetic::power2::lemma2_to64();
         vstd::arithmetic::power2::lemma2_to64_rest();
         let pt = path.push_tail(i);
@@ -744,7 +838,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             assert(pt.len() == 1);
             assert(rec_vaddr::<C>(pt, 1) == 0);
             assert(rec_vaddr::<C>(pt, 0) == (vaddr_make::<C, NR_LEVELS>(0, i) + 0) as usize);
-            assume(vaddr_make::<C, NR_LEVELS>(0, i) == 0x80_0000_0000usize * i);
+            lemma_vaddr_make_values::<C>(0, i);
             assert(page_size::<C>(4) == 0x80_0000_0000usize);
             assert(0x80_0000_0000usize * (i + 1) <= usize::MAX) by (nonlinear_arith)
                 requires
@@ -754,14 +848,14 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             let i0 = path.index(0);
             assert(rec_vaddr::<C>(path, 1) == 0);
             assert(rec_vaddr::<C>(path, 0) == vaddr_make::<C, NR_LEVELS>(0, i0) as usize);
-            assume(vaddr_make::<C, NR_LEVELS>(0, i0) == 0x80_0000_0000usize * i0);
+            lemma_vaddr_make_values::<C>(0, i0);
             assert(rec_vaddr::<C>(path, 0) == 0x80_0000_0000usize * i0);
             assert(pt.len() == 2);
             assert(pt.index(0) == i0);
             assert(pt.index(1) == i);
             assert(rec_vaddr::<C>(pt, 2) == 0);
             assert(rec_vaddr::<C>(pt, 1) == vaddr_make::<C, NR_LEVELS>(1, i) as usize);
-            assume(vaddr_make::<C, NR_LEVELS>(1, i) == 0x4000_0000usize * i);
+            lemma_vaddr_make_values::<C>(1, i);
             assert(rec_vaddr::<C>(pt, 0) as int == (0x80_0000_0000usize * i0) as int + (
             0x4000_0000usize * i) as int);
             assert(page_size::<C>(3) == 0x4000_0000usize);
@@ -774,9 +868,9 @@ impl<C: PageTableConfig> PageTableOwner<C> {
         } else if path.len() == 2 {
             let i0 = path.index(0);
             let i1 = path.index(1);
-            assume(vaddr_make::<C, NR_LEVELS>(0, i0) == 0x80_0000_0000usize * i0);
-            assume(vaddr_make::<C, NR_LEVELS>(1, i1) == 0x4000_0000usize * i1);
-            assume(vaddr_make::<C, NR_LEVELS>(2, i) == 0x20_0000usize * i);
+            lemma_vaddr_make_values::<C>(0, i0);
+            lemma_vaddr_make_values::<C>(1, i1);
+            lemma_vaddr_make_values::<C>(2, i);
             assert(rec_vaddr::<C>(path, 2) == 0);
             assert(rec_vaddr::<C>(path, 1) == vaddr_make::<C, NR_LEVELS>(1, i1) as usize);
             assert(rec_vaddr::<C>(path, 0) == (vaddr_make::<C, NR_LEVELS>(0, i0) + vaddr_make::<
@@ -810,10 +904,10 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             let i0 = path.index(0);
             let i1 = path.index(1);
             let i2 = path.index(2);
-            assume(vaddr_make::<C, NR_LEVELS>(0, i0) == 0x80_0000_0000usize * i0);
-            assume(vaddr_make::<C, NR_LEVELS>(1, i1) == 0x4000_0000usize * i1);
-            assume(vaddr_make::<C, NR_LEVELS>(2, i2) == 0x20_0000usize * i2);
-            assume(vaddr_make::<C, NR_LEVELS>(3, i) == 0x1000usize * i);
+            lemma_vaddr_make_values::<C>(0, i0);
+            lemma_vaddr_make_values::<C>(1, i1);
+            lemma_vaddr_make_values::<C>(2, i2);
+            lemma_vaddr_make_values::<C>(3, i);
             assert(rec_vaddr::<C>(path, 3) == 0);
             assert(rec_vaddr::<C>(path, 2) == vaddr_make::<C, NR_LEVELS>(2, i2) as usize);
             assert(rec_vaddr::<C>(path, 1) == (vaddr_make::<C, NR_LEVELS>(1, i1) + vaddr_make::<
@@ -876,13 +970,15 @@ impl<C: PageTableConfig> PageTableOwner<C> {
     {
         broadcast use PageTableOwner::group_lemmas;
 
-        assume(page_size::<C>(1) == 0x1000usize);
-        assume(page_size::<C>(2) == 0x20_0000usize);
-        assume(page_size::<C>(3) == 0x4000_0000usize);
-        assume(page_size::<C>(4) == 0x80_0000_0000usize);
-        assume(page_size::<C>(5) == 0x1_0000_0000_0000usize);
+        lemma_page_size_values::<C>();
         if self.0.value.is_frame() {
-            assume(1 <= INC_LEVELS - path.len() <= NR_LEVELS);
+            // From pt_inv -> self.0.inv() -> inv_node() -> self.0.value.inv() -> inv_base()
+            // inv_base() for frame: 1 <= parent_level < C::NR_LEVELS()
+            // parent_level == INC_LEVELS - path.len() (from requires)
+            // C::NR_LEVELS() == NR_LEVELS (from trait)
+            C::lemma_paging_consts_properties();
+            assert(self.0.value.inv_base());
+            assert(1 <= INC_LEVELS - path.len() <= NR_LEVELS);
             Self::lemma_vaddr_path_alignment_and_bound(path);
             let frame = self.0.value.frame();
             let pt_level = (INC_LEVELS - path.len()) as PagingLevel;
@@ -1176,11 +1272,14 @@ impl<C: PageTableConfig> PageTableOwner<C> {
         broadcast use PageTableOwner::group_lemmas;
 
         if self.0.value.is_frame() {
-            assume(page_size::<C>(1) == 4096usize);
-            assume(page_size::<C>(2) == 2097152usize);
-            assume(page_size::<C>(3) == 1073741824usize);
+            lemma_page_size_values::<C>();
             let pt_level = (INC_LEVELS - path.len()) as PagingLevel;
-            assume(pt_level == 1 || pt_level == 2 || pt_level == 3);
+            // From pt_inv -> self.0.inv() -> self.0.value.inv() -> inv_base()
+            // inv_base() for frame: 1 <= parent_level < C::NR_LEVELS() == 4
+            // parent_level == INC_LEVELS - path.len() == pt_level
+            C::lemma_paging_consts_properties();
+            assert(self.0.value.inv_base());
+            assert(pt_level == 1 || pt_level == 2 || pt_level == 3);
             assert(set![4096usize, 2097152usize, 1073741824usize].contains(
                 page_size::<C>(pt_level),
             ));
@@ -1218,10 +1317,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             vaddr::<C>(path) + page_size::<C>((INC_LEVELS - path.len()) as PagingLevel)
                 <= usize::MAX,
     {
-        assume(page_size::<C>(1) == 0x1000usize);
-        assume(page_size::<C>(2) == 0x20_0000usize);
-        assume(page_size::<C>(3) == 0x4000_0000usize);
-        assume(page_size::<C>(4) == 0x80_0000_0000usize);
+        lemma_page_size_values::<C>();
         vstd::arithmetic::power2::lemma2_to64();
         vstd::arithmetic::power2::lemma2_to64_rest();
         broadcast use TreePath::index_satisfies_elem_inv;
@@ -1245,7 +1341,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
                 path,
                 1,
             )) as usize);
-            assume(vaddr_make::<C, NR_LEVELS>(0, i0) == 0x80_0000_0000usize * i0);
+            lemma_vaddr_make_values::<C>(0, i0);
             assert(rec_vaddr::<C>(path, 0) == 0x80_0000_0000usize * i0);
             assert(page_size::<C>(4) == 0x80_0000_0000usize);
             assert((0x80_0000_0000usize * i0) % 0x80_0000_0000 == 0) by (nonlinear_arith);
@@ -1265,8 +1361,8 @@ impl<C: PageTableConfig> PageTableOwner<C> {
                 path,
                 1,
             )) as usize);
-            assume(vaddr_make::<C, NR_LEVELS>(0, i0) == 0x80_0000_0000usize * i0);
-            assume(vaddr_make::<C, NR_LEVELS>(1, i1) == 0x4000_0000usize * i1);
+            lemma_vaddr_make_values::<C>(0, i0);
+            lemma_vaddr_make_values::<C>(1, i1);
             let s = (0x80_0000_0000usize * i0 + 0x4000_0000usize * i1) as int;
             assert(rec_vaddr::<C>(path, 0) == s);
             assert(page_size::<C>(3) == 0x4000_0000usize);
@@ -1297,9 +1393,9 @@ impl<C: PageTableConfig> PageTableOwner<C> {
                 path,
                 1,
             )) as usize);
-            assume(vaddr_make::<C, NR_LEVELS>(0, i0) == 0x80_0000_0000usize * i0);
-            assume(vaddr_make::<C, NR_LEVELS>(1, i1) == 0x4000_0000usize * i1);
-            assume(vaddr_make::<C, NR_LEVELS>(2, i2) == 0x20_0000usize * i2);
+            lemma_vaddr_make_values::<C>(0, i0);
+            lemma_vaddr_make_values::<C>(1, i1);
+            lemma_vaddr_make_values::<C>(2, i2);
             let s = (0x80_0000_0000usize * i0 + 0x4000_0000usize * i1 + 0x20_0000usize * i2) as int;
             assert(rec_vaddr::<C>(path, 0) == s);
             assert(page_size::<C>(2) == 0x20_0000usize);
@@ -1337,10 +1433,10 @@ impl<C: PageTableConfig> PageTableOwner<C> {
                 path,
                 1,
             )) as usize);
-            assume(vaddr_make::<C, NR_LEVELS>(0, i0) == 0x80_0000_0000usize * i0);
-            assume(vaddr_make::<C, NR_LEVELS>(1, i1) == 0x4000_0000usize * i1);
-            assume(vaddr_make::<C, NR_LEVELS>(2, i2) == 0x20_0000usize * i2);
-            assume(vaddr_make::<C, NR_LEVELS>(3, i3) == 0x1000usize * i3);
+            lemma_vaddr_make_values::<C>(0, i0);
+            lemma_vaddr_make_values::<C>(1, i1);
+            lemma_vaddr_make_values::<C>(2, i2);
+            lemma_vaddr_make_values::<C>(3, i3);
             let s = (0x80_0000_0000usize * i0 + 0x4000_0000usize * i1 + 0x20_0000usize * i2
                 + 0x1000usize * i3) as int;
             assert(rec_vaddr::<C>(path, 0) == s);
@@ -1382,13 +1478,15 @@ impl<C: PageTableConfig> PageTableOwner<C> {
         broadcast use PageTableOwner::group_lemmas;
 
         if self.0.value.is_frame() {
-            assume(page_size::<C>(1) == 4096usize);
-            assume(page_size::<C>(2) == 2097152usize);
-            assume(page_size::<C>(3) == 1073741824usize);
-            assume(1 <= INC_LEVELS - path.len() <= NR_LEVELS);
+            lemma_page_size_values::<C>();
+            // From pt_inv -> self.0.inv() -> self.0.value.inv() -> inv_base()
+            // inv_base() for frame: 1 <= parent_level < C::NR_LEVELS() == 4
+            C::lemma_paging_consts_properties();
+            assert(self.0.value.inv_base());
+            assert(1 <= INC_LEVELS - path.len() <= NR_LEVELS);
             let frame = self.0.value.frame();
             let pt_level = (INC_LEVELS - path.len()) as PagingLevel;
-            assume(pt_level == 1 || pt_level == 2 || pt_level == 3);
+            assert(pt_level == 1 || pt_level == 2 || pt_level == 3);
             Self::lemma_vaddr_path_alignment_and_bound(path);
             let m = Mapping {
                 va_range: Range {
@@ -1777,9 +1875,11 @@ impl<C: PageTableConfig> PageTableOwner<C> {
                 path.push_tail(i as usize),
                 m,
             );
-            assume(page_size::<C>((INC_LEVELS - path.len() - 1) as PagingLevel) <= page_size::<C>(
+            C::lemma_paging_consts_properties();
+            page_size_monotonic::<C>(
+                (INC_LEVELS - path.len() - 1) as PagingLevel,
                 (INC_LEVELS - path.len()) as PagingLevel,
-            ));
+            );
         }
     }
 
