@@ -1252,7 +1252,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             ),
     {
         C::lemma_paging_consts_properties();
-        assume(C::BASE_PAGE_SIZE() == PAGE_SIZE);
         owner0.view_preserves_inv();
         owner_before_frame.view_preserves_inv();
         let s_top = page_size::<C>(level_before_frame as PagingLevel);
@@ -1314,7 +1313,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             ).mappings,
     {
         C::lemma_paging_consts_properties();
-        assume(C::BASE_PAGE_SIZE() == PAGE_SIZE);
         let ps = page_size::<C>(self.level as PagingLevel);
         let m = old_view.query_mapping();
         let f = old_view.mappings.filter(

@@ -242,7 +242,10 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         decreases level,
     {
         C::lemma_paging_consts_requirements();
-        assume(nr_subpage_per_huge::<C>() > 0);
+        C::lemma_paging_consts_properties();
+        assert(nr_subpage_per_huge::<C>() > 0) by {
+            crate::mm::lemma_nr_subpage_per_huge_bounded::<C>();
+        };
         if level > 1 {
             Self::max_steps_subtree_positive((level - 1) as usize);
             assert(Self::max_steps_subtree(level) > 0) by (nonlinear_arith)

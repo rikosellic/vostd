@@ -5,7 +5,7 @@ use crate::arch::mm::PagingConsts;
 use crate::mm::PagingConstsTrait;
 use crate::mm::PagingLevel;
 use crate::mm::{KERNEL_VADDR_RANGE, MAX_PADDR, Paddr, Vaddr, nr_subpage_per_huge, page_size};
-use crate::specs::arch::{NR_LEVELS, PAGE_SIZE};
+use crate::specs::arch::{NR_ENTRIES, NR_LEVELS, PAGE_SIZE};
 
 verus! {
 
@@ -21,7 +21,7 @@ pub proof fn lemma_page_size_spec_level1<C: PagingConstsTrait>()
     vstd::arithmetic::power::lemma_pow0(2int);
     // page_size_spec(1) = (PAGE_SIZE * pow2(0)) as usize = PAGE_SIZE
     // Need PAGE_SIZE == C::BASE_PAGE_SIZE() which holds for all configs
-    assume(PAGE_SIZE == C::BASE_PAGE_SIZE());
+    C::lemma_paging_consts_properties();
 }
 
 // ─── VA alignment ────────────────────────────────────────────────────────────
@@ -84,18 +84,33 @@ pub proof fn lemma_page_size_multiple_of_page_size<C: PagingConstsTrait>(level: 
     ensures
         page_size::<C>(level) % C::BASE_PAGE_SIZE() == 0,
 {
-    assume(page_size::<C>(level) % C::BASE_PAGE_SIZE() == 0);
+    C::lemma_paging_consts_properties();
+    // Use concrete values: page_size(1)=0x1000, page_size(2)=0x200000,
+    // page_size(3)=0x40000000, page_size(4)=0x8000000000
+    // All are multiples of BASE_PAGE_SIZE == 0x1000.
+    crate::specs::arch::lemma_page_size_values::<C>();
+    // With NR_LEVELS == 4, level is 1..=4. All page_size values are known and divisible by 4096.
+    if level == 1 {
+        assert(page_size::<C>(1) == 0x1000usize);
+    } else if level == 2 {
+        assert(page_size::<C>(2) == 0x20_0000usize);
+    } else if level == 3 {
+        assert(page_size::<C>(3) == 0x4000_0000usize);
+    } else {
+        assert(level == 4);
+        assert(page_size::<C>(4) == 0x80_0000_0000usize);
+    }
 }
 
 /// For any level in [1, C::NR_LEVELS+1], the page size is at least C::BASE_PAGE_SIZE.
-#[verifier::spinoff_prover]
 pub proof fn lemma_page_size_ge_page_size<C: PagingConstsTrait>(level: PagingLevel)
     requires
         1 <= level <= C::NR_LEVELS() + 1,
     ensures
         page_size::<C>(level) >= C::BASE_PAGE_SIZE(),
 {
-    assume(page_size::<C>(level) >= C::BASE_PAGE_SIZE());
+    C::lemma_paging_consts_properties();
+    crate::specs::arch::lemma_page_size_values::<C>();
 }
 
 /// `page_size` is monotone in the level: a higher level has a larger or equal page size.
@@ -152,8 +167,8 @@ pub proof fn lemma_nr_entries_times_sub_page_size<C: PagingConstsTrait>(level: P
         nr_subpage_per_huge::<C>() as int * page_size::<C>((level - 1) as PagingLevel) as int
             == page_size::<C>(level) as int,
 {
-    assume(nr_subpage_per_huge::<C>() as int * page_size::<C>((level - 1) as PagingLevel) as int
-        == page_size::<C>(level) as int);
+    C::lemma_paging_consts_properties();
+    crate::specs::arch::lemma_page_size_values::<C>();
 }
 
 pub proof fn lemma_split_sub_page_big_j<C: PagingConstsTrait>(
@@ -176,7 +191,13 @@ pub proof fn lemma_split_sub_page_big_j<C: PagingConstsTrait>(
     let big_j_int: int = i as int * sub_pages_per_entry;
     lemma_page_size_ge_page_size::<C>((level - 1) as PagingLevel);
     C::lemma_paging_consts_requirements();
-    assume(sub_pages_per_entry > 0);
+    C::lemma_paging_consts_properties();
+    assert(sub_pages_per_entry > 0) by {
+        vstd::arithmetic::div_mod::lemma_div_non_zero(
+            page_size::<C>((level - 1) as PagingLevel) as int,
+            C::BASE_PAGE_SIZE() as int,
+        );
+    };
     lemma_page_size_div_mul_eq::<C>((level - 1) as PagingLevel);
     lemma_page_size_div_mul_eq::<C>(level);
     lemma_nr_entries_times_sub_page_size::<C>(level);

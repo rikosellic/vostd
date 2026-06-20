@@ -975,9 +975,6 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 C::lemma_nr_subpage_per_huge_eq_nr_entries();
                 C::lemma_page_table_config_constant_requirements();
                 C::lemma_paging_consts_properties();
-                // Bridge: the arch constant PAGE_SIZE equals the trait-level
-                // C::BASE_PAGE_SIZE() for all configs used in vostd.
-                assume(C::BASE_PAGE_SIZE() == PAGE_SIZE);
             }
 
             proof {

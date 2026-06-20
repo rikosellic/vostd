@@ -49,9 +49,8 @@ pub struct AbstractVaddr<C: PagingConstsTrait> {
 
 impl<C: PagingConstsTrait> Inv for AbstractVaddr<C> {
     open spec fn inv(self) -> bool {
-        &&& 0 <= self.offset < nr_subpage_per_huge::<
-            C,
-        >()
+        &&& 0 <= self.offset
+            < C::BASE_PAGE_SIZE()
         // `index` has exactly `[0, NR_LEVELS)` as its domain.
         &&& self.index.dom() =~= Set::<int>::range(0, C::NR_LEVELS() as int)
         &&& forall|i: int|
@@ -87,11 +86,10 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
         ensures
             AbstractVaddr::<C>::from_vaddr(va).inv(),
     {
-        assume(nr_subpage_per_huge::<C>() > 0);
-        assume(C::BASE_PAGE_SIZE() > 0);
-        assume(C::BASE_PAGE_SIZE() <= nr_subpage_per_huge::<C>());
+        C::lemma_paging_consts_properties();
+        crate::mm::lemma_nr_subpage_per_huge_bounded::<C>();
         let abs = AbstractVaddr::<C>::from_vaddr(va);
-        assert(0 <= abs.offset < nr_subpage_per_huge::<C>()) by {
+        assert(0 <= abs.offset < C::BASE_PAGE_SIZE()) by {
             assert(abs.offset == (va % C::BASE_PAGE_SIZE()) as int);
             assert(0 <= va % C::BASE_PAGE_SIZE() < C::BASE_PAGE_SIZE()) by {
                 vstd::arithmetic::div_mod::lemma_mod_bound(va as int, C::BASE_PAGE_SIZE() as int);
@@ -470,7 +468,7 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
     {
         vstd::arithmetic::power2::lemma2_to64();
         vstd::arithmetic::power2::lemma2_to64_rest();
-        assume(page_size::<C>(1) == PAGE_SIZE);
+        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_spec_level1::<C>();
         vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
 
         let ns = node_start;
@@ -782,7 +780,8 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
         ensures
             abs_next_va.index[level - 1] != 0,
     {
-        assume(nr_subpage_per_huge::<C>() > 1);
+        C::lemma_paging_consts_properties();
+        crate::mm::lemma_nr_subpage_per_huge_bounded::<C>();
         abs_va_down.wrapped_index_nonzero(start_level, level);
     }
 
@@ -1264,7 +1263,7 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
 
         assert(page_size::<C>((level + 1) as PagingLevel) >= PAGE_SIZE) by {
             lemma_page_size_ge_page_size::<C>((level + 1) as PagingLevel);
-            assume(C::BASE_PAGE_SIZE() >= PAGE_SIZE);
+            C::lemma_paging_consts_properties();
         };
         lemma_nat_align_down_sound(cur, size as nat);
     }

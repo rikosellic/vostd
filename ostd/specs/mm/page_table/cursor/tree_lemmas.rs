@@ -210,7 +210,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         // cur_va == va (precondition) and cur_va + PAGE_SIZE <= end (from alignment
         // and cur_va < end). Hence cur_entry_fits_range == true, contradicting
         // !cur_entry_fits_range.
-        assume(C::BASE_PAGE_SIZE() == PAGE_SIZE);
+        C::lemma_paging_consts_properties();
         if self.level == 1 {
             crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_spec_level1::<
                 C,
