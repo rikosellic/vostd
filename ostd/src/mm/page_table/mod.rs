@@ -293,7 +293,6 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             ),
     ;
 
-
     // dubious: why is this an axiom
     /// `align_of::<E>()` divides `size_of::<E>()`. True for any sized Rust
     /// type (the alignment divides the size by the layout rules), but

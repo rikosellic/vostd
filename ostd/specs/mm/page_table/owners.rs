@@ -115,7 +115,6 @@ pub proof fn lemma_leading_bits_bounded<C: PageTableConfig>()
     C::lemma_leading_bits_bounded();
 }
 
-
 /// `vaddr(path) < 2^48` for every valid path: each term in the positional
 /// sum is `i_k * 2^(12 + 9·k)` with `i_k < 512 = 2^9`, so the sum is
 /// strictly less than `2^48`.
@@ -189,7 +188,6 @@ pub proof fn page_size_monotonic<C: PagingConstsTrait>(a: PagingLevel, b: Paging
         }
     }
 }
-
 
 /// Sibling paths (same prefix, different last index) have disjoint VA ranges,
 /// separated by at least the child page size.

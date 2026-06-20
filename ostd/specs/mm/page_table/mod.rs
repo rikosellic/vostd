@@ -20,9 +20,9 @@ use vstd_extra::ownership::*;
 
 use core::marker::PhantomData;
 
+use crate::arch::mm::PagingConsts;
 use crate::mm::page_table::PageTableConfig;
 use crate::mm::{PagingConstsTrait, PagingLevel, Vaddr, nr_subpage_per_huge, page_size};
-use crate::arch::mm::PagingConsts;
 use crate::specs::arch::*;
 
 use align_ext::AlignExt;

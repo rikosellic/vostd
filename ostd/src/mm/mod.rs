@@ -213,7 +213,6 @@ pub proof fn lemma_nr_subpage_per_huge_bounded<C: PagingConstsTrait>()
     };
 }
 
-
 /// The maximum virtual address of user space (non inclusive).
 ///
 /// Typical 64-bit systems have at least 48-bit virtual address space.
