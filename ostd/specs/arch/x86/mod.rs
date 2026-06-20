@@ -214,4 +214,148 @@ pub proof fn lemma_page_size_values<C: PagingConstsTrait>()
     vstd::bits::lemma_usize_pow2_no_overflow(48);
 }
 
+/// Arch-specific arithmetic step for `AbstractVaddr::from_vaddr_to_vaddr_roundtrip`.
+/// Proves the 64-bit positional decomposition identity for any 64-bit `va`,
+/// using the x86_64 layout (12-bit offset, 4 × 9-bit indices, 16-bit leading bits).
+pub proof fn lemma_from_vaddr_to_vaddr_roundtrip<C: PagingConstsTrait>(va: crate::mm::Vaddr)
+    ensures
+        crate::specs::mm::page_table::AbstractVaddr::<C>::from_vaddr(va).to_vaddr() == va,
+{
+    use crate::specs::mm::page_table::AbstractVaddr;
+    C::lemma_paging_consts_properties();
+    vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
+    vstd::arithmetic::power2::lemma2_to64();
+    vstd::arithmetic::power2::lemma2_to64_rest();
+    let abs = AbstractVaddr::<C>::from_vaddr(va);
+    assert(abs.to_vaddr_indices(NR_LEVELS as int) == 0);
+    assert(abs.to_vaddr_indices(3) == abs.index[3] * pow2(39nat) as int + abs.to_vaddr_indices(4));
+    assert(abs.to_vaddr_indices(2) == abs.index[2] * pow2(30nat) as int + abs.to_vaddr_indices(3));
+    assert(abs.to_vaddr_indices(1) == abs.index[1] * pow2(21nat) as int + abs.to_vaddr_indices(2));
+    assert(abs.to_vaddr_indices(0) == abs.index[0] * pow2(12nat) as int + abs.to_vaddr_indices(1));
+    assert(va == (va % 4096usize) + ((va / 4096usize) % 512usize) * 4096usize + ((va
+        / 0x20_0000usize) % 512usize) * 0x20_0000usize + ((va / 0x4000_0000usize) % 512usize)
+        * 0x4000_0000usize + ((va / 0x80_0000_0000usize) % 512usize) * 0x80_0000_0000usize + (va
+        / 0x1_0000_0000_0000usize) * 0x1_0000_0000_0000usize) by (bit_vector);
+}
+
+/// Arch-specific arithmetic step for `AbstractVaddr::to_vaddr_from_vaddr_roundtrip`.
+/// Proves that reconstructing a 64-bit `va` from a well-formed `AbstractVaddr`
+/// and extracting its components yields the same `AbstractVaddr`, using the
+/// x86_64 layout (12-bit offset, 4 × 9-bit indices, 16-bit leading bits).
+pub proof fn lemma_to_vaddr_from_vaddr_roundtrip<C: PagingConstsTrait>(
+    abs: crate::specs::mm::page_table::AbstractVaddr<C>,
+)
+    requires
+        abs.inv(),
+    ensures
+        crate::specs::mm::page_table::AbstractVaddr::<C>::from_vaddr(abs.to_vaddr()) == abs,
+{
+    use crate::specs::mm::page_table::AbstractVaddr;
+    C::lemma_paging_consts_properties();
+    vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
+    vstd::arithmetic::power2::lemma2_to64();
+    vstd::arithmetic::power2::lemma2_to64_rest();
+    abs.to_vaddr_bounded();
+    assert(abs.to_vaddr_indices(NR_LEVELS as int) == 0);
+    assert(abs.to_vaddr_indices(3) == abs.index[3] * pow2(39nat) as int + abs.to_vaddr_indices(4));
+    assert(abs.to_vaddr_indices(2) == abs.index[2] * pow2(30nat) as int + abs.to_vaddr_indices(3));
+    assert(abs.to_vaddr_indices(1) == abs.index[1] * pow2(21nat) as int + abs.to_vaddr_indices(2));
+    assert(abs.to_vaddr_indices(0) == abs.index[0] * pow2(12nat) as int + abs.to_vaddr_indices(1));
+
+    assert(abs.index.contains_key(0));
+    assert(abs.index.contains_key(1));
+    assert(abs.index.contains_key(2));
+    assert(abs.index.contains_key(3));
+    let i0 = abs.index[0] as usize;
+    let i1 = abs.index[1] as usize;
+    let i2 = abs.index[2] as usize;
+    let i3 = abs.index[3] as usize;
+    let o = abs.offset as usize;
+    let tb = abs.leading_bits as usize;
+    let va = abs.to_vaddr();
+    assert(i0 < 512usize);
+    assert(i1 < 512usize);
+    assert(i2 < 512usize);
+    assert(i3 < 512usize);
+    assert(va == o + i0 * 4096usize + i1 * 0x20_0000usize + i2 * 0x4000_0000usize + i3
+        * 0x80_0000_0000usize + tb * 0x1_0000_0000_0000usize);
+
+    assert(va % 4096usize == o) by (bit_vector)
+        requires
+            va == o + i0 * 4096usize + i1 * 0x20_0000usize + i2 * 0x4000_0000usize + i3
+                * 0x80_0000_0000usize + tb * 0x1_0000_0000_0000usize,
+            o < 4096usize,
+            i0 < 512usize,
+            i1 < 512usize,
+            i2 < 512usize,
+            i3 < 512usize,
+            tb < 0x1_0000usize,
+    ;
+    assert((va / 4096usize) % 512usize == i0) by (bit_vector)
+        requires
+            va == o + i0 * 4096usize + i1 * 0x20_0000usize + i2 * 0x4000_0000usize + i3
+                * 0x80_0000_0000usize + tb * 0x1_0000_0000_0000usize,
+            o < 4096usize,
+            i0 < 512usize,
+            i1 < 512usize,
+            i2 < 512usize,
+            i3 < 512usize,
+            tb < 0x1_0000usize,
+    ;
+    assert((va / 0x20_0000usize) % 512usize == i1) by (bit_vector)
+        requires
+            va == o + i0 * 4096usize + i1 * 0x20_0000usize + i2 * 0x4000_0000usize + i3
+                * 0x80_0000_0000usize + tb * 0x1_0000_0000_0000usize,
+            o < 4096usize,
+            i0 < 512usize,
+            i1 < 512usize,
+            i2 < 512usize,
+            i3 < 512usize,
+            tb < 0x1_0000usize,
+    ;
+    assert((va / 0x4000_0000usize) % 512usize == i2) by (bit_vector)
+        requires
+            va == o + i0 * 4096usize + i1 * 0x20_0000usize + i2 * 0x4000_0000usize + i3
+                * 0x80_0000_0000usize + tb * 0x1_0000_0000_0000usize,
+            o < 4096usize,
+            i0 < 512usize,
+            i1 < 512usize,
+            i2 < 512usize,
+            i3 < 512usize,
+            tb < 0x1_0000usize,
+    ;
+    assert((va / 0x80_0000_0000usize) % 512usize == i3) by (bit_vector)
+        requires
+            va == o + i0 * 4096usize + i1 * 0x20_0000usize + i2 * 0x4000_0000usize + i3
+                * 0x80_0000_0000usize + tb * 0x1_0000_0000_0000usize,
+            o < 4096usize,
+            i0 < 512usize,
+            i1 < 512usize,
+            i2 < 512usize,
+            i3 < 512usize,
+            tb < 0x1_0000usize,
+    ;
+    assert(va / 0x1_0000_0000_0000usize == tb) by (bit_vector)
+        requires
+            va == o + i0 * 4096usize + i1 * 0x20_0000usize + i2 * 0x4000_0000usize + i3
+                * 0x80_0000_0000usize + tb * 0x1_0000_0000_0000usize,
+            o < 4096usize,
+            i0 < 512usize,
+            i1 < 512usize,
+            i2 < 512usize,
+            i3 < 512usize,
+            tb < 0x1_0000usize,
+    ;
+
+    let back = AbstractVaddr::<C>::from_vaddr(va);
+    assert forall|i: int| 0 <= i < NR_LEVELS implies #[trigger] back.index[i] == abs.index[i] by {
+        if i == 0 {
+        } else if i == 1 {
+        } else if i == 2 {
+        } else if i == 3 {
+        }
+    }
+    assert(back.index == abs.index);
+}
+
 } // verus!
