@@ -448,7 +448,51 @@ impl<C: PageTableConfig> EntryOwner<C> {
                 (self.parent_level - 1) as PagingLevel,
             )) as Paddr) % PAGE_SIZE == 0,
     {
-        admit();
+        let pa = self.frame().mapped_pa;
+        let child_pa = (pa + idx * page_size::<C>((self.parent_level - 1) as PagingLevel)) as Paddr;
+        C::lemma_paging_consts_properties();
+        assert(C::NR_LEVELS() == NR_LEVELS);
+        assert(self.parent_level == 2 || self.parent_level == 3);
+        assert(NR_ENTRIES == 512) by {
+            crate::arch::mm::lemma_nr_subpage_per_huge_eq_nr_entries();
+        };
+        assert(crate::mm::nr_subpage_per_huge::<C>() == 512usize) by {
+            C::lemma_paging_consts_properties();
+        };
+        vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
+        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_spec_level1::<C>();
+        assert(512usize.ilog2() == 9);
+        vstd::arithmetic::power2::lemma2_to64();
+        if self.parent_level == 2 {
+            assert(page_size::<C>(2) == (PAGE_SIZE * pow2((512usize.ilog2() * 1usize) as nat)) as usize);
+            assert(page_size::<C>(2) == 2097152);
+            assert(pa % page_size::<C>(2) == 0);
+            crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_divides::<C>(1, 2);
+            assert(child_pa % page_size::<C>(1) == 0);
+            assert(child_pa + page_size::<C>(1) <= MAX_PADDR) by {
+                assert(idx < 512);
+                assert(idx * 4096 + 4096 <= 2097152);
+                assert(child_pa + page_size::<C>(1) <= pa + page_size::<C>(2));
+            };
+        } else {
+            assert(self.parent_level == 3);
+            assert(page_size::<C>(3) == (PAGE_SIZE * pow2((512usize.ilog2() * 2usize) as nat)) as usize);
+            assert(page_size::<C>(3) == 1073741824);
+            assert(pa % page_size::<C>(3) == 0);
+            crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_va_align_page_size::<C>(pa, 2);
+            assert(child_pa == pa + idx * page_size::<C>(2));
+            vstd::arithmetic::div_mod::lemma_mod_multiples_basic(idx as int, page_size::<C>(2) as int);
+            vstd::arithmetic::div_mod::lemma_add_mod_noop(
+                pa as int,
+                (idx * page_size::<C>(2)) as int,
+                page_size::<C>(2) as int,
+            );
+            assert(child_pa % page_size::<C>(2) == 0);
+            assert(child_pa + page_size::<C>(2) <= MAX_PADDR) by {
+                assert(idx * 2097152 + 2097152 <= 1073741824);
+                assert(child_pa + page_size::<C>(2) <= pa + page_size::<C>(3));
+            };
+        }
     }
 
     /// Helper: sub-page validity is preserved when the only slot that changed is the

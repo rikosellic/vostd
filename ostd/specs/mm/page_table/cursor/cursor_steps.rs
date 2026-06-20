@@ -1558,6 +1558,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.pop_level_owner().0.only_current_locked(guards),
             self.pop_level_owner().0.nodes_locked(guards),
             self.pop_level_owner().0.metaregion_sound(regions),
+            self.pop_level_owner().0.cur_entry_owner().is_node(),
+            self.pop_level_owner().1.inner.inner@.ptr.addr()
+                == self.pop_level_owner().0.cur_entry_owner().node().meta_addr_self(),
     {
         assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
         self.inv_continuation(self.level - 1);
@@ -1648,6 +1651,29 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 }
             };
         };
+
+        // The cur_entry_owner of the popped owner is the child entry we just
+        // restored: new_cont.children[new_cont.idx] == Some(child_node)
+        // where child_node.value == child.entry_own, which is a node
+        // (from child.inv() => child.entry_own.is_node()).
+        assert(child.inv());
+        assert(child.entry_own.is_node());
+        assert(new_cont.idx == cont.idx);
+        assert(new_cont.children[new_cont.idx as int] == Some(child_node));
+        assert(child_node.value == child.entry_own);
+        // new_owner.level == self.level + 1
+        // new_owner.continuations[new_owner.level - 1] == new_cont
+        assert(new_owner.level == (self.level + 1) as u8);
+        assert(new_owner.continuations[new_owner.level as int - 1] == new_cont);
+        assert(new_owner.cur_entry_owner() == child.entry_own);
+        assert(new_owner.cur_entry_owner().is_node());
+        // The guard returned by pop_level_owner is child.guard (from restore).
+        // child.inv() gives relate_guard, so guard.addr == cur_entry_owner().node().meta_addr_self().
+        let (_new_owner, pop_guard) = self.pop_level_owner();
+        assert(pop_guard == child.guard);
+        assert(child.entry_own.node().relate_guard(child.guard));
+        assert(pop_guard.inner.inner@.ptr.addr()
+            == new_owner.cur_entry_owner().node().meta_addr_self());
     }
 
     /// Update va to a new value that shares the same indices at levels >= self.level.

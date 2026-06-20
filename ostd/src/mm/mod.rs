@@ -2,6 +2,8 @@
 //! Virtual memory (VM).
 use crate::specs::arch::PAGE_SIZE;
 use core::fmt::Debug;
+use vstd::arithmetic::div_mod::group_div_basics;
+use vstd::arithmetic::div_mod::lemma_div_non_zero;
 use vstd::arithmetic::power2::*;
 use vstd::prelude::*;
 
@@ -15,6 +17,7 @@ pub(crate) mod dma;
 pub mod frame;
 //pub mod heap;
 pub mod io;
+pub const MAX_NR_LEVELS: usize = 4;
 pub use io::{
     Fallible, FallibleVmRead, FallibleVmWrite, Infallible, PodOnce, VmIo, VmIoOnce, VmReader,
     VmWriter,
@@ -72,7 +75,7 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
     #[verifier::when_used_as_spec(NR_LEVELS_spec)]
     fn NR_LEVELS() -> PagingLevel
         returns
-            Self::NR_LEVELS_spec(),
+            Self::NR_LEVELS(),
     ;
 
     spec fn HIGHEST_TRANSLATION_LEVEL_spec() -> PagingLevel;
@@ -101,7 +104,7 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
     #[verifier::when_used_as_spec(ADDRESS_WIDTH_spec)]
     fn ADDRESS_WIDTH() -> usize
         returns
-            Self::ADDRESS_WIDTH_spec(),
+            Self::ADDRESS_WIDTH(),
     ;
 
     spec fn VA_SIGN_EXT_spec() -> bool;
@@ -124,7 +127,7 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
     ;
 
     /// All configs in vostd use the same value for the per-config
-    /// `NR_LEVELS_spec()` as the architecture-level constant `NR_LEVELS`
+    /// `NR_LEVELS()` as the architecture-level constant `NR_LEVELS`
     /// (= 4 for x86_64). This is *implicit* in the cursor framework:
     /// `CursorOwner::inv()` hardcodes `self.level <= NR_LEVELS` (const)
     /// for cursors over any `C: PagingConstsTrait`, so a config whose
@@ -140,9 +143,27 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
             3 <= Self::NR_LEVELS() <= 4,
             is_pow2(Self::PTE_SIZE() as int),
             0 < Self::PTE_SIZE() <= Self::BASE_PAGE_SIZE(),
+            // FIXME: remove this once we have a more general
+            Self::BASE_PAGE_SIZE() == PAGE_SIZE,
+            Self::NR_LEVELS() == NR_LEVELS,
+            Self::BASE_PAGE_SIZE() / Self::PTE_SIZE() == NR_ENTRIES,
             0 < Self::BASE_PAGE_SIZE().ilog2() + (Self::BASE_PAGE_SIZE() / Self::PTE_SIZE()).ilog2()
                 * Self::NR_LEVELS() <= Self::ADDRESS_WIDTH() <= 64,
     ;
+
+    proof fn lemma_paging_consts_properties()
+        ensures
+            0 < Self::BASE_PAGE_SIZE(),
+            is_pow2(Self::BASE_PAGE_SIZE() as int),
+            Self::NR_LEVELS() > 0,
+            is_pow2(Self::PTE_SIZE() as int),
+            0 < Self::PTE_SIZE() <= Self::BASE_PAGE_SIZE(),
+            Self::BASE_PAGE_SIZE() == PAGE_SIZE,
+            Self::NR_LEVELS() == NR_LEVELS,
+            Self::BASE_PAGE_SIZE() / Self::PTE_SIZE() == NR_ENTRIES,
+    {
+        Self::lemma_paging_consts_requirements();
+    }
 }
 
 pub open spec fn page_size_spec<C: PagingConstsTrait>(level: PagingLevel) -> usize {
@@ -179,6 +200,19 @@ pub fn nr_subpage_per_huge<C: PagingConstsTrait>() -> (res: usize)
     }
     C::BASE_PAGE_SIZE() / C::PTE_SIZE()
 }
+
+pub proof fn lemma_nr_subpage_per_huge_bounded<C: PagingConstsTrait>()
+    ensures
+        0 < nr_subpage_per_huge::<C>() <= C::BASE_PAGE_SIZE(),
+{
+    C::lemma_paging_consts_properties();
+    broadcast use group_div_basics;
+
+    assert(C::BASE_PAGE_SIZE() / C::PTE_SIZE() > 0) by {
+        lemma_div_non_zero(C::BASE_PAGE_SIZE() as int, C::PTE_SIZE() as int);
+    };
+}
+
 
 /// The maximum virtual address of user space (non inclusive).
 ///

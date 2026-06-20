@@ -17,6 +17,7 @@ use vstd_extra::arithmetic::{
     lemma_nat_align_up_sound,
 };
 
+use crate::arch::mm::PagingConsts;
 use crate::mm::nr_subpage_per_huge;
 use crate::mm::page_table::*;
 use crate::mm::{PagingConstsTrait, PagingLevel, Vaddr, page_size};
@@ -334,7 +335,93 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.continuations[j].path().index(self.continuations[i].path().len() as int)
                 == self.continuations[i].idx,
     {
-        admit();
+        C::lemma_paging_consts_properties();
+        assert(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        // Explicitly instantiate continuation invariants for all indices
+        // that the case branches use. inv_continuation(k) requires
+        // self.level - 1 <= k <= C::NR_LEVELS() - 1, which holds for
+        // all k in [j, i] since self.level - 1 <= j < i < C::NR_LEVELS().
+        self.inv_continuation(i);
+        self.inv_continuation(j);
+        // Also instantiate for intermediate indices used in the i==3,j==0
+        // and i==2,j==0 branches (they access continuations[1] and [2]).
+        if j < i - 1 {
+            // There's at least one index between j and i
+            self.inv_continuation(j + 1);
+            if j + 2 < i {
+                self.inv_continuation(j + 2);
+            }
+        }
+        if i == 3 && j == 2 {
+            self.continuations[3].path().push_tail_property_index(
+                self.continuations[3].idx as usize,
+            );
+            self.continuations[3].path().push_tail_property_len(self.continuations[3].idx as usize);
+        } else if i == 3 && j == 1 {
+            let p3 = self.continuations[3].path();
+            let p2 = self.continuations[2].path();
+            let idx3 = self.continuations[3].idx as usize;
+            let idx2 = self.continuations[2].idx as usize;
+            p3.push_tail_property_index(idx3);
+            p3.push_tail_property_len(idx3);
+            p2.push_tail_property_index(idx2);
+            p2.push_tail_property_len(idx2);
+            assert(p3.len() < p2.len());
+            assert(self.continuations[1].path() == p2.push_tail(idx2));
+            assert(p2.push_tail(idx2).index(p3.len() as int) == p2.index(p3.len() as int));
+        } else if i == 3 && j == 0 {
+            let p3 = self.continuations[3].path();
+            let p2 = self.continuations[2].path();
+            let p1 = self.continuations[1].path();
+            let idx3 = self.continuations[3].idx as usize;
+            let idx2 = self.continuations[2].idx as usize;
+            let idx1 = self.continuations[1].idx as usize;
+            p3.push_tail_property_index(idx3);
+            p3.push_tail_property_len(idx3);
+            p2.push_tail_property_index(idx2);
+            p2.push_tail_property_len(idx2);
+            p1.push_tail_property_index(idx1);
+            p1.push_tail_property_len(idx1);
+            assert(p3.len() < p2.len());
+            assert(p3.len() < p1.len());
+            assert(p1.push_tail(idx1).index(p3.len() as int) == p1.index(p3.len() as int));
+            assert(p2.push_tail(idx2).index(p3.len() as int) == p2.index(p3.len() as int));
+        } else if i == 2 && j == 1 {
+            self.continuations[2].path().push_tail_property_index(
+                self.continuations[2].idx as usize,
+            );
+            self.continuations[2].path().push_tail_property_len(self.continuations[2].idx as usize);
+        } else if i == 2 && j == 0 {
+            let p2 = self.continuations[2].path();
+            let p1 = self.continuations[1].path();
+            let idx2 = self.continuations[2].idx as usize;
+            let idx1 = self.continuations[1].idx as usize;
+            p2.push_tail_property_index(idx2);
+            p2.push_tail_property_len(idx2);
+            p1.push_tail_property_index(idx1);
+            p1.push_tail_property_len(idx1);
+            assert(p2.len() < p1.len());
+            assert(self.continuations[0].path() == p1.push_tail(idx1));
+            assert(p1.push_tail(idx1).index(p2.len() as int) == p1.index(p2.len() as int));
+            assert(p1 == p2.push_tail(idx2));
+            assert(p2.push_tail(idx2).index(p2.len() as int) == idx2);
+        } else if i == 1 && j == 0 {
+            self.continuations[1].path().push_tail_property_index(
+                self.continuations[1].idx as usize,
+            );
+            self.continuations[1].path().push_tail_property_len(self.continuations[1].idx as usize);
+        }
+    }
+
+    pub proof fn lemma_page_size_spec_5_eq_pow2_48()
+        ensures
+            page_size::<PagingConsts>(5) == pow2(48nat) as usize,
+    {
+        crate::arch::mm::lemma_nr_subpage_per_huge_eq_nr_entries();
+        vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
+        vstd::arithmetic::power2::lemma2_to64();
+        vstd::arithmetic::power2::lemma2_to64_rest();
+        vstd::arithmetic::power2::lemma_pow2_adds(12nat, 36nat);
     }
 
     pub proof fn jump_not_in_node_level_lt_guard_minus_one(

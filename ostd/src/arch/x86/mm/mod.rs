@@ -30,7 +30,8 @@ use crate::{
 mod util;
 
 verus! {
-#[derive(Clone,Debug, Default)]
+#[verifier::allow(autoderive_clone_without_spec)]
+#[derive(Clone, Debug, Default)]
 pub struct PagingConsts {}
 
 impl PagingConstsTrait for PagingConsts {
@@ -116,6 +117,13 @@ impl PagingConstsTrait for PagingConsts {
     }
 }
 
+pub proof fn lemma_nr_subpage_per_huge_eq_nr_entries()
+    ensures
+        crate::mm::nr_subpage_per_huge::<PagingConsts>() == NR_ENTRIES,
+{
+    assert(crate::mm::nr_subpage_per_huge::<PagingConsts>() == 4096usize / 8usize);
+    assert(NR_ENTRIES == 512usize);
+}
 }
 
 verified_bitflags::bitflags! {

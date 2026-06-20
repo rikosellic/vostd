@@ -941,6 +941,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         C::lemma_nr_subpage_per_huge_eq_nr_entries();
         assume(C::BASE_PAGE_SIZE() == PAGE_SIZE);
         C::lemma_paging_consts_requirements();
+        C::lemma_paging_consts_properties();
+        assert(nr_subpage_per_huge::<C>() == NR_ENTRIES);
         self.popped_too_high = false;
         let tracked mut cont = self.continuations.tracked_remove(self.level - 1);
         cont.do_inc_index();
@@ -2069,6 +2071,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let big = 0x1_0000_0000_0000int;  // 2^48 == page_size(NR_LEVELS+1)
         let ps_nr = page_size::<C>(C::NR_LEVELS() as PagingLevel) as int;
 
+        crate::specs::arch::lemma_page_size_spec_values();
         // node_size == page_size_spec(5) == 2^48; page_size(NR_LEVELS) == 2^39 < 2^48.
 
         // ---- prefix.to_vaddr() == lb * 2^48 -------------------------------

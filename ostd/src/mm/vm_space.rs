@@ -38,21 +38,19 @@ use core::marker::PhantomData;
 use core::{ops::Range, sync::atomic::Ordering};
 use vstd_extra::ghost_tree::*;
 use vstd_extra::panic::may_panic;
+use vstd_extra::prelude::*;
 use vstd_extra::{assert, assert_eq};
 
 use crate::mm::kspace::KERNEL_PAGE_TABLE;
 use crate::mm::tlb::*;
 use crate::specs::mm::cpu::{AtomicCpuSet, CpuSet};
 
-use crate::specs::mm::io::VmIoOwner;
-use crate::{
-    mm::{
-        MAX_USERSPACE_VADDR, Paddr, PagingConstsTrait, PagingLevel, Vaddr,
-        io::{Fallible, VmReader, VmWriter},
-        page_prop::PageProperty,
-    },
-    prelude::*,
+use crate::mm::{
+    MAX_USERSPACE_VADDR, Paddr, PagingConstsTrait, PagingLevel, Vaddr,
+    io::{Fallible, VmReader, VmWriter},
+    page_prop::PageProperty,
 };
+use crate::specs::mm::io::VmIoOwner;
 
 use alloc::sync::Arc;
 
@@ -1568,6 +1566,7 @@ pub(super) fn get_activated_vm_space() -> *const VmSpace {
 }*/
 
 /// The configuration for user page tables.
+#[verifier::allow(autoderive_clone_without_spec)]
 #[derive(Clone, Debug)]
 pub struct UserPtConfig {}
 
@@ -1620,7 +1619,7 @@ unsafe impl PageTableConfig for UserPtConfig {
 
     type C = PagingConsts;
 
-    proof fn lemma_top_level_index_range_bounds() {
+    proof fn lemma_page_table_config_constant_requirements() {
         use crate::mm::nr_subpage_per_huge;
         use crate::mm::page_table::{nr_pte_index_bits, pte_index_bit_offset_spec};
         use vstd::arithmetic::power2::{lemma2_to64, lemma2_to64_rest, lemma_pow2_adds, pow2};
@@ -1647,6 +1646,7 @@ unsafe impl PageTableConfig for UserPtConfig {
         use crate::mm::page_table::pte_index_bit_offset_spec;
         use vstd::arithmetic::power2::{lemma_pow2_pos, pow2};
 
+        Self::lemma_page_table_config_constant_requirements();
         Self::lemma_top_level_index_range_bounds();
         assert(Self::LEADING_BITS_spec() == 0usize);
         assert(Self::TOP_LEVEL_INDEX_RANGE_spec().start == 0_usize);
@@ -1701,12 +1701,36 @@ unsafe impl PageTableConfig for UserPtConfig {
 
     proof fn lemma_pte_walk_fills_page() {
         Self::lemma_nr_subpage_per_huge_eq_nr_entries();
+        Self::lemma_page_table_config_constant_requirements();
         Self::axiom_pte_size_eq_size_of();
     }
 
     proof fn lemma_top_level_index_range_within_nr_entries() {
         assert(Self::TOP_LEVEL_INDEX_RANGE_spec().end == 256usize);
         assert(NR_ENTRIES == 512usize);
+    }
+
+    proof fn lemma_top_level_index_range_bounds() {
+        use crate::mm::nr_subpage_per_huge;
+        use crate::mm::page_table::{nr_pte_index_bits, pte_index_bit_offset_spec};
+        use vstd::arithmetic::power2::{lemma2_to64, lemma2_to64_rest, lemma_pow2_adds, pow2};
+        use vstd_extra::prelude::lemma_usize_pow2_ilog2;
+
+        lemma2_to64();
+        lemma2_to64_rest();
+        assert(usize::BITS == 64) by (compute);
+        vstd::layout::unsigned_int_max_values();
+        lemma_usize_pow2_ilog2(12);
+        lemma_usize_pow2_ilog2(9);
+        lemma_pow2_adds(9, 39);
+        assert(nr_subpage_per_huge::<PagingConsts>() == 512_usize);
+        assert(nr_pte_index_bits::<PagingConsts>() == 9_usize);
+        assert(PagingConsts::BASE_PAGE_SIZE().ilog2() == 12u32);
+        assert(pte_index_bit_offset_spec::<PagingConsts>(4) == 39);
+        assert(pte_index_bit_offset_spec::<Self::C>(Self::C::NR_LEVELS()) == 39);
+        assert(Self::C::ADDRESS_WIDTH() == 48usize);
+        assert(Self::TOP_LEVEL_INDEX_RANGE_spec().start == 0_usize);
+        assert(Self::TOP_LEVEL_INDEX_RANGE_spec().end == 256_usize);
     }
 
     axiom fn axiom_pte_align_divides_size();

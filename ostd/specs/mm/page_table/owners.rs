@@ -14,7 +14,7 @@ use vstd_extra::ownership::*;
 use vstd_extra::prelude::TreeNodeValue;
 
 use crate::mm::{
-    Paddr, PagingLevel, Vaddr, page_size,
+    MAX_NR_LEVELS, Paddr, PagingConstsTrait, PagingLevel, Vaddr, page_size,
     page_table::{EntryOwner, EntryOwnerKind},
 };
 
@@ -115,6 +115,7 @@ pub proof fn lemma_leading_bits_bounded<C: PageTableConfig>()
     C::lemma_leading_bits_bounded();
 }
 
+
 /// `vaddr(path) < 2^48` for every valid path: each term in the positional
 /// sum is `i_k * 2^(12 + 9·k)` with `i_k < 512 = 2^9`, so the sum is
 /// strictly less than `2^48`.
@@ -141,11 +142,11 @@ pub proof fn lemma_vaddr_of_eq_int<C: PageTableConfig>(path: TreePath<NR_ENTRIES
             * 0x1_0000_0000_0000int,
 {
     lemma_leading_bits_bounded::<C>();
+    C::lemma_page_table_config_constant_requirements();
     lemma_vaddr_strict_bound::<C>(path);
     let lb = C::LEADING_BITS_spec() as int;
     let v = vaddr::<C>(path) as int;
     // `0 <= v + lb * 2^48 < 2^64`: sum fits in usize, cast is lossless.
-    assert(0 <= v);
     assert(lb * 0x1_0000_0000_0000int <= 0xffff_int * 0x1_0000_0000_0000int) by (nonlinear_arith)
         requires
             lb < 0x1_0000int,
@@ -158,6 +159,37 @@ pub proof fn lemma_vaddr_of_eq_int<C: PageTableConfig>(path: TreePath<NR_ENTRIES
             lb >= 0,
     ;
 }
+
+/// page_size is monotonically increasing in its argument.
+pub proof fn page_size_monotonic<C: PagingConstsTrait>(a: PagingLevel, b: PagingLevel)
+    requires
+        1 <= a <= b <= C::NR_LEVELS() + 1,
+    ensures
+        page_size::<C>(a) <= page_size::<C>(b),
+{
+    if a == b {
+    } else {
+        let ps_a = page_size::<C>(a);
+        let ps_b = page_size::<C>(b);
+
+        lemma_page_size_ge_page_size::<C>(a);
+        lemma_page_size_ge_page_size::<C>(b);
+        C::lemma_paging_consts_properties();
+
+        lemma_page_size_divides::<C>(a, b);
+        assert(ps_b % ps_a == 0);
+
+        assert(ps_a <= ps_b) by {
+            if ps_b < ps_a {
+                vstd::arithmetic::div_mod::lemma_small_mod(ps_b as nat, ps_a as nat);
+                assert(ps_b % ps_a == ps_b);
+                assert(ps_b % ps_a == 0);
+                assert(false);
+            }
+        }
+    }
+}
+
 
 /// Sibling paths (same prefix, different last index) have disjoint VA ranges,
 /// separated by at least the child page size.
@@ -1384,6 +1416,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             // Bridge `vaddr_of(path) as int == vaddr(path) + LB * 2^48`.
             lemma_vaddr_of_eq_int::<C>(path);
             lemma_leading_bits_bounded::<C>();
+            C::lemma_page_table_config_constant_requirements();
             lemma_vaddr_strict_bound::<C>(path);
             let lb = C::LEADING_BITS_spec() as int;
             vstd::arithmetic::power2::lemma2_to64();

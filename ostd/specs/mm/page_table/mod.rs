@@ -22,6 +22,7 @@ use core::marker::PhantomData;
 
 use crate::mm::page_table::PageTableConfig;
 use crate::mm::{PagingConstsTrait, PagingLevel, Vaddr, nr_subpage_per_huge, page_size};
+use crate::arch::mm::PagingConsts;
 use crate::specs::arch::*;
 
 use align_ext::AlignExt;
@@ -965,7 +966,36 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
             self.rec_compute_vaddr(start) as int == self.to_vaddr_indices(start) + self.offset,
         decreases C::NR_LEVELS() - start,
     {
-        admit();
+        vstd::arithmetic::power2::lemma2_to64();
+        vstd::arithmetic::power2::lemma2_to64_rest();
+        lemma_page_size_spec_values();
+        vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
+        C::lemma_paging_consts_properties();
+        assert(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        self.to_vaddr_indices_gap_bound(start);
+        if start < C::NR_LEVELS() {
+            self.rec_compute_vaddr_is_to_vaddr_indices(start + 1);
+            self.to_vaddr_indices_gap_bound(start + 1);
+            assert(self.index.contains_key(start));
+            // page_size(start+1) matches the positional shift pow2(12 + 9*start).
+            // For NR_LEVELS == 4, enumerate concrete cases so the constant
+            // folds from `lemma_page_size_spec_values`.
+            // With nr_subpage_per_huge::<C>() == NR_ENTRIES == nr_subpage_per_huge::<PagingConsts>(),
+            // page_size::<C>(n) == page_size::<PagingConsts>(n).
+            if start == 0 {
+                assert(page_size::<C>(1) == page_size::<PagingConsts>(1));
+                assert(page_size::<C>(1) == pow2(12nat) as usize);
+            } else if start == 1 {
+                assert(page_size::<C>(2) == page_size::<PagingConsts>(2));
+                assert(page_size::<C>(2) == pow2(21nat) as usize);
+            } else if start == 2 {
+                assert(page_size::<C>(3) == page_size::<PagingConsts>(3));
+                assert(page_size::<C>(3) == pow2(30nat) as usize);
+            } else {
+                assert(page_size::<C>(4) == page_size::<PagingConsts>(4));
+                assert(page_size::<C>(4) == pow2(39nat) as usize);
+            }
+        }
     }
 
     /// Full identity relating `to_vaddr()` to `compute_vaddr()`:

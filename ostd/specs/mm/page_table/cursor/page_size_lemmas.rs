@@ -2,12 +2,14 @@ use vstd::arithmetic::power2::pow2;
 use vstd::prelude::*;
 
 use crate::arch::mm::PagingConsts;
-use crate::mm::{Paddr, Vaddr, nr_subpage_per_huge, page_size};
-use crate::mm::{PagingConstsTrait, PagingLevel};
-use crate::specs::arch::*;
+use crate::mm::PagingLevel;
+use crate::mm::{KERNEL_VADDR_RANGE, MAX_PADDR, Paddr, Vaddr, nr_subpage_per_huge, page_size};
+use crate::mm::PagingConstsTrait;
+use crate::specs::arch::{NR_LEVELS, PAGE_SIZE};
 
 verus! {
 
+// ─── page_size(1) ──────────────────────────────────────────────────────
 /// page_size::<C>(1) == C::BASE_PAGE_SIZE.
 pub proof fn lemma_page_size_spec_level1<C: PagingConstsTrait>()
     ensures
@@ -22,8 +24,9 @@ pub proof fn lemma_page_size_spec_level1<C: PagingConstsTrait>()
     assume(PAGE_SIZE == C::BASE_PAGE_SIZE());
 }
 
-/// When `va` is aligned to `page_size::<C>(large_level)` and `level <= large_level`,
-/// then `va` is aligned to page_size::<C>(level).
+// ─── VA alignment ────────────────────────────────────────────────────────────
+/// When `va` is aligned to `page_size::<C>(large_level)` and `level <= large_level` (so
+/// page_size::<C>(level) divides page_size::<C>(large_level)), then `va` is aligned to page_size::<C>(level).
 pub proof fn lemma_va_align_page_size<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel)
     requires
         1 <= level <= C::NR_LEVELS() + 1,
@@ -63,6 +66,8 @@ pub proof fn lemma_va_align_page_size<C: PagingConstsTrait>(va: Vaddr, level: Pa
     }
 }
 
+/// Special case for level 1: page_size::<C>(1) == C::BASE_PAGE_SIZE(), so va % C::BASE_PAGE_SIZE() == 0 implies
+/// va % page_size::<C>(1) == 0.
 pub proof fn lemma_va_align_page_size_level_1<C: PagingConstsTrait>(va: Vaddr)
     requires
         va % C::BASE_PAGE_SIZE() == 0,
