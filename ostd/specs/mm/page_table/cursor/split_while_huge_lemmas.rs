@@ -1159,8 +1159,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self@.split_while_huge(page_size::<C>((self.level - 1) as PagingLevel)) == self@,
     {
-        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        C::lemma_paging_consts_properties();
         self.view_preserves_inv();
         if self@.present() {
             self.cur_subtree_inv();
@@ -1198,8 +1197,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self@.split_while_huge(page_size::<C>(self.level as PagingLevel)) == self@,
     {
-        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        C::lemma_paging_consts_properties();
         self.view_preserves_inv();
         if self@.present() {
             self.cur_subtree_inv();
@@ -1253,8 +1251,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 level_before_frame as PagingLevel,
             ),
     {
-        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        C::lemma_paging_consts_properties();
         assume(C::BASE_PAGE_SIZE() == PAGE_SIZE);
         owner0.view_preserves_inv();
         owner_before_frame.view_preserves_inv();
@@ -1316,8 +1313,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 page_size::<C>(self.level as PagingLevel),
             ).mappings,
     {
-        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        C::lemma_paging_consts_properties();
         assume(C::BASE_PAGE_SIZE() == PAGE_SIZE);
         let ps = page_size::<C>(self.level as PagingLevel);
         let m = old_view.query_mapping();

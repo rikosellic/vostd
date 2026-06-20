@@ -109,7 +109,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 self.level <= lv < NR_LEVELS ==> self.zero_below_level().va.index[lv]
                     == #[trigger] self.va.index[lv],
     {
-        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        C::lemma_paging_consts_properties();
         self.va.align_down_shape(self.level as int);
     }
 
@@ -155,8 +155,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.inc_index().zero_below_level().va.to_vaddr() > self.va.to_vaddr(),
     {
-        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
-        assume(crate::mm::nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        C::lemma_paging_consts_properties();
         // Trigger invariant clause: va.index[level-1] == continuations[level-1].idx
         self.inv_continuation(self.level as int - 1);
         assert(self.continuations.contains_key(self.level as int - 1));
@@ -227,7 +226,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     {
         broadcast use CursorContinuation::group_lemmas;
 
-        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
         self.cur_subtree_inv();
         self.cur_va_in_subtree_range();
         self.view_preserves_inv();
@@ -240,7 +238,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
 
         // TreePath<NR_ENTRIES> push_tail requires val < NR_ENTRIES;
         // inv now provides idx < nr_subpage_per_huge::<C>().
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        C::lemma_paging_consts_properties();
         cont.path().push_tail_property_len(cont.idx as usize);
         assume(path.len() <= INC_LEVELS - 1);
 
@@ -344,8 +342,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 self.level as PagingLevel,
             ) as int,
     {
-        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
-        assume(crate::mm::nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        C::lemma_paging_consts_properties();
         let L = self.level as int;
         self.inv_continuation(L - 1);
         let cont = self.continuations[L - 1];

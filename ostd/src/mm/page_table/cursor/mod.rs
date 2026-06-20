@@ -452,9 +452,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
         proof {
             owner.va.reflect_prop(self.va);
+            C::lemma_paging_consts_properties();
         }
-        assume(C::NR_LEVELS() == NR_LEVELS && nr_subpage_per_huge::<C>() == NR_ENTRIES
-            && C::BASE_PAGE_SIZE() == PAGE_SIZE);
         let rcu_guard = self.rcu_guard;
 
         let ghost initial_va = self.va;
@@ -950,8 +949,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     fn find_next_impl(&mut self, len: usize, find_unmap_subtree: bool, split_huge: bool) -> Option<
         Vaddr,
     > {
-        assume(C::NR_LEVELS() == NR_LEVELS && nr_subpage_per_huge::<C>() == NR_ENTRIES
-            && C::BASE_PAGE_SIZE() == PAGE_SIZE);
+        proof {
+            C::lemma_paging_consts_properties();
+        }
         assert_eq!(len % PAGE_SIZE, 0);
 
         //*** KNOWN BUG: `self.va + len` could overflow. For now assume that it doesn't. ***
@@ -1521,8 +1521,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             !(final(self).barrier_va.start <= va < final(self).barrier_va.end) ==> res is Err,
     )]
     pub fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError> {
-        assume(C::NR_LEVELS() == NR_LEVELS && nr_subpage_per_huge::<C>() == NR_ENTRIES
-            && C::BASE_PAGE_SIZE() == PAGE_SIZE);
+        proof {
+            C::lemma_paging_consts_properties();
+        }
         assert_eq!(va % PAGE_SIZE, 0);
 
         if !self.barrier_va.contains(&va) {
@@ -1673,8 +1674,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                 final(regions).slot_owners[idx] == old(regions).slot_owners[idx],
     )]
     fn move_forward(&mut self) {
-        assume(C::NR_LEVELS() == NR_LEVELS && nr_subpage_per_huge::<C>() == NR_ENTRIES
-            && C::BASE_PAGE_SIZE() == PAGE_SIZE);
+        proof {
+            C::lemma_paging_consts_properties();
+        }
         let ghost owner0 = *owner;
         let ghost regions0 = *regions;
         proof {
@@ -1887,7 +1889,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             // we get level < C::NR_LEVELS().
             assert(self.level <= self.guard_level);
             assert(owner.level < C::NR_LEVELS());
-            assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+            C::lemma_paging_consts_properties();
             owner.pop_level_owner_preserves_invs(*guards, *regions);
         }
         let tracked guard = owner.tracked_pop_level_owner();
@@ -1904,7 +1906,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             // Bridge cur_entry_owner().is_node() and guard address match:
             // pop_level_owner_preserves_invs ensures cur_entry_owner().is_node()
             // and the guard address matches cur_entry_owner().node().meta_addr_self().
-            assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+            C::lemma_paging_consts_properties();
             assert(owner.cur_entry_owner().is_node());
             assert(guard.inner.inner@.ptr.addr()
                 == owner.cur_entry_owner().node().meta_addr_self());
@@ -2027,8 +2029,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             ),
     )]
     fn cur_entry(&mut self) -> Entry<'_, 'rcu, C> {
-        assume(C::NR_LEVELS() == NR_LEVELS && nr_subpage_per_huge::<C>() == NR_ENTRIES
-            && C::BASE_PAGE_SIZE() == PAGE_SIZE);
+        proof {
+            C::lemma_paging_consts_properties();
+        }
         let ghost owner0 = *owner;
 
         let node = path_slot_as_mut(&mut self.path, self.level as usize - 1);
@@ -2461,8 +2464,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 old(regions).slots.contains_key(idx) ==> final(regions).slots.contains_key(idx),
     )]
     pub fn map_loop(&mut self, level: PagingLevel, rcu_guard: &'rcu A) {
-        assume(C::NR_LEVELS() == NR_LEVELS && nr_subpage_per_huge::<C>() == NR_ENTRIES
-            && C::BASE_PAGE_SIZE() == PAGE_SIZE);
+        proof {
+            C::lemma_paging_consts_properties();
+        }
         let ghost guard_level = self.0.guard_level;
         let ghost barrier_va = self.0.barrier_va;
         let ghost owner0 = *owner;
@@ -2983,8 +2987,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         let ghost self0 = *self;
         let ghost owner0 = *owner;
 
-        assume(C::NR_LEVELS() == NR_LEVELS && nr_subpage_per_huge::<C>() == NR_ENTRIES
-            && C::BASE_PAGE_SIZE() == PAGE_SIZE);
+        proof {
+            C::lemma_paging_consts_properties();
+        }
 
         assert!(self.0.va < self.0.barrier_va.end);
         let (pa, level, prop) = C::item_into_raw(item);
@@ -3398,9 +3403,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     #[verifier::spinoff_prover]
     #[verifier::rlimit(1500)]
     pub unsafe fn take_next(&mut self, len: usize) -> (r: Option<PageTableFrag<C>>) {
-        assume(C::NR_LEVELS() == NR_LEVELS && nr_subpage_per_huge::<C>() == NR_ENTRIES
-            && C::BASE_PAGE_SIZE() == PAGE_SIZE);
         proof {
+            C::lemma_paging_consts_properties();
             owner.va.reflect_prop(self.0.va);
         }
         let ghost old_cur_va = owner@.cur_va;
@@ -3809,8 +3813,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         len: usize,
         op: impl FnOnce(PageProperty) -> PageProperty,
     ) -> Option<Range<Vaddr>> {
-        assume(C::NR_LEVELS() == NR_LEVELS && nr_subpage_per_huge::<C>() == NR_ENTRIES
-            && C::BASE_PAGE_SIZE() == PAGE_SIZE);
+        proof {
+            C::lemma_paging_consts_properties();
+        }
         (#[verus_spec(with Tracked(owner), Tracked(regions), Tracked(guards))]
         self.0.find_next_impl(len, false, true))?;
 
@@ -4018,8 +4023,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     fn replace_cur_entry(&mut self, new_child: Child<C>) -> Option<PageTableFrag<C>> {
         broadcast use {CursorContinuation::group_lemmas, CursorOwner::group_lemmas};
 
-        assume(C::NR_LEVELS() == NR_LEVELS && nr_subpage_per_huge::<C>() == NR_ENTRIES
-            && C::BASE_PAGE_SIZE() == PAGE_SIZE);
+        proof {
+            C::lemma_paging_consts_properties();
+        }
 
         let ghost owner0 = *owner;
         let ghost regions0 = *regions;

@@ -87,7 +87,7 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
     {
         // TreePath<NR_ENTRIES> push_tail requires val < NR_ENTRIES;
         // inv now provides children.len() == nr_subpage_per_huge::<C>().
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        C::lemma_paging_consts_properties();
         assert forall|j: int|
             #![auto]
             0 <= j < self.children.len()
@@ -141,7 +141,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 #![trigger self.continuations[i]]
                 self.level - 1 <= i < C::NR_LEVELS() ==> self.continuations[i].map_children(g),
     {
-        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
         assert forall|i: int|
             #![trigger self.continuations[i]]
             self.level - 1 <= i < C::NR_LEVELS() implies self.continuations[i].map_children(g) by {
@@ -239,7 +238,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.not_in_tree(owner),
     {
-        assume(C::NR_LEVELS() == NR_LEVELS as PagingLevel);
+        C::lemma_paging_consts_properties();
         let g = |e: EntryOwner<C>, p: TreePath<NR_ENTRIES>| e.meta_slot_paddr_neq(owner);
         let nsp = PageTableOwner::<C>::not_in_scope_pred();
         assert(OwnerSubtree::implies(nsp, g)) by {

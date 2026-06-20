@@ -373,7 +373,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         C::lemma_paging_consts_requirements();
         // TreePath<NR_ENTRIES> push_tail requires val < NR_ENTRIES;
         // inv now provides idx/children.len() in terms of nr_subpage_per_huge::<C>().
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        C::lemma_paging_consts_properties();
         broadcast use {
             CursorContinuation::group_lemmas,
             CursorOwner::group_lemmas,
@@ -515,7 +515,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.push_level_owner(guard).inv(),
     {
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        C::lemma_paging_consts_properties();
         // locking-work: when self.level == self.guard_level, self.inv() does
         // not supply va.index[guard_level-1] == prefix.index[guard_level-1]
         // (the conjunct at owners.rs:481-482 requires strict level < guard_level).
@@ -942,7 +942,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.push_level_owner(guard).nodes_locked(guards),
             self.push_level_owner(guard).metaregion_sound(regions),
     {
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        C::lemma_paging_consts_properties();
         if self.level == self.guard_level {
             self.in_locked_range_guard_index_eq_prefix();
         }
@@ -1313,7 +1313,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.pop_level_owner().0.inv(),
     {
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        C::lemma_paging_consts_properties();
         self.inv_continuation(self.level - 1);
         self.inv_continuation(self.level as int);
         let child = self.continuations[self.level - 1];
@@ -1562,7 +1562,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.pop_level_owner().1.inner.inner@.ptr.addr()
                 == self.pop_level_owner().0.cur_entry_owner().node().meta_addr_self(),
     {
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        C::lemma_paging_consts_properties();
         self.inv_continuation(self.level - 1);
         self.inv_continuation(self.level as int);
         let new_owner = self.pop_level_owner().0;
@@ -1702,7 +1702,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     {
         C::lemma_paging_consts_requirements();
         // inv_continuation(3) needs C::NR_LEVELS() >= 4.
-        assume(C::NR_LEVELS() == NR_LEVELS);
         let r = self.set_va(new_va);
 
         assert(r.in_locked_range()) by {
@@ -1876,8 +1875,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.move_forward_owner_spec().va.to_vaddr() > self.va.to_vaddr(),
         decreases C::NR_LEVELS() - self.level,
     {
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
-        assume(C::NR_LEVELS() == NR_LEVELS);
+        C::lemma_paging_consts_properties();
         self.inv_continuation(self.level - 1);
         self.in_locked_range_level_le_guard_level();
         if self.index() + 1 < nr_subpage_per_huge::<C>() {
@@ -1963,8 +1961,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             ) <= self.max_steps(),
         decreases C::NR_LEVELS() - self.level,
     {
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
-        assume(C::NR_LEVELS() == NR_LEVELS);
+        C::lemma_paging_consts_properties();
         let l = self.level as usize;
         let st_l = Self::max_steps_subtree(l) as int;
         Self::max_steps_subtree_positive(l);
@@ -2051,8 +2048,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.move_forward_owner_spec().max_steps() < self.max_steps(),
         decreases C::NR_LEVELS() - self.level,
     {
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
-        assume(C::NR_LEVELS() == NR_LEVELS);
+        C::lemma_paging_consts_properties();
         self.inv_continuation(self.level - 1);
         let l = self.level as usize;
         let st_l = Self::max_steps_subtree(l) as int;
@@ -2167,8 +2163,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.move_forward_owner_spec().va == self.va.align_up(self.level as int),
         decreases C::NR_LEVELS() - self.level,
     {
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
-        assume(C::NR_LEVELS() == NR_LEVELS);
+        C::lemma_paging_consts_properties();
         self.inv_continuation(self.level - 1);
         if self.level == self.guard_level {
             if self.index() + 1 < nr_subpage_per_huge::<C>() {
@@ -2333,7 +2328,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.pop_level_owner().0@.mappings == self@.mappings,
     {
         C::lemma_paging_consts_requirements();
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        C::lemma_paging_consts_properties();
         self.inv_continuation(self.level - 1);
         self.inv_continuation(self.level as int);
         broadcast use {CursorContinuation::group_lemmas, CursorOwner::group_lemmas};
@@ -2477,8 +2472,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.move_forward_owner_spec()@.mappings == self@.mappings,
         decreases C::NR_LEVELS() - self.level,
     {
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
-        assume(C::NR_LEVELS() == NR_LEVELS);
+        C::lemma_paging_consts_properties();
         broadcast use {CursorContinuation::group_lemmas, CursorOwner::group_lemmas};
 
         if self.index() + 1 < nr_subpage_per_huge::<C>() {

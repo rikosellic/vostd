@@ -93,7 +93,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             other.inv(),
             other.metaregion_sound(regions),
     {
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        C::lemma_paging_consts_properties();
         let L = self.level as int;
         // Establish the precondition for map_branch_none_inv_holds:
         // other.va.index[other.level - 1] == other.continuations[other.level - 1].idx
@@ -227,7 +227,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.view_mappings() == owner0.view_mappings(),
     {
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        C::lemma_paging_consts_properties();
         broadcast use {CursorContinuation::group_lemmas, CursorOwner::group_lemmas};
 
         let L = self.level as int;
@@ -317,7 +317,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.cur_entry_owner().is_absent(),
     {
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
+        C::lemma_paging_consts_properties();
         self.inv_continuation(self.level - 1);
         let idx = self.continuations[self.level - 1].idx as int;
         assert(0 <= idx < NR_ENTRIES);

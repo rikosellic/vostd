@@ -510,8 +510,7 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
         assert(self.align_up(level) == advanced);
 
         assert(advanced.inv()) by {
-            assume(NR_ENTRIES == nr_subpage_per_huge::<C>());
-            assume(NR_LEVELS == C::NR_LEVELS());
+            C::lemma_paging_consts_properties();
             assert(advanced.index.dom() == Set::<int>::range(0, C::NR_LEVELS() as int));
             assert forall|i: int|
                 #![trigger advanced.index.contains_key(i)]
@@ -847,7 +846,7 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
             self.wrapped(level, level),
         decreases C::NR_LEVELS() - level,
     {
-        assume(NR_ENTRIES == nr_subpage_per_huge::<C>());
+        C::lemma_paging_consts_properties();
         let index = self.index[level - 1];
         let next_index = index + 1;
         if next_index == nr_subpage_per_huge::<C>() {
@@ -1095,7 +1094,7 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
         ensures
             self.to_path(level).inv(),
     {
-        assume(NR_ENTRIES == nr_subpage_per_huge::<C>());
+        C::lemma_paging_consts_properties();
         self.to_path_len(level);
         assert forall|i: int| 0 <= i < self.to_path(level).len() implies TreePath::<
             NR_ENTRIES,
@@ -1127,7 +1126,7 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
             rec_vaddr::<C>(path1, idx) == rec_vaddr::<C>(path2, idx),
         decreases path1.len() - idx,
     {
-        assume(NR_ENTRIES == nr_subpage_per_huge::<C>());
+        C::lemma_paging_consts_properties();
         if idx < path1.len() {
             assert(path1.index(idx) == path2.index(idx));
             Self::rec_vaddr_eq_if_indices_eq(path1, path2, idx + 1);
@@ -1146,7 +1145,7 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
             vaddr::<C>(path) == self.align_down((NR_LEVELS - path.len() + 1) as int).compute_vaddr()
                 - self.align_down((NR_LEVELS - path.len() + 1) as int).offset,
     {
-        assume(NR_ENTRIES == nr_subpage_per_huge::<C>());
+        C::lemma_paging_consts_properties();
         admit();
     }
 
@@ -1174,7 +1173,7 @@ impl<C: PagingConstsTrait> AbstractVaddr<C> {
                 - i],
         decreases abstract_level - bottom_level,
     {
-        assume(NR_ENTRIES == nr_subpage_per_huge::<C>());
+        C::lemma_paging_consts_properties();
         assert(self.index.contains_key(abstract_level));
         if abstract_level == bottom_level {
         } else {

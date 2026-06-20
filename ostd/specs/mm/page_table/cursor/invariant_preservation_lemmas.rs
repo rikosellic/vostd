@@ -74,8 +74,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.map_full_tree(|e: EntryOwner<C>, p: TreePath<NR_ENTRIES>| f(e, p) && guard(e, p)),
     {
-        assume(crate::mm::nr_subpage_per_huge::<C>() == NR_ENTRIES);
-        assume(C::NR_LEVELS() == NR_LEVELS);
+        C::lemma_paging_consts_properties();
         let combined = |e: EntryOwner<C>, p: TreePath<NR_ENTRIES>| f(e, p) && guard(e, p);
         assert forall|i: int|
             #![trigger self.continuations[i]]
@@ -123,8 +122,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.no_node_at_idx(changed_idx),
     {
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
-        assume(C::NR_LEVELS() == NR_LEVELS);
+        C::lemma_paging_consts_properties();
         let msp = PageTableOwner::<C>::metaregion_sound_pred(regions);
         let target = |e: EntryOwner<C>, _p: TreePath<NR_ENTRIES>|
             e.is_node() && e.meta_slot_paddr() is Some ==> frame_to_index(
@@ -188,8 +186,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.metaregion_sound(regions1),
     {
-        assume(crate::mm::nr_subpage_per_huge::<C>() == NR_ENTRIES);
-        assume(C::NR_LEVELS() == NR_LEVELS);
+        C::lemma_paging_consts_properties();
         let f = PageTableOwner::<C>::metaregion_sound_pred(regions0);
         let g = PageTableOwner::<C>::metaregion_sound_pred(regions1);
         let guard = |entry: EntryOwner<C>, _p: TreePath<NR_ENTRIES>|
@@ -339,8 +336,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.no_frame_with_path(removed_path),
     {
-        assume(nr_subpage_per_huge::<C>() == NR_ENTRIES);
-        assume(C::NR_LEVELS() == NR_LEVELS);
+        C::lemma_paging_consts_properties();
         broadcast use CursorContinuation::group_lemmas;
 
         let g = |e: EntryOwner<C>, _p: TreePath<NR_ENTRIES>|
@@ -492,8 +488,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             self.metaregion_sound(regions1),
     {
-        assume(crate::mm::nr_subpage_per_huge::<C>() == NR_ENTRIES);
-        assume(C::NR_LEVELS() == NR_LEVELS);
+        C::lemma_paging_consts_properties();
         let f = PageTableOwner::<C>::metaregion_sound_pred(regions0);
         let g = PageTableOwner::<C>::metaregion_sound_pred(regions1);
         let guard = |entry: EntryOwner<C>, _p: TreePath<NR_ENTRIES>|
