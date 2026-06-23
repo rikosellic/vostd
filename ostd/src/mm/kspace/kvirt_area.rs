@@ -4,7 +4,7 @@ use vstd::prelude::*;
 
 use vstd_extra::arithmetic::nat_align_down;
 use vstd_extra::assert;
-use vstd_extra::ownership::{InvView, ModelOf, OwnerOf};
+use vstd_extra::ownership::{InvView, OwnerOf};
 use vstd_extra::panic::may_panic;
 use vstd_extra::prelude::Inv;
 
@@ -869,7 +869,7 @@ impl KVirtArea {
             assert(cursor.0.invariants(cursor_owner, *regions, *guards));
 
             let ghost regions_before_map = *regions;
-            let ghost old_cursor_model: CursorView<KernelPtConfig> = cursor.0.model(cursor_owner);
+            let ghost old_cursor_model: CursorView<KernelPtConfig> = cursor_owner@;
             let ghost old_cursor_owner_va = cursor_owner.va;
             proof {
                 cursor_owner.view_preserves_inv();  // old_cursor_model.inv()
@@ -1288,9 +1288,7 @@ impl KVirtArea {
                     entry_owner.in_scope = false;
                 }
 
-                let ghost old_cursor_model: CursorView<KernelPtConfig> = cursor.0.model(
-                    cursor_owner,
-                );
+                let ghost old_cursor_model: CursorView<KernelPtConfig> = cursor_owner@;
                 let ghost old_cursor_owner_va = cursor_owner.va;
                 let ghost old_va: nat = cursor.0.va as nat;
 

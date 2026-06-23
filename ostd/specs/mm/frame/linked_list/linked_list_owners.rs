@@ -194,10 +194,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> OwnerOf for Link<M> {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> ModelOf for Link<M> {
-
-}
-
 pub ghost struct LinkedListModel {
     pub list: Seq<LinkModel>,
 }
@@ -988,10 +984,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> OwnerOf for LinkedList<M> {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> ModelOf for LinkedList<M> {
-
-}
-
 pub ghost struct CursorModel {
     pub ghost fore: Seq<LinkModel>,
     pub ghost rear: Seq<LinkModel>,
@@ -1087,10 +1079,6 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
         &&& owner.index == owner.list_own.list.len() ==> self.current.is_none()
         &&& (*self.list).wf_region(owner.list_own, regions)
     }
-}
-
-impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> ModelOf for CursorMut<'a, M> {
-
 }
 
 impl CursorModel {

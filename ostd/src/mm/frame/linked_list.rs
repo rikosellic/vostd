@@ -132,7 +132,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedList<M> {
             self.wf(owner),
             owner.inv(),
         ensures
-            s == self.model(owner).list.len(),
+            s == owner@.list.len(),
     )]
     pub fn size(&self) -> usize {
         proof {
@@ -225,7 +225,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedList<M> {
             owner.relate_region(*old(regions)),
         ensures
             owner.list.len() == 0 ==> r.is_none(),
-            r.is_some() ==> (r->0).0.model((r->0).1@).meta == owner.list[0]@,
+            r.is_some() ==> (r->0).1@@.meta == owner.list[0]@,
             r.is_some() ==> (r->0).1@.frame_link_inv(*final(regions)),
     )]
     pub fn pop_front(&mut self) -> Option<
@@ -319,7 +319,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedList<M> {
             owner.relate_region(*old(regions)),
         ensures
             owner.list.len() == 0 ==> r.is_none(),
-            r.is_some() ==> (r->0).0.model((r->0).1@).meta == owner.list[owner.list.len() - 1]@,
+            r.is_some() ==> (r->0).1@@.meta == owner.list[owner.list.len() - 1]@,
             r.is_some() ==> (r->0).1@.frame_link_inv(*final(regions)),
     )]
     pub fn pop_back(&mut self) -> Option<
@@ -612,9 +612,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             owner.inv_region(*regions),
             old(self).wf_region(owner, *regions),
         ensures
-            final(self).model(owner.move_next_owner_spec()) == old(self).model(
-                owner,
-            ).move_next_spec(),
+            owner.move_next_owner_spec()@ == owner@.move_next_spec(),
             owner.move_next_owner_spec().inv_region(*regions),
             final(self).wf_region(owner.move_next_owner_spec(), *regions),
     {
@@ -650,12 +648,8 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
 
         proof {
             LinkedListOwner::<M>::view_preserves_len(owner.list_own.list);
-            assert(self.model(owner.move_next_owner_spec()).fore == old_self.model(
-                owner,
-            ).move_next_spec().fore);
-            assert(self.model(owner.move_next_owner_spec()).rear == old_self.model(
-                owner,
-            ).move_next_spec().rear);
+            assert(owner.move_next_owner_spec()@.fore == owner@.move_next_spec().fore);
+            assert(owner.move_next_owner_spec()@.rear == owner@.move_next_spec().rear);
         }
     }
 
@@ -674,9 +668,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             owner.inv_region(*regions),
             old(self).wf_region(owner, *regions),
         ensures
-            final(self).model(owner.move_prev_owner_spec()) == old(self).model(
-                owner,
-            ).move_prev_spec(),
+            owner.move_prev_owner_spec()@ == owner@.move_prev_spec(),
             owner.move_prev_owner_spec().inv_region(*regions),
             final(self).wf_region(owner.move_prev_owner_spec(), *regions),
     {
@@ -715,20 +707,14 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
 
             if owner@.list_model.list.len() > 0 {
                 if owner@.fore.len() > 0 {
-                    assert(self.model(owner.move_prev_owner_spec()).fore == old_self.model(
-                        owner,
-                    ).move_prev_spec().fore);
-                    assert(self.model(owner.move_prev_owner_spec()).rear == old_self.model(
-                        owner,
-                    ).move_prev_spec().rear);
+                    assert(owner.move_prev_owner_spec()@.fore == owner@.move_prev_spec().fore);
+                    assert(owner.move_prev_owner_spec()@.rear == owner@.move_prev_spec().rear);
                     if owner@.rear.len() > 0 {
                         owner.list_own.relate_region_at_facts(*regions, owner.index);
                     }
                 } else {
                     owner.list_own.relate_region_at_facts(*regions, owner.index);
-                    assert(self.model(owner.move_prev_owner_spec()).rear == old_self.model(
-                        owner,
-                    ).move_prev_spec().rear);
+                    assert(owner.move_prev_owner_spec()@.rear == owner@.move_prev_spec().rear);
                     assert(owner@.rear == owner@.list_model.list);
                 }
             }
@@ -844,12 +830,8 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
         ensures
             old(owner).length() == 0 ==> res.is_none(),
             old(self).current.is_some() ==> res.is_some(),
-            res.is_some() ==> (res->0).0.model((res->0).1@).meta == old(owner).list_own.list[old(
-                owner,
-            ).index]@,
-            res.is_some() ==> final(self).model(*final(owner)) == old(self).model(
-                *old(owner),
-            ).remove(),
+            res.is_some() ==> (res->0).1@@.meta == old(owner).list_own.list[old(owner).index]@,
+            res.is_some() ==> final(owner)@ == old(owner)@.remove(),
             res.is_some() ==> (res->0).1@.frame_link_inv(*final(regions)),
             // Invariant preservation
             res.is_some() ==> final(owner).inv_region(*final(regions)),
@@ -1171,9 +1153,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             final(owner).index == old(owner).index + 1,
             final(frame_own).meta_own.paddr == old(frame_own).meta_own.paddr,
             final(frame_own).meta_own.in_list == final(owner).list_own.list_id,
-            final(self).model(*final(owner)) == old(self).model(*old(owner)).insert(
-                final(frame_own).meta_own@,
-            ),
+            final(owner)@ == old(owner)@.insert(final(frame_own).meta_own@),
     {
         let ghost owner0 = *owner;
         let ghost regions0 = *regions;
