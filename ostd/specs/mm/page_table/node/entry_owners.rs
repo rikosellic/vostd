@@ -9,7 +9,7 @@ use vstd_extra::ownership::*;
 
 use crate::arch::mm::PagingConsts;
 use crate::mm::frame::meta::MetaSlot;
-use crate::mm::frame::meta::{REF_COUNT_MAX, REF_COUNT_UNUSED};
+use crate::mm::frame::meta::{REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED};
 use crate::mm::page_prop::PageProperty;
 use crate::mm::page_table::*;
 use crate::mm::{Paddr, PagingConstsTrait, PagingLevel, Vaddr};
@@ -524,8 +524,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
                 0 < j < nr_pages implies {
                 let sub_idx = frame_to_index((pa + j * PAGE_SIZE) as usize);
                 &&& r1.slots.contains_key(sub_idx)
-                &&& r1.slot_owners[sub_idx].usage
-                    != crate::specs::mm::frame::meta_owners::PageUsage::MMIO ==> {
+                &&& r1.slot_owners[sub_idx].usage !is MMIO ==> {
                     &&& r1.slot_owners[sub_idx].inner_perms.ref_count.value() != REF_COUNT_UNUSED
                     &&& r1.slot_owners[sub_idx].inner_perms.ref_count.value() > 0
                 }
@@ -593,8 +592,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
                     // RC bookkeeping (`rc != UNUSED`, `rc > 0`) applies only to non-MMIO
                     // sub-pages. MMIO sub-page slots stay in the free pool with
                     // `rc == UNUSED` and `usage == MMIO`.
-                    &&& regions.slot_owners[sub_idx].usage
-                        != crate::specs::mm::frame::meta_owners::PageUsage::MMIO ==> {
+                    &&& regions.slot_owners[sub_idx].usage !is MMIO ==> {
                         &&& regions.slot_owners[sub_idx].inner_perms.ref_count.value()
                             != REF_COUNT_UNUSED
                         &&& regions.slot_owners[sub_idx].inner_perms.ref_count.value() > 0
@@ -624,8 +622,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
             // stay in the free pool with `rc == UNUSED`; tracked slots have
             // `rc > 0`. The slot's `usage == MMIO` is pinned by the paddr's
             // range membership via `axiom_mmio_usage_iff_mmio_paddr`.
-            &&& regions.slot_owners[idx].usage
-                != crate::specs::mm::frame::meta_owners::PageUsage::MMIO ==> {
+            &&& regions.slot_owners[idx].usage !is MMIO ==> {
                 &&& regions.slot_owners[idx].inner_perms.ref_count.value() != REF_COUNT_UNUSED
                 &&& regions.slot_owners[idx].inner_perms.ref_count.value() > 0
             }
@@ -720,8 +717,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
                 forall|j: usize|
                     0 < j < nr_pages ==> {
                         let sub_idx = #[trigger] frame_to_index((pa + j * PAGE_SIZE) as usize);
-                        sub_idx != changed_idx || r1.slot_owners[sub_idx].usage
-                            == crate::specs::mm::frame::meta_owners::PageUsage::MMIO || (
+                        sub_idx != changed_idx || r1.slot_owners[sub_idx].usage is MMIO || (
                         r1.slots.contains_key(sub_idx)
                             && r1.slot_owners[sub_idx].inner_perms.ref_count.value()
                             != REF_COUNT_UNUSED
@@ -808,8 +804,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
                         0 < j < nr_pages implies {
                         let sub_idx = frame_to_index((pa + j * PAGE_SIZE) as usize);
                         &&& r1.slots.contains_key(sub_idx)
-                        &&& r1.slot_owners[sub_idx].usage
-                            != crate::specs::mm::frame::meta_owners::PageUsage::MMIO ==> {
+                        &&& r1.slot_owners[sub_idx].usage !is MMIO ==> {
                             &&& r1.slot_owners[sub_idx].inner_perms.ref_count.value()
                                 != REF_COUNT_UNUSED
                             &&& r1.slot_owners[sub_idx].inner_perms.ref_count.value() > 0
@@ -860,8 +855,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
                 let idx = frame_to_index(self.meta_slot_paddr()->0);
                 &&& r1.slot_owners[idx].inner_perms.ref_count.id()
                     == r0.slot_owners[idx].inner_perms.ref_count.id()
-                &&& r1.slot_owners[idx].inner_perms.ref_count.value()
-                    != crate::specs::mm::frame::meta_owners::REF_COUNT_UNUSED
+                &&& r1.slot_owners[idx].inner_perms.ref_count.value() != REF_COUNT_UNUSED
                 &&& r1.slot_owners[idx].inner_perms.ref_count.value()
                     > 0
                 // Needed to re-establish the node branch's SHARED range (`<= MAX`).
@@ -892,8 +886,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
                 0 < j < nr_pages implies {
                 let sub_idx = frame_to_index((pa + j * PAGE_SIZE) as usize);
                 &&& r1.slots.contains_key(sub_idx)
-                &&& r1.slot_owners[sub_idx].usage
-                    != crate::specs::mm::frame::meta_owners::PageUsage::MMIO ==> {
+                &&& r1.slot_owners[sub_idx].usage !is MMIO ==> {
                     &&& r1.slot_owners[sub_idx].inner_perms.ref_count.value() != REF_COUNT_UNUSED
                     &&& r1.slot_owners[sub_idx].inner_perms.ref_count.value() > 0
                 }
