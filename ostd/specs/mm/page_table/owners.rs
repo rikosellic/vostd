@@ -207,6 +207,117 @@ pub proof fn lemma_vaddr_strict_bound(path: TreePath<NR_ENTRIES>)
     }
 }
 
+/// The VA of any path is within the `2^39`-sized cell of its top-level index:
+/// `path[0] * 2^39 <= vaddr(path)` and `vaddr(path) + page_size <= (path[0]+1) * 2^39`.
+/// Pure VA arithmetic (x86 4-level paging). Used by `view_rec_top_index_va_bound`.
+pub proof fn lemma_vaddr_top_index_cell(path: TreePath<NR_ENTRIES>)
+    requires
+        path.inv(),
+        1 <= path.len() <= INC_LEVELS - 1,
+    ensures
+        (path.index(0) as int) * 0x80_0000_0000int <= vaddr(path) as int,
+        (vaddr(path) as int) + page_size((INC_LEVELS - path.len()) as PagingLevel) as int <= (
+        path.index(0) as int + 1) * 0x80_0000_0000int,
+{
+    broadcast use TreePath::index_satisfies_elem_inv;
+
+    lemma_page_size_spec_values();
+    vstd::arithmetic::power2::lemma2_to64();
+    vstd::arithmetic::power2::lemma2_to64_rest();
+    let i0 = path.index(0);
+    assert(0 <= i0 < NR_ENTRIES);
+    if path.len() == 1 {
+        assert(rec_vaddr(path, 1) == 0);
+        assert(rec_vaddr(path, 0) == vaddr_make::<NR_LEVELS>(0, i0) as usize);
+        assert(vaddr_make::<NR_LEVELS>(0, i0) == 0x80_0000_0000usize * i0) by (compute);
+        assert(page_size(4) == 0x80_0000_0000usize);
+        assert((0x80_0000_0000int * i0) + 0x80_0000_0000int == (i0 + 1) * 0x80_0000_0000int)
+            by (nonlinear_arith);
+    } else if path.len() == 2 {
+        let i1 = path.index(1);
+        assert(0 <= i1 < NR_ENTRIES);
+        assert(rec_vaddr(path, 2) == 0);
+        assert(rec_vaddr(path, 1) == vaddr_make::<NR_LEVELS>(1, i1) as usize);
+        assert(rec_vaddr(path, 0) == (vaddr_make::<NR_LEVELS>(0, i0) + vaddr_make::<NR_LEVELS>(
+            1,
+            i1,
+        )) as usize);
+        assert(vaddr_make::<NR_LEVELS>(0, i0) == 0x80_0000_0000usize * i0) by (compute);
+        assert(vaddr_make::<NR_LEVELS>(1, i1) == 0x4000_0000usize * i1) by (compute);
+        assert(page_size(3) == 0x4000_0000usize);
+        assert(0x80_0000_0000int * i0 <= 0x80_0000_0000int * i0 + 0x4000_0000int * i1)
+            by (nonlinear_arith);
+        assert(0x80_0000_0000int * i0 + 0x4000_0000int * i1 + 0x4000_0000int <= (i0 + 1)
+            * 0x80_0000_0000int) by (nonlinear_arith)
+            requires
+                i1 < 512,
+        ;
+    } else if path.len() == 3 {
+        let i1 = path.index(1);
+        let i2 = path.index(2);
+        assert(0 <= i1 < NR_ENTRIES);
+        assert(0 <= i2 < NR_ENTRIES);
+        assert(rec_vaddr(path, 3) == 0);
+        assert(rec_vaddr(path, 2) == vaddr_make::<NR_LEVELS>(2, i2) as usize);
+        assert(rec_vaddr(path, 1) == (vaddr_make::<NR_LEVELS>(1, i1) + vaddr_make::<NR_LEVELS>(
+            2,
+            i2,
+        )) as usize);
+        assert(rec_vaddr(path, 0) == (vaddr_make::<NR_LEVELS>(0, i0) + vaddr_make::<NR_LEVELS>(
+            1,
+            i1,
+        ) + vaddr_make::<NR_LEVELS>(2, i2)) as usize);
+        assert(vaddr_make::<NR_LEVELS>(0, i0) == 0x80_0000_0000usize * i0) by (compute);
+        assert(vaddr_make::<NR_LEVELS>(1, i1) == 0x4000_0000usize * i1) by (compute);
+        assert(vaddr_make::<NR_LEVELS>(2, i2) == 0x20_0000usize * i2) by (compute);
+        assert(page_size(2) == 0x20_0000usize);
+        assert(0x80_0000_0000int * i0 <= 0x80_0000_0000int * i0 + 0x4000_0000int * i1 + 0x20_0000int
+            * i2) by (nonlinear_arith);
+        assert(0x80_0000_0000int * i0 + 0x4000_0000int * i1 + 0x20_0000int * i2 + 0x20_0000int <= (
+        i0 + 1) * 0x80_0000_0000int) by (nonlinear_arith)
+            requires
+                i1 < 512,
+                i2 < 512,
+        ;
+    } else {
+        assert(path.len() == 4);
+        let i1 = path.index(1);
+        let i2 = path.index(2);
+        let i3 = path.index(3);
+        assert(0 <= i1 < NR_ENTRIES);
+        assert(0 <= i2 < NR_ENTRIES);
+        assert(0 <= i3 < NR_ENTRIES);
+        assert(rec_vaddr(path, 4) == 0);
+        assert(rec_vaddr(path, 3) == vaddr_make::<NR_LEVELS>(3, i3) as usize);
+        assert(rec_vaddr(path, 2) == (vaddr_make::<NR_LEVELS>(2, i2) + vaddr_make::<NR_LEVELS>(
+            3,
+            i3,
+        )) as usize);
+        assert(rec_vaddr(path, 1) == (vaddr_make::<NR_LEVELS>(1, i1) + vaddr_make::<NR_LEVELS>(
+            2,
+            i2,
+        ) + vaddr_make::<NR_LEVELS>(3, i3)) as usize);
+        assert(rec_vaddr(path, 0) == (vaddr_make::<NR_LEVELS>(0, i0) + vaddr_make::<NR_LEVELS>(
+            1,
+            i1,
+        ) + vaddr_make::<NR_LEVELS>(2, i2) + vaddr_make::<NR_LEVELS>(3, i3)) as usize);
+        assert(vaddr_make::<NR_LEVELS>(0, i0) == 0x80_0000_0000usize * i0) by (compute);
+        assert(vaddr_make::<NR_LEVELS>(1, i1) == 0x4000_0000usize * i1) by (compute);
+        assert(vaddr_make::<NR_LEVELS>(2, i2) == 0x20_0000usize * i2) by (compute);
+        assert(vaddr_make::<NR_LEVELS>(3, i3) == 0x1000usize * i3) by (compute);
+        assert(page_size(1) == 0x1000usize);
+        assert(0x80_0000_0000int * i0 <= 0x80_0000_0000int * i0 + 0x4000_0000int * i1 + 0x20_0000int
+            * i2 + 0x1000int * i3) by (nonlinear_arith);
+        assert(0x80_0000_0000int * i0 + 0x4000_0000int * i1 + 0x20_0000int * i2 + 0x1000int * i3
+            + 0x1000int <= (i0 + 1) * 0x80_0000_0000int) by (nonlinear_arith)
+            requires
+                i1 < 512,
+                i2 < 512,
+                i3 < 512,
+        ;
+    }
+}
+
 /// `vaddr_of::<C>(path)` in `int` equals the unconditional sum — no usize
 /// wrap. Holds because `vaddr(path) < 2^48` (any valid path) and
 /// `LEADING_BITS < 2^16`, so the sum is `< 2^64 = usize::MAX + 1`.
@@ -318,7 +429,6 @@ impl<C: PageTableConfig, const L: usize> TreeNodeValue<L> for EntryOwner<C> {
     open spec fn default(lv: nat) -> Self {
         Self {
             kind: EntryOwnerKind::Absent,
-            in_scope: false,
             path: TreePath::new(Seq::empty()),
             parent_level: (INC_LEVELS - lv) as PagingLevel,
         }
@@ -371,14 +481,15 @@ pub open spec fn allocated_empty_node_owner<C: PageTableConfig>(
 ) -> bool {
     &&& owner.inv()
     &&& owner.value.is_node()
-    // The freshly-allocated node is in scope (just minted via
-    // `EntryOwner::tracked_new_absent`, whose ensures pins `in_scope`).
-    // Exposed so `alloc_if_none` can discharge `into_pte`'s `in_scope`
-    // precondition on the new node.
-    &&& owner.value.in_scope
     &&& owner.value.path == TreePath::<NR_ENTRIES>::new(Seq::empty())
     &&& owner.value.parent_level == (level + 1) as PagingLevel
-    &&& owner.value.node().level == level
+    &&& owner.value.node().level
+        == level
+    // The fresh subtree's ghost-tree depth. Lets `alloc_if_none` discharge
+    // `final(owner).inv()`'s `child.level == self.level + 1`: the grafted
+    // children sit at `new_node.level + 1`, which must match the cursor entry's
+    // depth + 1.
+    &&& owner.level == (INC_LEVELS - level - 1) as nat
     &&& owner.value.node().inv()
     &&& !owner.value.node().children_perm.value().all(|child: C::E| child.is_present())
     &&& forall|i: int|
@@ -386,7 +497,6 @@ pub open spec fn allocated_empty_node_owner<C: PageTableConfig>(
         0 <= i < NR_ENTRIES ==> {
             &&& owner.children[i] is Some
             &&& owner.children[i]->0.value.is_absent()
-            &&& !owner.children[i]->0.value.in_scope
             &&& owner.children[i]->0.value.inv()
             &&& owner.children[i]->0.value.path == owner.value.path.push_tail(i as usize)
         }
@@ -504,17 +614,74 @@ pub proof fn rebase_freshly_allocated_children<C: PageTableConfig>(
     rebase_freshly_allocated_children_at(owner, new_path, 0);
 }
 
+/// `tree_predicate_map` for a freshly-allocated node grafted into the cursor:
+/// every child is a `new_val`-shaped node (all grandchildren `None`), so each
+/// child's `tree_predicate_map` reduces to `f` at that child
+/// (`new_val_tree_predicate_map`). Combined with `f` at the root node, this
+/// discharges the whole one-level subtree. Used by `alloc_if_none` for the
+/// `node_unlocked_except` / `metaregion_sound_pred` / `path_tracked_pred`
+/// predicates over the fresh node (all of which hold trivially at the absent
+/// children).
+pub proof fn fresh_node_tree_predicate_map<C: PageTableConfig>(
+    node: OwnerSubtree<C>,
+    path: TreePath<NR_ENTRIES>,
+    f: spec_fn(EntryOwner<C>, TreePath<NR_ENTRIES>) -> bool,
+)
+    requires
+        node.inv(),
+        node.level < INC_LEVELS - 1,
+        f(node.value, path),
+        forall|i: int| 0 <= i < NR_ENTRIES ==> #[trigger] node.children[i] is Some,
+        forall|i: int, j: int|
+            0 <= i < NR_ENTRIES && 0 <= j < NR_ENTRIES
+                ==> #[trigger] node.children[i].unwrap().children[j] is None,
+        forall|i: int|
+            0 <= i < NR_ENTRIES ==> #[trigger] f(
+                node.children[i].unwrap().value,
+                path.push_tail(i as usize),
+            ),
+    ensures
+        node.tree_predicate_map(path, f),
+{
+    assert forall|i: int|
+        0 <= i < node.children.len()
+            && #[trigger] node.children[i] is Some implies node.children[i]->0.tree_predicate_map(
+        path.push_tail(i as usize),
+        f,
+    ) by {
+        // Each child has all-`None` grandchildren, so its `tree_predicate_map`
+        // unfolds to `f` at the child (the grandchild forall is vacuous).
+        node.child_some_properties(i as usize);
+        let child = node.children[i]->0;
+        assert(child.children.len() == NR_ENTRIES);
+        assert(forall|j: int|
+            0 <= j < child.children.len() ==> #[trigger] child.children[j] is None);
+    };
+}
+
 pub tracked struct PageTableOwner<C: PageTableConfig>(pub OwnerSubtree<C>);
 
 impl<C: PageTableConfig> PageTableOwner<C> {
     /// Per-edge constraint between a node-parent and its child at index `i`.
     pub open spec fn pt_edge_at(parent: OwnerSubtree<C>, i: int) -> bool {
         &&& parent.children[i] is Some
-        &&& parent.children[i]->0.value.path.len() == parent.value.node().tree_level + 1
-        &&& parent.children[i]->0.value.match_pte(
+        &&& parent.children[i]->0.value.path.len() == parent.value.node().tree_level
+            + 1
+        // The child either matches its PTE as an owned node/frame/absent
+        // entry, OR — only at the top level (`level == NR_LEVELS`, e.g. a user
+        // PT's shared kernel-half slots) — is a `borrowed` (translation-only)
+        // entry whose PTE is a present non-leaf node-PTE pointing at a sub-tree
+        // owned by another config. Borrowed children contribute nothing to
+        // `view_rec`. The top-level guard keeps deeper consumers on pure
+        // `match_pte`, so borrowing never appears below the root.
+        &&& (parent.children[i]->0.value.match_pte(
             parent.value.node().children_perm.value()[i],
             parent.value.node().level,
-        )
+        ) || (parent.value.node().level == NR_LEVELS && C::LEADING_BITS_spec() == 0
+            && parent.children[i]->0.value.borrowed_match_pte(
+            parent.value.node().children_perm.value()[i],
+            parent.value.node().level,
+        )))
         &&& parent.children[i]->0.value.path == parent.value.path.push_tail(i as usize)
         &&& parent.children[i]->0.value.parent_level == parent.value.node().level
     }
@@ -1022,6 +1189,43 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             assert(m.va_range.end <= vaddr_of::<C>(path) as int + (i + 1) * child_ps);
             assert(m.va_range.end <= vaddr_of::<C>(path) as int + parent_ps);
         }
+    }
+
+    /// Any mapping in a subtree's `view_rec` has its VA range within the
+    /// `2^39`-sized cell of the subtree's top-level index `path[0]`, shifted by
+    /// the config's `LEADING_BITS` high-half base. With `path[0] < t`, the range
+    /// end is `<= t * 2^39 + LEADING_BITS * 2^48` — the per-config VA bound that
+    /// discharges the user/kernel isolation theorems.
+    pub proof fn view_rec_top_index_va_bound(self, path: TreePath<NR_ENTRIES>, m: Mapping, t: int)
+        requires
+            self.pt_inv(),
+            path.inv(),
+            1 <= path.len() <= INC_LEVELS - 1,
+            path.len() == self.0.level,
+            self.0.value.parent_level == (INC_LEVELS - self.0.level) as PagingLevel,
+            (path.index(0) as int) < t,
+            self.view_rec(path).contains(m),
+        ensures
+            (path.index(0) as int) * 0x80_0000_0000int + (C::LEADING_BITS_spec() as int)
+                * 0x1_0000_0000_0000int <= m.va_range.start,
+            m.va_range.start < m.va_range.end,
+            m.va_range.end <= t * 0x80_0000_0000int + (C::LEADING_BITS_spec() as int)
+                * 0x1_0000_0000_0000int,
+    {
+        self.view_rec_vaddr_range(path, m);
+        lemma_vaddr_of_eq_int::<C>(path);
+        lemma_vaddr_top_index_cell(path);
+        // `vaddr_of(path) == vaddr(path) + LEADING_BITS*2^48` (lemma_vaddr_of_eq_int);
+        // the positional `vaddr(path)` lies in the top-index cell
+        // `[index(0)*2^39, (index(0)+1)*2^39)` (lemma_vaddr_top_index_cell), and
+        // `(index(0)+1) <= t`. Adding the `LEADING_BITS*2^48` base shifts both
+        // ends — giving the user (LB=0) low half and the kernel (LB=0xffff)
+        // high half.
+        assert((path.index(0) as int + 1) * 0x80_0000_0000int <= t * 0x80_0000_0000int)
+            by (nonlinear_arith)
+            requires
+                (path.index(0) as int) < t,
+        ;
     }
 
     /// `pt_inv` (plus the root's recorded path) lifts to a full
@@ -1537,21 +1741,59 @@ impl<C: PageTableConfig> PageTableOwner<C> {
     {
     }
 
-    /// A node with nr_children == 0 has no present PTEs, so all children are absent
-    /// and the subtree contributes no mappings.
+    /// A node with `nr_children == 0` has no present PTEs, so all children are
+    /// absent and the subtree contributes no mappings.
     ///
-    /// Axiom: the link between `nr_children` and the count of present PTEs is maintained
-    /// by `Entry::replace` / `Entry::new` but not yet formalised as a `NodeOwner` invariant.
-    pub axiom fn view_rec_nr_children_zero_empty(self, path: TreePath<NR_ENTRIES>)
+    /// `count_consistent` ties `nr_children` to `count_present(children_perm)`,
+    /// so `nr_children == 0` forces every PTE absent. `pt_edge_at` (from
+    /// `pt_inv`) then forces each ghost child `is_absent` — its `view_rec` is
+    /// `∅` — and `lemma_view_rec_contains` lifts that to the whole node's
+    /// `view_rec`. (At the top level the `borrowed` edge disjunct is ruled out:
+    /// `borrowed_match_pte` needs a *present* PTE, which `count_present == 0`
+    /// denies.)
+    pub proof fn view_rec_nr_children_zero_empty(self, path: TreePath<NR_ENTRIES>)
         requires
-            self.0.inv(),
+            self.pt_inv(),
             self.0.value.is_node(),
             self.0.value.node().meta_own.nr_children.value() == 0,
+            self.0.value.node().count_consistent(),
             path.len() <= INC_LEVELS - 1,
             path.len() == self.0.level,
         ensures
             self.view_rec(path) == set![],
-    ;
+    {
+        if path.len() < INC_LEVELS - 1 {
+            let cp = self.0.value.node().children_perm.value();
+            // `count_consistent` + `nr_children == 0` ⟹ no present PTEs.
+            assert(crate::specs::mm::page_table::node::owners::count_present(cp) == 0);
+            self.lemma_view_rec_contains(path);
+            assert forall|m: Mapping| self.view_rec(path).contains(m) implies false by {
+                let i = choose|i: int|
+                    #![trigger self.0.children[i]]
+                    0 <= i < self.0.children.len() && self.0.children[i] is Some && PageTableOwner(
+                        self.0.children[i]->0,
+                    ).view_rec(path.push_tail(i as usize)).contains(m);
+                self.pt_inv_unroll(i);
+                // PTE `i` is absent — else `count_present(cp) >= 1`.
+                if cp[i].is_present() {
+                    crate::specs::mm::page_table::node::owners::lemma_count_present_upto_present(
+                        cp,
+                        cp.len() as int,
+                        i,
+                    );
+                }
+                assert(!cp[i].is_present());
+                // `pt_edge_at`'s borrowed disjunct needs a present PTE, so it is
+                // false here; the `match_pte` disjunct holds, and `match_pte`
+                // with an absent PTE forces the child `is_absent`.
+                assert(self.0.children[i]->0.value.is_absent());
+                // An absent entry is neither frame nor node ⟹ empty `view_rec`.
+                assert(PageTableOwner(self.0.children[i]->0).view_rec(path.push_tail(i as usize))
+                    =~= set![]);
+            };
+            assert(self.view_rec(path) =~= set![]);
+        }
+    }
 
     pub open spec fn metaregion_sound_pred(regions: MetaRegionOwners) -> (spec_fn(
         EntryOwner<C>,
@@ -1668,7 +1910,9 @@ impl<C: PageTableConfig> PageTableOwner<C> {
                                 sub_idx != changed_idx || (r1.slots.contains_key(sub_idx)
                                     && r1.slot_owners[sub_idx].inner_perms.ref_count.value()
                                     != REF_COUNT_UNUSED
-                                    && r1.slot_owners[sub_idx].inner_perms.ref_count.value() > 0)
+                                    && r1.slot_owners[sub_idx].inner_perms.ref_count.value() > 0
+                                    && r1.slot_owners[sub_idx].inner_perms.ref_count.value()
+                                    <= REF_COUNT_MAX)
                             }
                     },
             ),
@@ -1720,7 +1964,9 @@ impl<C: PageTableConfig> PageTableOwner<C> {
                                 sub_idx != changed_idx || (r1.slots.contains_key(sub_idx)
                                     && r1.slot_owners[sub_idx].inner_perms.ref_count.value()
                                     != REF_COUNT_UNUSED
-                                    && r1.slot_owners[sub_idx].inner_perms.ref_count.value() > 0)
+                                    && r1.slot_owners[sub_idx].inner_perms.ref_count.value() > 0
+                                    && r1.slot_owners[sub_idx].inner_perms.ref_count.value()
+                                    <= REF_COUNT_MAX)
                             }
                     },
             ),
@@ -1781,11 +2027,10 @@ impl<C: PageTableConfig> PageTableOwner<C> {
     }
 
     pub open spec fn not_in_scope_pred() -> spec_fn(EntryOwner<C>, TreePath<NR_ENTRIES>) -> bool {
-        |entry: EntryOwner<C>, _path: TreePath<NR_ENTRIES>| !entry.in_scope
+        |entry: EntryOwner<C>, _path: TreePath<NR_ENTRIES>| true
     }
 
-    /// Every entry in an OwnerSubtree has `!in_scope`.
-    /// Follows from `EntryOwner::inv()` including `!in_scope`, propagated through the tree.
+    /// `tree_predicate_map` for the trivial `not_in_scope_pred`.
     pub proof fn tree_not_in_scope(subtree: OwnerSubtree<C>, path: TreePath<NR_ENTRIES>)
         requires
             subtree.inv(),
@@ -1793,7 +2038,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             subtree.tree_predicate_map(path, Self::not_in_scope_pred()),
         decreases INC_LEVELS - subtree.level,
     {
-        // subtree.inv() => inv_node() => value.inv() => !value.in_scope
+        // `not_in_scope_pred` is trivially `true`; recurse to discharge it.
         if subtree.level < INC_LEVELS - 1 {
             assert forall|i: int|
                 0 <= i < subtree.children.len() && (

@@ -152,8 +152,8 @@ fn path_slot_as_mut<'a, 'rcu, C: PageTableConfig>(
 ///
 /// ## Justification
 /// `Child::from_pte` (called inside `Entry::replace`) invokes `PageTableNode::from_raw`,
-/// which sets `regions.slot_owners[idx].raw_count = 0` and marks the entry owner
-/// `in_scope = true`.  Consequently `metaregion_sound` reports `raw_count == 0`, but
+/// which sets `regions.slot_owners[idx].raw_count = 0`.  Consequently `metaregion_sound`
+/// reports `raw_count == 0`, but
 /// `Frame::borrow` / `FrameRef::borrow_paddr` require `raw_count == 1`.
 ///
 /// This function bridges that gap: we have unique ownership of the live frame `pt`
@@ -1104,6 +1104,14 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     #[verus_spec(with Tracked(&mut child_node_owner), Tracked(&*regions))]
                     let nr_children = pt_guard.nr_children();
 
+                    // `nr_children()` requires `child_node_owner.metaregion_sound_node`,
+                    // so `count_consistent` holds for this node. Capture it as a ghost
+                    // before the node is moved back into the cursor tree.
+                    let ghost cur_node_owner = child_node_owner;
+                    proof {
+                        assert(cur_node_owner.count_consistent());
+                    }
+
                     proof {
                         child_owner.value.tracked_put_node(child_node_owner);
                         continuation.tracked_put_child(child_owner);
@@ -1144,6 +1152,15 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                             owner.move_forward_increases_va();
                             owner.move_forward_not_popped_too_high();
                             let ghost subtree = owner.cur_subtree();
+                            // `pt_inv` for the current subtree, from the current
+                            // continuation's `pt_inv_children`.
+                            owner.inv_continuation((owner.level - 1) as int);
+                            owner.continuations[owner.level - 1].pt_inv_children_unroll(
+                                owner.index() as int,
+                            );
+                            // The subtree's node is the one just read by `nr_children`,
+                            // carrying `count_consistent`.
+                            assert(subtree.value.node() == cur_node_owner);
                             PageTableOwner(subtree).view_rec_nr_children_zero_empty(
                                 subtree.value.path,
                             );
@@ -1379,7 +1396,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     }
 
                     proof {
-                        let ghost child_not_in_scope = !child_owner.value.in_scope;
                         assert(cur_entry.idx == cont0.idx);
                         let ghost reconstructed_entry_own = EntryOwner {
                             kind: EntryOwnerKind::Node(continuation.entry_own.node()),
@@ -2125,8 +2141,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         let ghost child_owner_parent_level = child_owner.value.parent_level;
 
         proof {
-            let ghost child_not_in_scope = !child_owner.value.in_scope;
-
             continuation.tracked_put_child(child_owner);
             continuation.entry_own.tracked_put_node(parent_owner);
             cont0.take_put_child();
@@ -2141,7 +2155,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             };
             assert(owner.continuations[owner.level - 1].inv()) by {
                 let cont_new = owner.continuations[owner.level - 1];
-                assert(child_not_in_scope);
                 cont_new.continuation_inv_holds_after_child_restore(cont0, cont0.entry_own.node());
             };
             assert(owner.continuations[owner.level - 1].entry_own.metaregion_sound(*regions));
@@ -2652,7 +2665,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                             0 <= i < NR_ENTRIES ==> (#[trigger] child_owner_children[i]) is Some
                                 && child_owner_children[i].unwrap().value.is_absent());
 
-                        let ghost child_not_in_scope = !child_owner.value.in_scope;
                         let ghost reconstructed_entry_own = EntryOwner {
                             kind: EntryOwnerKind::Node(parent_owner),
                             ..cont_pre_alloc.entry_own
@@ -3015,6 +3027,18 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 ==>
                 final(regions).slot_owners[
                     frame_to_index(C::item_into_raw(item).0)].inner_perms.ref_count.value() > 0,
+            // At the mapped index, the SHARED upper bound is preserved: on the
+            // non-panic path the clone's saturation guard keeps `rc <= MAX`.
+            // Lets callers re-derive `item_slot_in_regions`'s `rc <= MAX` for the
+            // mapped frame (covers duplicate frames in a map sequence).
+            (C::tracked(item)
+                && old(regions).slot_owners[
+                    frame_to_index(C::item_into_raw(item).0)].inner_perms.ref_count.value()
+                    <= crate::specs::mm::frame::meta_owners::REF_COUNT_MAX)
+                ==>
+                final(regions).slot_owners[
+                    frame_to_index(C::item_into_raw(item).0)].inner_perms.ref_count.value()
+                    <= crate::specs::mm::frame::meta_owners::REF_COUNT_MAX,
             // `regions.slots` is monotonic — slot existence is preserved through map.
             forall|idx: usize| #![trigger final(regions).slots.contains_key(idx)]
                 old(regions).slots.contains_key(idx) ==> final(regions).slots.contains_key(idx),
@@ -3085,7 +3109,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 cont.level(),
                 prop,
                 is_tracked,
-            ).set_in_scope(false));
+            ));
             assert(new_owner.value.is_frame());
             assert(new_owner.value.frame().mapped_pa == pa);
 
@@ -3454,9 +3478,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             owner.cur_entry_owner().path,
             owner.level,
         );
-        proof {
-            absent_entry_owner.in_scope = false;
-        }
         let tracked subtree = OwnerSubtree::new_val_tracked(
             absent_entry_owner,
             (owner.continuations[owner.level - 1].tree_level + 1) as nat,
@@ -3945,14 +3966,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         assert(owner.continuations == owner0.continuations.remove(owner.level - 1));
 
         let ghost pre_new_owner_value = new_owner.value;
-        // Capture the old child value before Entry::replace mutates it (from_pte_owner_spec
-        // only changes in_scope, so meta_slot_paddr() is unchanged, but we need the pre-replace
+        // Capture the old child value before Entry::replace mutates it (we need the pre-replace
         // value to match Entry::metaregion_sound_neq_preserved's old(owner) parameter).
         let ghost old_child_pre_replace = old_child_owner.value;
-
-        proof {
-            new_owner.value.in_scope = true;
-        }
 
         proof {
             assert(cont0 == owner0.continuations[(owner0.level - 1) as int]);
@@ -4206,7 +4222,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                     }
                     owner0.inv_continuation(i);
                     let eo = owner0.continuations[i].entry_own;
-                    assert(eo.inv() && eo.is_node() && !eo.in_scope);
+                    assert(eo.inv() && eo.is_node());
                     assert(eo.metaregion_sound(regions0));
 
                     if old_child_pre_replace.is_node() {

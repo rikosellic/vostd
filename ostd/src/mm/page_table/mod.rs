@@ -1503,7 +1503,9 @@ impl PageTable<KernelPtConfig> {
                                     && regions.slot_owners[sub_idx].inner_perms.ref_count.value()
                                     != REF_COUNT_UNUSED
                                     && regions.slot_owners[sub_idx].inner_perms.ref_count.value()
-                                    > 0)
+                                    > 0
+                                    && regions.slot_owners[sub_idx].inner_perms.ref_count.value()
+                                    <= crate::specs::mm::frame::meta_owners::REF_COUNT_MAX)
                             }
                     },
             );
@@ -1562,7 +1564,6 @@ impl PageTable<KernelPtConfig> {
                 assert(entry_owner.parent_level == kern_node.level);
                 assert(child_subtree.inv());
                 assert(entry_owner.inv());
-                assert(!entry_owner.in_scope);
                 assert(root_owner.relate_guard(root_node));
 
                 kernel_owner.0.map_unroll_once(

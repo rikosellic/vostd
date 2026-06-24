@@ -513,7 +513,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
             allocated_empty_node_grandchildren_none(owner@),
             res.ptr.addr() == owner@.value.node().meta_addr_self(),
             guards.unlocked(owner@.value.node().meta_addr_self()),
-            MetaSlot::get_from_unused_spec(meta_to_frame(owner@.value.node().meta_addr_self()), false, *old(regions), *final(regions)),
+            MetaSlot::get_node_from_unused_spec(meta_to_frame(owner@.value.node().meta_addr_self()), *old(regions), *final(regions)),
             MetaSlot::slot_perm_reparked_spec(meta_to_frame(owner@.value.node().meta_addr_self()), *old(regions), *final(regions)),
 
             final(regions).frame_obligations == old(regions).frame_obligations.insert(
@@ -699,7 +699,6 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
              Tracked(regions): Tracked<&MetaRegionOwners>,
         requires
             owner.inv(),
-            !child_owner.in_scope,
             child_owner.inv(),
             owner.relate_guard(*old(self)),
             child_owner.match_pte(

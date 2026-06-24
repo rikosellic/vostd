@@ -13,7 +13,8 @@ use vstd_extra::ownership::*;
 
 use super::*;
 use crate::mm::frame::AnyFrameMeta;
-use crate::mm::frame::meta::{MetaSlot, REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED};
+use crate::mm::frame::meta::MetaSlot;
+pub use crate::mm::frame::meta::{REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED};
 use crate::mm::kspace::FRAME_METADATA_RANGE;
 use crate::mm::{Paddr, PagingLevel, Vaddr};
 use crate::specs::arch::NR_ENTRIES;
@@ -219,6 +220,11 @@ impl Inv for MetaSlotOwner {
         &&& self.inner_perms.ref_count.value() == REF_COUNT_UNIQUE ==> {
             &&& self.inner_perms.vtable_ptr.is_init()
             &&& self.inner_perms.storage.is_init()
+            // A UNIQUE non-MMIO slot has no live PTE mapping (same rationale as
+            // the UNUSED branch): a mapping would be a reference keeping the
+            // count above the unique sentinel. Lets the list-store embedding
+            // discharge `paths_in_pt.is_empty()` for linked-list frames.
+            &&& (self.usage != PageUsage::MMIO ==> self.paths_in_pt.is_empty())
         }
         // A SHARED slot (`0 < rc <= REF_COUNT_MAX`) is genuinely in use:
         // metadata storage is written, `vtable_ptr` resolves the
