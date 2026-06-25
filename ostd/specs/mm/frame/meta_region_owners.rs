@@ -15,13 +15,15 @@ use super::*;
 use crate::mm::Paddr;
 use crate::mm::frame::Link;
 use crate::mm::frame::meta::{
-    AnyFrameMeta, MetaSlot, REF_COUNT_MAX,
-    mapping::{META_SLOT_SIZE, frame_to_index, frame_to_meta, max_meta_slots, meta_addr},
+    AnyFrameMeta, META_SLOT_SIZE, MetaSlot, REF_COUNT_MAX, mapping::frame_to_meta,
 };
 use crate::mm::kspace::FRAME_METADATA_RANGE;
 use crate::specs::arch::{MAX_PADDR, NR_ENTRIES, PAGE_SIZE};
 use crate::specs::mm::frame::linked_list::linked_list_owners::MetaSlotSmall;
-use crate::specs::mm::frame::meta_owners::Metadata;
+use crate::specs::mm::frame::{
+    mapping::{frame_to_index, max_meta_slots, meta_addr},
+    meta_owners::Metadata,
+};
 
 verus! {
 
@@ -45,6 +47,7 @@ verus! {
 /// Double-free happens when `from_raw` is called on a frame that is not forgotten, or that has been
 /// dropped with `ManuallyDrop::drop` instead of `into_raw`. All functions in
 /// the verified code that call `from_raw` have a precondition that the frame's index is not a key in `slots`.
+#[verifier::ext_equal]
 pub tracked struct MetaRegionOwners {
     pub slots: Map<usize, simple_pptr::PointsTo<MetaSlot>>,
     pub slot_owners: Map<usize, MetaSlotOwner>,

@@ -59,13 +59,16 @@ use vstd_extra::cast_ptr::Repr;
 use vstd_extra::ownership::*;
 
 use crate::mm::Paddr;
-use crate::mm::frame::meta::mapping::frame_to_index;
-use crate::mm::frame::{AnyFrameMeta, Link};
+use crate::mm::frame::{
+    AnyFrameMeta, Link,
+    meta::{REF_COUNT_UNIQUE, REF_COUNT_UNUSED},
+};
 use crate::specs::arch::has_safe_slot;
 use crate::specs::mm::frame::linked_list::linked_list_owners::{
     CursorOwner, LinkOwner, LinkedListOwner, MetaSlotSmall,
 };
-use crate::specs::mm::frame::meta_owners::{PageUsage, REF_COUNT_UNIQUE};
+use crate::specs::mm::frame::mapping::frame_to_index;
+use crate::specs::mm::frame::meta_owners::PageUsage;
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::frame::unique::UniqueFrameOwner;
 
@@ -169,11 +172,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> ListStore<M> {
         &&& forall|lid1: LooseId, lid2: LooseId|
             #![trigger self.loose.dom().contains(lid1), self.loose.dom().contains(lid2)]
             self.loose.dom().contains(lid1) && self.loose.dom().contains(lid2)
-                && self.loose[lid1].slot_index == self.loose[lid2].slot_index ==> lid1 == lid2
-        &&& self.cursors.dom().finite()
-        // A cursored list is *checked out*: it lives in `cursors`
-        // (keyed by its home id), never simultaneously in `lists`. This
-        // is the borrow — a live `CursorMut` holds the list exclusively.
+                && self.loose[lid1].slot_index == self.loose[lid2].slot_index ==> lid1
+                == lid2
+            // A cursored list is *checked out*: it lives in `cursors`
+            // (keyed by its home id), never simultaneously in `lists`. This
+            // is the borrow — a live `CursorMut` holds the list exclusively.
         &&& self.lists.dom().disjoint(
             self.cursors.dom(),
         )
@@ -743,7 +746,7 @@ pub axiom fn list_drop_embedded<M: AnyFrameMeta + Repr<MetaSlotSmall>>(
             0 <= i < owner.list.len() ==> {
                 let idx = owner.slot_index_at(i);
                 &&& final(regions).slot_owners[idx].inner_perms.ref_count.value()
-                    == crate::specs::mm::frame::meta_owners::REF_COUNT_UNUSED
+                    == REF_COUNT_UNUSED
                 &&& final(regions).slot_owners[idx].inner_perms.in_list.value() == 0
             },
         // Every slot outside the dropped list is fully preserved.
