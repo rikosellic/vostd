@@ -533,15 +533,9 @@ impl MetaSlot {
             match slot.borrow(Tracked(&slot_perm)).ref_count.load(
                 Tracked(&mut slot_own.inner_perms.ref_count),
             ) {
-                REF_COUNT_UNUSED => {
-                    return Err(GetFrameError::Unused);
-                },
-                REF_COUNT_UNIQUE => {
-                    return Err(GetFrameError::Unique);
-                },
-                0 => {
-                    return Err(GetFrameError::Busy);
-                },
+                REF_COUNT_UNUSED => return Err(GetFrameError::Unused),
+                REF_COUNT_UNIQUE => return Err(GetFrameError::Unique),
+                0 => return Err(GetFrameError::Busy),
                 last_ref_cnt => {
                     if last_ref_cnt >= REF_COUNT_MAX {
                         // See `Self::inc_ref_count` for the explanation.
@@ -662,6 +656,14 @@ impl MetaSlot {
     }*/
     /// Gets the stored metadata as type `M`.
     ///
+    /// Calling the method should be safe, but using the returned pointer would
+    /// be unsafe. Specifically, the derefernecer should ensure that:
+    ///  - the stored metadata is initialized (by [`Self::write_meta`]) and
+    ///    valid;
+    ///  - the initialized metadata is of type `M`;
+    ///  - the returned pointer should not be dereferenced as mutable unless
+    ///    having exclusive access to the metadata slot.
+    ///
     /// # Verified Properties
     /// ## Preconditions
     /// - **Safety**: The caller must provide an existing permission that matches the contents of the metadata slot.
@@ -694,6 +696,10 @@ impl MetaSlot {
     }
 
     /// Writes the metadata to the slot without reading or dropping the previous value.
+    ///
+    /// # Safety
+    ///
+    /// The caller should have exclusive access to the metadata slot's fields.
     ///
     /// # Verification Design
     /// This function is axiomatized for now because of trait constraints.
@@ -737,6 +743,12 @@ impl MetaSlot {
 
     /// Drops the metadata and deallocates the frame.
     ///
+    /// # Safety
+    ///
+    /// The caller should ensure that:
+    ///  - the reference count is `0` (so we are the sole owner of the frame);
+    ///  - the metadata is initialized;
+    ///
     /// # Verified Properties
     /// ## Preconditions
     /// - **Safety Invariant**: The metadata slot must satisfy the safety invariants.
@@ -766,7 +778,7 @@ impl MetaSlot {
             final(owner).inner_perms.vtable_ptr.is_uninit(),
             final(owner).inner_perms.vtable_ptr.pptr() == old(owner).inner_perms.vtable_ptr.pptr(),
             final(owner).inner_perms.in_list == old(owner).inner_perms.in_list,
-            final(owner).self_addr == old(owner).self_addr,
+            final(owner).slot_vaddr == old(owner).slot_vaddr,
             final(owner).usage == old(owner).usage,
             final(owner).paths_in_pt == old(owner).paths_in_pt,
     )]
@@ -816,7 +828,7 @@ impl MetaSlot {
             final(slot_own).inner_perms.in_list == old(slot_own).inner_perms.in_list,
             final(slot_own).inner_perms.vtable_ptr.is_uninit(),
             final(slot_own).inner_perms.vtable_ptr.pptr() == old(slot_own).inner_perms.vtable_ptr.pptr(),
-            final(slot_own).self_addr == old(slot_own).self_addr,
+            final(slot_own).slot_vaddr == old(slot_own).slot_vaddr,
             final(slot_own).usage == old(slot_own).usage,
             final(slot_own).paths_in_pt == old(slot_own).paths_in_pt,
     )]
