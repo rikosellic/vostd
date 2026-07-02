@@ -369,6 +369,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     /// FIXME： General architecture support. Move properties only relevant to paging constants to `PagingConstsTrait`.
     proof fn lemma_page_table_config_constant_requirements()
         ensures
+            core::mem::size_of::<Self::E>() == Self::C::PTE_SIZE(),
             Self::TOP_LEVEL_INDEX_RANGE().start < Self::TOP_LEVEL_INDEX_RANGE().end,
             Self::TOP_LEVEL_INDEX_RANGE().end <= pow2(
                 (Self::C::ADDRESS_WIDTH() - pte_index_bit_offset::<Self::C>(
@@ -390,6 +391,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
                     - pow2(Self::C::ADDRESS_WIDTH() as nat)
             },
             Self::LEADING_BITS_spec() < 0x1_0000_usize,
+            // FIXME: This property does not hold in general, `ADDRESS_WIDTH` can be wider.
             pow2(
                 (Self::C::ADDRESS_WIDTH() - pte_index_bit_offset::<Self::C>(
                     Self::C::NR_LEVELS(),
@@ -407,6 +409,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             Self::TOP_LEVEL_INDEX_RANGE().end <= NR_ENTRIES,
             // Copied from the postcondition of `lemma_page_table_config_constant_requirements`
             // so that we only need to call this lemma in proofs.
+            core::mem::size_of::<Self::E>() == Self::C::PTE_SIZE(),
             Self::TOP_LEVEL_INDEX_RANGE().start < Self::TOP_LEVEL_INDEX_RANGE().end,
             Self::TOP_LEVEL_INDEX_RANGE().end <= pow2(
                 (Self::C::ADDRESS_WIDTH() - pte_index_bit_offset::<Self::C>(
@@ -428,6 +431,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
                     - pow2(Self::C::ADDRESS_WIDTH() as nat)
             },
             Self::LEADING_BITS_spec() < 0x1_0000_usize,
+            // FIXME: This property does not hold in general, `ADDRESS_WIDTH` can be wider.
             pow2(
                 (Self::C::ADDRESS_WIDTH() - pte_index_bit_offset::<Self::C>(
                     Self::C::NR_LEVELS(),
@@ -437,15 +441,6 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         Self::C::lemma_paging_consts_properties();
         Self::lemma_page_table_config_constant_requirements();
     }
-
-    /// Layout identity: the PTE type's Rust `size_of` matches the config's
-    /// `PTE_SIZE_spec`. Concrete impls satisfy this via their `global
-    /// layout` declaration. Exposed for generic code that calls
-    /// `core::mem::size_of::<Self::E>()`.
-    proof fn lemma_pte_size_eq_size_of()
-        ensures
-            core::mem::size_of::<Self::E>() == Self::C::PTE_SIZE_spec(),
-    ;
 
     /// A full PT-node's worth of PTEs fills exactly one base page.
     proof fn lemma_pte_walk_fills_page()
@@ -1957,6 +1952,7 @@ pub trait PageTableEntryTrait:
     /// Absent (zero) PTE has well-formed paddr for match_pte.
     proof fn lemma_page_table_entry_properties()
         ensures
+            core::mem::size_of::<Self>() == core::mem::size_of::<usize>(),
             Self::new_absent().paddr() % PAGE_SIZE == 0,
             Self::new_absent().paddr() < MAX_PADDR,
             !Self::new_absent().is_present(),

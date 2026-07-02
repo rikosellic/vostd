@@ -154,6 +154,7 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
             Self::BASE_PAGE_SIZE() == PAGE_SIZE,
             Self::NR_LEVELS() == NR_LEVELS,
             Self::BASE_PAGE_SIZE() / Self::PTE_SIZE() == NR_ENTRIES,
+            Self::PTE_SIZE() == core::mem::size_of::<usize>(),
     ;
 
     /// The derived properties of the paging constants.
@@ -179,6 +180,7 @@ pub trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
             Self::BASE_PAGE_SIZE() == PAGE_SIZE,
             Self::NR_LEVELS() == NR_LEVELS,
             Self::BASE_PAGE_SIZE() / Self::PTE_SIZE() == NR_ENTRIES,
+            Self::PTE_SIZE() == core::mem::size_of::<usize>(),
     {
         Self::lemma_paging_consts_requirements();
         broadcast use group_div_basics;

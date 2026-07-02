@@ -175,7 +175,8 @@ unsafe impl PageTableConfig for KernelPtConfig {
         use crate::mm::page_table::{nr_pte_index_bits, pte_index_bit_offset_spec};
         use vstd::arithmetic::power2::{lemma2_to64, lemma2_to64_rest, lemma_pow2_adds, pow2};
         use vstd_extra::prelude::lemma_usize_pow2_ilog2;
-
+        Self::C::lemma_paging_consts_properties();
+        PageTableEntry::lemma_layout();
         lemma2_to64();
         lemma2_to64_rest();
         assert(usize::BITS == 64) by (compute);
@@ -277,13 +278,8 @@ unsafe impl PageTableConfig for KernelPtConfig {
         }
     }
 
-    proof fn lemma_pte_size_eq_size_of() {
-        PageTableEntry::lemma_layout();
-    }
-
     proof fn lemma_pte_walk_fills_page() {
         Self::lemma_page_table_config_constant_properties();
-        Self::lemma_pte_size_eq_size_of();
     }
 
     proof fn lemma_pte_align_divides_size() {
