@@ -85,15 +85,15 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
     /// `Segment` together with `MetaRegionOwners`. The segment's own `range`
     /// is the only identity source; there is no separate segment owner token.
     pub open spec fn relate_regions(&self, regions: MetaRegionOwners) -> bool {
-        &&& self.tracked_permissions@.len() == seg_nframes(self.range)
+        &&& self.permissions().len() == seg_nframes(self.range())
         &&& forall|i: int|
-            #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize)]
-            0 <= i < seg_nframes(self.range) ==> {
-                let idx = frame_to_index((self.range.start + i * PAGE_SIZE) as usize);
+            #![trigger frame_to_index((self.range().start + i * PAGE_SIZE) as usize)]
+            0 <= i < seg_nframes(self.range()) ==> {
+                let idx = frame_to_index((self.range().start + i * PAGE_SIZE) as usize);
                 &&& Frame::<M>::frame_permission_wf(
                     regions,
-                    (self.range.start + i * PAGE_SIZE) as usize,
-                    self.tracked_permissions@[i],
+                    (self.range().start + i * PAGE_SIZE) as usize,
+                    self.permissions()[i],
                 )
                 &&& regions.contains(idx)
                 &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
@@ -111,11 +111,11 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
                 &&& regions.slot_owners[idx].usage is Frame
             }
         &&& forall|i: int, j: int|
-            #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize),
-                frame_to_index((self.range.start + j * PAGE_SIZE) as usize)]
-            0 <= i < j < seg_nframes(self.range) ==> frame_to_index(
-                (self.range.start + i * PAGE_SIZE) as usize,
-            ) != frame_to_index((self.range.start + j * PAGE_SIZE) as usize)
+            #![trigger frame_to_index((self.range().start + i * PAGE_SIZE) as usize),
+                frame_to_index((self.range().start + j * PAGE_SIZE) as usize)]
+            0 <= i < j < seg_nframes(self.range()) ==> frame_to_index(
+                (self.range().start + i * PAGE_SIZE) as usize,
+            ) != frame_to_index((self.range().start + j * PAGE_SIZE) as usize)
     }
 
     /// Manually instantiates the [`relate_regions`] forall at a specific index.
@@ -123,14 +123,14 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
     pub proof fn relate_regions_at(&self, regions: MetaRegionOwners, i: int)
         requires
             self.relate_regions(regions),
-            0 <= i < seg_nframes(self.range),
+            0 <= i < seg_nframes(self.range()),
         ensures
             ({
-                let idx = frame_to_index((self.range.start + i * PAGE_SIZE) as usize);
+                let idx = frame_to_index((self.range().start + i * PAGE_SIZE) as usize);
                 &&& Frame::<M>::frame_permission_wf(
                     regions,
-                    (self.range.start + i * PAGE_SIZE) as usize,
-                    self.tracked_permissions@[i],
+                    (self.range().start + i * PAGE_SIZE) as usize,
+                    self.permissions()[i],
                 )
                 &&& regions.contains(
                     idx,
@@ -145,7 +145,7 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
             }),
     {
         // Trigger the forall at index `i`.
-        let _ = frame_to_index((self.range.start + i * PAGE_SIZE) as usize);
+        let _ = frame_to_index((self.range().start + i * PAGE_SIZE) as usize);
     }
 
     /// Manually instantiates the [`relate_regions`] distinctness forall at a
@@ -154,15 +154,15 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
     pub proof fn relate_regions_distinct(&self, regions: MetaRegionOwners, i: int, j: int)
         requires
             self.relate_regions(regions),
-            0 <= i < j < seg_nframes(self.range),
+            0 <= i < j < seg_nframes(self.range()),
         ensures
-            frame_to_index((self.range.start + i * PAGE_SIZE) as usize) != frame_to_index(
-                (self.range.start + j * PAGE_SIZE) as usize,
+            frame_to_index((self.range().start + i * PAGE_SIZE) as usize) != frame_to_index(
+                (self.range().start + j * PAGE_SIZE) as usize,
             ),
     {
         // Trigger the distinctness forall at `(i, j)`.
-        let _ = frame_to_index((self.range.start + i * PAGE_SIZE) as usize);
-        let _ = frame_to_index((self.range.start + j * PAGE_SIZE) as usize);
+        let _ = frame_to_index((self.range().start + i * PAGE_SIZE) as usize);
+        let _ = frame_to_index((self.range().start + j * PAGE_SIZE) as usize);
     }
 
     /// The bundled invariant for [`Segment`] operations that thread the global
@@ -176,17 +176,6 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
         &&& self.inv()
         &&& regions.inv()
         &&& self.relate_regions(regions)
-    }
-
-    /// Every frame can be cloned without hitting the reference-count
-    /// saturation guard. Borrowing iteration yields cloned frame handles, so
-    /// this is the iterator's no-unwind condition.
-    pub open spec fn iterable(&self, regions: MetaRegionOwners) -> bool {
-        forall|i: int|
-            #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize)]
-            0 <= i < seg_nframes(self.range) ==> regions.slot_owners[frame_to_index(
-                (self.range.start + i * PAGE_SIZE) as usize,
-            )].ref_count.value() < crate::mm::frame::meta::REF_COUNT_MAX
     }
 
     /// Whether a [`MemView`] covers the segment through the kernel direct mapping.

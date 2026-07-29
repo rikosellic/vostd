@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 //! A contiguous range of frames.
-use vstd::modes::tracked_swap;
 use vstd::prelude::*;
-use vstd::proph::ProphecyGhost;
 use vstd::simple_pptr::PPtr;
-
-use vstd::std_specs::iter::{IteratorSpec, IteratorSpecImpl};
+use vstd::std_specs::iter::IteratorSpecImpl;
 use vstd_extra::assert;
 use vstd_extra::cast_ptr::*;
 use vstd_extra::drop_tracking::*;
@@ -51,11 +48,45 @@ verus! {
 #[allow(repr_transparent_non_zst_fields)]
 pub struct Segment<M: AnyFrameMeta + ?Sized> {
     /// The physical address range of the segment.
-    pub range: Range<Paddr>,
-    pub _marker: core::marker::PhantomData<M>,
+    range: Range<Paddr>,
+    _marker: core::marker::PhantomData<M>,
     /// One metadata fraction for each frame in `range`, in address order.
     #[cfg(verus_keep_ghost_body)]
-    pub tracked_permissions: Tracked<Seq<FramePermission>>,
+    tracked_permissions: Tracked<Seq<FramePermission>>,
+}
+
+#[verifier::reject_recursive_types(M)]
+pub closed spec fn segment_iter_frame<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
+    paddr: Paddr,
+    permission: FramePermission,
+) -> Frame<M> {
+    Frame {
+        ptr: PPtr(frame_to_meta(paddr), core::marker::PhantomData),
+        _marker: core::marker::PhantomData,
+        #[cfg(verus_keep_ghost_body)]
+        tracked_perm: Tracked(Some(permission)),
+    }
+}
+
+#[verifier::reject_recursive_types(M)]
+pub closed spec fn segment_iter_remaining<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
+    range: Range<Paddr>,
+    permissions: Seq<FramePermission>,
+) -> Seq<Frame<M>> {
+    Seq::new(permissions.len() as nat, |i: int| {
+        segment_iter_frame::<M>(
+            (range.start + i * PAGE_SIZE) as usize,
+            permissions[i],
+        )
+    })
+}
+
+impl<M: AnyFrameMeta + ?Sized> Segment<M> {
+    #[verifier::type_invariant]
+    pub closed spec fn type_inv(self) -> bool {
+        &&& self.inv()
+        &&& self.tracked_permissions@.len() == seg_nframes(self.range)
+    }
 }
 
 /*
@@ -348,6 +379,18 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
 
 #[verus_verify]
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
+    pub closed spec fn from_raw_value(
+        range: Range<Paddr>,
+        permissions: Seq<FramePermission>,
+    ) -> Self {
+        Segment {
+            range,
+            _marker: core::marker::PhantomData::<M>,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_permissions: Tracked(permissions),
+        }
+    }
+
     /// Creates a new [`Segment`] from unused frames.
     ///
     /// The caller must provide a closure to initialize metadata for all the frames.
@@ -415,7 +458,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         proof_decl! {
             let tracked mut addrs = Seq::<usize>::tracked_empty();
             let tracked mut permissions = Seq::<FramePermission>::tracked_empty();
-            let tracked initial_segment_permissions = Seq::<FramePermission>::tracked_empty();
         }
 
         if range.start % PAGE_SIZE != 0 || range.end % PAGE_SIZE != 0 {
@@ -426,12 +468,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         }
         assert!(range.start < range.end);
 
-        let mut segment = Self {
-            range: range.start..range.start,
-            _marker: core::marker::PhantomData,
-            #[cfg(verus_keep_ghost_body)]
-            tracked_permissions: Tracked(initial_segment_permissions),
-        };
+        let mut segment_range = range.start..range.start;
 
         let mut i = 0;
         let addr_len = (range.end - range.start) / PAGE_SIZE;
@@ -479,8 +516,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                     },
                 regions.inv(),
                 regions.slot_owners.dom() == old(regions).slot_owners.dom(),
-                segment.range.start == range.start,
-                segment.range.end == range.start + i * PAGE_SIZE,
+                segment_range.start == range.start,
+                segment_range.end == range.start + i * PAGE_SIZE,
             ensures
                 i == addr_len,
             decreases addr_len - i,
@@ -496,16 +533,16 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 Err(e) => {
                     let mut p = range.start;
                     let ghost mut k: int = 0;
-                    while p < segment.range.end
+                    while p < segment_range.end
                         invariant
                             regions.inv(),
                             permissions.len() == i - k,
                             regions.slot_owners.dom() == old(regions).slot_owners.dom(),
                             range.start % PAGE_SIZE == 0,
                             i == addrs.len(),
-                            segment.range.end == range.start + i * PAGE_SIZE,
-                            segment.range.end <= MAX_PADDR,
-                            range.start <= p <= segment.range.end,
+                            segment_range.end == range.start + i * PAGE_SIZE,
+                            segment_range.end <= MAX_PADDR,
+                            range.start <= p <= segment_range.end,
                             p == range.start + k * PAGE_SIZE,
                             p % PAGE_SIZE == 0,
                             0 <= k <= i,
@@ -529,7 +566,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                                     &&& addrs[j] < MAX_PADDR
                                     &&& addrs[j] == range.start + (j as u64) * PAGE_SIZE
                                 },
-                        decreases segment.range.end - p,
+                        decreases segment_range.end - p,
                     {
                         let ghost reclaim_pre = *regions;
                         let ghost idx_k = frame_to_index(p);
@@ -575,7 +612,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             }
             let _ = #[verus_spec(with Tracked(regions) => Tracked(frame_permission))]
             frame.into_raw();
-            segment.range.end = paddr + PAGE_SIZE;
+            segment_range.end = paddr + PAGE_SIZE;
             proof {
                 broadcast use group_page_meta;
 
@@ -595,7 +632,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         }
 
         proof {
-            assert(segment.range == range);
+            assert(segment_range == range);
 
             assert forall|addr: usize|
                 #![trigger frame_to_index(addr)]
@@ -606,12 +643,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 assert(addrs[j as int] == addr);
             }
             assert forall|i: int|
-                #![trigger frame_to_index((segment.range.start + i * PAGE_SIZE) as usize)]
-                0 <= i < crate::specs::mm::frame::segment::seg_nframes(segment.range) implies {
-                let idx = frame_to_index((segment.range.start + i * PAGE_SIZE) as usize);
+                #![trigger frame_to_index((segment_range.start + i * PAGE_SIZE) as usize)]
+                0 <= i < crate::specs::mm::frame::segment::seg_nframes(segment_range) implies {
+                let idx = frame_to_index((segment_range.start + i * PAGE_SIZE) as usize);
                 &&& Frame::<M>::frame_permission_wf(
                     *regions,
-                    (segment.range.start + i * PAGE_SIZE) as usize,
+                    (segment_range.start + i * PAGE_SIZE) as usize,
                     permissions[i],
                 )
                 &&& regions.contains(idx)
@@ -622,24 +659,24 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 &&& regions.slot_owners[idx].paths_in_pt.is_empty()
                 &&& regions.slot_owners[idx].usage is Frame
             } by {
-                assert(addrs[i] == segment.range.start + i * PAGE_SIZE);
+                assert(addrs[i] == segment_range.start + i * PAGE_SIZE);
             }
             assert forall|i: int, j: int|
-                #![trigger frame_to_index((segment.range.start + i * PAGE_SIZE) as usize),
-                    frame_to_index((segment.range.start + j * PAGE_SIZE) as usize)]
+                #![trigger frame_to_index((segment_range.start + i * PAGE_SIZE) as usize),
+                    frame_to_index((segment_range.start + j * PAGE_SIZE) as usize)]
                 0 <= i < j < crate::specs::mm::frame::segment::seg_nframes(
-                    segment.range,
-                ) implies frame_to_index((segment.range.start + i * PAGE_SIZE) as usize)
-                != frame_to_index((segment.range.start + j * PAGE_SIZE) as usize) by {
-                let p1 = (segment.range.start + i * PAGE_SIZE) as usize;
-                let p2 = (segment.range.start + j * PAGE_SIZE) as usize;
+                    segment_range,
+                ) implies frame_to_index((segment_range.start + i * PAGE_SIZE) as usize)
+                != frame_to_index((segment_range.start + j * PAGE_SIZE) as usize) by {
+                let p1 = (segment_range.start + i * PAGE_SIZE) as usize;
+                let p2 = (segment_range.start + j * PAGE_SIZE) as usize;
                 assert(p1 != p2);
                 crate::specs::mm::frame::mapping::lemma_frame_to_index_injective(p1, p2);
             }
         }
 
         Ok(Self {
-            range: segment.range,
+            range: segment_range,
             _marker: core::marker::PhantomData,
             #[cfg(verus_keep_ghost_body)]
             tracked_permissions: Tracked(permissions),
@@ -669,12 +706,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(raw_permissions): Tracked<Seq<FramePermission>>,
         requires
-            (Segment {
-                range,
-                _marker: core::marker::PhantomData::<M>,
-                #[cfg(verus_keep_ghost_body)]
-                tracked_permissions: Tracked(raw_permissions),
-            }).invariants(*old(regions)),
+            Self::from_raw_value(range, raw_permissions).invariants(*old(regions)),
         ensures
             r.range() == range,
             r.invariants(*final(regions)),
@@ -730,6 +762,10 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
     pub open spec fn range(&self) -> Range<Paddr> {
         self.start_paddr()..self.end_paddr()
     }
+
+    pub closed spec fn permissions(&self) -> Seq<FramePermission> {
+        self.tracked_permissions@
+    }
 }
 
 #[verus_verify]
@@ -770,26 +806,21 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         let ghost old_regions = *regions;
         let ghost original = self;
 
-        let tracked mut left_permissions = self.tracked_permissions.get();
+        let Self {
+            range: old_range,
+            _marker: _,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_permissions,
+        } = self;
+        let tracked mut left_permissions = tracked_permissions.get();
         let tracked right_permissions = seq_tracked_split_at(
             &mut left_permissions,
             (offset / PAGE_SIZE) as int,
         );
-        proof_decl! {
-            let tracked empty_permissions = Seq::<FramePermission>::tracked_empty();
-        }
-        let raw_segment = Self {
-            range: self.range,
-            _marker: core::marker::PhantomData,
-            #[cfg(verus_keep_ghost_body)]
-            tracked_permissions: Tracked(empty_permissions),
-        };
-        proof_with!(Tracked(()));
-        let old = ManuallyDrop::new(raw_segment);
-        let at = old.range.start + offset;
+        let at = old_range.start + offset;
 
-        let ghost old_start = old@.start_paddr();
-        let ghost old_end = old@.end_paddr();
+        let ghost old_start = old_range.start;
+        let ghost old_end = old_range.end;
 
         let ghost seg1 = Segment {
             range: old_start..at,
@@ -868,13 +899,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         }
         (
             Self {
-                range: old.range.start..at,
+                range: old_range.start..at,
                 _marker: core::marker::PhantomData,
                 #[cfg(verus_keep_ghost_body)]
                 tracked_permissions: Tracked(left_permissions),
             },
             Self {
-                range: at..old.range.end,
+                range: at..old_range.end,
                 _marker: core::marker::PhantomData,
                 #[cfg(verus_keep_ghost_body)]
                 tracked_permissions: Tracked(right_permissions),
@@ -897,7 +928,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         regions: MetaRegionOwners,
     ) -> bool {
         exists|j: int|
-            #![trigger frame_to_index((self.range.start + j * PAGE_SIZE) as usize)]
+            #![trigger frame_to_index((self.start_paddr() + j * PAGE_SIZE) as usize)]
             (range.start as int) / (PAGE_SIZE as int) <= j < (range.end as int) / (PAGE_SIZE as int)
                 && regions.slot_owners[frame_to_index(
                 (self.start_paddr() + j * PAGE_SIZE) as usize,
@@ -934,7 +965,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             range.start % PAGE_SIZE == 0,
             range.end % PAGE_SIZE == 0,
             range.start <= range.end,
-            self.range.start + range.end <= self.range.end,
+            self.start_paddr() + range.end <= self.end_paddr(),
             !self.page_in_range_saturated(range, *old(regions)),
             r.inv(),
             r.start_paddr() == self.start_paddr() + range.start,
@@ -1154,22 +1185,16 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             r == self.range(),
             final(regions).inv(),
             *final(regions) == *old(regions),
-            raw_permissions@ == self.tracked_permissions@,
+            raw_permissions@ == self.permissions(),
     )]
     pub(crate) fn into_raw(self) -> Range<Paddr> {
-        let range = self.range.clone();
-        let tracked permissions = self.tracked_permissions.get();
-        proof_decl! {
-            let tracked empty_permissions = Seq::<FramePermission>::tracked_empty();
-        }
-        let raw_segment = Self {
-            range: self.range,
-            _marker: core::marker::PhantomData,
+        let Self {
+            range,
+            _marker: _,
             #[cfg(verus_keep_ghost_body)]
-            tracked_permissions: Tracked(empty_permissions),
-        };
-        proof_with!(Tracked(()));
-        let _ = ManuallyDrop::new(raw_segment);
+            tracked_permissions,
+        } = self;
+        let tracked permissions = tracked_permissions.get();
 
         proof_with!(|= Tracked(permissions));
         range
@@ -1217,474 +1242,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
     }
 }
 
-/// A cloned frame yielded from a [`SegmentIterator`].
-pub type SegmentIteratorItem<M> = Frame<M>;
-
-/// Prophetic sequence state used to specify the frames that a segment iterator will yield.
-/// FIXME: Do we need another iterator struct?
-#[verifier::reject_recursive_types(T)]
-pub tracked struct SegmentIteratorProphecySeq<T> {
-    tracked var: ProphecyGhost<Seq<T>>,
-    ghost done: bool,
-}
-
-impl<T> SegmentIteratorProphecySeq<T> {
-    #[verifier::prophetic]
-    closed spec fn seq(&self) -> Seq<T> {
-        if self.done {
-            Seq::empty()
-        } else {
-            self.var.value()
-        }
-    }
-
-    proof fn new() -> (tracked res: Self)
-        ensures
-            !res.done,
-    {
-        SegmentIteratorProphecySeq { var: ProphecyGhost::new(), done: false }
-    }
-
-    proof fn resolve_cons(tracked &mut self, value: T)
-        requires
-            !old(self).done,
-        ensures
-            !final(self).done,
-            old(self).seq() == seq![value] + final(self).seq(),
-    {
-        let tracked mut var = ProphecyGhost::new();
-        tracked_swap(&mut var, &mut self.var);
-        var.resolve_dependent(&self.var, |tail| seq![value] + tail);
-    }
-
-    proof fn resolve_nil(tracked &mut self)
-        ensures
-            old(self).seq() == Seq::<T>::empty(),
-            final(self).seq() == Seq::<T>::empty(),
-            final(self).done,
-    {
-        if !self.done {
-            let tracked mut var = ProphecyGhost::new();
-            tracked_swap(&mut var, &mut self.var);
-            var.resolve(seq![]);
-            self.done = true;
-        }
-    }
-}
-
-/// Verified iterator over the frames owned by a [`Segment`].
-///
-/// The iterator advances an owned suffix of the segment while threading the
-/// metadata region owner.
-#[verifier::reject_recursive_types(M)]
-pub struct SegmentIterator<'a, M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> {
-    segment: &'a Segment<M>,
-    range: Range<Paddr>,
-    tracked_regions: Tracked<&'a mut MetaRegionOwners>,
-    tracked_remaining: Tracked<SegmentIteratorProphecySeq<SegmentIteratorItem<M>>>,
-}
-
-#[verus_verify]
-impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> SegmentIterator<'a, M> {
-    pub closed spec fn segment_ref(&self) -> &'a Segment<M> {
-        self.segment
-    }
-
-    pub closed spec fn range_spec(&self) -> Range<Paddr> {
-        self.range
-    }
-
-    pub closed spec fn current_segment(&self) -> Segment<M> {
-        let first = (self.range.start - self.segment.range.start) / (PAGE_SIZE as int);
-        Segment {
-            range: self.range.start..self.range.end,
-            _marker: core::marker::PhantomData::<M>,
-            #[cfg(verus_keep_ghost_body)]
-            tracked_permissions: Tracked(
-                self.segment.tracked_permissions@.subrange(
-                    first as int,
-                    self.segment.tracked_permissions@.len() as int,
-                ),
-            ),
-        }
-    }
-
-    #[verifier::prophetic]
-    pub closed spec fn remaining_spec(&self) -> Seq<SegmentIteratorItem<M>> {
-        self.tracked_remaining@.seq()
-    }
-
-    #[verifier::type_invariant]
-    pub closed spec fn type_inv(self) -> bool {
-        &&& self.segment.inv()
-        &&& self.segment.range.start <= self.range.start
-        &&& self.range.end == self.segment.range.end
-        &&& 0 <= (self.range.start - self.segment.range.start) / (PAGE_SIZE as int)
-            <= self.segment.tracked_permissions@.len()
-        &&& self.current_segment().invariants(*self.tracked_regions@)
-        &&& self.current_segment().iterable(*self.tracked_regions@)
-        &&& self.range.start < self.range.end ==> !self.tracked_remaining@.done
-    }
-
-    #[verus_spec(res =>
-        with
-            Tracked(regions): Tracked<&'a mut MetaRegionOwners>,
-        requires
-            segment.invariants(*regions),
-            segment.iterable(*regions),
-        ensures
-            res.segment_ref() == segment,
-            res.range_spec() == segment.range,
-            IteratorSpec::decrease(&res) is Some,
-            IteratorSpec::initial_value_relation(&res, &res),
-    )]
-    pub fn new(segment: &'a Segment<M>) -> Self {
-        Self {
-            segment,
-            range: segment.range.start..segment.range.end,
-            tracked_regions: Tracked(regions),
-            tracked_remaining: Tracked(SegmentIteratorProphecySeq::new()),
-        }
-    }
-
-    /// Advances the verified segment iterator by one frame.
-    ///
-    /// This helper is the proof-carrying body behind [`Iterator::next`]. The
-    /// tracked metadata region and prophecy state are supplied
-    /// through `#[verus_spec]`, keeping the executable signature free of tracked
-    /// arguments.
-    ///
-    /// # Verified Properties
-    /// ## Preconditions
-    /// - the segment must satisfy its invariant;
-    /// - `range` must be a suffix of `segment.range`;
-    /// - the segment represented by `range` must satisfy its bundled invariant
-    ///   with the tracked metadata region;
-    /// - if `range` is non-empty, the remaining prophecy sequence must not have
-    ///   been resolved to `done`.
-    ///
-    /// ## Postconditions
-    /// - the segment must satisfy its invariant;
-    /// - `range` remains a suffix of `segment.range`;
-    /// - the segment represented by the final `range` satisfies its invariant
-    ///   with the final tracked metadata region;
-    /// - if the result is `None`, `range` is unchanged and both the old and final
-    ///   remaining prophecy sequences are empty;
-    /// - if the result is `Some(item)`, `range.start` advances by one page, the
-    ///   yielded frame starts at the old `range.start`, and the old remaining
-    ///   prophecy sequence is exactly `item` followed by the final one;
-    /// - if the final `range` is still non-empty, the remaining prophecy sequence
-    ///   is still unresolved.
-    #[verus_spec(res =>
-        with
-            Tracked(regions_ref): Tracked<&mut &'a mut MetaRegionOwners>,
-            Tracked(remaining): Tracked<&mut SegmentIteratorProphecySeq<SegmentIteratorItem<M>>>,
-        requires
-            segment.inv(),
-            segment.range.start <= old(range).start,
-            old(range).end == segment.range.end,
-            0 <= (old(range).start - segment.range.start) / (PAGE_SIZE as int)
-                <= segment.tracked_permissions@.len(),
-            (Segment {
-                range: old(range).start..old(range).end,
-                _marker: core::marker::PhantomData::<M>,
-                #[cfg(verus_keep_ghost_body)]
-                tracked_permissions: Tracked(
-                    segment.tracked_permissions@.subrange(
-                        (old(range).start - segment.range.start) / (PAGE_SIZE as int),
-                        segment.tracked_permissions@.len() as int,
-                    ),
-                ),
-            }).invariants(**old(regions_ref)),
-            (Segment {
-                range: old(range).start..old(range).end,
-                _marker: core::marker::PhantomData::<M>,
-                #[cfg(verus_keep_ghost_body)]
-                tracked_permissions: Tracked(
-                    segment.tracked_permissions@.subrange(
-                        (old(range).start - segment.range.start) / (PAGE_SIZE as int),
-                        segment.tracked_permissions@.len() as int,
-                    ),
-                ),
-            }).iterable(**old(regions_ref)),
-            old(range).start < old(range).end ==> !old(remaining).done,
-        ensures
-            segment.inv(),
-            segment.range.start <= final(range).start,
-            final(range).end == segment.range.end,
-            0 <= (final(range).start - segment.range.start) / (PAGE_SIZE as int)
-                <= segment.tracked_permissions@.len(),
-            (Segment {
-                range: final(range).start..final(range).end,
-                _marker: core::marker::PhantomData::<M>,
-                #[cfg(verus_keep_ghost_body)]
-                tracked_permissions: Tracked(
-                    segment.tracked_permissions@.subrange(
-                        (final(range).start - segment.range.start) / (PAGE_SIZE as int),
-                        segment.tracked_permissions@.len() as int,
-                    ),
-                ),
-            }).invariants(**final(regions_ref)),
-            (Segment {
-                range: final(range).start..final(range).end,
-                _marker: core::marker::PhantomData::<M>,
-                #[cfg(verus_keep_ghost_body)]
-                tracked_permissions: Tracked(
-                    segment.tracked_permissions@.subrange(
-                        (final(range).start - segment.range.start) / (PAGE_SIZE as int),
-                        segment.tracked_permissions@.len() as int,
-                    ),
-                ),
-            }).iterable(**final(regions_ref)),
-            final(range).start < final(range).end ==> !final(remaining).done,
-            match res {
-                None => {
-                    &&& final(range).start == old(range).start
-                    &&& final(range).end == old(range).end
-                    &&& old(remaining).seq() == Seq::<SegmentIteratorItem<M>>::empty()
-                    &&& final(remaining).seq() == Seq::<SegmentIteratorItem<M>>::empty()
-                },
-                Some(item) => {
-                    &&& final(range).start == old(range).start + PAGE_SIZE
-                    &&& final(range).end == old(range).end
-                    &&& item.paddr() == old(range).start
-                    &&& old(remaining).seq() == seq![item] + final(remaining).seq()
-                },
-            },
-        no_unwind
-    )]
-    fn next_inner(segment: &'a Segment<M>, range: &mut Range<Paddr>) -> (res: Option<
-        SegmentIteratorItem<M>,
-    >) {
-        if range.start < range.end {
-            let ghost old_remaining = remaining.seq();
-            let ghost old_range = range.start..range.end;
-            let ghost old_segment = Segment {
-                range: old_range.start..old_range.end,
-                _marker: core::marker::PhantomData::<M>,
-                #[cfg(verus_keep_ghost_body)]
-                tracked_permissions: Tracked(
-                    segment.tracked_permissions@.subrange(
-                        (old_range.start - segment.range.start) / (PAGE_SIZE as int),
-                        segment.tracked_permissions@.len() as int,
-                    ),
-                ),
-            };
-            let ghost old_regions = **regions_ref;
-            let paddr = range.start;
-
-            proof {
-                broadcast use vstd::seq_lib::group_seq_properties;
-
-                old_segment.relate_regions_at(old_regions, 0);
-                assert(paddr == old_range.start);
-                let idx = frame_to_index(paddr);
-                assert(old_segment.iterable(old_regions));
-                assert(old_regions.slot_owners[idx].ref_count.value() < REF_COUNT_MAX);
-            }
-
-            let tracked_permission = unsafe {
-                #[verus_spec(with Tracked(*regions_ref))]
-                crate::mm::frame::inc_frame_ref_count(paddr)
-            };
-            let tracked frame_permission = tracked_permission.get();
-            let frame = unsafe {
-                #[verus_spec(with Tracked(*regions_ref), Tracked(frame_permission))]
-                Frame::<M>::from_raw(paddr)
-            };
-
-            proof {
-                broadcast use vstd::seq_lib::group_seq_properties;
-
-                let new_range = ((old_range.start + PAGE_SIZE) as usize)..old_range.end;
-                let first = (old_range.start - segment.range.start) / (PAGE_SIZE as int);
-                let permission_len = segment.tracked_permissions@.len() as int;
-                vstd::seq::lemma_seq_subrange_len(
-                    segment.tracked_permissions@,
-                    first,
-                    permission_len,
-                );
-                assert(old_segment.tracked_permissions@.len() > 0);
-                assert(first < permission_len);
-                assert(
-                    (new_range.start - segment.range.start) / (PAGE_SIZE as int)
-                        == first + 1
-                );
-                assert(0 <= first + 1 <= permission_len);
-                let ghost new_segment = Segment {
-                    range: new_range.start..new_range.end,
-                    _marker: core::marker::PhantomData::<M>,
-                    #[cfg(verus_keep_ghost_body)]
-                    tracked_permissions: Tracked(
-                        segment.tracked_permissions@.subrange(
-                            (new_range.start - segment.range.start) / (PAGE_SIZE as int),
-                            segment.tracked_permissions@.len() as int,
-                        ),
-                    ),
-                };
-
-                assert forall|i: int|
-                    #![trigger frame_to_index((new_segment.range.start + i * PAGE_SIZE) as usize)]
-                    0 <= i < crate::specs::mm::frame::segment::seg_nframes(
-                        new_segment.range,
-                    ) implies {
-                    let idx = frame_to_index((new_segment.range.start + i * PAGE_SIZE) as usize);
-                    &&& Frame::<M>::frame_permission_wf(
-                        **regions_ref,
-                        (new_segment.range.start + i * PAGE_SIZE) as usize,
-                        new_segment.tracked_permissions@[i],
-                    )
-                    &&& (**regions_ref).contains(idx)
-                    &&& (**regions_ref).slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                    &&& (**regions_ref).slot_owners[idx].ref_count.value() > 0
-                    &&& (**regions_ref).slot_owners[idx].ref_count.value()
-                        <= crate::mm::frame::meta::REF_COUNT_MAX
-                    &&& (**regions_ref).slot_owners[idx].paths_in_pt.is_empty()
-                    &&& (**regions_ref).slot_owners[idx].usage is Frame
-                } by {
-                    let idx = frame_to_index(
-                        (new_segment.range.start + i * PAGE_SIZE) as usize,
-                    );
-                    old_segment.relate_regions_at(old_regions, i + 1);
-                    old_segment.relate_regions_distinct(old_regions, 0, i + 1);
-                    assert(0 <= first <= permission_len);
-                    assert(0 <= i + 1 < permission_len - first);
-                    vstd::seq::lemma_seq_subrange_index(
-                        segment.tracked_permissions@,
-                        first,
-                        permission_len,
-                        i + 1,
-                    );
-                    assert(
-                        old_segment.tracked_permissions@[i + 1]
-                            == segment.tracked_permissions@[first + i + 1]
-                    );
-                    assert(
-                        (new_range.start - segment.range.start) / (PAGE_SIZE as int)
-                            == first + 1
-                    );
-                    assert(0 <= first + 1 <= permission_len);
-                    assert(0 <= i < permission_len - (first + 1));
-                    vstd::seq::lemma_seq_subrange_index(
-                        segment.tracked_permissions@,
-                        first + 1,
-                        permission_len,
-                        i,
-                    );
-                    assert(
-                        new_segment.tracked_permissions@[i]
-                            == old_segment.tracked_permissions@[i + 1]
-                    );
-                    assert(
-                        (**regions_ref).slot_owners[idx]
-                            == old_regions.slot_owners[idx]
-                    );
-                }
-                assert forall|i: int, j: int|
-                    #![trigger frame_to_index((new_segment.range.start + i * PAGE_SIZE) as usize),
-                        frame_to_index((new_segment.range.start + j * PAGE_SIZE) as usize)]
-                    0 <= i < j < crate::specs::mm::frame::segment::seg_nframes(
-                        new_segment.range,
-                    ) implies frame_to_index((new_segment.range.start + i * PAGE_SIZE) as usize)
-                    != frame_to_index((new_segment.range.start + j * PAGE_SIZE) as usize) by {
-                    old_segment.relate_regions_distinct(old_regions, i + 1, j + 1);
-                }
-                assert(new_segment.invariants(**regions_ref));
-                assert forall|i: int|
-                    #![trigger frame_to_index((new_segment.range.start + i * PAGE_SIZE) as usize)]
-                    0 <= i < crate::specs::mm::frame::segment::seg_nframes(
-                        new_segment.range,
-                    ) implies (**regions_ref).slot_owners[frame_to_index(
-                        (new_segment.range.start + i * PAGE_SIZE) as usize,
-                    )].ref_count.value() < REF_COUNT_MAX by {
-                    let idx = frame_to_index(
-                        (new_segment.range.start + i * PAGE_SIZE) as usize,
-                    );
-                    old_segment.relate_regions_distinct(old_regions, 0, i + 1);
-                    assert(old_segment.iterable(old_regions));
-                    assert(old_regions.slot_owners[idx].ref_count.value() < REF_COUNT_MAX);
-                    assert((**regions_ref).slot_owners[idx] == old_regions.slot_owners[idx]);
-                }
-                assert(new_segment.iterable(**regions_ref));
-                broadcast use group_page_meta;
-
-                assert((**regions_ref).slots[frame.index()].pptr() == frame.ptr);
-                assert(frame.wf_with_region(**regions_ref));
-            }
-
-            range.start = range.start + PAGE_SIZE;
-            let item = frame;
-            proof {
-                remaining.resolve_cons(item);
-                broadcast use vstd::seq::group_seq_lemmas;
-
-                assert(remaining.seq() == old_remaining.drop_first());
-                assert(item == old_remaining[0]);
-            }
-            Some(item)
-        } else {
-            let ghost old_remaining = remaining.seq();
-            proof {
-                remaining.resolve_nil();
-                assert(remaining.seq() == old_remaining);
-            }
-            None
-        }
-    }
-}
-
-impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> IteratorSpecImpl for SegmentIterator<
-    '_,
-    M,
-> {
-    open spec fn obeys_prophetic_iter_laws(&self) -> bool {
-        true
-    }
-
-    #[verifier::prophetic]
-    closed spec fn remaining(&self) -> Seq<Self::Item> {
-        self.remaining_spec()
-    }
-
-    #[verifier::prophetic]
-    closed spec fn will_return_none(&self) -> bool {
-        true
-    }
-
-    closed spec fn decrease(&self) -> Option<nat> {
-        Some((self.range.end - self.range.start) as nat)
-    }
-
-    #[verifier::prophetic]
-    open spec fn initial_value_relation(&self, init: &Self) -> bool {
-        &&& IteratorSpec::remaining(init) == IteratorSpec::remaining(self)
-        &&& init.remaining_spec() == self.remaining_spec()
-        &&& init.segment_ref() == self.segment_ref()
-        &&& init.range_spec() == self.range_spec()
-    }
-
-    open spec fn peek(&self, index: int) -> Option<Self::Item> {
-        None
-    }
-}
-
-impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Iterator for SegmentIterator<'_, M> {
-    type Item = SegmentIteratorItem<M>;
-
-    /// Gets the next frame in the segment.
-    fn next(&mut self) -> Option<Self::Item> {
-        proof {
-            use_type_invariant(&*self);
-        }
-
-        #[verus_spec(with
-            Tracked(self.tracked_regions.borrow_mut()),
-            Tracked(self.tracked_remaining.borrow_mut()),
-        )]
-        SegmentIterator::next_inner(self.segment, &mut self.range)
-    }
-}
-
 #[verus_verify]
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> From<Frame<M>> for Segment<M> {
     /// Converts a single [`Frame`] into a one-page [`Segment`] by forgetting
@@ -1694,7 +1251,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> From<Frame<M>> for Segment<M> {
     // Trusted at the trait boundary: the `From::from` signature can't thread
     // `Tracked` metadata to bump the frame's `raw_count` via the verified
     // `vstd_extra::drop_tracking::ManuallyDrop`, so we use `core::mem`'s
-    // version. Same trust pattern as the `Iterator` impl.
+    // version.
     #[verifier::external_body]
     fn from(frame: Frame<M>) -> Self {
         let pa = frame.start_paddr();
@@ -1715,28 +1272,107 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> From<Frame<M>> for Segment<M> {
     }
 }
 
-impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Iterator for Segment<M> {
-    type Item = Frame<M>;
-
-    /// Gets the next frame in the segment.
-    //
-    // Verus's `core::iter::Iterator` support doesn't allow threading `Tracked`
-    // metadata through the trait method's fixed signature, so the verified
-    // `next` lives as an inherent method on `Segment<M>` and the trait body
-    // is trusted at the trait boundary.
-    #[verifier::external_body]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.range.start < self.range.end {
-            let tracked frame_permission =
-                self.tracked_permissions.borrow_mut().tracked_remove(0);
+#[verus_verify]
+impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
+    #[verus_spec(res =>
+        with Tracked(permissions): Tracked<&mut Seq<FramePermission>>,
+        requires
+            old(range).start % PAGE_SIZE == 0,
+            old(range).end % PAGE_SIZE == 0,
+            old(range).start <= old(range).end <= MAX_PADDR,
+            old(permissions).len() == seg_nframes(*old(range)),
+        ensures
+            final(range).start % PAGE_SIZE == 0,
+            final(range).end % PAGE_SIZE == 0,
+            final(range).start <= final(range).end <= MAX_PADDR,
+            final(permissions).len() == seg_nframes(*final(range)),
+            old(permissions).len() > 0 ==> (
+                segment_iter_remaining::<M>(*final(range), *final(permissions))
+                    == segment_iter_remaining::<M>(
+                        *old(range),
+                        *old(permissions),
+                    ).drop_first()
+            ),
+            match res {
+                Some(frame) => {
+                    &&& old(range).start < old(range).end
+                    &&& final(range).start == old(range).start + PAGE_SIZE
+                    &&& final(range).end == old(range).end
+                    &&& frame.paddr() == old(range).start
+                    &&& frame
+                        == segment_iter_remaining::<M>(*old(range), *old(permissions))[0]
+                },
+                None => {
+                    &&& old(range).start == old(range).end
+                    &&& *final(range) == *old(range)
+                    &&& *final(permissions) == *old(permissions)
+                    &&& segment_iter_remaining::<M>(*old(range), *old(permissions)).len() == 0
+                },
+            },
+        no_unwind
+    )]
+    fn next_inner(range: &mut Range<Paddr>) -> Option<Frame<M>> {
+        if range.start < range.end {
+            let tracked frame_permission = permissions.tracked_remove(0);
             let frame = Frame::<M> {
-                ptr: PPtr::from_addr(frame_to_meta(self.range.start)),
+                ptr: PPtr(frame_to_meta(range.start), core::marker::PhantomData),
                 _marker: core::marker::PhantomData,
                 #[cfg(verus_keep_ghost_body)]
                 tracked_perm: Tracked(Some(frame_permission)),
             };
-            self.range.start = self.range.start + PAGE_SIZE;
+            range.start = range.start + PAGE_SIZE;
             Some(frame)
+        } else {
+            None
+        }
+    }
+}
+
+impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Iterator for Segment<M> {
+    type Item = Frame<M>;
+
+    /// Gets the next frame in the segment.
+    fn next(&mut self) -> Option<Self::Item> {
+        proof {
+            use_type_invariant(&*self);
+        }
+
+        #[verus_spec(with Tracked(self.tracked_permissions.borrow_mut()))]
+        Self::next_inner(&mut self.range)
+    }
+}
+
+impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> IteratorSpecImpl for Segment<M> {
+    open spec fn obeys_prophetic_iter_laws(&self) -> bool {
+        true
+    }
+
+    #[verifier::prophetic]
+    closed spec fn remaining(&self) -> Seq<Self::Item> {
+        segment_iter_remaining::<M>(self.range, self.tracked_permissions@)
+    }
+
+    #[verifier::prophetic]
+    closed spec fn will_return_none(&self) -> bool {
+        true
+    }
+
+    closed spec fn decrease(&self) -> Option<nat> {
+        Some(seg_nframes(self.range) as nat)
+    }
+
+    #[verifier::prophetic]
+    open spec fn initial_value_relation(&self, init: &Self) -> bool {
+        &&& init.range() == self.range()
+        &&& init.permissions() == self.permissions()
+    }
+
+    open spec fn peek(&self, index: int) -> Option<Self::Item> {
+        if 0 <= index < self.permissions().len() {
+            Some(segment_iter_frame::<M>(
+                (self.range().start + index * PAGE_SIZE) as usize,
+                self.permissions()[index],
+            ))
         } else {
             None
         }
@@ -1752,9 +1388,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
         requires
             self.invariants(*old(regions)),
             forall|i: int|
-                #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize)]
-                0 <= i < crate::specs::mm::frame::segment::seg_nframes(self.range) ==> {
-                    let idx = frame_to_index((self.range.start + i * PAGE_SIZE) as usize);
+                #![trigger frame_to_index((self.start_paddr() + i * PAGE_SIZE) as usize)]
+                0 <= i < crate::specs::mm::frame::segment::seg_nframes(self.range()) ==> {
+                    let idx = frame_to_index((self.start_paddr() + i * PAGE_SIZE) as usize);
                     old(regions).slot_owners[idx].ref_count.value() == 1 ==> {
                         &&& old(regions).slot_owners[idx].storage().is_init()
                         &&& old(regions).slot_owners[idx].in_list.value() == 0
