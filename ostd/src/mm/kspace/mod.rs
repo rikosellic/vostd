@@ -234,10 +234,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
     }
 
     #[verifier::external_body]
-    fn item_into_raw(
-        item: Self::Item,
-        Tracked(regions): Tracked<&mut MetaRegionOwners>,
-    ) -> (res: (
+    fn item_into_raw(item: Self::Item, Tracked(regions): Tracked<&mut MetaRegionOwners>) -> (res: (
         (Paddr, PagingLevel, PageProperty),
         Tracked<Option<FramePermission>>,
     )) {
@@ -317,10 +314,8 @@ unsafe impl PageTableConfig for KernelPtConfig {
         assert(Self::raw_item_well_formed(pa, level, prop));
         Self::lemma_item_from_raw_well_formed(pa, level, prop, permission);
         prop.lemma_avail1_tag_encoding();
-        assert(
-            Self::tracked(Self::item_from_raw_spec(pa, level, prop, permission))
-                == prop.flags.contains(PageFlags::AVAIL1())
-        );
+        assert(Self::tracked(Self::item_from_raw_spec(pa, level, prop, permission))
+            == prop.flags.contains(PageFlags::AVAIL1()));
         if prop.flags.contains(PageFlags::AVAIL1()) {
             assert(Self::item_from_raw_spec(pa, level, prop, permission) is Tracked);
             assert(permission is Some);
@@ -398,11 +393,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
         ));
     }
 
-    proof fn lemma_huge_raw_item_untracked(
-        pa: Paddr,
-        level: PagingLevel,
-        prop: PageProperty,
-    ) {
+    proof fn lemma_huge_raw_item_untracked(pa: Paddr, level: PagingLevel, prop: PageProperty) {
     }
 
     proof fn lemma_item_from_raw_well_formed(
@@ -523,18 +514,14 @@ impl RCClone for MappedItem {
         res: Self,
     ) -> bool {
         match (self, res) {
-            (
-                MappedItem::Tracked(frame, prop),
-                MappedItem::Tracked(res_frame, res_prop),
-            ) => {
+            (MappedItem::Tracked(frame, prop), MappedItem::Tracked(res_frame, res_prop)) => {
                 &&& prop == res_prop
                 &&& frame.clone_ensures(old_perm, new_perm, res_frame)
             },
-            (MappedItem::Untracked(pa, level, prop), MappedItem::Untracked(
-                res_pa,
-                res_level,
-                res_prop,
-            )) => {
+            (
+                MappedItem::Untracked(pa, level, prop),
+                MappedItem::Untracked(res_pa, res_level, res_prop),
+            ) => {
                 &&& pa == res_pa
                 &&& level == res_level
                 &&& prop == res_prop

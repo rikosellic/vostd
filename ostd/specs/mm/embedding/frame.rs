@@ -188,10 +188,8 @@ pub axiom fn frame_drop_embedded(tracked regions: &mut MetaRegionOwners, paddr: 
         old(regions).inv(),
         old(regions).contains(frame_to_index(paddr)),
         old(regions).slot_owners[frame_to_index(paddr)].ref_count.value() > 0,
-        old(regions).slot_owners[frame_to_index(paddr)].ref_count.value()
-            != REF_COUNT_UNUSED,
-        old(regions).slot_owners[frame_to_index(paddr)].ref_count.value()
-            <= REF_COUNT_MAX,
+        old(regions).slot_owners[frame_to_index(paddr)].ref_count.value() != REF_COUNT_UNUSED,
+        old(regions).slot_owners[frame_to_index(paddr)].ref_count.value() <= REF_COUNT_MAX,
         old(regions).slot_owners[frame_to_index(paddr)].ref_count.value() == 1 ==> {
             &&& old(regions).slot_owners[frame_to_index(paddr)].storage().is_init()
             &&& old(regions).slot_owners[frame_to_index(paddr)].in_list.value()
@@ -252,8 +250,9 @@ pub axiom fn frame_drop_embedded(tracked regions: &mut MetaRegionOwners, paddr: 
             ==> final(regions).slot_owners[frame_to_index(paddr)].ref_count.value()
             == REF_COUNT_UNUSED,
         old(regions).slot_owners[frame_to_index(paddr)].ref_count.value() > 1
-            ==> final(regions).slot_owners[frame_to_index(paddr)].ref_count.value() == (
-        old(regions).slot_owners[frame_to_index(paddr)].ref_count.value() - 1) as u64,
+            ==> final(regions).slot_owners[frame_to_index(paddr)].ref_count.value() == (old(
+            regions,
+        ).slot_owners[frame_to_index(paddr)].ref_count.value() - 1) as u64,
         // Storage preservation in the decrement branch (rc>1): the
         // exec `fetch_sub` only touches `ref_count`; only the rc==1
         // teardown branch invokes `drop_last_in_place` (which uninits
@@ -400,19 +399,17 @@ pub(super) proof fn drop_step(tracked regions: &mut MetaRegionOwners, tracked en
             ==> final(regions).slot_owners[frame_to_index(entry.paddr)].paths_in_pt.is_empty(),
         // rc transition (mirrors `frame_drop_embedded` exactly).
         old(regions).slot_owners[frame_to_index(entry.paddr)].ref_count.value() == 1
-            ==> final(regions).slot_owners[frame_to_index(
-            entry.paddr,
-        )].ref_count.value() == REF_COUNT_UNUSED,
+            ==> final(regions).slot_owners[frame_to_index(entry.paddr)].ref_count.value()
+            == REF_COUNT_UNUSED,
         old(regions).slot_owners[frame_to_index(entry.paddr)].ref_count.value() > 1
-            ==> final(regions).slot_owners[frame_to_index(
-            entry.paddr,
-        )].ref_count.value() == (old(regions).slot_owners[frame_to_index(
-            entry.paddr,
-        )].ref_count.value() - 1) as u64,
+            ==> final(regions).slot_owners[frame_to_index(entry.paddr)].ref_count.value() == (old(
+            regions,
+        ).slot_owners[frame_to_index(entry.paddr)].ref_count.value() - 1) as u64,
         // Storage preservation in the decrement branch (rc>1).
         old(regions).slot_owners[frame_to_index(entry.paddr)].ref_count.value() > 1
-            ==> final(regions).slot_owners[frame_to_index(entry.paddr)].storage()
-            == old(regions).slot_owners[frame_to_index(entry.paddr)].storage(),
+            ==> final(regions).slot_owners[frame_to_index(entry.paddr)].storage() == old(
+            regions,
+        ).slot_owners[frame_to_index(entry.paddr)].storage(),
         forall|c: CursorOwner<'_, UserPtConfig>|
             #![auto]
             c.metaregion_sound(*old(regions)) ==> c.metaregion_sound(*final(regions)),

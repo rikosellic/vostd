@@ -622,13 +622,14 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                         owner.cur_entry_frame_present();
                     }
                     let ghost owner_before_permission_take = *owner;
-                    let ghost continuation_before_permission_take =
-                        owner.continuations[owner.level - 1];
+                    let ghost continuation_before_permission_take = owner.continuations[owner.level
+                        - 1];
                     let ghost child_before_permission_take =
                         continuation_before_permission_take.child();
                     let ghost entry_before_permission_take = owner.cur_entry_owner();
-                    let tracked mut continuation =
-                        owner.continuations.tracked_remove(owner.level - 1);
+                    let tracked mut continuation = owner.continuations.tracked_remove(
+                        owner.level - 1,
+                    );
                     let tracked mut child_owner = continuation.tracked_take_child();
                     let tracked raw_permission = {
                         let tracked child_value = child_owner.tracked_borrow_mut_value();
@@ -650,22 +651,11 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     // (currently, only kernel page tables), the callers of the unsafe
                     // `protect_next` method uphold this invariant.
                     let item = unsafe {
-                        C::item_from_raw(
-                            pa,
-                            level,
-                            prop,
-                            Tracked(regions),
-                            Tracked(raw_permission),
-                        )
+                        C::item_from_raw(pa, level, prop, Tracked(regions), Tracked(raw_permission))
                     };
 
                     proof {
-                        C::lemma_item_from_raw_well_formed(
-                            pa,
-                            level,
-                            prop,
-                            raw_permission,
-                        );
+                        C::lemma_item_from_raw_well_formed(pa, level, prop, raw_permission);
                         C::lemma_item_into_raw_roundtrip(pa, level, prop, raw_permission);
                     }
 
@@ -676,8 +666,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                         old(regions).inv_implies_correct_addr(pa);
                         assert(regions.slot_owners.contains_key(idx));
                         assert(owner_before_permission_take.cur_entry_owner().inv_base());
-                        if C::tracked(item)
-                            && regions.slot_owners[idx].ref_count.value()
+                        if C::tracked(item) && regions.slot_owners[idx].ref_count.value()
                             >= REF_COUNT_MAX {
                             EntryOwner::<C>::axiom_frame_is_tracked_iff_not_mmio(
                                 owner_before_permission_take.cur_entry_owner(),
@@ -703,8 +692,10 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     #[verus_spec(with Tracked(regions), Ghost(pa))]
                     let cloned = Self::clone_item(&item);
 
-                    let (_raw, Tracked(restored_permission)) =
-                        C::item_into_raw(item, Tracked(regions));
+                    let (_raw, Tracked(restored_permission)) = C::item_into_raw(
+                        item,
+                        Tracked(regions),
+                    );
                     proof {
                         assert(restored_permission == raw_permission);
                         {
@@ -758,10 +749,10 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                         assert(owner@ == old(owner)@);
                         assert(owner@.query_mapping().pa_range.start == pa);
                         if C::tracked(item) {
-                            assert(old_regions.slot_owners[idx].ref_count.value()
-                                == old(regions).slot_owners[idx].ref_count.value());
-                            assert(old(regions).slot_owners[idx].ref_count.value()
-                                < REF_COUNT_MAX);
+                            assert(old_regions.slot_owners[idx].ref_count.value() == old(
+                                regions,
+                            ).slot_owners[idx].ref_count.value());
+                            assert(old(regions).slot_owners[idx].ref_count.value() < REF_COUNT_MAX);
                         } else {
                             EntryOwner::<C>::axiom_frame_is_tracked_iff_not_mmio(
                                 owner.cur_entry_owner(),
@@ -2254,10 +2245,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 (INC_LEVELS - child_owner.level()) as nat,
             );
             assert(PageTableOwner(child_owner).pt_inv());
-            child_owner0.value().metaregion_sound_frame_prop_changed(
-                child_owner.value(),
-                *regions,
-            );
+            child_owner0.value().metaregion_sound_frame_prop_changed(child_owner.value(), *regions);
             assert(child_owner.value().metaregion_sound(*regions));
             assert(child_owner.subtree_satisfies(
                 child_owner.value().path,
@@ -3184,8 +3172,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         let ghost owner0 = *owner;
 
         assert!(self.0.va < self.0.barrier_va.end);
-        let ((pa, level, prop), Tracked(raw_permission)) =
-            C::item_into_raw(item, Tracked(regions));
+        let ((pa, level, prop), Tracked(raw_permission)) = C::item_into_raw(item, Tracked(regions));
         proof {
             C::lemma_item_from_raw_roundtrip(item, pa, level, prop, raw_permission);
         }
@@ -3402,12 +3389,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 if C::tracked(item) && old(regions).contains(pa_idx2) && old(
                     regions,
                 ).slot_owners[pa_idx2].ref_count.value() > 0 {
-                    assert(regions_before_new_child.slot_owners[pa_idx2].ref_count.value()
-                        > 0);
-                    assert(regions_after_new_child.slot_owners[pa_idx2].ref_count.value()
-                        > 0);
-                    assert(regions_after_replace.slot_owners[pa_idx2].ref_count.value()
-                        > 0);
+                    assert(regions_before_new_child.slot_owners[pa_idx2].ref_count.value() > 0);
+                    assert(regions_after_new_child.slot_owners[pa_idx2].ref_count.value() > 0);
+                    assert(regions_after_replace.slot_owners[pa_idx2].ref_count.value() > 0);
                 }
             };
 
@@ -4390,13 +4374,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 // (currently, only kernel page tables), the callers of the unsafe
                 // `protect_next` method uphold this invariant.
                 let item = unsafe {
-                    C::item_from_raw(
-                        pa,
-                        level,
-                        prop,
-                        Tracked(regions),
-                        Tracked(raw_permission),
-                    )
+                    C::item_from_raw(pa, level, prop, Tracked(regions), Tracked(raw_permission))
                 };
                 proof {
                     C::lemma_item_from_raw_well_formed(pa, level, prop, raw_permission);

@@ -363,15 +363,10 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                     assert(raw_permissions_pre.permissions.contains_key(cursor_pre_read));
                     assert(raw_permissions_pre.permissions[cursor_pre_read] is Some
                         <==> if pte.is_last(self.level) {
-                            C::tracked(C::item_from_raw_spec(
-                                paddr,
-                                self.level,
-                                pte.prop(),
-                                None,
-                            ))
-                        } else {
-                            true
-                        });
+                        C::tracked(C::item_from_raw_spec(paddr, self.level, pte.prop(), None))
+                    } else {
+                        true
+                    });
                 }
                 let tracked raw_permission =
                     vm_io_owner.raw_frame_permissions.permissions.tracked_remove(cursor_pre_read);
@@ -519,54 +514,46 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                 )) by {
                     assert forall|cursor: usize|
                         #![trigger Self::walk_pte_at_view(initial_view, cursor)]
-                        reader.cursor.vaddr <= cursor
-                            && cursor + core::mem::size_of::<C::E>() <= reader.cursor.vaddr
-                                + reader.remain_spec()
-                            && (cursor - reader.cursor.vaddr)
-                                % core::mem::size_of::<C::E>() as int == 0
-                            implies {
-                                let future_pte =
-                                    Self::walk_pte_at_view(initial_view, cursor);
-                                future_pte.is_present() ==> {
-                                    &&& vm_io_owner.raw_frame_permissions.permissions.contains_key(
-                                        cursor,
-                                    )
-                                    &&& {
-                                        let permission =
-                                            vm_io_owner.raw_frame_permissions.permissions[cursor];
-                                        &&& if future_pte.is_last(self.level) {
-                                            permission is Some <==> C::tracked(
-                                                C::item_from_raw_spec(
-                                                    future_pte.paddr(),
-                                                    self.level,
-                                                    future_pte.prop(),
-                                                    None,
-                                                ),
-                                            )
-                                        } else {
-                                            permission is Some
-                                        }
-                                        &&& permission is Some ==> Frame::<
-                                            MetaSlotStorage,
-                                        >::frame_permission_wf(
-                                            *regions,
+                        reader.cursor.vaddr <= cursor && cursor + core::mem::size_of::<C::E>()
+                            <= reader.cursor.vaddr + reader.remain_spec() && (cursor
+                            - reader.cursor.vaddr) % core::mem::size_of::<C::E>() as int
+                            == 0 implies {
+                        let future_pte = Self::walk_pte_at_view(initial_view, cursor);
+                        future_pte.is_present() ==> {
+                            &&& vm_io_owner.raw_frame_permissions.permissions.contains_key(cursor)
+                            &&& {
+                                let permission =
+                                    vm_io_owner.raw_frame_permissions.permissions[cursor];
+                                &&& if future_pte.is_last(self.level) {
+                                    permission is Some <==> C::tracked(
+                                        C::item_from_raw_spec(
                                             future_pte.paddr(),
-                                            permission->0,
-                                        )
-                                    }
+                                            self.level,
+                                            future_pte.prop(),
+                                            None,
+                                        ),
+                                    )
+                                } else {
+                                    permission is Some
                                 }
-                            } by {
+                                &&& permission is Some ==> Frame::<
+                                    MetaSlotStorage,
+                                >::frame_permission_wf(*regions, future_pte.paddr(), permission->0)
+                            }
+                        }
+                    } by {
                         assert(cursor != cursor_pre_read);
                         assert(reader_pre_read.cursor.vaddr <= cursor);
-                        assert(cursor + core::mem::size_of::<C::E>()
-                            <= reader_pre_read.cursor.vaddr + reader_pre_read.remain_spec());
+                        assert(cursor + core::mem::size_of::<C::E>() <= reader_pre_read.cursor.vaddr
+                            + reader_pre_read.remain_spec());
                         vstd::arithmetic::div_mod::lemma_mod_adds(
                             cursor - reader.cursor.vaddr,
                             core::mem::size_of::<C::E>() as int,
                             core::mem::size_of::<C::E>() as int,
                         );
-                        assert((cursor - reader_pre_read.cursor.vaddr)
-                            % core::mem::size_of::<C::E>() as int == 0);
+                        assert((cursor - reader_pre_read.cursor.vaddr) % core::mem::size_of::<
+                            C::E,
+                        >() as int == 0);
                         assert(self.walk_raw_permissions_from_view(
                             reader_pre_read,
                             initial_view,
@@ -576,18 +563,21 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                         let future_pte = Self::walk_pte_at_view(initial_view, cursor);
                         if future_pte.is_present() {
                             assert(raw_permissions_pre.permissions.contains_key(cursor));
-                        assert(vm_io_owner.raw_frame_permissions.permissions.contains_key(cursor));
-                            let future_permission =
-                                raw_permissions_pre.permissions[cursor];
+                            assert(vm_io_owner.raw_frame_permissions.permissions.contains_key(
+                                cursor,
+                            ));
+                            let future_permission = raw_permissions_pre.permissions[cursor];
                             assert(future_permission is Some <==> if future_pte.is_last(
                                 self.level,
                             ) {
-                                C::tracked(C::item_from_raw_spec(
-                                    future_pte.paddr(),
-                                    self.level,
-                                    future_pte.prop(),
-                                    None,
-                                ))
+                                C::tracked(
+                                    C::item_from_raw_spec(
+                                        future_pte.paddr(),
+                                        self.level,
+                                        future_pte.prop(),
+                                        None,
+                                    ),
+                                )
                             } else {
                                 true
                             });
@@ -1260,36 +1250,29 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
     ) -> bool {
         forall|cursor: usize|
             #![trigger Self::walk_pte_at_view(view, cursor)]
-            reader.cursor.vaddr <= cursor
-                && cursor + core::mem::size_of::<C::E>() <= reader.cursor.vaddr
-                    + reader.remain_spec()
-                && (cursor - reader.cursor.vaddr) % core::mem::size_of::<C::E>() as int == 0
-                ==> {
-                    let pte = Self::walk_pte_at_view(view, cursor);
-                    pte.is_present() ==> {
-                        &&& raw_permissions.permissions.contains_key(cursor)
-                        &&& {
-                            let permission = raw_permissions.permissions[cursor];
-                            &&& if pte.is_last(self.level) {
-                                permission is Some <==> C::tracked(
-                                    C::item_from_raw_spec(
-                                        pte.paddr(),
-                                        self.level,
-                                        pte.prop(),
-                                        None,
-                                    ),
-                                )
-                            } else {
-                                permission is Some
-                            }
-                            &&& permission is Some ==> Frame::<MetaSlotStorage>::frame_permission_wf(
-                                regions,
-                                pte.paddr(),
-                                permission->0,
+            reader.cursor.vaddr <= cursor && cursor + core::mem::size_of::<C::E>()
+                <= reader.cursor.vaddr + reader.remain_spec() && (cursor - reader.cursor.vaddr)
+                % core::mem::size_of::<C::E>() as int == 0 ==> {
+                let pte = Self::walk_pte_at_view(view, cursor);
+                pte.is_present() ==> {
+                    &&& raw_permissions.permissions.contains_key(cursor)
+                    &&& {
+                        let permission = raw_permissions.permissions[cursor];
+                        &&& if pte.is_last(self.level) {
+                            permission is Some <==> C::tracked(
+                                C::item_from_raw_spec(pte.paddr(), self.level, pte.prop(), None),
                             )
+                        } else {
+                            permission is Some
                         }
+                        &&& permission is Some ==> Frame::<MetaSlotStorage>::frame_permission_wf(
+                            regions,
+                            pte.paddr(),
+                            permission->0,
+                        )
                     }
                 }
+            }
     }
 
     /// Caller-side shape obligation: every paddr in `child_perms.dom()`

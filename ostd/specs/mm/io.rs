@@ -12,8 +12,8 @@ use vstd::prelude::*;
 use vstd::pervasive::{arbitrary, proof_from_false};
 use vstd_extra::ownership::Inv;
 
-use crate::specs::mm::virt_mem::MemView;
 use crate::specs::mm::frame::meta_owners::RawFramePermissions;
+use crate::specs::mm::virt_mem::MemView;
 
 use crate::mm::{
     io::{Infallible, VmReader, VmWriter},

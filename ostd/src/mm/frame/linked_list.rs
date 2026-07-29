@@ -849,8 +849,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 let paddr = old(self).current->0.addr();
                 let idx = meta_to_index(paddr);
                 &&& final(regions).slots.dom() == old(regions).slots.dom()
-                &&& final(regions).slot_owners[idx].ref_count.value()
-                    == REF_COUNT_UNIQUE
+                &&& final(regions).slot_owners[idx].ref_count.value() == REF_COUNT_UNIQUE
                 &&& final(regions).slot_owners[idx].in_list.value() == 0
                 &&& (res->0).1@.metadata_perms->0.storage.is_init()
                 &&& (res->0).1@.metadata_perms->0.vtable_ptr.is_init()
@@ -1059,8 +1058,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 &&& regions.slots[i].pptr() == regions0.slots[i].pptr()
                 &&& regions.slot_owners[i].ref_count.value() == REF_COUNT_UNIQUE
                 &&& regions.slot_owners[i].metadata.is_empty()
-                &&& regions.slot_owners[i].metadata.id()
-                    == owner.list_own.empty_metadata[np].id()
+                &&& regions.slot_owners[i].metadata.id() == owner.list_own.empty_metadata[np].id()
                 &&& owner.list_own.metadata_perms[np].storage.id()
                     == regions.slots[i].value().storage.id()
                 &&& owner.list_own.metadata_perms[np].vtable_ptr.pptr()
@@ -1169,8 +1167,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             ) by {
                 owner0.list_own.relate_region_at_facts(regions0, p);
                 if frame_own.slot_index == meta_to_index(owner0.list_own.list[p].paddr) {
-                    assert(regions0.slot_owners[frame_own.slot_index].in_list.value()
-                        == 0);
+                    assert(regions0.slot_owners[frame_own.slot_index].in_list.value() == 0);
                     assert(regions0.slot_owners[meta_to_index(
                         owner0.list_own.list[p].paddr,
                     )].in_list.value() == owner0.list_own.list_id);
@@ -1345,8 +1342,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 &&& regions.slots[i].pptr() == regions0.slots[i].pptr()
                 &&& regions.slot_owners[i].ref_count.value() == REF_COUNT_UNIQUE
                 &&& regions.slot_owners[i].metadata.is_empty()
-                &&& regions.slot_owners[i].metadata.id()
-                    == owner.list_own.empty_metadata[np].id()
+                &&& regions.slot_owners[i].metadata.id() == owner.list_own.empty_metadata[np].id()
                 &&& owner.list_own.metadata_perms[np].storage.id()
                     == regions.slots[i].value().storage.id()
                 &&& owner.list_own.metadata_perms[np].vtable_ptr.pptr()
@@ -1580,8 +1576,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> Drop for LinkedList<M> {
                         let idx = meta_to_index(original_list[j].paddr);
                         &&& original_regions.contains(idx)
                         &&& original_regions.slot_owners[idx].paths_in_pt.is_empty()
-                        &&& original_regions.slot_owners[idx].ref_count.value()
-                            == REF_COUNT_UNIQUE
+                        &&& original_regions.slot_owners[idx].ref_count.value() == REF_COUNT_UNIQUE
                     },
             ensures
                 k == n,

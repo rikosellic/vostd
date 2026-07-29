@@ -477,8 +477,7 @@ impl MetaSlot {
         // SAFETY: The slot now has a reference count of `0`, other threads will
         // not access the metadata slot so it is safe to have a mutable reference.
 
-        let tracked (mut metadata_perms, empty_metadata) =
-            slot_own.tracked_take_full_metadata();
+        let tracked (mut metadata_perms, empty_metadata) = slot_own.tracked_take_full_metadata();
 
         unsafe {
             #[verus_spec(with
@@ -632,8 +631,7 @@ impl MetaSlot {
             old(rc_perm).value() < REF_COUNT_MAX,
             final(rc_perm).id() == old(rc_perm).id(),
     )]
-    pub(super) unsafe fn inc_ref_count(&self)
-    {
+    pub(super) unsafe fn inc_ref_count(&self) {
         let last_ref_cnt = self.ref_count.fetch_add(Tracked(rc_perm), 1);
 
         if last_ref_cnt >= REF_COUNT_MAX {
@@ -819,8 +817,7 @@ impl MetaSlot {
     pub(super) unsafe fn drop_last_in_place(&self) {
         // This should be guaranteed as a safety requirement.
         //        debug_assert_eq!(self.ref_count.load(Tracked(&*rc_perm)), 0);
-        let tracked (mut metadata_perms, empty_metadata) =
-            owner.tracked_take_full_metadata();
+        let tracked (mut metadata_perms, empty_metadata) = owner.tracked_take_full_metadata();
         // SAFETY: The caller ensures safety.
         unsafe {
             #[verus_spec(with Tracked(owner), Tracked(&mut metadata_perms))]

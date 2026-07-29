@@ -15,9 +15,9 @@ use vstd::vpanic;
 
 use crate::arch::mm::{PageTableEntry, PagingConsts, current_page_table_paddr};
 use crate::error::Error;
-use crate::mm::frame::{Frame, MetaSlot};
 use crate::mm::frame::meta::mapping::meta_to_frame;
 use crate::mm::frame::untyped::UFrame;
+use crate::mm::frame::{Frame, MetaSlot};
 use crate::mm::kspace::KernelPtConfig;
 use crate::mm::page_table::*;
 use crate::mm::{
@@ -1648,10 +1648,7 @@ unsafe impl PageTableConfig for UserPtConfig {
     }
 
     #[verifier::external_body]
-    fn item_into_raw(
-        item: Self::Item,
-        Tracked(regions): Tracked<&mut MetaRegionOwners>,
-    ) -> (res: (
+    fn item_into_raw(item: Self::Item, Tracked(regions): Tracked<&mut MetaRegionOwners>) -> (res: (
         (Paddr, PagingLevel, PageProperty),
         Tracked<Option<FramePermission>>,
     )) {
@@ -1757,11 +1754,7 @@ unsafe impl PageTableConfig for UserPtConfig {
     ) {
     }
 
-    proof fn lemma_huge_raw_item_untracked(
-        pa: Paddr,
-        level: PagingLevel,
-        prop: PageProperty,
-    ) {
+    proof fn lemma_huge_raw_item_untracked(pa: Paddr, level: PagingLevel, prop: PageProperty) {
     }
 
     proof fn lemma_item_from_raw_well_formed(

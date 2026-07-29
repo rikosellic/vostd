@@ -224,12 +224,11 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
         assume((forall|i: int|
             #![trigger old(regions).slot_owners[i]]
             old(regions).contains(i) && old(regions).slot_owners[i].ref_count.value()
-                != REF_COUNT_UNUSED ==> old(regions).slot_owners[i].ref_count.value()
-                + 1 < REF_COUNT_MAX) ==> (forall|i: int|
+                != REF_COUNT_UNUSED ==> old(regions).slot_owners[i].ref_count.value() + 1
+                < REF_COUNT_MAX) ==> (forall|i: int|
             #![trigger regions.slot_owners[i]]
-            regions.contains(i) && regions.slot_owners[i].ref_count.value()
-                != REF_COUNT_UNUSED ==> regions.slot_owners[i].ref_count.value() + 1
-                < REF_COUNT_MAX));
+            regions.contains(i) && regions.slot_owners[i].ref_count.value() != REF_COUNT_UNUSED
+                ==> regions.slot_owners[i].ref_count.value() + 1 < REF_COUNT_MAX));
     }
     res
 }

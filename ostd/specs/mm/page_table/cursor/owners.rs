@@ -36,7 +36,10 @@ use crate::specs::{
 use crate::arch::mm::PagingConsts;
 use crate::mm::{
     MAX_USERSPACE_VADDR, Paddr, PagingConstsTrait, PagingLevel, Vaddr,
-    frame::{Frame, meta::{REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED}},
+    frame::{
+        Frame,
+        meta::{REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED},
+    },
     kspace::KernelPtConfig,
     nr_subpage_per_huge,
     page_prop::PageProperty,
@@ -93,9 +96,7 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
     /// Temporarily extracts the current child while a permission nested in
     /// that child is in flight. During that interval the continuation need
     /// not satisfy its full invariant, but its sequence shape is unchanged.
-    pub proof fn tracked_take_child_shape_only(
-        tracked &mut self,
-    ) -> (tracked res: OwnerSubtree<C>)
+    pub proof fn tracked_take_child_shape_only(tracked &mut self) -> (tracked res: OwnerSubtree<C>)
         requires
             old(self).idx < old(self).children.len(),
             old(self).children[old(self).idx as int] is Some,
@@ -595,12 +596,9 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
             paddr + page_size(self.level()) <= MAX_PADDR,
             C::raw_item_well_formed(paddr, self.level(), prop),
             C::E::new_page_req(paddr, self.level(), prop),
-            permission is Some <==> C::tracked(C::item_from_raw_spec(
-                paddr,
-                self.level(),
-                prop,
-                None,
-            )),
+            permission is Some <==> C::tracked(
+                C::item_from_raw_spec(paddr, self.level(), prop, None),
+            ),
             self.path().push_tail(self.idx as int).inv(),
         ensures
             final(regions).slot_owners == old(regions).slot_owners,
@@ -1130,9 +1128,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             // The recorded entry trackedness matches the item being cloned.
             C::tracked(item) == self.cur_entry_owner().frame_is_tracked(),
             // Saturation aborts (Arc-style) via `inc_ref_count`'s diverging panic.
-            C::tracked(item) ==> (regions.slot_owners[frame_to_index(
-                pa,
-            )].ref_count.value() < REF_COUNT_MAX || may_panic()),
+            C::tracked(item) ==> (regions.slot_owners[frame_to_index(pa)].ref_count.value()
+                < REF_COUNT_MAX || may_panic()),
         ensures
             item.clone_requires(regions),
     {
@@ -1181,8 +1178,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 == old_regions.slot_owners[idx].metadata.id(),
             new_regions.slot_owners[idx].metadata.frac() + 1
                 == old_regions.slot_owners[idx].metadata.frac(),
-            new_regions.slot_owners[idx].in_list
-                == old_regions.slot_owners[idx].in_list,
+            new_regions.slot_owners[idx].in_list == old_regions.slot_owners[idx].in_list,
             // Other MetaSlotOwner fields at idx unchanged
             new_regions.slot_owners[idx].paths_in_pt == old_regions.slot_owners[idx].paths_in_pt,
             new_regions.slot_owners[idx].slot_vaddr == old_regions.slot_owners[idx].slot_vaddr,
@@ -2157,14 +2153,11 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             regions1.slot_owners.dom() == regions0.slot_owners.dom(),
             regions1.slot_owners[idx].ref_count.value()
                 == regions0.slot_owners[idx].ref_count.value() + 1,
-            regions1.slot_owners[idx].ref_count.id()
-                == regions0.slot_owners[idx].ref_count.id(),
-            regions1.slot_owners[idx].metadata.id()
-                == regions0.slot_owners[idx].metadata.id(),
+            regions1.slot_owners[idx].ref_count.id() == regions0.slot_owners[idx].ref_count.id(),
+            regions1.slot_owners[idx].metadata.id() == regions0.slot_owners[idx].metadata.id(),
             regions1.slot_owners[idx].metadata.frac() + 1
                 == regions0.slot_owners[idx].metadata.frac(),
-            regions1.slot_owners[idx].in_list
-                == regions0.slot_owners[idx].in_list,
+            regions1.slot_owners[idx].in_list == regions0.slot_owners[idx].in_list,
             regions1.slot_owners[idx].paths_in_pt == regions0.slot_owners[idx].paths_in_pt,
             regions1.slot_owners[idx].slot_vaddr == regions0.slot_owners[idx].slot_vaddr,
             regions1.slot_owners[idx].usage == regions0.slot_owners[idx].usage,
@@ -2208,9 +2201,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 regions0.slots.contains_key(k) ==> regions0.slots[k]
                     == #[trigger] regions1.slots[k],
             // All other fields at changed_idx preserved
-            regions1.slot_owners[changed_idx].same_permissions(
-                regions0.slot_owners[changed_idx],
-            ),
+            regions1.slot_owners[changed_idx].same_permissions(regions0.slot_owners[changed_idx]),
             regions1.slot_owners[changed_idx].slot_vaddr
                 == regions0.slot_owners[changed_idx].slot_vaddr,
             regions1.slot_owners[changed_idx].usage == regions0.slot_owners[changed_idx].usage,

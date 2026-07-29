@@ -412,8 +412,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
                 &&& regions.slot_owners[idx].ref_count.value() == REF_COUNT_UNIQUE
                 &&& regions.slot_owners[idx].metadata.is_empty()
                 &&& regions.slot_owners[idx].metadata.id() == self.empty_metadata[i].id()
-                &&& self.metadata_perms[i].storage.id()
-                    == regions.slots[idx].value().storage.id()
+                &&& self.metadata_perms[i].storage.id() == regions.slots[idx].value().storage.id()
                 &&& self.metadata_perms[i].vtable_ptr.pptr()
                     == regions.slots[idx].value().vtable_ptr
                 &&& self.metadata_perms[i].vtable_ptr.is_init()
@@ -458,8 +457,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
                 &&& regions.slot_owners[idx].ref_count.value() == REF_COUNT_UNIQUE
                 &&& regions.slot_owners[idx].metadata.is_empty()
                 &&& regions.slot_owners[idx].metadata.id() == self.empty_metadata[i].id()
-                &&& self.metadata_perms[i].storage.id()
-                    == regions.slots[idx].value().storage.id()
+                &&& self.metadata_perms[i].storage.id() == regions.slots[idx].value().storage.id()
                 &&& self.metadata_perms[i].vtable_ptr.pptr()
                     == regions.slots[idx].value().vtable_ptr
                 &&& self.metadata_perms[i].vtable_ptr.is_init()
@@ -570,10 +568,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
                     &&& fr.slot_owners[i].ref_count.value() == REF_COUNT_UNIQUE
                     &&& fr.slot_owners[i].metadata.is_empty()
                     &&& fr.slot_owners[i].metadata.id() == new.empty_metadata[np].id()
-                    &&& new.metadata_perms[np].storage.id()
-                        == fr.slots[i].value().storage.id()
-                    &&& new.metadata_perms[np].vtable_ptr.pptr()
-                        == fr.slots[i].value().vtable_ptr
+                    &&& new.metadata_perms[np].storage.id() == fr.slots[i].value().storage.id()
+                    &&& new.metadata_perms[np].vtable_ptr.pptr() == fr.slots[i].value().vtable_ptr
                     &&& new.metadata_perms[np].vtable_ptr.is_init()
                     &&& fr.slot_owners[i].usage is Frame
                     &&& fr.slot_owners[i].in_list.value() == new.list_id
@@ -717,8 +713,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
                 &&& fr.slot_owners[ins].metadata.is_empty()
                 &&& fr.slot_owners[ins].metadata.id() == new.empty_metadata[n].id()
                 &&& new.metadata_perms[n].storage.id() == fr.slots[ins].value().storage.id()
-                &&& new.metadata_perms[n].vtable_ptr.pptr()
-                    == fr.slots[ins].value().vtable_ptr
+                &&& new.metadata_perms[n].vtable_ptr.pptr() == fr.slots[ins].value().vtable_ptr
                 &&& new.metadata_perms[n].vtable_ptr.is_init()
                 &&& fr.slot_owners[ins].usage is Frame
                 &&& fr.slot_owners[ins].in_list.value() == new.list_id
@@ -760,10 +755,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
                     &&& fr.slot_owners[i].ref_count.value() == REF_COUNT_UNIQUE
                     &&& fr.slot_owners[i].metadata.is_empty()
                     &&& fr.slot_owners[i].metadata.id() == new.empty_metadata[np].id()
-                    &&& new.metadata_perms[np].storage.id()
-                        == fr.slots[i].value().storage.id()
-                    &&& new.metadata_perms[np].vtable_ptr.pptr()
-                        == fr.slots[i].value().vtable_ptr
+                    &&& new.metadata_perms[np].storage.id() == fr.slots[i].value().storage.id()
+                    &&& new.metadata_perms[np].vtable_ptr.pptr() == fr.slots[i].value().vtable_ptr
                     &&& new.metadata_perms[np].vtable_ptr.is_init()
                     &&& fr.slot_owners[i].usage is Frame
                     &&& fr.slot_owners[i].in_list.value() == new.list_id

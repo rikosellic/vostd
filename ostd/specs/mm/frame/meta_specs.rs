@@ -46,10 +46,7 @@ impl MetaSlot {
 
     }
 
-    pub open spec fn get_from_unused_owner_spec(
-        as_unique: bool,
-        owner: MetaSlotOwner,
-    ) -> bool {
+    pub open spec fn get_from_unused_owner_spec(as_unique: bool, owner: MetaSlotOwner) -> bool {
         &&& owner.ref_count.value() == (if as_unique {
             REF_COUNT_UNIQUE as u64
         } else {
@@ -172,18 +169,13 @@ impl MetaSlot {
         let pre_perms = pre.slot_owners[idx].ref_count.value();
         {
             &&& post.slot_owners[idx].ref_count.value() == pre_perms + 1
-            &&& post.slot_owners[idx].ref_count.id()
-                == pre.slot_owners[idx].ref_count.id()
-            &&& post.slot_owners[idx].metadata.id()
-                == pre.slot_owners[idx].metadata.id()
-            &&& post.slot_owners[idx].metadata.frac() + 1
-                == pre.slot_owners[idx].metadata.frac()
+            &&& post.slot_owners[idx].ref_count.id() == pre.slot_owners[idx].ref_count.id()
+            &&& post.slot_owners[idx].metadata.id() == pre.slot_owners[idx].metadata.id()
+            &&& post.slot_owners[idx].metadata.frac() + 1 == pre.slot_owners[idx].metadata.frac()
             &&& pre.slot_owners[idx].metadata.frac() > 1 ==> {
-                post.slot_owners[idx].metadata@
-                    == pre.slot_owners[idx].metadata@
+                post.slot_owners[idx].metadata@ == pre.slot_owners[idx].metadata@
             }
-            &&& post.slot_owners[idx].in_list
-                == pre.slot_owners[idx].in_list
+            &&& post.slot_owners[idx].in_list == pre.slot_owners[idx].in_list
             &&& post.slot_owners[idx].slot_vaddr == pre.slot_owners[idx].slot_vaddr
             &&& post.slot_owners[idx].usage == pre.slot_owners[idx].usage
             &&& post.slot_owners[idx].paths_in_pt == pre.slot_owners[idx].paths_in_pt
@@ -192,8 +184,7 @@ impl MetaSlot {
     }
 
     pub open spec fn drop_last_in_place_safety_cond(owner: MetaSlotOwner) -> bool {
-        &&& (owner.ref_count.value() == 0 || owner.ref_count.value()
-            == REF_COUNT_UNIQUE)
+        &&& (owner.ref_count.value() == 0 || owner.ref_count.value() == REF_COUNT_UNIQUE)
         &&& owner.metadata.is_full()
         &&& owner.storage().is_init()
         &&& owner.in_list.value()

@@ -958,8 +958,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                     != crate::specs::mm::frame::meta_owners::PageUsage::PageTable
                 &&& regions.slot_owners[sub_idx].usage
                     != crate::specs::mm::frame::meta_owners::PageUsage::MMIO ==> {
-                    &&& regions.slot_owners[sub_idx].ref_count.value()
-                        != REF_COUNT_UNUSED
+                    &&& regions.slot_owners[sub_idx].ref_count.value() != REF_COUNT_UNUSED
                     &&& regions.slot_owners[sub_idx].ref_count.value() > 0
                     &&& regions.slot_owners[sub_idx].ref_count.value() <= REF_COUNT_MAX
                 }
@@ -1047,11 +1046,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                         &&& regions.slots.contains_key(sub_idx)
                         &&& regions.slot_owners[sub_idx].usage !is PageTable
                         &&& regions.slot_owners[sub_idx].usage !is MMIO ==> {
-                            &&& regions.slot_owners[sub_idx].ref_count.value()
-                                != REF_COUNT_UNUSED
+                            &&& regions.slot_owners[sub_idx].ref_count.value() != REF_COUNT_UNUSED
                             &&& regions.slot_owners[sub_idx].ref_count.value() > 0
-                            &&& regions.slot_owners[sub_idx].ref_count.value()
-                                <= REF_COUNT_MAX
+                            &&& regions.slot_owners[sub_idx].ref_count.value() <= REF_COUNT_MAX
                         }
                     },
                 // j = 0: the huge frame's own slot.
@@ -1061,8 +1058,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                     &&& regions.slot_owners[frame_to_index(pa)].ref_count.value()
                         != REF_COUNT_UNUSED
                     &&& regions.slot_owners[frame_to_index(pa)].ref_count.value() > 0
-                    &&& regions.slot_owners[frame_to_index(pa)].ref_count.value()
-                        <= REF_COUNT_MAX
+                    &&& regions.slot_owners[frame_to_index(pa)].ref_count.value() <= REF_COUNT_MAX
                 },
                 new_page.ptr.addr() == new_owner_meta_addr,
                 new_owner.value().node().metaregion_sound_node(*regions),
@@ -1070,12 +1066,10 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 // `metaregion_sound` conjuncts not derivable from
                 // `metaregion_sound_node` (slot_vaddr/wf derive). Carried so
                 // `into_pte`'s `Child::invariants` holds after the loop.
-                regions.slot_owners[meta_to_index(
-                    new_owner_meta_addr,
-                )].ref_count.value() != REF_COUNT_UNUSED,
-                0 < regions.slot_owners[meta_to_index(
-                    new_owner_meta_addr,
-                )].ref_count.value() <= REF_COUNT_MAX,
+                regions.slot_owners[meta_to_index(new_owner_meta_addr)].ref_count.value()
+                    != REF_COUNT_UNUSED,
+                0 < regions.slot_owners[meta_to_index(new_owner_meta_addr)].ref_count.value()
+                    <= REF_COUNT_MAX,
                 regions.slot_owners[meta_to_index(new_owner_meta_addr)].paths_in_pt
                     == set![new_owner_path],
         {
@@ -1134,11 +1128,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                         let sub_idx = frame_to_index((small_pa + j_prime * PAGE_SIZE) as usize);
                         &&& regions.slots.contains_key(sub_idx)
                         &&& regions.slot_owners[sub_idx].usage !is MMIO ==> {
-                            &&& regions.slot_owners[sub_idx].ref_count.value()
-                                != REF_COUNT_UNUSED
+                            &&& regions.slot_owners[sub_idx].ref_count.value() != REF_COUNT_UNUSED
                             &&& regions.slot_owners[sub_idx].ref_count.value() > 0
-                            &&& regions.slot_owners[sub_idx].ref_count.value()
-                                <= REF_COUNT_MAX
+                            &&& regions.slot_owners[sub_idx].ref_count.value() <= REF_COUNT_MAX
                         }
                     } by {
                         let sub_pages_per_subframe = page_size((level - 1) as PagingLevel)

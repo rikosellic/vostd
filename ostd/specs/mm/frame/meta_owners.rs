@@ -463,8 +463,7 @@ impl Inv for MetaSlotOwner {
         // drop its `rc == 1 ⟹ storage.is_init ∧ in_list == 0` residual
         // (it follows from `regions.inv() ⟹ slot_owners[idx].inv()`).
         &&& 0 < self.ref_count.value() <= REF_COUNT_MAX ==> {
-            &&& self.metadata.frac() + self.ref_count.value() as int
-                == REF_COUNT_MAX
+            &&& self.metadata.frac() + self.ref_count.value() as int == REF_COUNT_MAX
             &&& self.metadata.not_empty() ==> {
                 &&& self.vtable_ptr().is_init()
                 &&& self.storage().is_init()

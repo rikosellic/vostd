@@ -63,8 +63,7 @@ impl<'a, M: ?Sized> Frame<M> {
         &&& regions.slot_owners[frame_to_index(paddr)].ref_count.value() > 0
         &&& regions.slot_owners[frame_to_index(paddr)].ref_count.value() <= REF_COUNT_MAX
         &&& regions.slot_owners[frame_to_index(paddr)].ref_count.value() != REF_COUNT_UNIQUE
-        &&& regions.slot_owners[frame_to_index(paddr)].ref_count.value()
-            != REF_COUNT_UNUSED
+        &&& regions.slot_owners[frame_to_index(paddr)].ref_count.value() != REF_COUNT_UNUSED
     }
 
     pub open spec fn from_raw_ensures(
@@ -280,17 +279,15 @@ impl<M: ?Sized> TrackDrop for Frame<M> {
         // drop (it only adjusts refcount and, on teardown, storage).
         &&& so1.slot_vaddr == so0.slot_vaddr
         &&& so1.usage == so0.usage
-        &&& so1.paths_in_pt
-            == so0.paths_in_pt
-        &&& so1.metadata.id() == so0.metadata.id()
+        &&& so1.paths_in_pt == so0.paths_in_pt
+        &&& so1.metadata.id()
+            == so0.metadata.id()
         // Refcount transition. `drop_requires` guarantees the old value
         // is in `[1, REF_COUNT_MAX]`, so these cases are exhaustive:
         //  - last reference (== 1): the slot is torn down to UNUSED.
         //  - otherwise (> 1): the refcount is decremented by one.
-        &&& so0.ref_count.value() == 1 ==> so1.ref_count.value()
-            == REF_COUNT_UNUSED
-        &&& so0.ref_count.value() > 1 ==> so1.ref_count.value() == (
-        so0.ref_count.value()
+        &&& so0.ref_count.value() == 1 ==> so1.ref_count.value() == REF_COUNT_UNUSED
+        &&& so0.ref_count.value() > 1 ==> so1.ref_count.value() == (so0.ref_count.value()
             - 1) as u64
     }
 }

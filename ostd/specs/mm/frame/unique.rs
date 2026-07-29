@@ -155,8 +155,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
         &&& regions.slots[self.slot_index].addr() == index_to_meta(self.slot_index)
         &&& self.meta_value(regions).wf(self.meta_own)
         &&& regions.slot_owners[self.slot_index].metadata.is_empty()
-        &&& regions.slot_owners[self.slot_index].metadata.id()
-            == self.empty_metadata->0.id()
+        &&& regions.slot_owners[self.slot_index].metadata.id() == self.empty_metadata->0.id()
         &&& self.metadata_perms->0.storage.id()
             == regions.slots[self.slot_index].value().storage.id()
         &&& self.metadata_perms->0.vtable_ptr.pptr()
@@ -295,7 +294,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
             _ => proof_from_false(),
         }
     }
-
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> TrackDrop for UniqueFrame<M> {
@@ -334,8 +332,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> TrackDrop for UniqueFram
         &&& forall|i: int|
             #![trigger s1.slot_owners[i]]
             i != self.index() ==> s1.slot_owners[i] == s0.slot_owners[i]
-        &&& s1.slots
-            =~= s0.slots
+        &&& s1.slots =~= s0.slots
         &&& s1.inv()
     }
 }

@@ -436,9 +436,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
     }
 
     pub open spec fn into_raw_requires(self, regions: MetaRegionOwners) -> bool {
-        &&& regions.contains(
-            self.index(),
-        )
+        &&& regions.contains(self.index())
         &&& regions.inv()
     }
 

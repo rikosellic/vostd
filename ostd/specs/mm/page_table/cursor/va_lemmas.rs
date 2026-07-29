@@ -194,8 +194,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             assert(inc.va.offset == self.va.offset);
             assert(inc.va.leading_bits == self.va.leading_bits);
             assert(inc.va.index.dom() =~= self.va.index.dom());
-            assert forall|i: int| 0 <= i < NR_LEVELS implies inc.va.index.contains_key(i)
-                && 0 <= #[trigger] inc.va.index[i] && inc.va.index[i] < NR_ENTRIES by {
+            assert forall|i: int| 0 <= i < NR_LEVELS implies inc.va.index.contains_key(i) && 0
+                <= #[trigger] inc.va.index[i] && inc.va.index[i] < NR_ENTRIES by {
                 if i != self.level - 1 {
                 }
             };

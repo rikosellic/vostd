@@ -21,7 +21,10 @@ use crate::specs::{
 use crate::arch::mm::PagingConsts;
 use crate::mm::{
     Paddr, PagingConstsTrait, PagingLevel, Vaddr,
-    frame::{Frame, meta::{META_SLOT_SIZE, MetaSlot, mapping::meta_to_frame}},
+    frame::{
+        Frame,
+        meta::{META_SLOT_SIZE, MetaSlot, mapping::meta_to_frame},
+    },
     kspace::{FRAME_METADATA_RANGE, LINEAR_MAPPING_BASE_VADDR, VMALLOC_BASE_VADDR},
     paddr_to_vaddr,
     page_table::{PageTableGuard, *},
@@ -255,9 +258,8 @@ impl<C: PageTableConfig> Inv for NodeOwner<C> {
 }
 
 impl<C: PageTableConfig> NodeOwner<C> {
-    pub proof fn tracked_borrow_frame_storage(
-        tracked permission: &FramePermission,
-    ) -> (tracked res: &vstd::cell::pcell_maybe_uninit::PointsTo<MetaSlotStorage>)
+    pub proof fn tracked_borrow_frame_storage(tracked permission: &FramePermission) -> (tracked res:
+        &vstd::cell::pcell_maybe_uninit::PointsTo<MetaSlotStorage>)
         ensures
             *res == permission.resource().storage,
     {
@@ -289,10 +291,7 @@ impl<C: PageTableConfig> NodeOwner<C> {
         recommends
             self.meta_wf(regions),
     {
-        typed_meta_value::<PageTablePageMeta<C>>(
-            self.frame_permission.resource().storage,
-            (),
-        )
+        typed_meta_value::<PageTablePageMeta<C>>(self.frame_permission.resource().storage, ())
     }
 
     /// Regions-tied invariants that used to live in `NodeOwner::inv()` via
@@ -410,9 +409,7 @@ impl<C: PageTableConfig> OwnerOf for PageTableNode<C> {
 impl<C: PageTableConfig> PageTableNode<C> {
     pub open spec fn invariants(self, owner: NodeOwner<C>) -> bool {
         &&& owner.inv()
-        &&& self.wf(
-            owner,
-        )
+        &&& self.wf(owner)
         //        &&& owner.meta_perm.wf(...)
         //        &&& owner.meta_perm.addr() == self.ptr.addr()
         //        &&& owner.meta_perm.addr() == self.ptr.addr()

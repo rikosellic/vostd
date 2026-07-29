@@ -1539,11 +1539,9 @@ impl<C: PageTableConfig> PageTableOwner<C> {
                                     (pa + j * PAGE_SIZE) as usize,
                                 );
                                 sub_idx != changed_idx || (r1.slots.contains_key(sub_idx)
-                                    && r1.slot_owners[sub_idx].ref_count.value()
-                                    != REF_COUNT_UNUSED
+                                    && r1.slot_owners[sub_idx].ref_count.value() != REF_COUNT_UNUSED
                                     && r1.slot_owners[sub_idx].ref_count.value() > 0
-                                    && r1.slot_owners[sub_idx].ref_count.value()
-                                    <= REF_COUNT_MAX)
+                                    && r1.slot_owners[sub_idx].ref_count.value() <= REF_COUNT_MAX)
                             }
                     },
             ),
@@ -1593,11 +1591,9 @@ impl<C: PageTableConfig> PageTableOwner<C> {
                                     (pa + j * PAGE_SIZE) as usize,
                                 );
                                 sub_idx != changed_idx || (r1.slots.contains_key(sub_idx)
-                                    && r1.slot_owners[sub_idx].ref_count.value()
-                                    != REF_COUNT_UNUSED
+                                    && r1.slot_owners[sub_idx].ref_count.value() != REF_COUNT_UNUSED
                                     && r1.slot_owners[sub_idx].ref_count.value() > 0
-                                    && r1.slot_owners[sub_idx].ref_count.value()
-                                    <= REF_COUNT_MAX)
+                                    && r1.slot_owners[sub_idx].ref_count.value() <= REF_COUNT_MAX)
                             }
                     },
             ),

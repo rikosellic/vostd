@@ -23,8 +23,7 @@ use crate::mm::{
     frame::{
         Frame,
         meta::{
-            MetaSlot, REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED,
-            mapping::meta_to_frame,
+            MetaSlot, REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED, mapping::meta_to_frame,
         },
     },
     page_prop::PageProperty,
@@ -132,11 +131,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
         permission: Option<FramePermission>,
     ) -> Self {
         EntryOwner {
-            kind: EntryOwnerKind::Frame(FrameEntryOwner {
-                mapped_pa: paddr,
-                prop,
-                permission,
-            }),
+            kind: EntryOwnerKind::Frame(FrameEntryOwner { mapped_pa: paddr, prop, permission }),
             path,
             parent_level,
         }
@@ -233,10 +228,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
             old(self).kind is Frame,
         ensures
             *final(self) == (EntryOwner {
-                kind: EntryOwnerKind::Frame(FrameEntryOwner {
-                    prop,
-                    ..old(self).frame()
-                }),
+                kind: EntryOwnerKind::Frame(FrameEntryOwner { prop, ..old(self).frame() }),
                 ..*old(self)
             }),
     {
@@ -246,28 +238,23 @@ impl<C: PageTableConfig> EntryOwner<C> {
             EntryOwnerKind::Frame(frame) => {
                 let ghost mapped_pa = frame.mapped_pa;
                 let tracked permission = frame.permission;
-                self.kind = EntryOwnerKind::Frame(FrameEntryOwner {
-                    mapped_pa,
-                    prop,
-                    permission,
-                });
+                self.kind = EntryOwnerKind::Frame(FrameEntryOwner { mapped_pa, prop, permission });
             },
             _ => proof_from_false(),
         }
     }
 
-    pub proof fn tracked_take_frame_permission(
-        tracked &mut self,
-    ) -> (tracked res: Option<FramePermission>)
+    pub proof fn tracked_take_frame_permission(tracked &mut self) -> (tracked res: Option<
+        FramePermission,
+    >)
         requires
             old(self).is_frame(),
         ensures
             res == old(self).frame_permission(),
             *final(self) == (EntryOwner {
-                kind: EntryOwnerKind::Frame(FrameEntryOwner {
-                    permission: None,
-                    ..old(self).frame()
-                }),
+                kind: EntryOwnerKind::Frame(
+                    FrameEntryOwner { permission: None, ..old(self).frame() },
+                ),
                 ..*old(self)
             }),
     {
@@ -278,11 +265,9 @@ impl<C: PageTableConfig> EntryOwner<C> {
                 let ghost mapped_pa = frame.mapped_pa;
                 let ghost prop = frame.prop;
                 let tracked permission = frame.permission;
-                self.kind = EntryOwnerKind::Frame(FrameEntryOwner {
-                    mapped_pa,
-                    prop,
-                    permission: None,
-                });
+                self.kind = EntryOwnerKind::Frame(
+                    FrameEntryOwner { mapped_pa, prop, permission: None },
+                );
                 permission
             },
             _ => proof_from_false(),
@@ -298,10 +283,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
             old(self).frame_permission() is None,
         ensures
             *final(self) == (EntryOwner {
-                kind: EntryOwnerKind::Frame(FrameEntryOwner {
-                    permission,
-                    ..old(self).frame()
-                }),
+                kind: EntryOwnerKind::Frame(FrameEntryOwner { permission, ..old(self).frame() }),
                 ..*old(self)
             }),
     {
@@ -311,11 +293,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
             EntryOwnerKind::Frame(frame) => {
                 let ghost mapped_pa = frame.mapped_pa;
                 let ghost prop = frame.prop;
-                self.kind = EntryOwnerKind::Frame(FrameEntryOwner {
-                    mapped_pa,
-                    prop,
-                    permission,
-                });
+                self.kind = EntryOwnerKind::Frame(FrameEntryOwner { mapped_pa, prop, permission });
             },
             _ => proof_from_false(),
         }
@@ -332,11 +310,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
             Self::new_frame(paddr, path, parent_level, prop, permission),
     {
         Self {
-            kind: EntryOwnerKind::Frame(FrameEntryOwner {
-                mapped_pa: paddr,
-                prop,
-                permission,
-            }),
+            kind: EntryOwnerKind::Frame(FrameEntryOwner { mapped_pa: paddr, prop, permission }),
             path,
             parent_level,
         }
@@ -402,11 +376,9 @@ impl<C: PageTableConfig> EntryOwner<C> {
             crate::mm::page_table::Child::<C>::Frame(paddr, parent_level, prop).wf(res),
     {
         Self {
-            kind: EntryOwnerKind::Frame(FrameEntryOwner {
-                mapped_pa: paddr,
-                prop,
-                permission: None,
-            }),
+            kind: EntryOwnerKind::Frame(
+                FrameEntryOwner { mapped_pa: paddr, prop, permission: None },
+            ),
             path: TreePath(Seq::empty()),
             parent_level,
         }
@@ -601,11 +573,9 @@ impl<C: PageTableConfig> EntryOwner<C> {
                     // covered base page. Current configs only permit untracked
                     // huge mappings, so this implication is normally vacuous.
                     &&& self.frame_is_tracked() ==> {
-                        &&& regions.slot_owners[sub_idx].ref_count.value()
-                            != REF_COUNT_UNUSED
+                        &&& regions.slot_owners[sub_idx].ref_count.value() != REF_COUNT_UNUSED
                         &&& regions.slot_owners[sub_idx].ref_count.value() > 0
-                        &&& regions.slot_owners[sub_idx].ref_count.value()
-                            <= REF_COUNT_MAX
+                        &&& regions.slot_owners[sub_idx].ref_count.value() <= REF_COUNT_MAX
                     }
                 }
         }
@@ -717,11 +687,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
     /// Changing only a leaf PTE's page properties preserves its relationship
     /// to the metadata region. The counting permission, physical address and
     /// page-table path remain unchanged.
-    pub proof fn metaregion_sound_frame_prop_changed(
-        self,
-        other: Self,
-        regions: MetaRegionOwners,
-    )
+    pub proof fn metaregion_sound_frame_prop_changed(self, other: Self, regions: MetaRegionOwners)
         requires
             regions.inv(),
             self.inv(),
@@ -769,12 +735,9 @@ impl<C: PageTableConfig> EntryOwner<C> {
                     0 < j < nr_pages ==> {
                         let sub_idx = #[trigger] frame_to_index((pa + j * PAGE_SIZE) as usize);
                         sub_idx != changed_idx || r1.slot_owners[sub_idx].usage is MMIO || (
-                        r1.slots.contains_key(sub_idx)
-                            && r1.slot_owners[sub_idx].ref_count.value()
-                            != REF_COUNT_UNUSED
-                            && r1.slot_owners[sub_idx].ref_count.value() > 0
-                            && r1.slot_owners[sub_idx].ref_count.value()
-                            <= REF_COUNT_MAX)
+                        r1.slots.contains_key(sub_idx) && r1.slot_owners[sub_idx].ref_count.value()
+                            != REF_COUNT_UNUSED && r1.slot_owners[sub_idx].ref_count.value() > 0
+                            && r1.slot_owners[sub_idx].ref_count.value() <= REF_COUNT_MAX)
                     }
             },
         ensures
@@ -878,11 +841,9 @@ impl<C: PageTableConfig> EntryOwner<C> {
                         let sub_idx = frame_to_index((pa + j * PAGE_SIZE) as usize);
                         &&& r1.slots.contains_key(sub_idx)
                         &&& self.frame_is_tracked() ==> {
-                            &&& r1.slot_owners[sub_idx].ref_count.value()
-                                != REF_COUNT_UNUSED
+                            &&& r1.slot_owners[sub_idx].ref_count.value() != REF_COUNT_UNUSED
                             &&& r1.slot_owners[sub_idx].ref_count.value() > 0
-                            &&& r1.slot_owners[sub_idx].ref_count.value()
-                                <= REF_COUNT_MAX
+                            &&& r1.slot_owners[sub_idx].ref_count.value() <= REF_COUNT_MAX
                         }
                     } by {
                         let sub_idx = frame_to_index((pa + j * PAGE_SIZE) as usize);
@@ -924,17 +885,14 @@ impl<C: PageTableConfig> EntryOwner<C> {
             ({
                 let idx = frame_to_index(self.meta_slot_paddr()->0);
                 &&& r1.slot_owners.contains_key(idx)
-                &&& r1.slot_owners[idx].ref_count.id()
-                    == r0.slot_owners[idx].ref_count.id()
+                &&& r1.slot_owners[idx].ref_count.id() == r0.slot_owners[idx].ref_count.id()
                 &&& r1.slot_owners[idx].ref_count.value() != REF_COUNT_UNUSED
                 &&& r1.slot_owners[idx].ref_count.value()
                     > 0
                 // Needed to re-establish the node branch's SHARED range (`<= MAX`).
                 &&& r1.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX
-                &&& r1.slot_owners[idx].metadata.id()
-                    == r0.slot_owners[idx].metadata.id()
-                &&& r1.slot_owners[idx].in_list
-                    == r0.slot_owners[idx].in_list
+                &&& r1.slot_owners[idx].metadata.id() == r0.slot_owners[idx].metadata.id()
+                &&& r1.slot_owners[idx].in_list == r0.slot_owners[idx].in_list
                 &&& r1.slot_owners[idx].slot_vaddr == r0.slot_owners[idx].slot_vaddr
                 &&& r1.slot_owners[idx].paths_in_pt
                     == r0.slot_owners[idx].paths_in_pt

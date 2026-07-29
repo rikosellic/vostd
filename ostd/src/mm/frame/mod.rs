@@ -707,18 +707,15 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> RCClone for Frame<M> {
         // ref_count incremented
         &&& new_perm.slot_owners[idx].ref_count.value()
             == old_perm.slot_owners[idx].ref_count.value() + 1
-        &&& new_perm.slot_owners[idx].ref_count.id()
-            == old_perm.slot_owners[idx].ref_count.id()
-        &&& new_perm.slot_owners[idx].metadata.id()
-            == old_perm.slot_owners[idx].metadata.id()
+        &&& new_perm.slot_owners[idx].ref_count.id() == old_perm.slot_owners[idx].ref_count.id()
+        &&& new_perm.slot_owners[idx].metadata.id() == old_perm.slot_owners[idx].metadata.id()
         &&& new_perm.slot_owners[idx].metadata.frac() + 1
             == old_perm.slot_owners[idx].metadata.frac()
         &&& res.tracked_perm@ is Some
         &&& res.tracked_perm@->0.frac() == 1
         &&& res.tracked_perm@->0.id() == new_perm.slot_owners[idx].metadata.id()
         &&& res.ptr == self.ptr
-        &&& new_perm.slot_owners[idx].in_list
-            == old_perm.slot_owners[idx].in_list
+        &&& new_perm.slot_owners[idx].in_list == old_perm.slot_owners[idx].in_list
         &&& new_perm.slot_owners[idx].paths_in_pt == old_perm.slot_owners[idx].paths_in_pt
         &&& new_perm.slot_owners[idx].slot_vaddr == old_perm.slot_owners[idx].slot_vaddr
         &&& new_perm.slot_owners[idx].usage
@@ -754,11 +751,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> RCClone for Frame<M> {
 }
 
 impl<M: ?Sized> Drop for Frame<M> {
-    fn drop(
-        self,
-        Tracked(regions): Tracked<&mut MetaRegionOwners>,
-        Tracked(_obl): Tracked<()>,
-    ) {
+    fn drop(self, Tracked(regions): Tracked<&mut MetaRegionOwners>, Tracked(_obl): Tracked<()>) {
         let ghost idx = self.index();
         let ghost old_regions = *regions;
 
@@ -779,10 +772,7 @@ impl<M: ?Sized> Drop for Frame<M> {
         // `drop_ensures` (refcount transition + identity preservation).
         let ghost so0 = slot_own;
 
-        let last_ref_cnt = slot.ref_count.fetch_sub(
-            Tracked(&mut slot_own.ref_count),
-            1,
-        );
+        let last_ref_cnt = slot.ref_count.fetch_sub(Tracked(&mut slot_own.ref_count), 1);
 
         if last_ref_cnt == 1 {
             // A fence is needed here with the same reasons stated in the implementation of
@@ -987,8 +977,7 @@ impl TryFrom<Frame<dyn AnyFrameMeta>> for UFrame {
 )]
 pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) -> (permission: Tracked<
     FramePermission,
->)
-{
+>) {
     let tracked mut slot_own = regions.slot_owners.tracked_remove(frame_to_index(paddr));
     let tracked perm = regions.slots.tracked_borrow(frame_to_index(paddr));
     let tracked inner_perms = &mut slot_own;
@@ -1011,9 +1000,7 @@ pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) -> (permission: Tr
         let idx = frame_to_index(paddr);
 
         // inc_ref_count preserves permission id
-        assert(inner_perms.ref_count.id() == old(
-            regions,
-        ).slot_owners[idx].ref_count.id());
+        assert(inner_perms.ref_count.id() == old(regions).slot_owners[idx].ref_count.id());
 
         // slot_own.inv() holds: rc in (0, REF_COUNT_MAX), vtable_ptr init, slot_vaddr ok
         assert(slot_own.inv());
