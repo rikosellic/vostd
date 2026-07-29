@@ -7,3 +7,5 @@ pub mod meta_region_owners;
 pub mod meta_specs;
 pub mod segment;
 pub mod unique;
+
+pub use meta_owners::{EmptyFramePermission, FramePermission, FramePermissionResource};

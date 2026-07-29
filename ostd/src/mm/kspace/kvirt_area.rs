@@ -52,7 +52,12 @@ verus! {
 pub open spec fn frame_as_dynframe<T: AnyFrameMeta + Repr<MetaSlotStorage>>(
     frame: Frame<T>,
 ) -> DynFrame {
-    DynFrame { ptr: frame.ptr, _marker: PhantomData }
+    DynFrame {
+        ptr: frame.ptr,
+        _marker: PhantomData,
+        #[cfg(verus_keep_ghost_body)]
+        tracked_perm: Tracked(None),
+    }
 }
 
 /// Converts `Frame<T>` to `DynFrame`, with a spec postcondition connecting the result
@@ -73,7 +78,12 @@ pub open spec fn frame_entry_wf<T: AnyFrameMeta + Repr<MetaSlotStorage>>(
     prop: PageProperty,
     entry_owner: EntryOwner<KernelPtConfig>,
 ) -> bool {
-    let frame_mss = DynFrame { ptr: frame.ptr, _marker: PhantomData };
+    let frame_mss = DynFrame {
+        ptr: frame.ptr,
+        _marker: PhantomData,
+        #[cfg(verus_keep_ghost_body)]
+        tracked_perm: Tracked(None),
+    };
     let item = MappedItem::Tracked(frame_mss, prop);
     let (pa, level, prop_from_item) = KernelPtConfig::item_into_raw_spec(item);
     Child::Frame(pa, level, prop_from_item).wf(entry_owner)
@@ -351,7 +361,7 @@ impl KVirtArea {
         let idx = frame_to_index(pa);
         ||| !(self.range.start <= addr < self.range.end)
         ||| (v.present() && !is_mmio_paddr(pa)
-            && regions.slot_owners[idx].inner_perms.ref_count.value() >= REF_COUNT_MAX)
+            && regions.slot_owners[idx].ref_count.value() >= REF_COUNT_MAX)
     }
 
     pub fn start(&self) -> Vaddr
@@ -683,6 +693,7 @@ impl KVirtArea {
                     cur_path,
                     cur_parent_level,
                     prop,
+                    None,
                 );
                 entry_owners.tracked_insert(cur_mapped_pa, fresh);
             }
@@ -732,7 +743,7 @@ impl KVirtArea {
             pa_range.start <= pa < pa_range.end && pa % PAGE_SIZE == 0 ==> {
                 let idx = crate::specs::mm::frame::mapping::frame_to_index(pa);
                 &&& regions.contains(idx)
-                &&& regions.slot_owners[idx].inner_perms.ref_count.value() != REF_COUNT_UNUSED
+                &&& regions.slot_owners[idx].ref_count.value() != REF_COUNT_UNUSED
             }
     }
 
@@ -832,7 +843,7 @@ impl KVirtArea {
                     pa_range.start <= pa < pa_range.end && pa % PAGE_SIZE == 0 implies {
                     let idx = crate::specs::mm::frame::mapping::frame_to_index(pa);
                     &&& regions.contains(idx)
-                    &&& regions.slot_owners[idx].inner_perms.ref_count.value() != REF_COUNT_UNUSED
+                    &&& regions.slot_owners[idx].ref_count.value() != REF_COUNT_UNUSED
                 } by {
                     let idx = crate::specs::mm::frame::mapping::frame_to_index(pa);
                     assert(regions.contains(idx));
@@ -882,7 +893,7 @@ impl KVirtArea {
                         pa_range.start <= pa < pa_range.end && pa % PAGE_SIZE == 0 ==> {
                             let idx = crate::specs::mm::frame::mapping::frame_to_index(pa);
                             &&& regions.contains(idx)
-                            &&& regions.slot_owners[idx].inner_perms.ref_count.value()
+                            &&& regions.slot_owners[idx].ref_count.value()
                                 != REF_COUNT_UNUSED
                         },
             {

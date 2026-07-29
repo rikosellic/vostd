@@ -9,6 +9,10 @@ use vstd_extra::{
     cast_ptr::{self, Repr},
     ghost_tree::TreePath,
     ownership::*,
+    resource::ghost_resource::{
+        count::{Count, EmptyCount},
+        tokens::CountResource,
+    },
 };
 
 use crate::specs::{arch::NR_ENTRIES, mm::frame::linked_list::linked_list_owners::StoredLink};
@@ -193,17 +197,169 @@ impl MetaSlotStorage {
     }
 }
 
-pub tracked struct MetadataInnerPerms {
+/// Permissions whose initialized contents belong to one installed metadata
+/// value. Shared frames receive fractional access to this bundle, while a
+/// unique frame owns the bundle exclusively.
+pub tracked struct MetadataPerms {
     pub storage: pcell_maybe_uninit::PointsTo<MetaSlotStorage>,
-    pub ref_count: PermissionU64,
     pub vtable_ptr: vstd::simple_pptr::PointsTo<usize>,
-    pub in_list: PermissionU64,
 }
 
-/// Well-formedness of a concrete metadata representation. The permissions for
-/// the outer slot and its storage remain owned by `MetaRegionOwners`; only the
-/// representation-specific permission is supplied by the concrete metadata
-/// owner.
+/// One unit of shared ownership of the currently installed metadata.
+pub type FramePermission = Count<MetadataPerms, REF_COUNT_MAX>;
+
+/// The undistributed part of a metadata permission.
+pub type FramePermissionResource = CountResource<MetadataPerms, REF_COUNT_MAX>;
+
+/// The witness left after a unique frame extracts the complete metadata
+/// permission from a full [`FramePermissionResource`].
+pub type EmptyFramePermission = EmptyCount<MetadataPerms, REF_COUNT_MAX>;
+
+/// Fractions transferred from a page-table ownership tree to the metadata
+/// destructor for one recursive teardown. Keys are PTE virtual addresses, so
+/// distinct mappings of the same physical frame retain distinct fractions.
+///
+/// This is an explicit, transient handoff value; it is not stored in
+/// [`MetaRegionOwners`] and does not reserve a central fraction.
+pub tracked struct RawFramePermissions {
+    pub permissions: Map<usize, Option<FramePermission>>,
+}
+
+impl RawFramePermissions {
+    pub proof fn tracked_empty() -> (tracked res: Self)
+        ensures
+            res.permissions.dom().is_empty(),
+    {
+        Self { permissions: Map::tracked_empty() }
+    }
+}
+
+/// Permissions that remain under the authority of `MetaRegionOwners`.
+///
+/// `ref_count` and `in_list` exist for the complete lifetime of the
+/// corresponding `MetaSlot`. `metadata` owns the undistributed fractions of
+/// the currently installed [`MetadataPerms`].
+pub tracked struct MetaSlotOwner {
+    pub metadata: FramePermissionResource,
+    pub ref_count: PermissionU64,
+    pub in_list: PermissionU64,
+    pub ghost slot_vaddr: Vaddr,
+    pub ghost usage: PageUsage,
+    /// The set of tree paths at which this slot is referenced. For PT-node
+    /// slots this is a singleton. For data-frame slots this tracks every
+    /// location the frame is currently mapped — allowing a single frame to be
+    /// mapped at multiple addresses.
+    pub ghost paths_in_pt: Set<TreePath<NR_ENTRIES>>,
+}
+
+impl MetaSlotOwner {
+    pub open spec fn same_permissions(self, other: Self) -> bool {
+        &&& self.metadata == other.metadata
+        &&& self.ref_count == other.ref_count
+        &&& self.in_list == other.in_list
+    }
+
+    pub open spec fn metadata_perms(self) -> MetadataPerms
+        recommends
+            self.metadata.not_empty(),
+    {
+        self.metadata@
+    }
+
+    pub open spec fn storage(self) -> pcell_maybe_uninit::PointsTo<MetaSlotStorage>
+        recommends
+            self.metadata.not_empty(),
+    {
+        self.metadata_perms().storage
+    }
+
+    pub open spec fn vtable_ptr(self) -> vstd::simple_pptr::PointsTo<usize>
+        recommends
+            self.metadata.not_empty(),
+    {
+        self.metadata_perms().vtable_ptr
+    }
+
+    pub proof fn tracked_borrow_metadata(tracked &self) -> (tracked res: &MetadataPerms)
+        requires
+            self.metadata.not_empty(),
+        ensures
+            *res == self.metadata_perms(),
+    {
+        self.metadata.tracked_borrow()
+    }
+
+    pub proof fn tracked_borrow_storage(tracked &self) -> (tracked res:
+        &pcell_maybe_uninit::PointsTo<MetaSlotStorage>)
+        requires
+            self.metadata.not_empty(),
+        ensures
+            *res == self.storage(),
+    {
+        &self.metadata.tracked_borrow().storage
+    }
+
+    pub proof fn tracked_borrow_vtable_ptr(tracked &self) -> (tracked res:
+        &vstd::simple_pptr::PointsTo<usize>)
+        requires
+            self.metadata.not_empty(),
+        ensures
+            *res == self.vtable_ptr(),
+    {
+        &self.metadata.tracked_borrow().vtable_ptr
+    }
+
+    /// Extracts the complete metadata permission for a unique owner. The
+    /// central pool remains empty but retains its identity.
+    pub proof fn tracked_take_full_metadata(tracked &mut self) -> (tracked res: (
+        MetadataPerms,
+        EmptyFramePermission,
+    ))
+        requires
+            old(self).metadata.is_full(),
+        ensures
+            final(self).metadata.is_empty(),
+            final(self).metadata.id() == old(self).metadata.id(),
+            final(self).ref_count == old(self).ref_count,
+            final(self).in_list == old(self).in_list,
+            final(self).slot_vaddr == old(self).slot_vaddr,
+            final(self).usage == old(self).usage,
+            final(self).paths_in_pt == old(self).paths_in_pt,
+            res.0 == old(self).metadata@,
+            res.1.id() == final(self).metadata.id(),
+    {
+        let tracked full = self.metadata.split(REF_COUNT_MAX as int);
+        full.take_resource()
+    }
+
+    /// Returns the metadata permission held by a unique owner to the central
+    /// pool.
+    pub proof fn tracked_restore_full_metadata(
+        tracked &mut self,
+        tracked metadata: MetadataPerms,
+        tracked empty: EmptyFramePermission,
+    )
+        requires
+            old(self).metadata.is_empty(),
+            old(self).metadata.id() == empty.id(),
+        ensures
+            final(self).metadata.is_full(),
+            final(self).metadata@ == metadata,
+            final(self).metadata.id() == old(self).metadata.id(),
+            final(self).ref_count == old(self).ref_count,
+            final(self).in_list == old(self).in_list,
+            final(self).slot_vaddr == old(self).slot_vaddr,
+            final(self).usage == old(self).usage,
+            final(self).paths_in_pt == old(self).paths_in_pt,
+    {
+        let tracked full = empty.put_resource(metadata);
+        self.metadata.combine(full);
+    }
+}
+
+/// Well-formedness of a concrete metadata representation. The outer slot
+/// permission remains permanently in `MetaRegionOwners`; the storage
+/// permission comes from either a shared fraction or the unique owner.
 pub open spec fn typed_meta_wf<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     points_to: vstd::simple_pptr::PointsTo<MetaSlot>,
     storage: pcell_maybe_uninit::PointsTo<MetaSlotStorage>,
@@ -245,47 +401,27 @@ pub fn borrow_meta<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>>(
 pub fn borrow_meta_mut<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     ptr: cast_ptr::ReprPtr<MetaSlotStorage, M>,
     Tracked(points_to): Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>,
-    Tracked(slot_owner): Tracked<&'a mut MetaSlotOwner>,
+    Tracked(metadata_perms): Tracked<&'a mut MetadataPerms>,
     Tracked(repr_perm): Tracked<&'a mut M::ReprPerm>,
 ) -> (res: &'a mut M)
     requires
-        old(slot_owner).inv(),
-        points_to.value().wf(*old(slot_owner)),
-        typed_meta_wf::<M>(*points_to, old(slot_owner).inner_perms.storage, *old(repr_perm)),
+        points_to.is_init(),
+        points_to.value().storage.id() == old(metadata_perms).storage.id(),
+        points_to.value().vtable_ptr == old(metadata_perms).vtable_ptr.pptr(),
+        typed_meta_wf::<M>(*points_to, old(metadata_perms).storage, *old(repr_perm)),
         ptr.addr() == points_to.addr(),
     ensures
-        *res == typed_meta_value::<M>(old(slot_owner).inner_perms.storage, *old(repr_perm)),
-        final(slot_owner).inv(),
-        points_to.value().wf(*final(slot_owner)),
-        final(slot_owner).slot_vaddr == old(slot_owner).slot_vaddr,
-        final(slot_owner).usage == old(slot_owner).usage,
-        final(slot_owner).paths_in_pt == old(slot_owner).paths_in_pt,
-        final(slot_owner).inner_perms.ref_count == old(slot_owner).inner_perms.ref_count,
-        final(slot_owner).inner_perms.vtable_ptr == old(slot_owner).inner_perms.vtable_ptr,
-        final(slot_owner).inner_perms.in_list == old(slot_owner).inner_perms.in_list,
-        typed_meta_wf::<M>(*points_to, final(slot_owner).inner_perms.storage, *final(repr_perm)),
-        *final(res) == typed_meta_value::<M>(
-            final(slot_owner).inner_perms.storage,
-            *final(repr_perm),
-        ),
+        *res == typed_meta_value::<M>(old(metadata_perms).storage, *old(repr_perm)),
+        final(metadata_perms).storage.id() == old(metadata_perms).storage.id(),
+        final(metadata_perms).vtable_ptr == old(metadata_perms).vtable_ptr,
+        typed_meta_wf::<M>(*points_to, final(metadata_perms).storage, *final(repr_perm)),
+        *final(res) == typed_meta_value::<M>(final(metadata_perms).storage, *final(repr_perm)),
 {
     let slot = PPtr::<MetaSlot>::from_addr(ptr.addr()).borrow(Tracked(points_to));
-    let tracked inner_perms = slot_owner.tracked_borrow_mut_inner_perms();
     M::from_borrowed_mut(
-        slot.storage.borrow_mut(Tracked(&mut inner_perms.storage)),
+        slot.storage.borrow_mut(Tracked(&mut metadata_perms.storage)),
         Tracked(repr_perm),
     )
-}
-
-pub tracked struct MetaSlotOwner {
-    pub inner_perms: MetadataInnerPerms,
-    pub ghost slot_vaddr: Vaddr,
-    pub ghost usage: PageUsage,
-    /// The set of tree paths at which this slot is referenced. For PT-node
-    /// slots this is a singleton. For data-frame slots this tracks every
-    /// location the frame is currently mapped — allowing a single frame to be
-    /// mapped at multiple addresses.
-    pub ghost paths_in_pt: Set<TreePath<NR_ENTRIES>>,
 }
 
 impl Inv for MetaSlotOwner {
@@ -301,15 +437,15 @@ impl Inv for MetaSlotOwner {
         // `UNUSED` sentinel while still mapped), exactly as the embedding
         // accounting and the huge-page split loop invariant scope out
         // `usage == MMIO`.
-        &&& self.inner_perms.ref_count.value() == REF_COUNT_UNUSED ==> {
-            &&& self.inner_perms.storage.is_uninit()
-            &&& self.inner_perms.vtable_ptr.is_uninit()
-            &&& self.inner_perms.in_list.value() == 0
+        &&& self.ref_count.value() == REF_COUNT_UNUSED ==> {
+            &&& self.metadata.is_full()
+            &&& self.storage().is_uninit()
+            &&& self.vtable_ptr().is_uninit()
+            &&& self.in_list.value() == 0
             &&& (self.usage != PageUsage::MMIO ==> self.paths_in_pt.is_empty())
         }
-        &&& self.inner_perms.ref_count.value() == REF_COUNT_UNIQUE ==> {
-            &&& self.inner_perms.vtable_ptr.is_init()
-            &&& self.inner_perms.storage.is_init()
+        &&& self.ref_count.value() == REF_COUNT_UNIQUE ==> {
+            &&& self.metadata.is_empty()
             // A UNIQUE non-MMIO slot has no live PTE mapping (same rationale as
             // the UNUSED branch): a mapping would be a reference keeping the
             // count above the unique sentinel. Lets the list-store embedding
@@ -326,14 +462,18 @@ impl Inv for MetaSlotOwner {
         // these are invariants, the embedding's `op_pre[FrameDrop]` can
         // drop its `rc == 1 ⟹ storage.is_init ∧ in_list == 0` residual
         // (it follows from `regions.inv() ⟹ slot_owners[idx].inv()`).
-        &&& 0 < self.inner_perms.ref_count.value() <= REF_COUNT_MAX ==> {
-            &&& self.inner_perms.vtable_ptr.is_init()
-            &&& self.inner_perms.storage.is_init()
-            &&& self.inner_perms.in_list.value() == 0
+        &&& 0 < self.ref_count.value() <= REF_COUNT_MAX ==> {
+            &&& self.metadata.frac() + self.ref_count.value() as int
+                == REF_COUNT_MAX
+            &&& self.metadata.not_empty() ==> {
+                &&& self.vtable_ptr().is_init()
+                &&& self.storage().is_init()
+            }
+            &&& self.in_list.value() == 0
         }
-        &&& REF_COUNT_MAX < self.inner_perms.ref_count.value() < REF_COUNT_UNIQUE ==> { false }
-        &&& self.inner_perms.ref_count.value() == 0 ==> {
-            &&& self.inner_perms.in_list.value() == 0
+        &&& REF_COUNT_MAX < self.ref_count.value() < REF_COUNT_UNIQUE ==> { false }
+        &&& self.ref_count.value() == 0 ==> {
+            &&& self.in_list.value() == 0
         }
         &&& FRAME_METADATA_RANGE.start <= self.slot_vaddr < FRAME_METADATA_RANGE.end
         &&& self.slot_vaddr % META_SLOT_SIZE == 0
@@ -357,9 +497,9 @@ impl Inv for MetaSlotModel {
                 &&& self.vtable_ptr.is_uninit()
                 &&& self.in_list == 0
             },
-            REF_COUNT_UNIQUE => { &&& self.vtable_ptr.is_init() },
+            REF_COUNT_UNIQUE => { true },
             0 => { &&& self.in_list == 0 },
-            _ if self.ref_count <= REF_COUNT_MAX => { &&& self.vtable_ptr.is_init() },
+            _ if self.ref_count <= REF_COUNT_MAX => { true },
             _ => { false },
         }
     }
@@ -369,10 +509,18 @@ impl View for MetaSlotOwner {
     type V = MetaSlotModel;
 
     open spec fn view(&self) -> Self::V {
-        let storage = self.inner_perms.storage.mem_contents();
-        let ref_count = self.inner_perms.ref_count.value();
-        let vtable_ptr = self.inner_perms.vtable_ptr.mem_contents();
-        let in_list = self.inner_perms.in_list.value();
+        let storage = if self.metadata.not_empty() {
+            self.storage().mem_contents()
+        } else {
+            arbitrary()
+        };
+        let ref_count = self.ref_count.value();
+        let vtable_ptr = if self.metadata.not_empty() {
+            self.vtable_ptr().mem_contents()
+        } else {
+            arbitrary()
+        };
+        let in_list = self.in_list.value();
         let slot_vaddr = self.slot_vaddr;
         let usage = self.usage;
         let status = match ref_count {
@@ -395,21 +543,12 @@ impl OwnerOf for MetaSlot {
     type Owner = MetaSlotOwner;
 
     open spec fn wf(self, owner: Self::Owner) -> bool {
-        &&& self.storage.id() == owner.inner_perms.storage.id()
-        &&& self.ref_count.id() == owner.inner_perms.ref_count.id()
-        &&& self.vtable_ptr == owner.inner_perms.vtable_ptr.pptr()
-        &&& self.in_list.id() == owner.inner_perms.in_list.id()
-    }
-}
-
-impl MetaSlotOwner {
-    pub proof fn tracked_borrow_mut_inner_perms(tracked &mut self) -> (tracked res:
-        &mut MetadataInnerPerms)
-        ensures
-            *res == old(self).inner_perms,
-            *final(self) == (Self { inner_perms: *final(res), ..*old(self) }),
-    {
-        &mut self.inner_perms
+        &&& self.ref_count.id() == owner.ref_count.id()
+        &&& self.in_list.id() == owner.in_list.id()
+        &&& owner.metadata.not_empty() ==> {
+            &&& self.storage.id() == owner.storage().id()
+            &&& self.vtable_ptr == owner.vtable_ptr().pptr()
+        }
     }
 }
 

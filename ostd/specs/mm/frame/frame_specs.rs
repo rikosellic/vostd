@@ -1,13 +1,13 @@
 use core::marker::PhantomData;
 
 use vstd::prelude::*;
-use vstd_extra::{cast_ptr::*, drop_tracking::*, ownership::*};
+use vstd_extra::{cast_ptr::*, drop_tracking::TrackDrop, ownership::*};
 
 use crate::specs::{
     arch::*,
     mm::frame::{
         mapping::{frame_to_index, meta_to_index},
-        meta_owners::PageUsage,
+        meta_owners::{FramePermission, PageUsage},
         meta_region_owners::MetaRegionOwners,
     },
 };
@@ -30,6 +30,23 @@ verus! {
 // to break the AnyFrameMeta trait-resolution cycle in PT-node on_drop) can
 // reference these helpers via `Self::from_raw_*`.
 impl<'a, M: ?Sized> Frame<M> {
+    /// The one-unit metadata permission carried by a shared frame or by its
+    /// raw representation.
+    pub open spec fn frame_permission_wf(
+        regions: MetaRegionOwners,
+        paddr: Paddr,
+        permission: FramePermission,
+    ) -> bool {
+        let idx = frame_to_index(paddr);
+        &&& regions.contains(idx)
+        &&& permission.frac() == 1
+        &&& permission.id() == regions.slot_owners[idx].metadata.id()
+        &&& permission.resource().storage.id() == regions.slots[idx].value().storage.id()
+        &&& permission.resource().storage.is_init()
+        &&& permission.resource().vtable_ptr.pptr() == regions.slots[idx].value().vtable_ptr
+        &&& permission.resource().vtable_ptr.is_init()
+    }
+
     // ── from_raw precondition predicates ──
     /// **Safety**: The frame exists, is addressable, and its slot is alive
     /// (not torn down: `ref_count != REF_COUNT_UNUSED`). Under the
@@ -43,7 +60,10 @@ impl<'a, M: ?Sized> Frame<M> {
         &&& regions.slot_owners[frame_to_index(paddr)].slot_vaddr == frame_to_meta(paddr)
         &&& valid_frame_paddr(paddr)
         &&& regions.inv()
-        &&& regions.slot_owners[frame_to_index(paddr)].inner_perms.ref_count.value()
+        &&& regions.slot_owners[frame_to_index(paddr)].ref_count.value() > 0
+        &&& regions.slot_owners[frame_to_index(paddr)].ref_count.value() <= REF_COUNT_MAX
+        &&& regions.slot_owners[frame_to_index(paddr)].ref_count.value() != REF_COUNT_UNIQUE
+        &&& regions.slot_owners[frame_to_index(paddr)].ref_count.value()
             != REF_COUNT_UNUSED
     }
 
@@ -66,15 +86,8 @@ impl<'a, M: ?Sized> Frame<M> {
         &&& r.ptr.addr() == frame_to_meta(paddr)
         &&& r.paddr() == paddr
         &&& r.inv()
-        // Borrow-protocol: `from_raw` mints exactly one entry in
-        // `frame_obligations` at the recovered slot's index. The returned
-        // `DropObligation` token is the receipt; the entry will be
-        // consumed by either `ManuallyDrop::new` (FrameRef-style borrow)
-        // or `Frame::drop` (reclaim-and-drop). Segment-level ledger is
-        // untouched.
-        &&& new_regions.frame_obligations =~= old_regions.frame_obligations.insert(
-            frame_to_index(paddr),
-        )
+        &&& r.wf_with_region(new_regions)
+        &&& new_regions == old_regions
     }
 
     // ── into_raw precondition predicates ──
@@ -85,7 +98,7 @@ impl<'a, M: ?Sized> Frame<M> {
 
     /// **Bookkeeping**: The frame must be in use (not unused).
     pub open spec fn into_raw_pre_not_unused(self, regions: MetaRegionOwners) -> bool {
-        regions.slot_owners[self.index()].inner_perms.ref_count.value() != REF_COUNT_UNUSED
+        regions.slot_owners[self.index()].ref_count.value() != REF_COUNT_UNUSED
     }
 
     /// **Safety**: Frames other than this one are not affected by the call.
@@ -135,12 +148,12 @@ impl<M: ?Sized> Frame<M> {
         let pre_owner = pre.slot_owners[idx];
         let post_owner = post.slot_owners[idx];
         {
-            &&& pre_owner.inner_perms.ref_count.value() == REF_COUNT_UNUSED
-            &&& MetaSlot::get_from_unused_inner_perms_spec(false, post_owner.inner_perms)
+            &&& pre_owner.ref_count.value() == REF_COUNT_UNUSED
+            &&& MetaSlot::get_from_unused_owner_spec(false, post_owner)
             &&& post_owner.usage is Frame
             &&& post_owner.slot_vaddr == pre_owner.slot_vaddr
             &&& post_owner.paths_in_pt == pre_owner.paths_in_pt
-            &&& post =~= pre.insert_slot_owner(paddr, post_owner).mint_frame_obligation(idx)
+            &&& post =~= pre.insert_slot_owner(paddr, post_owner)
         }
     }
 }
@@ -177,33 +190,29 @@ impl<M: ?Sized> Frame<M> {
         &&& s.inv()
         &&& s.contains(idx)
         &&& s.slots[idx].pptr() == self.ptr
-        &&& slot_own.inner_perms.ref_count.value() != REF_COUNT_UNUSED
-        &&& slot_own.inner_perms.ref_count.value() != REF_COUNT_UNIQUE
-        &&& slot_own.inner_perms.ref_count.value() > 0
-        &&& slot_own.inner_perms.ref_count.value() <= REF_COUNT_MAX
+        &&& slot_own.ref_count.value() != REF_COUNT_UNUSED
+        &&& slot_own.ref_count.value() != REF_COUNT_UNIQUE
+        &&& slot_own.ref_count.value() > 0
+        &&& slot_own.ref_count.value() <= REF_COUNT_MAX
+        &&& self.tracked_perm@ is Some
+        &&& self.tracked_perm@->0.frac() == 1
+        &&& self.tracked_perm@->0.id() == slot_own.metadata.id()
+        &&& self.tracked_perm@->0.resource().storage.id() == s.slots[idx].value().storage.id()
+        &&& self.tracked_perm@->0.resource().storage.is_init()
+        &&& self.tracked_perm@->0.resource().vtable_ptr.pptr() == s.slots[idx].value().vtable_ptr
+        &&& self.tracked_perm@->0.resource().vtable_ptr.is_init()
     }
 }
 
-/// We need to keep track of when frames are forgotten with `ManuallyDrop`.
-/// We maintain a counter for each frame of how many times it has been forgotten (`raw_count`).
-/// Calling `ManuallyDrop::new` increments the counter. It is technically safe to forget a frame multiple times,
-/// and this will happen with read-only `FrameRef`s. All such references need to be dropped by the time
-/// `from_raw` is called. So, `ManuallyDrop::drop` decrements the counter when the reference is dropped,
-/// and `from_raw` may only be called when the counter is 1.
 impl<M: ?Sized> TrackDrop for Frame<M> {
     type State = MetaRegionOwners;
 
-    /// Slot index. Lets the obligation token identify *which* slot it
-    /// belongs to — `Drop::drop`'s precondition then refuses a token
-    /// from one slot being used to drop a Frame at another slot.
-    /// (Full per-instance ledger enforcement is a follow-up; for now
-    /// `consume_obligation` is a no-op so the token's identity is
-    /// documentary rather than gated against a multiset.)
-    type Obligation = DropObligation<int>;
+    /// The `FramePermission` stored in the frame is the linear ownership
+    /// witness. No second drop token is needed.
+    type Obligation = ();
 
     open spec fn tracked_redeem_requires(self, s: Self::State) -> bool {
-        &&& s.contains(self.index())
-        &&& s.inv()
+        true
     }
 
     open spec fn tracked_redeem_ensures(
@@ -212,31 +221,11 @@ impl<M: ?Sized> TrackDrop for Frame<M> {
         s1: Self::State,
         obl: Self::Obligation,
     ) -> bool {
-        let slot_own = s0.slot_owners[self.index()];
-        &&& s1.slot_owners[self.index()] == slot_own
-        &&& forall|i: int|
-            #![trigger s1.slot_owners[i]]
-            i != self.index() ==> s1.slot_owners[i] == s0.slot_owners[i]
-        &&& s1.slots =~= s0.slots
-        &&& s1.slot_owners.dom()
-            =~= s0.slot_owners.dom()
-        // Linear-drop pilot: minting a `Frame` (bumping `raw_count`) does
-        // not affect the segment obligation ledger.
-        // Frame-side ledger: `constructor_spec` adds one entry at the
-        // slot index via the paired mint axiom (multiset semantics).
-        &&& s1.frame_obligations =~= s0.frame_obligations.insert(self.index())
-        &&& obl.value() == self.index()
+        s1 == s0
     }
 
     proof fn tracked_redeem(self, tracked s: &mut Self::State) -> (tracked obl: Self::Obligation) {
-        let meta_addr = self.ptr.addr();
-        let index = meta_to_index(meta_addr);
-        let tracked mut slot_own = s.slot_owners.tracked_remove(index);
-        s.slot_owners.tracked_insert(index, slot_own);
-        // Paired mint axiom: produces the token AND adds its Loc to
-        // `frame_obligations`. Replaces the prior ledger-less
-        // `DropObligation::tracked_mint(index)`.
-        s.tracked_mint_frame_obligation(index)
+        ()
     }
 
     // It is unsound to drop a `Frame` while raw paddrs to it remain
@@ -253,11 +242,6 @@ impl<M: ?Sized> TrackDrop for Frame<M> {
         &&& self.wf_with_region(
             s,
         )
-        // Borrow-protocol transition: `raw_count` is dormant. The
-        // "outstanding raw paddrs must be drained before drop" guarantee
-        // is now carried by the `frame_obligations` ledger together with
-        // `from_raw`'s `ref_count >= 1` safety check (a torn-down slot is
-        // `UNUSED` and cannot be `from_raw`'d).
         // At `ref_count == 1` the teardown branch of `drop_last_in_place`
         // runs, requiring an empty `paths_in_pt` (the strengthened
         // `MetaSlotOwner::inv` UNUSED branch demands it post-teardown,
@@ -271,11 +255,9 @@ impl<M: ?Sized> TrackDrop for Frame<M> {
         // strengthened `MetaSlotOwner::inv` SHARED branch
         // (`0 < rc <= REF_COUNT_MAX`) — they hold universally for any
         // in-use slot, not just at `rc == 1`.
-        &&& slot_own.inner_perms.ref_count.value() == 1 ==> {
+        &&& slot_own.ref_count.value() == 1 ==> {
             &&& slot_own.paths_in_pt.is_empty()
         }
-        &&& s.frame_obligations.count(self.index()) > 0
-        &&& obl.value() == self.index()
     }
 
     open spec fn drop_ensures(
@@ -300,21 +282,16 @@ impl<M: ?Sized> TrackDrop for Frame<M> {
         &&& so1.usage == so0.usage
         &&& so1.paths_in_pt
             == so0.paths_in_pt
+        &&& so1.metadata.id() == so0.metadata.id()
         // Refcount transition. `drop_requires` guarantees the old value
         // is in `[1, REF_COUNT_MAX]`, so these cases are exhaustive:
         //  - last reference (== 1): the slot is torn down to UNUSED.
         //  - otherwise (> 1): the refcount is decremented by one.
-        &&& so0.inner_perms.ref_count.value() == 1 ==> so1.inner_perms.ref_count.value()
+        &&& so0.ref_count.value() == 1 ==> so1.ref_count.value()
             == REF_COUNT_UNUSED
-        &&& so0.inner_perms.ref_count.value() > 1 ==> so1.inner_perms.ref_count.value() == (
-        so0.inner_perms.ref_count.value()
+        &&& so0.ref_count.value() > 1 ==> so1.ref_count.value() == (
+        so0.ref_count.value()
             - 1) as u64
-        // Linear-drop pilot: `Frame::drop` doesn't redeem segment-level
-        // obligations, so the segment ledger is preserved.
-        // Frame-side ledger: routed through `consume_obligation` (called
-        // by Drop::drop's body first), the count at `obl_key` shrinks
-        // by 1.
-        &&& s1.frame_obligations =~= s0.frame_obligations.remove(self.index())
     }
 }
 

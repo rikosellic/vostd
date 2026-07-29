@@ -12,7 +12,6 @@ use crate::specs::{
     arch::*,
     mm::frame::{
         mapping::{frame_to_index, index_to_meta},
-        meta_owners::MetadataInnerPerms,
         meta_region_owners::MetaRegionOwners,
     },
 };
@@ -47,18 +46,25 @@ impl MetaSlot {
 
     }
 
-    pub open spec fn get_from_unused_inner_perms_spec(
+    pub open spec fn get_from_unused_owner_spec(
         as_unique: bool,
-        perms: MetadataInnerPerms,
+        owner: MetaSlotOwner,
     ) -> bool {
-        &&& perms.ref_count.value() == (if as_unique {
+        &&& owner.ref_count.value() == (if as_unique {
             REF_COUNT_UNIQUE as u64
         } else {
             1u64
         })
-        &&& perms.in_list.value() == 0
-        &&& perms.storage.is_init()
-        &&& perms.vtable_ptr.is_init()
+        &&& owner.in_list.value() == 0
+        &&& owner.metadata.frac() == (if as_unique {
+            0int
+        } else {
+            (REF_COUNT_MAX - 1) as int
+        })
+        &&& !as_unique ==> {
+            &&& owner.storage().is_init()
+            &&& owner.vtable_ptr().is_init()
+        }
     }
 
     /// The `slot_owners`/`obligations` transition of claiming an unused slot.
@@ -76,8 +82,8 @@ impl MetaSlot {
         let pre_owner = pre.slot_owners[idx];
         let post_owner = post.slot_owners[idx];
         {
-            &&& pre_owner.inner_perms.ref_count.value() == REF_COUNT_UNUSED
-            &&& MetaSlot::get_from_unused_inner_perms_spec(as_unique, post_owner.inner_perms)
+            &&& pre_owner.ref_count.value() == REF_COUNT_UNUSED
+            &&& MetaSlot::get_from_unused_owner_spec(as_unique, post_owner)
             &&& post_owner.usage is Frame
             &&& post_owner.slot_vaddr == pre_owner.slot_vaddr
             &&& post_owner.paths_in_pt == pre_owner.paths_in_pt
@@ -104,12 +110,12 @@ impl MetaSlot {
         let idx = frame_to_index(paddr);
         {
             &&& post.slot_owners.dom() =~= pre.slot_owners.dom()
-            &&& MetaSlot::get_from_unused_inner_perms_spec(false, post.slot_owners[idx].inner_perms)
+            &&& MetaSlot::get_from_unused_owner_spec(false, post.slot_owners[idx])
             &&& post.slot_owners[idx].usage is PageTable
             &&& post.slot_owners[idx].slot_vaddr == pre.slot_owners[idx].slot_vaddr
             &&& post.slot_owners[idx].paths_in_pt == pre.slot_owners[idx].paths_in_pt
             &&& forall|i: int| i != idx ==> (#[trigger] post.slot_owners[i] == pre.slot_owners[i])
-            &&& pre.slot_owners[idx].inner_perms.ref_count.value() == REF_COUNT_UNUSED
+            &&& pre.slot_owners[idx].ref_count.value() == REF_COUNT_UNUSED
         }
     }
 
@@ -129,28 +135,6 @@ impl MetaSlot {
         &&& forall|k: int|
             #![trigger post.slots[k]]
             k != idx && pre.contains(k) ==> post.slots[k] == pre.slots[k]
-    }
-
-    /// Obligation-ledger effect of producing a fresh live `Frame` handle on
-    /// success (e.g. [`crate::mm::frame::Frame::from_unused`] or
-    /// [`crate::mm::frame::Frame::from_in_use`]): the segment `obligations`
-    /// ledger is untouched, and the new handle mints its pending-Drop entry in
-    /// `frame_obligations` at `paddr`.
-    pub open spec fn live_frame_obligations_ok_spec(
-        paddr: Paddr,
-        pre: MetaRegionOwners,
-        post: MetaRegionOwners,
-    ) -> bool {
-        &&& post.frame_obligations =~= pre.frame_obligations.insert(frame_to_index(paddr))
-    }
-
-    /// Obligation-ledger effect on failure: both the segment and frame ledgers
-    /// are left untouched.
-    pub open spec fn live_frame_obligations_err_spec(
-        pre: MetaRegionOwners,
-        post: MetaRegionOwners,
-    ) -> bool {
-        &&& post.frame_obligations =~= pre.frame_obligations
     }
 
     pub open spec fn get_from_unused_perm_spec<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
@@ -185,17 +169,21 @@ impl MetaSlot {
             pre.inv(),
     {
         let idx = frame_to_index(paddr);
-        let pre_perms = pre.slot_owners[idx].inner_perms.ref_count.value();
+        let pre_perms = pre.slot_owners[idx].ref_count.value();
         {
-            &&& post.slot_owners[idx].inner_perms.ref_count.value() == pre_perms + 1
-            &&& post.slot_owners[idx].inner_perms.ref_count.id()
-                == pre.slot_owners[idx].inner_perms.ref_count.id()
-            &&& post.slot_owners[idx].inner_perms.storage
-                == pre.slot_owners[idx].inner_perms.storage
-            &&& post.slot_owners[idx].inner_perms.vtable_ptr
-                == pre.slot_owners[idx].inner_perms.vtable_ptr
-            &&& post.slot_owners[idx].inner_perms.in_list
-                == pre.slot_owners[idx].inner_perms.in_list
+            &&& post.slot_owners[idx].ref_count.value() == pre_perms + 1
+            &&& post.slot_owners[idx].ref_count.id()
+                == pre.slot_owners[idx].ref_count.id()
+            &&& post.slot_owners[idx].metadata.id()
+                == pre.slot_owners[idx].metadata.id()
+            &&& post.slot_owners[idx].metadata.frac() + 1
+                == pre.slot_owners[idx].metadata.frac()
+            &&& pre.slot_owners[idx].metadata.frac() > 1 ==> {
+                post.slot_owners[idx].metadata@
+                    == pre.slot_owners[idx].metadata@
+            }
+            &&& post.slot_owners[idx].in_list
+                == pre.slot_owners[idx].in_list
             &&& post.slot_owners[idx].slot_vaddr == pre.slot_owners[idx].slot_vaddr
             &&& post.slot_owners[idx].usage == pre.slot_owners[idx].usage
             &&& post.slot_owners[idx].paths_in_pt == pre.slot_owners[idx].paths_in_pt
@@ -204,10 +192,11 @@ impl MetaSlot {
     }
 
     pub open spec fn drop_last_in_place_safety_cond(owner: MetaSlotOwner) -> bool {
-        &&& (owner.inner_perms.ref_count.value() == 0 || owner.inner_perms.ref_count.value()
+        &&& (owner.ref_count.value() == 0 || owner.ref_count.value()
             == REF_COUNT_UNIQUE)
-        &&& owner.inner_perms.storage.is_init()
-        &&& owner.inner_perms.in_list.value()
+        &&& owner.metadata.is_full()
+        &&& owner.storage().is_init()
+        &&& owner.in_list.value()
             == 0
         // The slot is torn down to `REF_COUNT_UNUSED`; the strengthened
         // `MetaSlotOwner::inv` UNUSED branch requires an empty
@@ -233,6 +222,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
         Frame::<M> {
             ptr: PPtr::<MetaSlot>(frame_to_meta(paddr), PhantomData),
             _marker: PhantomData,
+            tracked_perm: Tracked(None),
         }
     }
 }

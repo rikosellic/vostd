@@ -11,10 +11,17 @@ use crate::specs::arch::*;
 use crate::specs::mm::page_table::{cursor::*, *};
 use crate::specs::task::InAtomicMode;
 
-use crate::mm::frame::meta::{REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED};
+use crate::mm::frame::meta::{
+    REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED,
+};
+use crate::mm::frame::Frame;
 use crate::mm::kspace::kvirt_area::disable_preempt;
 use crate::specs::mm::{
-    frame::{mapping::frame_to_index, meta_region_owners::MetaRegionOwners},
+    frame::{
+        mapping::frame_to_index,
+        meta_owners::{FramePermission, MetaSlotStorage},
+        meta_region_owners::MetaRegionOwners,
+    },
     page_table::{
         is_valid_range_spec, nr_pte_index_bits_spec, pte_index_bit_offset_spec,
         top_level_index_width_spec, vaddr_range_spec,
@@ -80,10 +87,6 @@ pub trait RCClone: Sized {
         requires
             self.clone_requires(*old(perm)),
         ensures
-    // RCClone::clone` doesn't mint/redeem segment obligations.
-    // The per-frame `frame_obligations` effect is left to each impl's `clone_ensures`
-
-            res == *self,
             self.clone_ensures(*old(perm), *final(perm), res),
             final(perm).inv(),
             final(perm).slots == old(perm).slots,
@@ -199,27 +202,49 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
 
     spec fn item_into_raw_spec(item: Self::Item) -> (Paddr, PagingLevel, PageProperty);
 
+    /// The metadata fraction transferred together with an item's raw
+    /// representation. Untracked mappings carry no fraction.
+    spec fn item_permission(item: Self::Item) -> Option<FramePermission>;
+
     /// Consumes the item and returns the physical address, the paging level,
     /// and the page property.
     ///
     /// The ownership of the item will be consumed, i.e., the item will be
     /// forgotten after this function is called.
-    #[verifier::when_used_as_spec(item_into_raw_spec)]
-    fn item_into_raw(item: Self::Item) -> ((paddr, level, prop): (Paddr, PagingLevel, PageProperty))
+    fn item_into_raw(
+        item: Self::Item,
+        Tracked(regions): Tracked<&mut MetaRegionOwners>,
+    ) -> (res: (
+        (Paddr, PagingLevel, PageProperty),
+        Tracked<Option<FramePermission>>,
+    ))
         requires
             Self::item_well_formed(item),
         ensures
-            1 <= level <= NR_LEVELS,
-            valid_frame_paddr(paddr),
-            paddr % page_size(level) == 0,
-            paddr + page_size(level) <= MAX_PADDR,
-            Self::raw_item_well_formed(paddr, level, prop),
-            Self::E::new_page_req(paddr, level, prop),
-        returns
-            Self::item_into_raw_spec(item),
+            *final(regions) == *old(regions),
+            res.0 == Self::item_into_raw_spec(item),
+            res.1@ == Self::item_permission(item),
+            res.1@ is Some <==> Self::tracked(item),
+            Self::tracked(Self::item_from_raw_spec(
+                res.0.0,
+                res.0.1,
+                res.0.2,
+                None,
+            )) == Self::tracked(item),
+            1 <= res.0.1 <= NR_LEVELS,
+            valid_frame_paddr(res.0.0),
+            res.0.0 % page_size(res.0.1) == 0,
+            res.0.0 + page_size(res.0.1) <= MAX_PADDR,
+            Self::raw_item_well_formed(res.0.0, res.0.1, res.0.2),
+            Self::E::new_page_req(res.0.0, res.0.1, res.0.2),
     ;
 
-    spec fn item_from_raw_spec(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self::Item;
+    spec fn item_from_raw_spec(
+        paddr: Paddr,
+        level: PagingLevel,
+        prop: PageProperty,
+        permission: Option<FramePermission>,
+    ) -> Self::Item;
 
     /// Restores the item from the physical address and the paging level.
     ///
@@ -245,16 +270,32 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     /// A concrete trait implementation may require the caller to ensure that
     ///  - the [`super::PageFlags::AVAIL1`] flag is the same as that returned
     ///    from [`PageTableConfig::item_into_raw`].
-    #[verifier::when_used_as_spec(item_from_raw_spec)]
-    unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> (res:
-        Self::Item)
+    unsafe fn item_from_raw(
+        paddr: Paddr,
+        level: PagingLevel,
+        prop: PageProperty,
+        Tracked(regions): Tracked<&mut MetaRegionOwners>,
+        Tracked(permission): Tracked<Option<FramePermission>>,
+    ) -> (res: Self::Item)
         requires
             valid_frame_paddr(paddr),
             Self::raw_item_well_formed(paddr, level, prop),
+            permission is Some <==> Self::tracked(
+                Self::item_from_raw_spec(paddr, level, prop, None),
+            ),
+            permission is Some ==> Frame::<MetaSlotStorage>::frame_permission_wf(
+                *old(regions),
+                paddr,
+                permission->0,
+            ),
         ensures
+            *final(regions) == *old(regions),
             Self::item_well_formed(res),
+            Self::tracked(res) == Self::tracked(
+                Self::item_from_raw_spec(paddr, level, prop, None),
+            ),
         returns
-            Self::item_from_raw_spec(paddr, level, prop),
+            Self::item_from_raw_spec(paddr, level, prop, permission),
     ;
 
     /// Whether cloning this item bumps a slot's refcount. For ref-counted items
@@ -281,8 +322,8 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         requires
             valid_frame_paddr(pa),
             Self::raw_item_well_formed(pa, level, old_prop),
-            Self::tracked(Self::item_from_raw(pa, level, new_prop)) == Self::tracked(
-                Self::item_from_raw(pa, level, old_prop),
+            Self::tracked(Self::item_from_raw_spec(pa, level, new_prop, None)) == Self::tracked(
+                Self::item_from_raw_spec(pa, level, old_prop, None),
             ),
         ensures
             Self::raw_item_well_formed(pa, level, new_prop),
@@ -306,24 +347,63 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         ensures
             Self::raw_item_well_formed(child_pa, (level - 1) as PagingLevel, prop),
             Self::E::new_page_req(child_pa, (level - 1) as PagingLevel, prop),
+            Self::tracked(Self::item_from_raw_spec(
+                child_pa,
+                (level - 1) as PagingLevel,
+                prop,
+                None,
+            )) == Self::tracked(Self::item_from_raw_spec(pa, level, prop, None)),
+    ;
+
+    /// Huge mappings are untracked. Both current configurations encode
+    /// tracked mappings only at the base-page level.
+    proof fn lemma_huge_raw_item_untracked(
+        pa: Paddr,
+        level: PagingLevel,
+        prop: PageProperty,
+    )
+        requires
+            Self::raw_item_well_formed(pa, level, prop),
+            level > 1,
+        ensures
+            !Self::tracked(Self::item_from_raw_spec(pa, level, prop, None)),
     ;
 
     /// The item produced by [`PageTableConfig::item_from_raw`] is well-formed.
-    proof fn lemma_item_from_raw_well_formed(pa: Paddr, level: PagingLevel, prop: PageProperty)
+    proof fn lemma_item_from_raw_well_formed(
+        pa: Paddr,
+        level: PagingLevel,
+        prop: PageProperty,
+        permission: Option<FramePermission>,
+    )
         requires
             valid_frame_paddr(pa),
             Self::raw_item_well_formed(pa, level, prop),
+            permission is Some <==> Self::tracked(
+                Self::item_from_raw_spec(pa, level, prop, None),
+            ),
         ensures
-            Self::item_well_formed(Self::item_from_raw(pa, level, prop)),
+            Self::item_well_formed(Self::item_from_raw_spec(pa, level, prop, permission)),
     ;
 
     /// Re-encoding a canonical raw item preserves the complete raw representation.
-    proof fn lemma_item_into_raw_roundtrip(pa: Paddr, level: PagingLevel, prop: PageProperty)
+    proof fn lemma_item_into_raw_roundtrip(
+        pa: Paddr,
+        level: PagingLevel,
+        prop: PageProperty,
+        permission: Option<FramePermission>,
+    )
         requires
             valid_frame_paddr(pa),
             Self::raw_item_well_formed(pa, level, prop),
+            permission is Some <==> Self::tracked(
+                Self::item_from_raw_spec(pa, level, prop, None),
+            ),
         ensures
-            Self::item_into_raw(Self::item_from_raw(pa, level, prop)) == (pa, level, prop),
+            Self::item_into_raw_spec(Self::item_from_raw_spec(pa, level, prop, permission))
+                == (pa, level, prop),
+            Self::item_permission(Self::item_from_raw_spec(pa, level, prop, permission))
+                == permission,
     ;
 
     /// Decoding the raw representation produced from a well-formed item restores that item.
@@ -332,13 +412,15 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         pa: Paddr,
         level: PagingLevel,
         prop: PageProperty,
+        permission: Option<FramePermission>,
     )
         requires
             valid_frame_paddr(pa),
             Self::item_well_formed(item),
-            Self::item_into_raw(item) == (pa, level, prop),
+            Self::item_into_raw_spec(item) == (pa, level, prop),
+            permission == Self::item_permission(item),
         ensures
-            Self::item_from_raw(pa, level, prop) == item,
+            Self::item_from_raw_spec(pa, level, prop, permission) == item,
     ;
 
     /// Proves that `clone_ensures` for `Self::Item` implies concrete per-field
@@ -357,11 +439,12 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         requires
             item.clone_ensures(old_regions, new_regions, res),
             Self::item_into_raw_spec(item).0 == pa,
-            res == item,
             new_regions.inv(),
             new_regions.slots =~= old_regions.slots,
             new_regions.slot_owners.dom() =~= old_regions.slot_owners.dom(),
         ensures
+            Self::item_into_raw_spec(res) == Self::item_into_raw_spec(item),
+            Self::tracked(res) == Self::tracked(item),
     // Other slots always unchanged.
 
             forall|i: int|
@@ -369,16 +452,16 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
                     == old_regions.slot_owners[i]),
             // The frame's slot: bumped if the item is ref-counted, otherwise unchanged.
             Self::tracked(item) ==> {
-                &&& new_regions.slot_owners[frame_to_index(pa)].inner_perms.ref_count.value()
-                    == old_regions.slot_owners[frame_to_index(pa)].inner_perms.ref_count.value() + 1
-                &&& new_regions.slot_owners[frame_to_index(pa)].inner_perms.ref_count.id()
-                    == old_regions.slot_owners[frame_to_index(pa)].inner_perms.ref_count.id()
-                &&& new_regions.slot_owners[frame_to_index(pa)].inner_perms.storage
-                    == old_regions.slot_owners[frame_to_index(pa)].inner_perms.storage
-                &&& new_regions.slot_owners[frame_to_index(pa)].inner_perms.vtable_ptr
-                    == old_regions.slot_owners[frame_to_index(pa)].inner_perms.vtable_ptr
-                &&& new_regions.slot_owners[frame_to_index(pa)].inner_perms.in_list
-                    == old_regions.slot_owners[frame_to_index(pa)].inner_perms.in_list
+                &&& new_regions.slot_owners[frame_to_index(pa)].ref_count.value()
+                    == old_regions.slot_owners[frame_to_index(pa)].ref_count.value() + 1
+                &&& new_regions.slot_owners[frame_to_index(pa)].ref_count.id()
+                    == old_regions.slot_owners[frame_to_index(pa)].ref_count.id()
+                &&& new_regions.slot_owners[frame_to_index(pa)].metadata.id()
+                    == old_regions.slot_owners[frame_to_index(pa)].metadata.id()
+                &&& new_regions.slot_owners[frame_to_index(pa)].metadata.frac() + 1
+                    == old_regions.slot_owners[frame_to_index(pa)].metadata.frac()
+                &&& new_regions.slot_owners[frame_to_index(pa)].in_list
+                    == old_regions.slot_owners[frame_to_index(pa)].in_list
                 &&& new_regions.slot_owners[frame_to_index(pa)].paths_in_pt
                     == old_regions.slot_owners[frame_to_index(pa)].paths_in_pt
                 &&& new_regions.slot_owners[frame_to_index(pa)].slot_vaddr
@@ -388,11 +471,6 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             },
             !Self::tracked(item) ==> new_regions.slot_owners[frame_to_index(pa)]
                 == old_regions.slot_owners[frame_to_index(pa)],
-            // Canonical model: a tracked clone MINTS one per-frame obligation
-            // at the slot (`Frame::clone`); an untracked clone is net-zero.
-            Self::tracked(item) ==> new_regions.frame_obligations
-                == old_regions.frame_obligations.insert(frame_to_index(pa)),
-            !Self::tracked(item) ==> new_regions.frame_obligations == old_regions.frame_obligations,
     ;
 
     /// Proves `item.clone_requires(regions)` from the concrete frame-slot facts
@@ -409,21 +487,31 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     )
         requires
             regions.inv(),
-            Self::item_from_raw_spec(pa, level, prop) == item,
+            Self::item_from_raw_spec(pa, level, prop, Self::item_permission(item)) == item,
             Self::raw_item_well_formed(pa, level, prop),
             valid_frame_paddr(pa),
             regions.contains(frame_to_index(pa)),
             Self::tracked(item) ==> regions.slot_owners[frame_to_index(
                 pa,
-            )].inner_perms.ref_count.value() > 0,
+            )].ref_count.value() > 0,
+            Self::tracked(item) ==> regions.slot_owners[frame_to_index(
+                pa,
+            )].ref_count.value() <= REF_COUNT_MAX,
             // `rc != UNUSED` is needed only for tracked frames (untracked clone is a no-op).
             Self::tracked(item) ==> regions.slot_owners[frame_to_index(
                 pa,
-            )].inner_perms.ref_count.value() != REF_COUNT_UNUSED,
+            )].ref_count.value() != REF_COUNT_UNUSED,
+            Self::tracked(item) ==> Self::item_permission(item) is Some,
+            Self::tracked(item) ==> Frame::<MetaSlotStorage>::frame_permission_wf(
+                regions,
+                pa,
+                Self::item_permission(item)->0,
+            ),
+            !Self::tracked(item) ==> Self::item_permission(item) is None,
             // Saturation aborts (Arc-style) via `inc_ref_count`'s diverging panic.
             Self::tracked(item) ==> (regions.slot_owners[frame_to_index(
                 pa,
-            )].inner_perms.ref_count.value() < REF_COUNT_MAX || may_panic()),
+            )].ref_count.value() < REF_COUNT_MAX || may_panic()),
         ensures
             item.clone_requires(regions),
     ;
@@ -1098,11 +1186,11 @@ impl PageTable<KernelPtConfig> {
                                     (pa + j * PAGE_SIZE) as usize,
                                 );
                                 sub_idx != new_idx || (regions.contains(sub_idx)
-                                    && regions.slot_owners[sub_idx].inner_perms.ref_count.value()
+                                    && regions.slot_owners[sub_idx].ref_count.value()
                                     != REF_COUNT_UNUSED
-                                    && regions.slot_owners[sub_idx].inner_perms.ref_count.value()
+                                    && regions.slot_owners[sub_idx].ref_count.value()
                                     > 0
-                                    && regions.slot_owners[sub_idx].inner_perms.ref_count.value()
+                                    && regions.slot_owners[sub_idx].ref_count.value()
                                     <= REF_COUNT_MAX)
                             }
                     },
@@ -1446,16 +1534,16 @@ impl<C: PageTableConfig> PageTable<C> {
             // PT-node allocations come from UNUSED slots, so any slot that
             // was already in use keeps its paths_in_pt.
             forall |idx: int| #![trigger final(regions).slot_owners[idx].paths_in_pt]
-                old(regions).slot_owners[idx].inner_perms.ref_count.value()
+                old(regions).slot_owners[idx].ref_count.value()
                     != REF_COUNT_UNUSED
                 ==> final(regions).slot_owners[idx].paths_in_pt
                         == old(regions).slot_owners[idx].paths_in_pt,
             forall|idx: int| #![trigger final(regions).slot_owners[idx]]
                 old(regions).contains(idx)
-                && old(regions).slot_owners[idx].inner_perms.ref_count.value()
+                && old(regions).slot_owners[idx].ref_count.value()
                     != REF_COUNT_UNUSED
-                ==> final(regions).slot_owners[idx].inner_perms.ref_count.value()
-                        == old(regions).slot_owners[idx].inner_perms.ref_count.value()
+                ==> final(regions).slot_owners[idx].ref_count.value()
+                        == old(regions).slot_owners[idx].ref_count.value()
                     && final(regions).slot_owners[idx].usage
                         == old(regions).slot_owners[idx].usage,
     )]
@@ -1497,38 +1585,38 @@ impl<C: PageTableConfig> PageTable<C> {
             },
             !Cursor::<C, G>::cursor_new_success_conditions(*va) ==> r is Err,
             forall|idx: int| #![trigger final(regions).slot_owners[idx].paths_in_pt]
-                old(regions).slot_owners[idx].inner_perms.ref_count.value()
+                old(regions).slot_owners[idx].ref_count.value()
                     != REF_COUNT_UNUSED
                 ==> final(regions).slot_owners[idx].paths_in_pt
                         == old(regions).slot_owners[idx].paths_in_pt,
             // Non-saturation preservation.
             (forall |i: int| #![trigger old(regions).slot_owners[i]]
                 old(regions).contains(i)
-                && old(regions).slot_owners[i].inner_perms.ref_count.value()
+                && old(regions).slot_owners[i].ref_count.value()
                     != REF_COUNT_UNUSED
-                ==> old(regions).slot_owners[i].inner_perms.ref_count.value() + 1
+                ==> old(regions).slot_owners[i].ref_count.value() + 1
                     < REF_COUNT_MAX)
             ==>
             (forall |i: int| #![trigger final(regions).slot_owners[i]]
                 final(regions).contains(i)
-                && final(regions).slot_owners[i].inner_perms.ref_count.value()
+                && final(regions).slot_owners[i].ref_count.value()
                     != REF_COUNT_UNUSED
-                ==> final(regions).slot_owners[i].inner_perms.ref_count.value() + 1
+                ==> final(regions).slot_owners[i].ref_count.value() + 1
                     < REF_COUNT_MAX),
             // Saturated-slot bridge (relayed from `Cursor::new`):
             // a slot at `>= REF_COUNT_MAX` before iff after, with the same
             // value. Used by `KVirtArea::query` to bridge inner-cursor
             // saturation back to the caller's snapshot.
-            forall|idx: int| #![trigger final(regions).slot_owners[idx].inner_perms.ref_count.value()]
-                final(regions).slot_owners[idx].inner_perms.ref_count.value()
+            forall|idx: int| #![trigger final(regions).slot_owners[idx].ref_count.value()]
+                final(regions).slot_owners[idx].ref_count.value()
                     >= REF_COUNT_MAX
-                ==> old(regions).slot_owners[idx].inner_perms.ref_count.value()
-                        == final(regions).slot_owners[idx].inner_perms.ref_count.value(),
-            forall|idx: int| #![trigger old(regions).slot_owners[idx].inner_perms.ref_count.value()]
-                old(regions).slot_owners[idx].inner_perms.ref_count.value()
+                ==> old(regions).slot_owners[idx].ref_count.value()
+                        == final(regions).slot_owners[idx].ref_count.value(),
+            forall|idx: int| #![trigger old(regions).slot_owners[idx].ref_count.value()]
+                old(regions).slot_owners[idx].ref_count.value()
                     >= REF_COUNT_MAX
-                ==> final(regions).slot_owners[idx].inner_perms.ref_count.value()
-                        == old(regions).slot_owners[idx].inner_perms.ref_count.value(),
+                ==> final(regions).slot_owners[idx].ref_count.value()
+                        == old(regions).slot_owners[idx].ref_count.value(),
     )]
     pub fn cursor<'rcu, G: InAtomicMode>(&'rcu self, guard: &'rcu G, va: &Range<Vaddr>) -> Result<
         (Cursor<'rcu, C, G>, Tracked<CursorOwner<'rcu, C>>),

@@ -3,6 +3,7 @@
 use vstd::modes::tracked_swap;
 use vstd::prelude::*;
 use vstd::proph::ProphecyGhost;
+use vstd::simple_pptr::PPtr;
 
 use vstd::std_specs::iter::{IteratorSpec, IteratorSpecImpl};
 use vstd_extra::assert;
@@ -47,10 +48,14 @@ verus! {
 /// type.
 // FIXME: field visibility
 #[repr(transparent)]
+#[allow(repr_transparent_non_zst_fields)]
 pub struct Segment<M: AnyFrameMeta + ?Sized> {
     /// The physical address range of the segment.
     pub range: Range<Paddr>,
     pub _marker: core::marker::PhantomData<M>,
+    /// One metadata fraction for each frame in `range`, in address order.
+    #[cfg(verus_keep_ghost_body)]
+    pub tracked_permissions: Tracked<Seq<FramePermission>>,
 }
 
 /*
@@ -97,18 +102,17 @@ pub type USegment = Segment<dyn AnyUFrameMeta>;
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
     open spec fn clone_requires(self, perm: MetaRegionOwners) -> bool {
-        &&& self.inv()
-        &&& perm.inv()
+        &&& self.invariants(perm)
         &&& forall|pa: Paddr|
             #![trigger frame_to_index(pa)]
             (self.start_paddr() <= pa < self.end_paddr() && pa % PAGE_SIZE == 0) ==> {
                 let idx = frame_to_index(pa);
                 &&& perm.contains(idx)
                 &&& valid_frame_paddr(pa)
-                &&& perm.slot_owners[idx].inner_perms.ref_count.value() > 0
-                &&& perm.slot_owners[idx].inner_perms.ref_count.value() + 1
+                &&& perm.slot_owners[idx].ref_count.value() > 0
+                &&& perm.slot_owners[idx].ref_count.value() + 1
                     < super::meta::REF_COUNT_MAX
-                &&& !MetaSlot::inc_ref_count_panic_cond(perm.slot_owners[idx].inner_perms.ref_count)
+                &&& !MetaSlot::inc_ref_count_panic_cond(perm.slot_owners[idx].ref_count)
             }
     }
 
@@ -121,16 +125,16 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
         &&& res.range() == self.range()
         &&& res.inv()
         &&& new_perm.inv()
-        // `Segment::clone` bumps each page's refcount via
-        // `inc_frame_ref_count` (which preserves the ledger), not through
-        // `Frame::clone`, so it is net-zero on `frame_obligations`. (The
-        // trait no longer hardcodes this; each impl states its own effect.)
-        &&& new_perm.frame_obligations =~= old_perm.frame_obligations
+        &&& res.invariants(new_perm)
     }
 
     #[verifier::loop_isolation(false)]
+    #[verifier::rlimit(50)]
     fn clone(&self, Tracked(perm): Tracked<&mut MetaRegionOwners>) -> (res: Self) {
         let mut paddr = self.range.start;
+        proof_decl! {
+            let tracked mut permissions = Seq::<FramePermission>::tracked_empty();
+        }
 
         loop
             invariant
@@ -138,7 +142,25 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                 self.inv(),
                 perm.slots == old(perm).slots,
                 perm.slot_owners.dom() == old(perm).slot_owners.dom(),
-                perm.frame_obligations == old(perm).frame_obligations,
+                permissions.len() == (paddr - self.range.start) / (PAGE_SIZE as int),
+                forall|i: int| 0 <= i < permissions.len() ==> Frame::<M>::frame_permission_wf(
+                    *perm,
+                    (self.range.start + i * PAGE_SIZE) as usize,
+                    permissions[i],
+                ),
+                forall|i: int|
+                    #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize)]
+                    0 <= i < permissions.len() ==> ({
+                    let idx = frame_to_index(
+                        (self.range.start + i * PAGE_SIZE) as usize,
+                    );
+                    &&& perm.contains(idx)
+                    &&& perm.slot_owners[idx].slot_vaddr == index_to_meta(idx)
+                    &&& perm.slot_owners[idx].ref_count.value() > 0
+                    &&& perm.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX
+                    &&& perm.slot_owners[idx].paths_in_pt.is_empty()
+                    &&& perm.slot_owners[idx].usage is Frame
+                }),
                 self.range.start <= paddr <= self.range.end,
                 paddr % PAGE_SIZE == 0,
                 paddr <= MAX_PADDR,
@@ -148,27 +170,179 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                         let idx = frame_to_index(pa);
                         &&& perm.contains(idx)
                         &&& valid_frame_paddr(pa)
-                        &&& perm.slot_owners[idx].inner_perms.ref_count.value() > 0
-                        &&& perm.slot_owners[idx].inner_perms.ref_count.value() + 1
+                        &&& perm.slot_owners[idx].ref_count.value() > 0
+                        &&& perm.slot_owners[idx].ref_count.value() + 1
                             < super::meta::REF_COUNT_MAX
                         &&& !MetaSlot::inc_ref_count_panic_cond(
-                            perm.slot_owners[idx].inner_perms.ref_count,
+                            perm.slot_owners[idx].ref_count,
                         )
                     },
+                forall|i: int|
+                    #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize)]
+                    permissions.len() <= i < crate::specs::mm::frame::segment::seg_nframes(
+                        self.range,
+                    ) ==> perm.slot_owners[frame_to_index(
+                        (self.range.start + i * PAGE_SIZE) as usize,
+                    )] == old(perm).slot_owners[frame_to_index(
+                        (self.range.start + i * PAGE_SIZE) as usize,
+                    )],
             decreases self.range.end - paddr,
         {
             if paddr >= self.range.end {
                 break;
             }
-            unsafe {
+            let ghost regions_pre = *perm;
+            let ghost permissions_len: int = permissions.len() as int;
+            proof {
+                self.relate_regions_at(*old(perm), permissions_len);
+                assert(
+                    regions_pre.slot_owners[frame_to_index(paddr)]
+                        == old(perm).slot_owners[frame_to_index(paddr)]
+                );
+            }
+            let tracked_permission = unsafe {
                 #[verus_spec(with Tracked(perm))]
                 crate::mm::frame::inc_frame_ref_count(paddr)
             };
+            let tracked frame_permission = tracked_permission.get();
+            proof {
+                assert forall|i: int|
+                    #![trigger permissions[i]]
+                    0 <= i < permissions_len implies {
+                    let old_paddr = (self.range.start + i * PAGE_SIZE) as usize;
+                    let idx = frame_to_index(old_paddr);
+                    &&& Frame::<M>::frame_permission_wf(
+                        *perm,
+                        old_paddr,
+                        permissions[i],
+                    )
+                    &&& perm.contains(idx)
+                    &&& perm.slot_owners[idx].slot_vaddr == index_to_meta(idx)
+                    &&& perm.slot_owners[idx].ref_count.value() > 0
+                    &&& perm.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX
+                    &&& perm.slot_owners[idx].paths_in_pt.is_empty()
+                    &&& perm.slot_owners[idx].usage is Frame
+                } by {
+                    let old_paddr = (self.range.start + i * PAGE_SIZE) as usize;
+                    let idx = frame_to_index(old_paddr);
+                    assert(Frame::<M>::frame_permission_wf(
+                        regions_pre,
+                        old_paddr,
+                        permissions[i],
+                    ));
+                    assert(regions_pre.contains(idx));
+                    assert(regions_pre.slot_owners[idx].slot_vaddr == index_to_meta(idx));
+                    assert(regions_pre.slot_owners[idx].ref_count.value() > 0);
+                    assert(regions_pre.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX);
+                    assert(regions_pre.slot_owners[idx].paths_in_pt.is_empty());
+                    assert(regions_pre.slot_owners[idx].usage is Frame);
+                    assert(old_paddr < paddr);
+                    crate::specs::mm::frame::mapping::lemma_frame_to_index_injective(
+                        old_paddr,
+                        paddr,
+                    );
+                    assert(perm.slots == regions_pre.slots);
+                    assert(
+                        perm.slot_owners[frame_to_index(old_paddr)]
+                            == regions_pre.slot_owners[frame_to_index(old_paddr)]
+                    );
+                }
+                let idx = frame_to_index(paddr);
+                assert(regions_pre.contains(idx));
+                assert(regions_pre.slot_owners[idx].inv());
+                assert(regions_pre.slot_owners[idx].slot_vaddr == index_to_meta(idx));
+                assert(regions_pre.slot_owners[idx].ref_count.value() > 0);
+                assert(regions_pre.slot_owners[idx].ref_count.value() < REF_COUNT_MAX);
+                assert(regions_pre.slot_owners[idx].metadata.not_empty());
+                assert(regions_pre.slots[idx].value().wf(regions_pre.slot_owners[idx]));
+                assert(perm.slot_owners[idx].slot_vaddr
+                    == regions_pre.slot_owners[idx].slot_vaddr);
+                assert(perm.slot_owners[idx].paths_in_pt
+                    == regions_pre.slot_owners[idx].paths_in_pt);
+                assert(perm.slot_owners[idx].usage == regions_pre.slot_owners[idx].usage);
+                assert(regions_pre.slot_owners[idx].paths_in_pt.is_empty());
+                assert(regions_pre.slot_owners[idx].usage is Frame);
+                assert(Frame::<M>::frame_permission_wf(*perm, paddr, frame_permission));
+                permissions.tracked_push(frame_permission);
+                assert forall|i: int|
+                    #![trigger permissions[i]]
+                    0 <= i < permissions.len() implies Frame::<M>::frame_permission_wf(
+                        *perm,
+                        (self.range.start + i * PAGE_SIZE) as usize,
+                        permissions[i],
+                    ) by {
+                    if i < permissions_len {
+                        assert(Frame::<M>::frame_permission_wf(
+                            *perm,
+                            (self.range.start + i * PAGE_SIZE) as usize,
+                            permissions[i],
+                        ));
+                    } else {
+                        assert(i == permissions_len);
+                        assert((self.range.start + i * PAGE_SIZE) as usize == paddr);
+                        assert(permissions[i] == frame_permission);
+                    }
+                }
+                assert forall|i: int|
+                    #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize)]
+                    0 <= i < permissions.len() implies ({
+                    let idx = frame_to_index(
+                        (self.range.start + i * PAGE_SIZE) as usize,
+                    );
+                    &&& perm.contains(idx)
+                    &&& perm.slot_owners[idx].slot_vaddr == index_to_meta(idx)
+                    &&& perm.slot_owners[idx].ref_count.value() > 0
+                    &&& perm.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX
+                    &&& perm.slot_owners[idx].paths_in_pt.is_empty()
+                    &&& perm.slot_owners[idx].usage is Frame
+                }) by {
+                    let idx = frame_to_index(
+                        (self.range.start + i * PAGE_SIZE) as usize,
+                    );
+                    if i < permissions_len {
+                        let old_paddr = (self.range.start + i * PAGE_SIZE) as usize;
+                        assert(perm.contains(idx));
+                        assert(perm.slot_owners[idx].slot_vaddr == index_to_meta(idx));
+                        assert(perm.slot_owners[idx].ref_count.value() > 0);
+                        assert(perm.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX);
+                        assert(perm.slot_owners[idx].paths_in_pt.is_empty());
+                        assert(perm.slot_owners[idx].usage is Frame);
+                    } else {
+                        assert(i == permissions_len);
+                        assert((self.range.start + i * PAGE_SIZE) as usize == paddr);
+                        assert(perm.contains(idx));
+                        assert(perm.slot_owners[idx].slot_vaddr == index_to_meta(idx));
+                        assert(perm.slot_owners[idx].ref_count.value()
+                            == regions_pre.slot_owners[idx].ref_count.value() + 1);
+                        assert(perm.slot_owners[idx].ref_count.value() > 0);
+                        assert(perm.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX);
+                        assert(perm.slot_owners[idx].paths_in_pt.is_empty());
+                        assert(perm.slot_owners[idx].usage is Frame);
+                    }
+                }
+            }
 
             paddr = paddr + PAGE_SIZE;
         }
 
-        Self { range: self.range.start..self.range.end, _marker: core::marker::PhantomData }
+        proof {
+            assert forall|i: int, j: int|
+                #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize),
+                    frame_to_index((self.range.start + j * PAGE_SIZE) as usize)]
+                0 <= i < j < crate::specs::mm::frame::segment::seg_nframes(
+                    self.range,
+                ) implies frame_to_index((self.range.start + i * PAGE_SIZE) as usize)
+                    != frame_to_index((self.range.start + j * PAGE_SIZE) as usize) by {
+                self.relate_regions_distinct(*old(perm), i, j);
+            }
+        }
+
+        Self {
+            range: self.range.start..self.range.end,
+            _marker: core::marker::PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_permissions: Tracked(permissions),
+        }
     }
 }
 
@@ -220,7 +394,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             !(range.end <= MAX_PADDR ==> range.start < range.end) ==> may_panic(),
         ensures
             final(regions).inv(),
-            r is Err ==> final(regions).frame_obligations == old(regions).frame_obligations,
             (range.start % PAGE_SIZE != 0 || range.end % PAGE_SIZE != 0)
                 ==> r == Err::<Self, _>(GetFrameError::NotAligned),
             (range.start % PAGE_SIZE == 0 && range.end % PAGE_SIZE == 0 && range.end > MAX_PADDR)
@@ -230,12 +403,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 &&& seg.end_paddr() == range.end
                 &&& seg.start_paddr() < seg.end_paddr()
                 &&& seg.invariants(*final(regions))
-                &&& crate::specs::mm::frame::segment::seg_obligations_minted(
-                    *old(regions),
-                    *final(regions),
-                    range.start,
-                    crate::specs::mm::frame::segment::seg_nframes(range),
-                )
                 &&& forall|paddr: Paddr|
                     #![trigger frame_to_index(paddr)]
                     (range.start <= paddr < range.end && paddr % PAGE_SIZE == 0)
@@ -247,6 +414,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         Result<Self, GetFrameError>) {
         proof_decl! {
             let tracked mut addrs = Seq::<usize>::tracked_empty();
+            let tracked mut permissions = Seq::<FramePermission>::tracked_empty();
+            let tracked initial_segment_permissions = Seq::<FramePermission>::tracked_empty();
         }
 
         if range.start % PAGE_SIZE != 0 || range.end % PAGE_SIZE != 0 {
@@ -260,6 +429,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         let mut segment = Self {
             range: range.start..range.start,
             _marker: core::marker::PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_permissions: Tracked(initial_segment_permissions),
         };
 
         let mut i = 0;
@@ -269,6 +440,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             invariant
                 i <= addr_len,
                 i == addrs.len(),
+                i == permissions.len(),
                 range.start % PAGE_SIZE == 0,
                 range.end % PAGE_SIZE == 0,
                 range.end <= MAX_PADDR,
@@ -291,9 +463,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                         let idx = frame_to_index(addrs[j]);
                         &&& regions.contains(idx)
                         &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                        &&& regions.slot_owners[idx].inner_perms.ref_count.value() > 0
-                        &&& regions.slot_owners[idx].inner_perms.ref_count.value()
+                        &&& regions.slot_owners[idx].ref_count.value() > 0
+                        &&& regions.slot_owners[idx].ref_count.value()
                             <= crate::mm::frame::meta::REF_COUNT_MAX
+                        &&& Frame::<M>::frame_permission_wf(
+                            *regions,
+                            addrs[j],
+                            permissions[j],
+                        )
                         &&& regions.slot_owners[idx].paths_in_pt.is_empty()
                         &&& regions.slot_owners[idx].usage is Frame
                         &&& addrs[j] % PAGE_SIZE == 0
@@ -301,7 +478,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                         &&& addrs[j] == range.start + (j as u64) * PAGE_SIZE
                     },
                 regions.inv(),
-                regions.frame_obligations == old(regions).frame_obligations,
                 regions.slot_owners.dom() == old(regions).slot_owners.dom(),
                 segment.range.start == range.start,
                 segment.range.end == range.start + i * PAGE_SIZE,
@@ -323,7 +499,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                     while p < segment.range.end
                         invariant
                             regions.inv(),
-                            regions.frame_obligations == old(regions).frame_obligations,
+                            permissions.len() == i - k,
                             regions.slot_owners.dom() == old(regions).slot_owners.dom(),
                             range.start % PAGE_SIZE == 0,
                             i == addrs.len(),
@@ -339,9 +515,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                                     let idx = frame_to_index(addrs[j]);
                                     &&& regions.contains(idx)
                                     &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                                    &&& regions.slot_owners[idx].inner_perms.ref_count.value() > 0
-                                    &&& regions.slot_owners[idx].inner_perms.ref_count.value()
+                                    &&& regions.slot_owners[idx].ref_count.value() > 0
+                                    &&& regions.slot_owners[idx].ref_count.value()
                                         <= crate::mm::frame::meta::REF_COUNT_MAX
+                                    &&& Frame::<M>::frame_permission_wf(
+                                        *regions,
+                                        addrs[j],
+                                        permissions[j - k],
+                                    )
                                     &&& regions.slot_owners[idx].paths_in_pt.is_empty()
                                     &&& regions.slot_owners[idx].usage is Frame
                                     &&& addrs[j] % PAGE_SIZE == 0
@@ -359,14 +540,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                             assert(index_to_meta(idx_k) == frame_to_meta(p));
                             assert(regions.contains(idx_k));
                         }
-                        proof_decl! {
-                            let tracked from_raw_obl: vstd_extra::drop_tracking::DropObligation<int>;
-                        }
+                        let tracked frame_permission = permissions.tracked_remove(0);
                         let frame = unsafe {
-                            #[verus_spec(with Tracked(regions) => Tracked(from_raw_obl))]
+                            #[verus_spec(with Tracked(regions), Tracked(frame_permission))]
                             Frame::<M>::from_raw(p)
                         };
-                        frame.drop(Tracked(regions), Tracked(from_raw_obl));
+                        frame.drop(Tracked(regions), Tracked(()));
                         proof {
                             assert forall|j: int|
                                 #![trigger addrs[j]]
@@ -392,12 +571,10 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             };
 
             proof_decl! {
-                let tracked redeem_obl = DropObligation::tracked_mint(frame.index());
-                regions.tracked_redeem_frame_obligation(redeem_obl);
-                let tracked md_obl = DropObligation::tracked_mint(frame.index());
+                let tracked frame_permission: FramePermission;
             }
-            proof_with!(Tracked(md_obl));
-            let _ = ManuallyDrop::new(frame);
+            let _ = #[verus_spec(with Tracked(regions) => Tracked(frame_permission))]
+            frame.into_raw();
             segment.range.end = paddr + PAGE_SIZE;
             proof {
                 broadcast use group_page_meta;
@@ -410,30 +587,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 assert(regions.slot_owners[idx].paths_in_pt
                     == regions_pre.slot_owners[idx].paths_in_pt);
                 assert(regions.slot_owners[idx].usage is Frame);
-                assert(regions.frame_obligations == regions_pre.frame_obligations);
                 addrs.tracked_push(paddr);
+                permissions.tracked_push(frame_permission);
             }
 
             i += 1;
         }
 
         proof {
-            // Per-frame migration: record one forgotten reference per frame in
-            // `frame_obligations`. The construction loop above is net-zero on
-            // the ledger (each `Frame::from_unused` mint is cancelled by its
-            // `ManuallyDrop`); this post-loop pass records the segment's
-            // retained per-frame references, replacing the old single
-            // range-keyed `obligations` entry.
-            // The construction loop preserved `frame_obligations`, so the mint
-            // helper's exact delta (stated against the pre-mint state) telescopes
-            // to the function's entry state for the postcondition.
-            assert(regions.frame_obligations == old(regions).frame_obligations);
-            let ghost before_mint = *regions;
-            crate::specs::mm::frame::segment::tracked_mint_seg_obligations(
-                regions,
-                range.start,
-                addr_len as int,
-            );
             assert(segment.range == range);
 
             assert forall|addr: usize|
@@ -448,18 +609,20 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 #![trigger frame_to_index((segment.range.start + i * PAGE_SIZE) as usize)]
                 0 <= i < crate::specs::mm::frame::segment::seg_nframes(segment.range) implies {
                 let idx = frame_to_index((segment.range.start + i * PAGE_SIZE) as usize);
-                &&& regions.frame_obligations.count(idx) >= 1
+                &&& Frame::<M>::frame_permission_wf(
+                    *regions,
+                    (segment.range.start + i * PAGE_SIZE) as usize,
+                    permissions[i],
+                )
                 &&& regions.contains(idx)
                 &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                &&& regions.slot_owners[idx].inner_perms.ref_count.value() > 0
-                &&& regions.slot_owners[idx].inner_perms.ref_count.value()
+                &&& regions.slot_owners[idx].ref_count.value() > 0
+                &&& regions.slot_owners[idx].ref_count.value()
                     <= crate::mm::frame::meta::REF_COUNT_MAX
                 &&& regions.slot_owners[idx].paths_in_pt.is_empty()
                 &&& regions.slot_owners[idx].usage is Frame
             } by {
                 assert(addrs[i] == segment.range.start + i * PAGE_SIZE);
-                assert(regions.slot_owners == before_mint.slot_owners);
-                assert(regions.slots == before_mint.slots);
             }
             assert forall|i: int, j: int|
                 #![trigger frame_to_index((segment.range.start + i * PAGE_SIZE) as usize),
@@ -475,7 +638,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             }
         }
 
-        Ok(segment)
+        Ok(Self {
+            range: segment.range,
+            _marker: core::marker::PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_permissions: Tracked(permissions),
+        })
     }
 
     /// Restores the [`Segment`] from the raw physical address range.
@@ -499,10 +667,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
     #[verus_spec(r =>
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            Tracked(raw_permissions): Tracked<Seq<FramePermission>>,
         requires
             (Segment {
                 range,
                 _marker: core::marker::PhantomData::<M>,
+                #[cfg(verus_keep_ghost_body)]
+                tracked_permissions: Tracked(raw_permissions),
             }).invariants(*old(regions)),
         ensures
             r.range() == range,
@@ -511,7 +682,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             *final(regions) == *old(regions),
     )]
     pub(crate) unsafe fn from_raw(range: Range<Paddr>) -> Self {
-        Self { range, _marker: core::marker::PhantomData }
+        Self {
+            range,
+            _marker: core::marker::PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_permissions: Tracked(raw_permissions),
+        }
     }
 }
 
@@ -582,7 +758,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         ensures
             final(regions).slots == old(regions).slots,
             final(regions).slot_owners == old(regions).slot_owners,
-            final(regions).frame_obligations == old(regions).frame_obligations,
             (r.0, r.1) == self.split_spec(offset),
             r.0.invariants(*final(regions)),
             r.1.invariants(*final(regions)),
@@ -593,49 +768,79 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         assert!(0 < offset && offset < self.size());
 
         let ghost old_regions = *regions;
+        let ghost original = self;
 
+        let tracked mut left_permissions = self.tracked_permissions.get();
+        let tracked right_permissions = seq_tracked_split_at(
+            &mut left_permissions,
+            (offset / PAGE_SIZE) as int,
+        );
         proof_decl! {
-            let tracked md_obl = DropObligation::tracked_mint(self.range);
+            let tracked empty_permissions = Seq::<FramePermission>::tracked_empty();
         }
-        proof_with!(Tracked(md_obl));
-        let old = ManuallyDrop::new(self);
+        let raw_segment = Self {
+            range: self.range,
+            _marker: core::marker::PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_permissions: Tracked(empty_permissions),
+        };
+        proof_with!(Tracked(()));
+        let old = ManuallyDrop::new(raw_segment);
         let at = old.range.start + offset;
 
         let ghost old_start = old@.start_paddr();
         let ghost old_end = old@.end_paddr();
 
-        let ghost seg1 = Segment { range: old_start..at, _marker: core::marker::PhantomData::<M> };
-        let ghost seg2 = Segment { range: at..old_end, _marker: core::marker::PhantomData::<M> };
+        let ghost seg1 = Segment {
+            range: old_start..at,
+            _marker: core::marker::PhantomData::<M>,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_permissions: Tracked(left_permissions),
+        };
+        let ghost seg2 = Segment {
+            range: at..old_end,
+            _marker: core::marker::PhantomData::<M>,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_permissions: Tracked(right_permissions),
+        };
         proof {
             assert forall|i: int|
                 #![trigger frame_to_index((seg1.range.start + i * PAGE_SIZE) as usize)]
                 0 <= i < crate::specs::mm::frame::segment::seg_nframes(seg1.range) implies {
                 let idx = frame_to_index((seg1.range.start + i * PAGE_SIZE) as usize);
-                &&& regions.frame_obligations.count(idx) >= 1
+                &&& Frame::<M>::frame_permission_wf(
+                    *regions,
+                    (seg1.range.start + i * PAGE_SIZE) as usize,
+                    seg1.tracked_permissions@[i],
+                )
                 &&& regions.contains(idx)
                 &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                &&& regions.slot_owners[idx].inner_perms.ref_count.value() > 0
-                &&& regions.slot_owners[idx].inner_perms.ref_count.value()
+                &&& regions.slot_owners[idx].ref_count.value() > 0
+                &&& regions.slot_owners[idx].ref_count.value()
                     <= crate::mm::frame::meta::REF_COUNT_MAX
                 &&& regions.slot_owners[idx].paths_in_pt.is_empty()
                 &&& regions.slot_owners[idx].usage is Frame
             } by {
-                old@.relate_regions_at(old_regions, i);
+                original.relate_regions_at(old_regions, i);
             }
             assert forall|i: int|
                 #![trigger frame_to_index((seg2.range.start + i * PAGE_SIZE) as usize)]
                 0 <= i < crate::specs::mm::frame::segment::seg_nframes(seg2.range) implies {
                 let idx = frame_to_index((seg2.range.start + i * PAGE_SIZE) as usize);
-                &&& regions.frame_obligations.count(idx) >= 1
+                &&& Frame::<M>::frame_permission_wf(
+                    *regions,
+                    (seg2.range.start + i * PAGE_SIZE) as usize,
+                    seg2.tracked_permissions@[i],
+                )
                 &&& regions.contains(idx)
                 &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                &&& regions.slot_owners[idx].inner_perms.ref_count.value() > 0
-                &&& regions.slot_owners[idx].inner_perms.ref_count.value()
+                &&& regions.slot_owners[idx].ref_count.value() > 0
+                &&& regions.slot_owners[idx].ref_count.value()
                     <= crate::mm::frame::meta::REF_COUNT_MAX
                 &&& regions.slot_owners[idx].paths_in_pt.is_empty()
                 &&& regions.slot_owners[idx].usage is Frame
             } by {
-                old@.relate_regions_at(old_regions, i + (offset / PAGE_SIZE) as int);
+                original.relate_regions_at(old_regions, i + (offset / PAGE_SIZE) as int);
             }
 
             assert forall|i: int, j: int|
@@ -645,7 +850,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                     seg1.range,
                 ) implies frame_to_index((seg1.range.start + i * PAGE_SIZE) as usize)
                 != frame_to_index((seg1.range.start + j * PAGE_SIZE) as usize) by {
-                old@.relate_regions_distinct(old_regions, i, j);
+                original.relate_regions_distinct(old_regions, i, j);
             }
             assert forall|i: int, j: int|
                 #![trigger frame_to_index((seg2.range.start + i * PAGE_SIZE) as usize),
@@ -654,7 +859,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                     seg2.range,
                 ) implies frame_to_index((seg2.range.start + i * PAGE_SIZE) as usize)
                 != frame_to_index((seg2.range.start + j * PAGE_SIZE) as usize) by {
-                old@.relate_regions_distinct(
+                original.relate_regions_distinct(
                     old_regions,
                     i + (offset / PAGE_SIZE) as int,
                     j + (offset / PAGE_SIZE),
@@ -662,8 +867,18 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             }
         }
         (
-            Self { range: old.range.start..at, _marker: core::marker::PhantomData },
-            Self { range: at..old.range.end, _marker: core::marker::PhantomData },
+            Self {
+                range: old.range.start..at,
+                _marker: core::marker::PhantomData,
+                #[cfg(verus_keep_ghost_body)]
+                tracked_permissions: Tracked(left_permissions),
+            },
+            Self {
+                range: at..old.range.end,
+                _marker: core::marker::PhantomData,
+                #[cfg(verus_keep_ghost_body)]
+                tracked_permissions: Tracked(right_permissions),
+            },
         )
     }
 
@@ -686,7 +901,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             (range.start as int) / (PAGE_SIZE as int) <= j < (range.end as int) / (PAGE_SIZE as int)
                 && regions.slot_owners[frame_to_index(
                 (self.start_paddr() + j * PAGE_SIZE) as usize,
-            )].inner_perms.ref_count.value() >= REF_COUNT_MAX
+            )].ref_count.value() >= REF_COUNT_MAX
     }
 
     // [FIXED] BUG FOUND BY FV: potential overflow. https://github.com/asterinas/asterinas/pull/3587
@@ -728,10 +943,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             final(regions).inv(),
             final(regions).slots == old(regions).slots,
             final(regions).slot_owners.dom() == old(regions).slot_owners.dom(),
-            final(regions).frame_obligations == old(regions).frame_obligations,
+            r.invariants(*final(regions)),
     )]
     #[verifier::spinoff_prover]
     #[verifier::loop_isolation(false)]
+    #[verifier::rlimit(50)]
     pub fn slice(&self, range: &Range<usize>) -> Self {
         assert!(range.start % PAGE_SIZE == 0 && range.end % PAGE_SIZE == 0);
         assert!(range.start <= range.end && range.end <= self.size());
@@ -743,13 +959,32 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         let ghost first_perm_idx: int = (range.start / PAGE_SIZE) as int;
         let ghost last_perm_idx: int = (range.end / PAGE_SIZE) as int;
         let ghost mut i: int = 0;
+        proof_decl! {
+            let tracked mut permissions = Seq::<FramePermission>::tracked_empty();
+        }
         loop
             invariant
                 self.page_in_range_saturated(range, *old(regions)) ==> may_panic(),
                 regions.inv(),
                 regions.slots == old(regions).slots,
                 regions.slot_owners.dom() == old(regions).slot_owners.dom(),
-                regions.frame_obligations == old(regions).frame_obligations,
+                permissions.len() == i,
+                forall|j: int| 0 <= j < permissions.len() ==> Frame::<M>::frame_permission_wf(
+                    *regions,
+                    (start + j * PAGE_SIZE) as usize,
+                    permissions[j],
+                ),
+                forall|j: int|
+                    #![trigger frame_to_index((start + j * PAGE_SIZE) as usize)]
+                    0 <= j < permissions.len() ==> {
+                    let idx = frame_to_index((start + j * PAGE_SIZE) as usize);
+                    &&& regions.contains(idx)
+                    &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
+                    &&& regions.slot_owners[idx].ref_count.value() > 0
+                    &&& regions.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX
+                    &&& regions.slot_owners[idx].paths_in_pt.is_empty()
+                    &&& regions.slot_owners[idx].usage is Frame
+                },
                 paddr == (start + i * PAGE_SIZE) as usize,
                 paddr <= end,
                 0 <= i <= addr_len,
@@ -769,7 +1004,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                         regions,
                     ).slot_owners[frame_to_index(
                         (self.range.start + j * PAGE_SIZE) as usize,
-                    )].inner_perms.ref_count.value() < REF_COUNT_MAX,
+                    )].ref_count.value() < REF_COUNT_MAX,
             decreases addr_len - i,
         {
             if paddr >= end {
@@ -779,12 +1014,85 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
 
             proof {
                 self.relate_regions_at(*old(regions), perm_idx);
+                assert(paddr == (self.range.start + perm_idx * PAGE_SIZE) as usize);
+                assert((*regions).contains(frame_to_index(paddr)));
             }
 
-            unsafe {
+            let ghost regions_pre = *regions;
+            let ghost permissions_len = permissions.len();
+            let tracked_permission = unsafe {
                 #[verus_spec(with Tracked(regions))]
                 crate::mm::frame::inc_frame_ref_count(paddr)
             };
+            let tracked frame_permission = tracked_permission.get();
+            proof {
+                assert forall|j: int|
+                    #![trigger permissions[j]]
+                    0 <= j < permissions_len implies {
+                    let old_paddr = (start + j * PAGE_SIZE) as usize;
+                    let idx = frame_to_index(old_paddr);
+                    &&& Frame::<M>::frame_permission_wf(
+                        *regions,
+                        old_paddr,
+                        permissions[j],
+                    )
+                    &&& regions.contains(idx)
+                    &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
+                    &&& regions.slot_owners[idx].ref_count.value() > 0
+                    &&& regions.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX
+                    &&& regions.slot_owners[idx].paths_in_pt.is_empty()
+                    &&& regions.slot_owners[idx].usage is Frame
+                } by {
+                    let old_paddr = (start + j * PAGE_SIZE) as usize;
+                    let idx = frame_to_index(old_paddr);
+                    assert(Frame::<M>::frame_permission_wf(
+                        regions_pre,
+                        old_paddr,
+                        permissions[j],
+                    ));
+                    assert(regions_pre.contains(idx));
+                    assert(old_paddr < paddr);
+                    crate::specs::mm::frame::mapping::lemma_frame_to_index_injective(
+                        old_paddr,
+                        paddr,
+                    );
+                    assert(regions.slots == regions_pre.slots);
+                    assert(
+                        regions.slot_owners[frame_to_index(old_paddr)]
+                            == regions_pre.slot_owners[frame_to_index(old_paddr)]
+                    );
+                }
+                let idx = frame_to_index(paddr);
+                assert(regions_pre.contains(idx));
+                assert(regions_pre.slot_owners[idx].inv());
+                assert(regions_pre.slot_owners[idx].ref_count.value() < REF_COUNT_MAX);
+                assert(regions_pre.slot_owners[idx].metadata.not_empty());
+                assert(regions_pre.slots[idx].value().wf(regions_pre.slot_owners[idx]));
+                assert(Frame::<M>::frame_permission_wf(*regions, paddr, frame_permission));
+                permissions.tracked_push(frame_permission);
+                assert forall|j: int|
+                    #![trigger permissions[j]]
+                    0 <= j < permissions.len() implies {
+                    let idx = frame_to_index((start + j * PAGE_SIZE) as usize);
+                    &&& Frame::<M>::frame_permission_wf(
+                        *regions,
+                        (start + j * PAGE_SIZE) as usize,
+                        permissions[j],
+                    )
+                    &&& regions.contains(idx)
+                    &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
+                    &&& regions.slot_owners[idx].ref_count.value() > 0
+                    &&& regions.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX
+                    &&& regions.slot_owners[idx].paths_in_pt.is_empty()
+                    &&& regions.slot_owners[idx].usage is Frame
+                } by {
+                    if j < permissions_len {
+                    } else {
+                        assert(j == permissions_len);
+                        assert((start + j * PAGE_SIZE) as usize == paddr);
+                    }
+                }
+            }
 
             paddr = paddr + PAGE_SIZE;
 
@@ -800,7 +1108,28 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             }
         }
 
-        Self { range: start..end, _marker: core::marker::PhantomData }
+        proof {
+            assert forall|i: int, j: int|
+                #![trigger frame_to_index((start + i * PAGE_SIZE) as usize),
+                    frame_to_index((start + j * PAGE_SIZE) as usize)]
+                0 <= i < j < crate::specs::mm::frame::segment::seg_nframes(
+                    start..end,
+                ) implies frame_to_index((start + i * PAGE_SIZE) as usize)
+                    != frame_to_index((start + j * PAGE_SIZE) as usize) by {
+                self.relate_regions_distinct(
+                    *old(regions),
+                    first_perm_idx + i,
+                    first_perm_idx + j,
+                );
+            }
+        }
+
+        Self {
+            range: start..end,
+            _marker: core::marker::PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_permissions: Tracked(permissions),
+        }
     }
 
     /// Forgets the [`Segment`] and gets a raw range of physical addresses.
@@ -818,21 +1147,31 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
     #[verus_spec(r =>
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            -> raw_permissions: Tracked<Seq<FramePermission>>,
         requires
             self.invariants(*old(regions)),
         ensures
             r == self.range(),
             final(regions).inv(),
             *final(regions) == *old(regions),
+            raw_permissions@ == self.tracked_permissions@,
     )]
     pub(crate) fn into_raw(self) -> Range<Paddr> {
         let range = self.range.clone();
+        let tracked permissions = self.tracked_permissions.get();
         proof_decl! {
-            let tracked md_obl = DropObligation::tracked_mint(self.range);
+            let tracked empty_permissions = Seq::<FramePermission>::tracked_empty();
         }
-        proof_with!(Tracked(md_obl));
-        let _ = ManuallyDrop::new(self);
+        let raw_segment = Self {
+            range: self.range,
+            _marker: core::marker::PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_permissions: Tracked(empty_permissions),
+        };
+        proof_with!(Tracked(()));
+        let _ = ManuallyDrop::new(raw_segment);
 
+        proof_with!(|= Tracked(permissions));
         range
     }
 
@@ -853,16 +1192,33 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             0 < offset < self.size(),
     {
         let at = (self.start_paddr() + offset) as usize;
-        let idx = at / PAGE_SIZE;
+        let idx = offset / PAGE_SIZE;
         (
-            Self { range: self.start_paddr()..at, _marker: core::marker::PhantomData },
-            Self { range: at..self.end_paddr(), _marker: core::marker::PhantomData },
+            Self {
+                range: self.start_paddr()..at,
+                _marker: core::marker::PhantomData,
+                #[cfg(verus_keep_ghost_body)]
+                tracked_permissions: Tracked(
+                    self.tracked_permissions@.subrange(0, idx as int),
+                ),
+            },
+            Self {
+                range: at..self.end_paddr(),
+                _marker: core::marker::PhantomData,
+                #[cfg(verus_keep_ghost_body)]
+                tracked_permissions: Tracked(
+                    self.tracked_permissions@.subrange(
+                        idx as int,
+                        self.tracked_permissions@.len() as int,
+                    ),
+                ),
+            },
         )
     }
 }
 
-/// A frame yielded from a [`SegmentIterator`] together with its drop obligation.
-pub type SegmentIteratorItem<M> = (Frame<M>, Tracked<DropObligation<int>>);
+/// A cloned frame yielded from a [`SegmentIterator`].
+pub type SegmentIteratorItem<M> = Frame<M>;
 
 /// Prophetic sequence state used to specify the frames that a segment iterator will yield.
 /// FIXME: Do we need another iterator struct?
@@ -939,7 +1295,18 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> SegmentIterator<'a, 
     }
 
     pub closed spec fn current_segment(&self) -> Segment<M> {
-        Segment { range: self.range.start..self.range.end, _marker: core::marker::PhantomData::<M> }
+        let first = (self.range.start - self.segment.range.start) / (PAGE_SIZE as int);
+        Segment {
+            range: self.range.start..self.range.end,
+            _marker: core::marker::PhantomData::<M>,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_permissions: Tracked(
+                self.segment.tracked_permissions@.subrange(
+                    first as int,
+                    self.segment.tracked_permissions@.len() as int,
+                ),
+            ),
+        }
     }
 
     #[verifier::prophetic]
@@ -952,7 +1319,10 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> SegmentIterator<'a, 
         &&& self.segment.inv()
         &&& self.segment.range.start <= self.range.start
         &&& self.range.end == self.segment.range.end
+        &&& 0 <= (self.range.start - self.segment.range.start) / (PAGE_SIZE as int)
+            <= self.segment.tracked_permissions@.len()
         &&& self.current_segment().invariants(*self.tracked_regions@)
+        &&& self.current_segment().iterable(*self.tracked_regions@)
         &&& self.range.start < self.range.end ==> !self.tracked_remaining@.done
     }
 
@@ -961,6 +1331,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> SegmentIterator<'a, 
             Tracked(regions): Tracked<&'a mut MetaRegionOwners>,
         requires
             segment.invariants(*regions),
+            segment.iterable(*regions),
         ensures
             res.segment_ref() == segment,
             res.range_spec() == segment.range,
@@ -1012,19 +1383,59 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> SegmentIterator<'a, 
             segment.inv(),
             segment.range.start <= old(range).start,
             old(range).end == segment.range.end,
+            0 <= (old(range).start - segment.range.start) / (PAGE_SIZE as int)
+                <= segment.tracked_permissions@.len(),
             (Segment {
                 range: old(range).start..old(range).end,
                 _marker: core::marker::PhantomData::<M>,
+                #[cfg(verus_keep_ghost_body)]
+                tracked_permissions: Tracked(
+                    segment.tracked_permissions@.subrange(
+                        (old(range).start - segment.range.start) / (PAGE_SIZE as int),
+                        segment.tracked_permissions@.len() as int,
+                    ),
+                ),
             }).invariants(**old(regions_ref)),
+            (Segment {
+                range: old(range).start..old(range).end,
+                _marker: core::marker::PhantomData::<M>,
+                #[cfg(verus_keep_ghost_body)]
+                tracked_permissions: Tracked(
+                    segment.tracked_permissions@.subrange(
+                        (old(range).start - segment.range.start) / (PAGE_SIZE as int),
+                        segment.tracked_permissions@.len() as int,
+                    ),
+                ),
+            }).iterable(**old(regions_ref)),
             old(range).start < old(range).end ==> !old(remaining).done,
         ensures
             segment.inv(),
             segment.range.start <= final(range).start,
             final(range).end == segment.range.end,
+            0 <= (final(range).start - segment.range.start) / (PAGE_SIZE as int)
+                <= segment.tracked_permissions@.len(),
             (Segment {
                 range: final(range).start..final(range).end,
                 _marker: core::marker::PhantomData::<M>,
+                #[cfg(verus_keep_ghost_body)]
+                tracked_permissions: Tracked(
+                    segment.tracked_permissions@.subrange(
+                        (final(range).start - segment.range.start) / (PAGE_SIZE as int),
+                        segment.tracked_permissions@.len() as int,
+                    ),
+                ),
             }).invariants(**final(regions_ref)),
+            (Segment {
+                range: final(range).start..final(range).end,
+                _marker: core::marker::PhantomData::<M>,
+                #[cfg(verus_keep_ghost_body)]
+                tracked_permissions: Tracked(
+                    segment.tracked_permissions@.subrange(
+                        (final(range).start - segment.range.start) / (PAGE_SIZE as int),
+                        segment.tracked_permissions@.len() as int,
+                    ),
+                ),
+            }).iterable(**final(regions_ref)),
             final(range).start < final(range).end ==> !final(remaining).done,
             match res {
                 None => {
@@ -1036,7 +1447,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> SegmentIterator<'a, 
                 Some(item) => {
                     &&& final(range).start == old(range).start + PAGE_SIZE
                     &&& final(range).end == old(range).end
-                    &&& item.0.paddr() == old(range).start
+                    &&& item.paddr() == old(range).start
                     &&& old(remaining).seq() == seq![item] + final(remaining).seq()
                 },
             },
@@ -1051,32 +1462,66 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> SegmentIterator<'a, 
             let ghost old_segment = Segment {
                 range: old_range.start..old_range.end,
                 _marker: core::marker::PhantomData::<M>,
+                #[cfg(verus_keep_ghost_body)]
+                tracked_permissions: Tracked(
+                    segment.tracked_permissions@.subrange(
+                        (old_range.start - segment.range.start) / (PAGE_SIZE as int),
+                        segment.tracked_permissions@.len() as int,
+                    ),
+                ),
             };
             let ghost old_regions = **regions_ref;
             let paddr = range.start;
 
             proof {
+                broadcast use vstd::seq_lib::group_seq_properties;
+
                 old_segment.relate_regions_at(old_regions, 0);
                 assert(paddr == old_range.start);
+                let idx = frame_to_index(paddr);
+                assert(old_segment.iterable(old_regions));
+                assert(old_regions.slot_owners[idx].ref_count.value() < REF_COUNT_MAX);
             }
 
-            proof_decl! {
-                let tracked from_raw_obl: DropObligation<int>;
-            }
+            let tracked_permission = unsafe {
+                #[verus_spec(with Tracked(*regions_ref))]
+                crate::mm::frame::inc_frame_ref_count(paddr)
+            };
+            let tracked frame_permission = tracked_permission.get();
             let frame = unsafe {
-                #[verus_spec(with Tracked(*regions_ref) => Tracked(from_raw_obl))]
+                #[verus_spec(with Tracked(*regions_ref), Tracked(frame_permission))]
                 Frame::<M>::from_raw(paddr)
             };
 
             proof {
+                broadcast use vstd::seq_lib::group_seq_properties;
+
                 let new_range = ((old_range.start + PAGE_SIZE) as usize)..old_range.end;
+                let first = (old_range.start - segment.range.start) / (PAGE_SIZE as int);
+                let permission_len = segment.tracked_permissions@.len() as int;
+                vstd::seq::lemma_seq_subrange_len(
+                    segment.tracked_permissions@,
+                    first,
+                    permission_len,
+                );
+                assert(old_segment.tracked_permissions@.len() > 0);
+                assert(first < permission_len);
+                assert(
+                    (new_range.start - segment.range.start) / (PAGE_SIZE as int)
+                        == first + 1
+                );
+                assert(0 <= first + 1 <= permission_len);
                 let ghost new_segment = Segment {
                     range: new_range.start..new_range.end,
                     _marker: core::marker::PhantomData::<M>,
+                    #[cfg(verus_keep_ghost_body)]
+                    tracked_permissions: Tracked(
+                        segment.tracked_permissions@.subrange(
+                            (new_range.start - segment.range.start) / (PAGE_SIZE as int),
+                            segment.tracked_permissions@.len() as int,
+                        ),
+                    ),
                 };
-                let tracked redeem_tok = DropObligation::tracked_mint(frame.index());
-                (*regions_ref).tracked_redeem_frame_obligation(redeem_tok);
-                assert((**regions_ref).frame_obligations == old_regions.frame_obligations);
 
                 assert forall|i: int|
                     #![trigger frame_to_index((new_segment.range.start + i * PAGE_SIZE) as usize)]
@@ -1084,17 +1529,56 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> SegmentIterator<'a, 
                         new_segment.range,
                     ) implies {
                     let idx = frame_to_index((new_segment.range.start + i * PAGE_SIZE) as usize);
-                    &&& (**regions_ref).frame_obligations.count(idx) >= 1
+                    &&& Frame::<M>::frame_permission_wf(
+                        **regions_ref,
+                        (new_segment.range.start + i * PAGE_SIZE) as usize,
+                        new_segment.tracked_permissions@[i],
+                    )
                     &&& (**regions_ref).contains(idx)
                     &&& (**regions_ref).slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                    &&& (**regions_ref).slot_owners[idx].inner_perms.ref_count.value() > 0
-                    &&& (**regions_ref).slot_owners[idx].inner_perms.ref_count.value()
+                    &&& (**regions_ref).slot_owners[idx].ref_count.value() > 0
+                    &&& (**regions_ref).slot_owners[idx].ref_count.value()
                         <= crate::mm::frame::meta::REF_COUNT_MAX
                     &&& (**regions_ref).slot_owners[idx].paths_in_pt.is_empty()
                     &&& (**regions_ref).slot_owners[idx].usage is Frame
                 } by {
+                    let idx = frame_to_index(
+                        (new_segment.range.start + i * PAGE_SIZE) as usize,
+                    );
                     old_segment.relate_regions_at(old_regions, i + 1);
                     old_segment.relate_regions_distinct(old_regions, 0, i + 1);
+                    assert(0 <= first <= permission_len);
+                    assert(0 <= i + 1 < permission_len - first);
+                    vstd::seq::lemma_seq_subrange_index(
+                        segment.tracked_permissions@,
+                        first,
+                        permission_len,
+                        i + 1,
+                    );
+                    assert(
+                        old_segment.tracked_permissions@[i + 1]
+                            == segment.tracked_permissions@[first + i + 1]
+                    );
+                    assert(
+                        (new_range.start - segment.range.start) / (PAGE_SIZE as int)
+                            == first + 1
+                    );
+                    assert(0 <= first + 1 <= permission_len);
+                    assert(0 <= i < permission_len - (first + 1));
+                    vstd::seq::lemma_seq_subrange_index(
+                        segment.tracked_permissions@,
+                        first + 1,
+                        permission_len,
+                        i,
+                    );
+                    assert(
+                        new_segment.tracked_permissions@[i]
+                            == old_segment.tracked_permissions@[i + 1]
+                    );
+                    assert(
+                        (**regions_ref).slot_owners[idx]
+                            == old_regions.slot_owners[idx]
+                    );
                 }
                 assert forall|i: int, j: int|
                     #![trigger frame_to_index((new_segment.range.start + i * PAGE_SIZE) as usize),
@@ -1105,6 +1589,23 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> SegmentIterator<'a, 
                     != frame_to_index((new_segment.range.start + j * PAGE_SIZE) as usize) by {
                     old_segment.relate_regions_distinct(old_regions, i + 1, j + 1);
                 }
+                assert(new_segment.invariants(**regions_ref));
+                assert forall|i: int|
+                    #![trigger frame_to_index((new_segment.range.start + i * PAGE_SIZE) as usize)]
+                    0 <= i < crate::specs::mm::frame::segment::seg_nframes(
+                        new_segment.range,
+                    ) implies (**regions_ref).slot_owners[frame_to_index(
+                        (new_segment.range.start + i * PAGE_SIZE) as usize,
+                    )].ref_count.value() < REF_COUNT_MAX by {
+                    let idx = frame_to_index(
+                        (new_segment.range.start + i * PAGE_SIZE) as usize,
+                    );
+                    old_segment.relate_regions_distinct(old_regions, 0, i + 1);
+                    assert(old_segment.iterable(old_regions));
+                    assert(old_regions.slot_owners[idx].ref_count.value() < REF_COUNT_MAX);
+                    assert((**regions_ref).slot_owners[idx] == old_regions.slot_owners[idx]);
+                }
+                assert(new_segment.iterable(**regions_ref));
                 broadcast use group_page_meta;
 
                 assert((**regions_ref).slots[frame.index()].pptr() == frame.ptr);
@@ -1112,7 +1613,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> SegmentIterator<'a, 
             }
 
             range.start = range.start + PAGE_SIZE;
-            let item = (frame, Tracked(from_raw_obl));
+            let item = frame;
             proof {
                 remaining.resolve_cons(item);
                 broadcast use vstd::seq::group_seq_lemmas;
@@ -1197,8 +1698,20 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> From<Frame<M>> for Segment<M> {
     #[verifier::external_body]
     fn from(frame: Frame<M>) -> Self {
         let pa = frame.start_paddr();
-        let _ = core::mem::ManuallyDrop::new(frame);
-        Self { range: pa..(pa + PAGE_SIZE), _marker: core::marker::PhantomData }
+        let tracked frame_permission = frame.tracked_perm.get().tracked_unwrap();
+        let raw_frame = Frame::<M> {
+            ptr: frame.ptr,
+            _marker: core::marker::PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_perm: Tracked(None),
+        };
+        let _ = core::mem::ManuallyDrop::new(raw_frame);
+        Self {
+            range: pa..(pa + PAGE_SIZE),
+            _marker: core::marker::PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_permissions: Tracked(seq![frame_permission]),
+        }
     }
 }
 
@@ -1214,9 +1727,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Iterator for Segment<M> 
     #[verifier::external_body]
     fn next(&mut self) -> Option<Self::Item> {
         if self.range.start < self.range.end {
-            // SAFETY: each frame in the range was a forgotten handle when
-            // creating the `Segment` object.
-            let frame = unsafe { Frame::<M>::from_raw(self.range.start) };
+            let tracked frame_permission =
+                self.tracked_permissions.borrow_mut().tracked_remove(0);
+            let frame = Frame::<M> {
+                ptr: PPtr::from_addr(frame_to_meta(self.range.start)),
+                _marker: core::marker::PhantomData,
+                #[cfg(verus_keep_ghost_body)]
+                tracked_perm: Tracked(Some(frame_permission)),
+            };
             self.range.start = self.range.start + PAGE_SIZE;
             Some(frame)
         } else {
@@ -1229,11 +1747,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
     /// Verified drop: iterates over each frame in the segment, decrements its
     /// reference count, and (when last ref) tears down the metadata.
     ///
-    /// Per-frame linear-drop: before the teardown loop, this redeems the one
-    /// `frame_obligations` entry the segment retained per frame (minted by
-    /// `Segment::from_unused`). Failing to drop the segment leaves those
-    /// per-frame counts outstanding and breaks
-    /// [`MetaRegionOwners::clean_inv`] at the enclosing function's exit.
     #[verus_spec(
         with Tracked(regions): Tracked<&mut MetaRegionOwners>
         requires
@@ -1242,9 +1755,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
                 #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize)]
                 0 <= i < crate::specs::mm::frame::segment::seg_nframes(self.range) ==> {
                     let idx = frame_to_index((self.range.start + i * PAGE_SIZE) as usize);
-                    old(regions).slot_owners[idx].inner_perms.ref_count.value() == 1 ==> {
-                        &&& old(regions).slot_owners[idx].inner_perms.storage.is_init()
-                        &&& old(regions).slot_owners[idx].inner_perms.in_list.value() == 0
+                    old(regions).slot_owners[idx].ref_count.value() == 1 ==> {
+                        &&& old(regions).slot_owners[idx].storage().is_init()
+                        &&& old(regions).slot_owners[idx].in_list.value() == 0
                     }
                 },
         ensures
@@ -1253,43 +1766,28 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
     pub fn drop(self) {
         let ghost n = crate::specs::mm::frame::segment::seg_nframes(self.range);
         let mut paddr = self.range.start;
+        let tracked mut permissions = self.tracked_permissions.get();
 
         let ghost mut k: int = 0;
 
         assert forall|i: int| #![trigger frame_idx_at(self.range.start, i)] 0 <= i < n implies {
             let idx = frame_idx_at(self.range.start, i);
-            old(regions).slot_owners[idx].inner_perms.ref_count.value() == 1 ==> {
-                &&& old(regions).slot_owners[idx].inner_perms.storage.is_init()
-                &&& old(regions).slot_owners[idx].inner_perms.in_list.value() == 0
+            old(regions).slot_owners[idx].ref_count.value() == 1 ==> {
+                &&& old(regions).slot_owners[idx].storage().is_init()
+                &&& old(regions).slot_owners[idx].in_list.value() == 0
             }
         } by {};
-
-        proof {
-            assert forall|i: int|
-                #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize)]
-                0 <= i < n implies old(regions).frame_obligations.count(
-                frame_to_index((self.range.start + i * PAGE_SIZE) as usize),
-            ) >= 1 by {
-                self.relate_regions_at(*old(regions), i);
-            };
-            assert forall|i: int, j: int|
-                #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize),
-                    frame_to_index((self.range.start + j * PAGE_SIZE) as usize)]
-                0 <= i < j < n implies frame_to_index((self.range.start + i * PAGE_SIZE) as usize)
-                != frame_to_index((self.range.start + j * PAGE_SIZE) as usize) by {
-                self.relate_regions_distinct(*old(regions), i, j);
-            };
-            crate::specs::mm::frame::segment::tracked_redeem_seg_obligations(
-                regions,
-                self.range.start,
-                n,
-            );
-        }
 
         loop
             invariant
                 regions.inv(),
                 self.inv(),
+                permissions.len() == n - k,
+                forall|j: int| 0 <= j < permissions.len() ==> Frame::<M>::frame_permission_wf(
+                    *regions,
+                    (self.range.start + (k + j) * PAGE_SIZE) as usize,
+                    permissions[j],
+                ),
                 self.range.start <= paddr <= self.range.end,
                 paddr == (self.range.start + k * PAGE_SIZE) as usize,
                 paddr % PAGE_SIZE == 0,
@@ -1316,9 +1814,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
                     #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize)]
                     0 <= i < n ==> {
                         let idx = frame_to_index((self.range.start + i * PAGE_SIZE) as usize);
-                        old(regions).slot_owners[idx].inner_perms.ref_count.value() == 1 ==> {
-                            &&& old(regions).slot_owners[idx].inner_perms.storage.is_init()
-                            &&& old(regions).slot_owners[idx].inner_perms.in_list.value() == 0
+                        old(regions).slot_owners[idx].ref_count.value() == 1 ==> {
+                            &&& old(regions).slot_owners[idx].storage().is_init()
+                            &&& old(regions).slot_owners[idx].in_list.value() == 0
                         }
                     },
             decreases n - k,
@@ -1330,21 +1828,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
                 self.relate_regions_at(*old(regions), k);
             }
 
-            proof_decl! {
-                let tracked from_raw_obl: vstd_extra::drop_tracking::DropObligation<int>;
-            }
-
-            // SAFETY: each segment frame holds a forgotten reference;
-            // `from_raw` mints the obligation and `frame.drop` consumes
-            // it directly. The old "redeem-then-mint-then-drop" dance
-            // is gone — `from_raw`'s freshly minted obligation feeds
-            // straight into `frame.drop`.
+            let tracked frame_permission = permissions.tracked_remove(0);
             let frame = unsafe {
-                #[verus_spec(with Tracked(regions) => Tracked(from_raw_obl))]
+                #[verus_spec(with Tracked(regions), Tracked(frame_permission))]
                 Frame::<M>::from_raw(paddr)
             };
 
-            frame.drop(Tracked(regions), Tracked(from_raw_obl));
+            frame.drop(Tracked(regions), Tracked(()));
 
             proof {
                 assert forall|j: int|
@@ -1394,7 +1884,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
                 // Linear-drop pilot: cloning a Segment doesn't mint or
                 // redeem its obligation — the per-frame ref-count bump is
                 // an Arc-style operation.
-                perm.frame_obligations == old_perm.frame_obligations,
                 self.range.start <= paddr <= self.range.end,
                 paddr % PAGE_SIZE == 0,
                 paddr <= MAX_PADDR,
@@ -1404,11 +1893,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
                         let idx = frame_to_index(pa);
                         &&& perm.contains(idx)
                         &&& valid_frame_paddr(pa)
-                        &&& perm.slot_owners[idx].inner_perms.ref_count.value() > 0
-                        &&& perm.slot_owners[idx].inner_perms.ref_count.value() + 1
+                        &&& perm.slot_owners[idx].ref_count.value() > 0
+                        &&& perm.slot_owners[idx].ref_count.value() + 1
                             < super::meta::REF_COUNT_MAX
                         &&& !MetaSlot::inc_ref_count_panic_cond(
-                            perm.slot_owners[idx].inner_perms.ref_count,
+                            perm.slot_owners[idx].ref_count,
                         )
                     },
             decreases self.range.end - paddr,
