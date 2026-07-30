@@ -60,7 +60,8 @@ use crate::specs::mm::{
     frame::{
         mapping::{frame_to_index, lemma_frame_to_index_injective, meta_to_index},
         meta_owners::{
-            FracMetadataPerm, MetaSlotOwner, MetaSlotStorage, typed_meta_value, typed_meta_wf,
+            FracMetadataPerm, MetaSlotOwner, MetaSlotStorage, MetadataPerms, typed_meta_value,
+            typed_meta_wf,
         },
         meta_region_owners::MetaRegionOwners,
     },
@@ -361,15 +362,17 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                     assert(0int % core::mem::size_of::<C::E>() as int == 0);
                     assert(Self::walk_pte_at_view(initial_view, cursor_pre_read) == pte);
                     assert(raw_permissions_pre.contains_key(cursor_pre_read));
-                    assert(raw_permissions_pre[cursor_pre_read] is Some
-                        <==> if pte.is_last(self.level) {
+                    assert(raw_permissions_pre[cursor_pre_read] is Some <==> if pte.is_last(
+                        self.level,
+                    ) {
                         C::tracked(C::item_from_raw_spec(paddr, self.level, pte.prop(), None))
                     } else {
                         true
                     });
                 }
-                let tracked raw_permission =
-                    vm_io_owner.raw_frame_permissions.tracked_remove(cursor_pre_read);
+                let tracked raw_permission = vm_io_owner.raw_frame_permissions.tracked_remove(
+                    cursor_pre_read,
+                );
                 if !pte.is_last(level) {
                     proof {
                         vstd::arithmetic::mul::lemma_mul_is_distributive_add_other_way(
@@ -522,8 +525,7 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                         future_pte.is_present() ==> {
                             &&& vm_io_owner.raw_frame_permissions.contains_key(cursor)
                             &&& {
-                                let permission =
-                                    vm_io_owner.raw_frame_permissions[cursor];
+                                let permission = vm_io_owner.raw_frame_permissions[cursor];
                                 &&& if future_pte.is_last(self.level) {
                                     permission is Some <==> C::tracked(
                                         C::item_from_raw_spec(
@@ -563,9 +565,7 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                         let future_pte = Self::walk_pte_at_view(initial_view, cursor);
                         if future_pte.is_present() {
                             assert(raw_permissions_pre.contains_key(cursor));
-                            assert(vm_io_owner.raw_frame_permissions.contains_key(
-                                cursor,
-                            ));
+                            assert(vm_io_owner.raw_frame_permissions.contains_key(cursor));
                             let future_permission = raw_permissions_pre[cursor];
                             assert(future_permission is Some <==> if future_pte.is_last(
                                 self.level,
@@ -648,7 +648,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
         let tracked points_to = regions.slots.tracked_borrow(owner.slot_index);
         #[verus_spec(with
             Tracked(points_to),
-            Tracked(owner.tracked_borrow_storage()),
+            Tracked(owner.tracked_borrow_metadata_perms()),
             Tracked(&())
         )]
         let meta = self.meta();
@@ -910,7 +910,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         let tracked points_to = regions.slots.tracked_borrow(owner.slot_index);
         #[verus_spec(with
             Tracked(points_to),
-            Tracked(owner.tracked_borrow_storage()),
+            Tracked(owner.tracked_borrow_metadata_perms()),
             Tracked(&())
         )]
         let meta = self.meta();
@@ -922,13 +922,20 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     #[verus_spec(res =>
         with
             Tracked(points_to): Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>,
-            Tracked(storage): Tracked<&'a pcell_maybe_uninit::PointsTo<MetaSlotStorage>>,
+            Tracked(metadata_perms): Tracked<&'a MetadataPerms>,
             Tracked(repr_perm): Tracked<&'a ()>,
             Ghost(stray_id): Ghost<vstd::cell::CellId>,
         requires
             old(self).inner.inner@.ptr.addr() == points_to.addr(),
-            typed_meta_wf::<PageTablePageMeta<C>>(*points_to, *storage, *repr_perm),
-            typed_meta_value::<PageTablePageMeta<C>>(*storage, *repr_perm).stray.id()
+            typed_meta_wf::<PageTablePageMeta<C>>(
+                *points_to,
+                *metadata_perms,
+                *repr_perm,
+            ),
+            typed_meta_value::<PageTablePageMeta<C>>(
+                *metadata_perms,
+                *repr_perm,
+            ).stray.id()
                 == stray_id,
         ensures
             res.id() == stray_id,
@@ -938,7 +945,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         // SAFETY: The lock is held so we have an exclusive access.
         #[verus_spec(with
             Tracked(points_to),
-            Tracked(storage),
+            Tracked(metadata_perms),
             Tracked(repr_perm)
         )]
         let meta = self.meta();
@@ -1040,12 +1047,15 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     #[verus_spec(res =>
         with
             Tracked(points_to): Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>,
-            Tracked(storage): Tracked<&'a pcell_maybe_uninit::PointsTo<MetaSlotStorage>>,
+            Tracked(metadata_perms): Tracked<&'a MetadataPerms>,
             Ghost(nr_children_id): Ghost<vstd::cell::CellId>,
         requires
             old(self).inner.inner@.ptr.addr() == points_to.addr(),
-            typed_meta_wf::<PageTablePageMeta<C>>(*points_to, *storage, ()),
-            typed_meta_value::<PageTablePageMeta<C>>(*storage, ()).nr_children.id()
+            typed_meta_wf::<PageTablePageMeta<C>>(*points_to, *metadata_perms, ()),
+            typed_meta_value::<PageTablePageMeta<C>>(
+                *metadata_perms,
+                (),
+            ).nr_children.id()
                 == nr_children_id,
         ensures
             res.id() == nr_children_id,
@@ -1055,7 +1065,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         // SAFETY: The lock is held so we have an exclusive access.
         #[verus_spec(with
             Tracked(points_to),
-            Tracked(storage),
+            Tracked(metadata_perms),
             Tracked(&())
         )]
         let meta = self.meta();

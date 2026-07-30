@@ -125,7 +125,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
     pub open spec fn meta_wf(self, regions: MetaRegionOwners) -> bool {
         typed_meta_wf::<M>(
             *regions.slots[self.slot_index],
-            self.metadata_perms->0.storage,
+            self.metadata_perms->0,
             self.repr_perm->0,
         )
     }
@@ -134,7 +134,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
         recommends
             self.meta_wf(regions),
     {
-        typed_meta_value::<M>(self.metadata_perms->0.storage, self.repr_perm->0)
+        typed_meta_value::<M>(self.metadata_perms->0, self.repr_perm->0)
     }
 
     pub open spec fn perm_inv(self, perm: vstd::simple_pptr::PointsTo<MetaSlot>) -> bool {

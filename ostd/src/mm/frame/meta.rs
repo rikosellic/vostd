@@ -477,7 +477,8 @@ impl MetaSlot {
         // SAFETY: The slot now has a reference count of `0`, other threads will
         // not access the metadata slot so it is safe to have a mutable reference.
 
-        let tracked (mut metadata_perms, empty_metadata) = slot_own.tracked_take_full_metadata_perms();
+        let tracked (mut metadata_perms, empty_metadata) =
+            slot_own.tracked_take_full_metadata_perms();
 
         unsafe {
             #[verus_spec(with

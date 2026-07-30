@@ -258,21 +258,20 @@ impl<C: PageTableConfig> Inv for NodeOwner<C> {
 }
 
 impl<C: PageTableConfig> NodeOwner<C> {
-    pub proof fn tracked_borrow_frame_storage(
+    pub proof fn tracked_borrow_frame_metadata_perms(
         tracked permission: &FracMetadataPerm,
-    ) -> (tracked res: &vstd::cell::pcell_maybe_uninit::PointsTo<MetaSlotStorage>)
+    ) -> (tracked res: &MetadataPerms)
         ensures
-            *res == permission.resource().storage,
+            *res == permission.resource(),
     {
-        &permission.borrow().storage
+        permission.borrow()
     }
 
-    pub proof fn tracked_borrow_storage(tracked &self) -> (tracked res:
-        &vstd::cell::pcell_maybe_uninit::PointsTo<MetaSlotStorage>)
+    pub proof fn tracked_borrow_metadata_perms(tracked &self) -> (tracked res: &MetadataPerms)
         ensures
-            *res == self.frame_permission.resource().storage,
+            *res == self.frame_permission.resource(),
     {
-        &self.frame_permission.borrow().storage
+        self.frame_permission.borrow()
     }
 
     /// The meta address of this node's slot, computed from `slot_index`.
@@ -283,7 +282,7 @@ impl<C: PageTableConfig> NodeOwner<C> {
     pub open spec fn meta_wf(self, regions: MetaRegionOwners) -> bool {
         typed_meta_wf::<PageTablePageMeta<C>>(
             *regions.slots[self.slot_index],
-            self.frame_permission.resource().storage,
+            self.frame_permission.resource(),
             (),
         )
     }
@@ -292,7 +291,7 @@ impl<C: PageTableConfig> NodeOwner<C> {
         recommends
             self.meta_wf(regions),
     {
-        typed_meta_value::<PageTablePageMeta<C>>(self.frame_permission.resource().storage, ())
+        typed_meta_value::<PageTablePageMeta<C>>(self.frame_permission.resource(), ())
     }
 
     /// Regions-tied invariants that used to live in `NodeOwner::inv()` via

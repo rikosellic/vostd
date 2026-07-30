@@ -282,11 +282,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
 
     pub open spec fn meta_wf_at(self, regions: MetaRegionOwners, i: int) -> bool {
         let idx = meta_to_index(self.list[i].paddr);
-        typed_meta_wf::<Link<M>>(
-            *regions.slots[idx],
-            self.metadata_perms[i].storage,
-            self.repr_perms[i],
-        )
+        typed_meta_wf::<Link<M>>(*regions.slots[idx], self.metadata_perms[i], self.repr_perms[i])
     }
 
     pub open spec fn meta_value_at(self, regions: MetaRegionOwners, i: int) -> Link<M>
@@ -294,7 +290,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
             self.meta_wf_at(regions, i),
     {
         let idx = meta_to_index(self.list[i].paddr);
-        typed_meta_value::<Link<M>>(self.metadata_perms[i].storage, self.repr_perms[i])
+        typed_meta_value::<Link<M>>(self.metadata_perms[i], self.repr_perms[i])
     }
 
     /// The per-link invariant expressed directly over the region-owned slot and
@@ -559,7 +555,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
                         p - 1
                     };
                     let fp = typed_meta_value::<Link<M>>(
-                        new.metadata_perms[np].storage,
+                        new.metadata_perms[np],
                         new.repr_perms[np],
                     );
                     &&& fr.contains(i)
@@ -575,7 +571,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
                     &&& fr.slot_owners[i].in_list.value() == new.list_id
                     &&& typed_meta_wf::<Link<M>>(
                         *fr.slots[i],
-                        new.metadata_perms[np].storage,
+                        new.metadata_perms[np],
                         new.repr_perms[np],
                     )
                     &&& fr.slots[i].addr() % META_SLOT_SIZE == 0

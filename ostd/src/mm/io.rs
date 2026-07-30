@@ -299,8 +299,7 @@ impl<'a> VmWriter<'a, Infallible> {
             is_fallible: fallible,
             is_kernel: true,
             mem_view,
-            raw_frame_permissions:
-                Map::tracked_empty(),
+            raw_frame_permissions: Map::tracked_empty(),
         };
 
         proof_with!(|= Tracked(owner));
@@ -729,8 +728,7 @@ impl<'a> VmReader<'a, Infallible> {
             is_fallible: false,
             is_kernel: true,
             mem_view: Some(VmIoMemView::ReadView(mv)),
-            raw_frame_permissions:
-                Map::tracked_empty(),
+            raw_frame_permissions: Map::tracked_empty(),
         };
 
         proof_with!(|= Tracked(owner));
@@ -1075,8 +1073,7 @@ impl<'a> VmReader<'a, Fallible> {
             is_fallible: true,
             is_kernel: false,
             mem_view: None,
-            raw_frame_permissions:
-                Map::tracked_empty(),
+            raw_frame_permissions: Map::tracked_empty(),
         };
         proof_with!(|= Tracked(owner));
         Self { ghost_id: Ghost(id), cursor: ptr, end: ptr.wrapping_add(len), phantom: PhantomData }
@@ -1841,8 +1838,7 @@ impl<'a> VmWriter<'a, Fallible> {
             is_fallible: true,
             is_kernel: false,
             mem_view: None,
-            raw_frame_permissions:
-                Map::tracked_empty(),
+            raw_frame_permissions: Map::tracked_empty(),
         };
         proof_with!(|= Tracked(owner));
         Self { ghost_id: Ghost(id), cursor: ptr, end: ptr.wrapping_add(len), phantom: PhantomData }

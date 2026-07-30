@@ -212,18 +212,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
         self.tracked_perm.borrow().tracked_borrow().borrow()
     }
 
-    /// Borrows the storage permission guarded by this frame's counting
-    /// fraction.
-    pub proof fn tracked_borrow_storage(tracked &self) -> (tracked res:
-        &vstd::cell::pcell_maybe_uninit::PointsTo<MetaSlotStorage>)
-        requires
-            self.tracked_perm@ is Some,
-        ensures
-            *res == self.tracked_perm@->0.resource().storage,
-    {
-        &self.tracked_borrow_metadata_perms().storage
-    }
-
     /// Gets a [`Frame`] with a specific usage from a raw, unused page.
     ///
     /// The caller should provide the initial metadata of the page.
@@ -295,13 +283,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
     #[verus_spec(
         with
             Tracked(points_to): Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>,
-            Tracked(storage): Tracked<&'a vstd::cell::pcell_maybe_uninit::PointsTo<MetaSlotStorage>>,
+            Tracked(metadata_perms): Tracked<&'a MetadataPerms>,
             Tracked(repr_perm): Tracked<&'a M::ReprPerm>,
         requires
             self.ptr == points_to.pptr(),
-            typed_meta_wf::<M>(*points_to, *storage, *repr_perm),
+            typed_meta_wf::<M>(*points_to, *metadata_perms, *repr_perm),
         returns
-            typed_meta_value::<M>(*storage, *repr_perm),
+            typed_meta_value::<M>(*metadata_perms, *repr_perm),
     )]
     pub fn meta<'a>(&'a self) -> &'a M {
         // SAFETY: The type is tracked by the typed storage permission.
@@ -309,7 +297,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
         borrow_meta(
             ReprPtr::<MetaSlotStorage, M>::from_pptr(PPtr::from_addr(self.ptr.addr())),
             Tracked(points_to),
-            Tracked(storage),
+            Tracked(metadata_perms),
             Tracked(repr_perm),
         )
     }
