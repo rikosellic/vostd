@@ -482,9 +482,8 @@ impl MetaSlot {
 
         unsafe {
             #[verus_spec(with
-                Tracked(&mut metadata_perms.storage),
-                Tracked(repr_perm),
-                Tracked(&mut metadata_perms.vtable_ptr)
+                Tracked(&mut metadata_perms),
+                Tracked(repr_perm)
             )]
             slot.write_meta(metadata)
         };
@@ -727,24 +726,23 @@ impl MetaSlot {
     /// The caller must have exclusive access to the metadata slot's storage in order to provide the permission token.
     #[verus_spec(
         with
-            Tracked(meta_perm): Tracked<&mut vstd::cell::pcell_maybe_uninit::PointsTo<MetaSlotStorage>>,
+            Tracked(metadata_perms): Tracked<&mut MetadataPerms>,
             Tracked(repr_perm): Tracked<&mut M::ReprPerm>,
-            Tracked(vtable_perm): Tracked<&mut PointsTo<usize>>,
         requires
-            self.storage.id() == old(meta_perm).id(),
-            self.vtable_ptr == old(vtable_perm).pptr(),
-            old(vtable_perm).is_uninit(),
+            self.storage.id() == old(metadata_perms).storage.id(),
+            self.vtable_ptr == old(metadata_perms).vtable_ptr.pptr(),
+            old(metadata_perms).vtable_ptr.is_uninit(),
         ensures
-            final(meta_perm).id() == old(meta_perm).id(),
-            final(meta_perm).is_init(),
-            final(vtable_perm).pptr() == old(vtable_perm).pptr(),
-            final(vtable_perm).is_init(),
+            final(metadata_perms).storage.id() == old(metadata_perms).storage.id(),
+            final(metadata_perms).storage.is_init(),
+            final(metadata_perms).vtable_ptr.pptr() == old(metadata_perms).vtable_ptr.pptr(),
+            final(metadata_perms).vtable_ptr.is_init(),
             <M as Repr<MetaSlotStorage>>::wf(
-                final(meta_perm).value(),
+                final(metadata_perms).storage.value(),
                 *final(repr_perm),
             ),
             M::from_repr_spec(
-                final(meta_perm).value(),
+                final(metadata_perms).storage.value(),
                 *final(repr_perm),
             ) == metadata,
     )]
@@ -755,7 +753,7 @@ impl MetaSlot {
         // SAFETY: Caller ensures that the access to the fields are exclusive.
         //        let vtable_ptr = unsafe { &mut *self.vtable_ptr.get() };
         //        vtable_ptr.write(core::ptr::metadata(&metadata as &dyn AnyFrameMeta));
-        self.vtable_ptr.put(Tracked(vtable_perm), 0);
+        self.vtable_ptr.put(Tracked(&mut metadata_perms.vtable_ptr), 0);
 
         // SAFETY:
         // 1. `ptr` points to the metadata storage.
@@ -765,7 +763,7 @@ impl MetaSlot {
         // unsafe { ptr.cast::<M>().write(metadata) };
         write_metadata_into_storage(
             &self.storage,
-            Tracked(meta_perm),
+            Tracked(metadata_perms),
             Tracked(repr_perm),
             metadata,
         );

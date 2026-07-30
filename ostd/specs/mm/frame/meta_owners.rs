@@ -385,7 +385,7 @@ impl Inv for MetaSlotOwner {
         // dynamic type, and the slot is *not* on the allocator's free
         // list.
         &&& 0 < self.ref_count.value() <= REF_COUNT_MAX ==> {
-            &&& self.metadata.frac() + self.ref_count.value() as int == REF_COUNT_MAX
+            &&& self.metadata.frac() + self.ref_count.value() == REF_COUNT_MAX
             &&& self.metadata.not_empty() ==> {
                 &&& self.vtable_ptr_perm().is_init()
                 &&& self.storage_perm().is_init()
@@ -477,24 +477,25 @@ impl OwnerOf for MetaSlot {
 /// `Repr<MetaSlotStorage>` interpretation.
 pub exec fn write_metadata_into_storage<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     cell: &pcell_maybe_uninit::PCell<MetaSlotStorage>,
-    Tracked(storage): Tracked<&mut pcell_maybe_uninit::PointsTo<MetaSlotStorage>>,
+    Tracked(metadata_perms): Tracked<&mut MetadataPerms>,
     Tracked(repr_perm): Tracked<&mut M::ReprPerm>,
     metadata: M,
 )
     requires
-        cell.id() == old(storage).id(),
+        cell.id() == old(metadata_perms).storage.id(),
     ensures
-        final(storage).id() == old(storage).id(),
-        final(storage).is_init(),
-        M::wf(final(storage).value(), *final(repr_perm)),
-        M::from_repr_spec(final(storage).value(), *final(repr_perm)) == metadata,
+        final(metadata_perms).storage.id() == old(metadata_perms).storage.id(),
+        final(metadata_perms).storage.is_init(),
+        final(metadata_perms).vtable_ptr == old(metadata_perms).vtable_ptr,
+        M::wf(final(metadata_perms).storage.value(), *final(repr_perm)),
+        M::from_repr_spec(final(metadata_perms).storage.value(), *final(repr_perm)) == metadata,
 {
     proof {
         M::from_to_repr(metadata, *repr_perm);
         M::to_repr_wf(metadata, *repr_perm);
     }
     let repr = metadata.to_repr(Tracked(repr_perm));
-    cell.write(Tracked(storage), repr);
+    cell.write(Tracked(&mut metadata_perms.storage), repr);
 }
 
 } // verus!

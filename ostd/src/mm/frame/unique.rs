@@ -201,9 +201,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
 
         unsafe {
             #[verus_spec(with
-                Tracked(&mut metadata_perms.storage),
-                Tracked(&mut repr_perm),
-                Tracked(&mut metadata_perms.vtable_ptr)
+                Tracked(&mut metadata_perms),
+                Tracked(&mut repr_perm)
             )]
             slot.write_meta(metadata)
         };
