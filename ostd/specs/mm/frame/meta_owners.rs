@@ -215,25 +215,6 @@ pub type FracMetadataPermResource = CountResource<MetadataPerms, REF_COUNT_MAX>;
 /// permission from a full [`FracMetadataPermResource`].
 pub type EmptyFracMetadataPerm = EmptyCount<MetadataPerms, REF_COUNT_MAX>;
 
-/// Fractions transferred from a page-table ownership tree to the metadata
-/// destructor for one recursive teardown. Keys are PTE virtual addresses, so
-/// distinct mappings of the same physical frame retain distinct fractions.
-///
-/// This is an explicit, transient handoff value; it is not stored in
-/// [`MetaRegionOwners`] and does not reserve a central fraction.
-pub tracked struct RawFracMetadataPerms {
-    pub permissions: Map<usize, Option<FracMetadataPerm>>,
-}
-
-impl RawFracMetadataPerms {
-    pub proof fn tracked_empty() -> (tracked res: Self)
-        ensures
-            res.permissions.dom().is_empty(),
-    {
-        Self { permissions: Map::tracked_empty() }
-    }
-}
-
 /// Permissions that remain under the authority of `MetaRegionOwners`.
 ///
 /// `ref_count` and `in_list` exist for the complete lifetime of the

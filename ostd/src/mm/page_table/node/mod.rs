@@ -60,7 +60,7 @@ use crate::specs::mm::{
     frame::{
         mapping::{frame_to_index, lemma_frame_to_index_injective, meta_to_index},
         meta_owners::{
-            MetaSlotOwner, MetaSlotStorage, RawFracMetadataPerms, typed_meta_value, typed_meta_wf,
+            FracMetadataPerm, MetaSlotOwner, MetaSlotStorage, typed_meta_value, typed_meta_wf,
         },
         meta_region_owners::MetaRegionOwners,
     },
@@ -360,8 +360,8 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                     assert(cursor_pre_read - reader_pre_read.cursor.vaddr == 0);
                     assert(0int % core::mem::size_of::<C::E>() as int == 0);
                     assert(Self::walk_pte_at_view(initial_view, cursor_pre_read) == pte);
-                    assert(raw_permissions_pre.permissions.contains_key(cursor_pre_read));
-                    assert(raw_permissions_pre.permissions[cursor_pre_read] is Some
+                    assert(raw_permissions_pre.contains_key(cursor_pre_read));
+                    assert(raw_permissions_pre[cursor_pre_read] is Some
                         <==> if pte.is_last(self.level) {
                         C::tracked(C::item_from_raw_spec(paddr, self.level, pte.prop(), None))
                     } else {
@@ -369,7 +369,7 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                     });
                 }
                 let tracked raw_permission =
-                    vm_io_owner.raw_frame_permissions.permissions.tracked_remove(cursor_pre_read);
+                    vm_io_owner.raw_frame_permissions.tracked_remove(cursor_pre_read);
                 if !pte.is_last(level) {
                     proof {
                         vstd::arithmetic::mul::lemma_mul_is_distributive_add_other_way(
@@ -520,10 +520,10 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                             == 0 implies {
                         let future_pte = Self::walk_pte_at_view(initial_view, cursor);
                         future_pte.is_present() ==> {
-                            &&& vm_io_owner.raw_frame_permissions.permissions.contains_key(cursor)
+                            &&& vm_io_owner.raw_frame_permissions.contains_key(cursor)
                             &&& {
                                 let permission =
-                                    vm_io_owner.raw_frame_permissions.permissions[cursor];
+                                    vm_io_owner.raw_frame_permissions[cursor];
                                 &&& if future_pte.is_last(self.level) {
                                     permission is Some <==> C::tracked(
                                         C::item_from_raw_spec(
@@ -562,11 +562,11 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                         ));
                         let future_pte = Self::walk_pte_at_view(initial_view, cursor);
                         if future_pte.is_present() {
-                            assert(raw_permissions_pre.permissions.contains_key(cursor));
-                            assert(vm_io_owner.raw_frame_permissions.permissions.contains_key(
+                            assert(raw_permissions_pre.contains_key(cursor));
+                            assert(vm_io_owner.raw_frame_permissions.contains_key(
                                 cursor,
                             ));
-                            let future_permission = raw_permissions_pre.permissions[cursor];
+                            let future_permission = raw_permissions_pre[cursor];
                             assert(future_permission is Some <==> if future_pte.is_last(
                                 self.level,
                             ) {
@@ -594,8 +594,8 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                                 ));
                             }
                         }
-                        assert(vm_io_owner.raw_frame_permissions.permissions[cursor]
-                            == raw_permissions_pre.permissions[cursor]);
+                        assert(vm_io_owner.raw_frame_permissions[cursor]
+                            == raw_permissions_pre[cursor]);
                     };
                 };
                 vstd::arithmetic::div_mod::lemma_mod_adds(
@@ -1246,7 +1246,7 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
         reader: crate::mm::VmReader<'_, crate::mm::Infallible>,
         view: crate::specs::mm::virt_mem::MemView,
         regions: MetaRegionOwners,
-        raw_permissions: RawFracMetadataPerms,
+        raw_permissions: Map<usize, Option<FracMetadataPerm>>,
     ) -> bool {
         forall|cursor: usize|
             #![trigger Self::walk_pte_at_view(view, cursor)]
@@ -1255,9 +1255,9 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
                 % core::mem::size_of::<C::E>() as int == 0 ==> {
                 let pte = Self::walk_pte_at_view(view, cursor);
                 pte.is_present() ==> {
-                    &&& raw_permissions.permissions.contains_key(cursor)
+                    &&& raw_permissions.contains_key(cursor)
                     &&& {
-                        let permission = raw_permissions.permissions[cursor];
+                        let permission = raw_permissions[cursor];
                         &&& if pte.is_last(self.level) {
                             permission is Some <==> C::tracked(
                                 C::item_from_raw_spec(pte.paddr(), self.level, pte.prop(), None),

@@ -12,7 +12,7 @@ use vstd::prelude::*;
 use vstd::pervasive::{arbitrary, proof_from_false};
 use vstd_extra::ownership::Inv;
 
-use crate::specs::mm::frame::meta_owners::RawFracMetadataPerms;
+use crate::specs::mm::frame::meta_owners::FracMetadataPerm;
 use crate::specs::mm::virt_mem::MemView;
 
 use crate::mm::{
@@ -103,8 +103,10 @@ pub tracked struct VmIoOwner {
     /// The mem view associated with this owner.
     pub mem_view: Option<VmIoMemView>,
     /// Fractions handed to a metadata destructor for raw frame references.
-    /// Ordinary VM I/O owners keep this empty.
-    pub raw_frame_permissions: RawFracMetadataPerms,
+    /// Keys are PTE virtual addresses, so distinct mappings of the same
+    /// physical frame retain distinct fractions. Ordinary VM I/O owners keep
+    /// this empty.
+    pub raw_frame_permissions: Map<usize, Option<FracMetadataPerm>>,
 }
 
 impl VmIoOwner {
@@ -516,7 +518,7 @@ impl VmIoOwner {
             is_fallible: self.is_fallible,
             is_kernel: self.is_kernel,
             mem_view: Some(left_view),
-            raw_frame_permissions: RawFracMetadataPerms::tracked_empty(),
+            raw_frame_permissions: Map::tracked_empty(),
         };
         left_owner
     }
