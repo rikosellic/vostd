@@ -50,7 +50,7 @@ use crate::specs::mm::frame::mapping::{
     frame_to_index, index_to_meta, max_meta_slots, meta_to_index,
 };
 use crate::specs::mm::frame::meta_owners::{
-    FramePermission, MetaSlotOwner, PageUsage, is_mmio_paddr,
+    FracMetadataPerm, MetaSlotOwner, PageUsage, is_mmio_paddr,
 };
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::page_table::cursor::page_size_lemmas::*;

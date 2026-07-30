@@ -206,14 +206,14 @@ pub tracked struct MetadataPerms {
 }
 
 /// One unit of shared ownership of the currently installed metadata.
-pub type FramePermission = Count<MetadataPerms, REF_COUNT_MAX>;
+pub type FracMetadataPerm = Count<MetadataPerms, REF_COUNT_MAX>;
 
 /// The undistributed part of a metadata permission.
-pub type FramePermissionResource = CountResource<MetadataPerms, REF_COUNT_MAX>;
+pub type FracMetadataPermResource = CountResource<MetadataPerms, REF_COUNT_MAX>;
 
 /// The witness left after a unique frame extracts the complete metadata
-/// permission from a full [`FramePermissionResource`].
-pub type EmptyFramePermission = EmptyCount<MetadataPerms, REF_COUNT_MAX>;
+/// permission from a full [`FracMetadataPermResource`].
+pub type EmptyFracMetadataPerm = EmptyCount<MetadataPerms, REF_COUNT_MAX>;
 
 /// Fractions transferred from a page-table ownership tree to the metadata
 /// destructor for one recursive teardown. Keys are PTE virtual addresses, so
@@ -221,11 +221,11 @@ pub type EmptyFramePermission = EmptyCount<MetadataPerms, REF_COUNT_MAX>;
 ///
 /// This is an explicit, transient handoff value; it is not stored in
 /// [`MetaRegionOwners`] and does not reserve a central fraction.
-pub tracked struct RawFramePermissions {
-    pub permissions: Map<usize, Option<FramePermission>>,
+pub tracked struct RawFracMetadataPerms {
+    pub permissions: Map<usize, Option<FracMetadataPerm>>,
 }
 
-impl RawFramePermissions {
+impl RawFracMetadataPerms {
     pub proof fn tracked_empty() -> (tracked res: Self)
         ensures
             res.permissions.dom().is_empty(),
@@ -240,7 +240,7 @@ impl RawFramePermissions {
 /// corresponding `MetaSlot`. `metadata` owns the undistributed fractions of
 /// the currently installed [`MetadataPerms`].
 pub tracked struct MetaSlotOwner {
-    pub metadata: FramePermissionResource,
+    pub metadata: FracMetadataPermResource,
     pub ref_count: PermissionU64,
     pub in_list: PermissionU64,
     pub ghost slot_vaddr: Vaddr,
@@ -313,7 +313,7 @@ impl MetaSlotOwner {
     /// central pool remains empty but retains its identity.
     pub proof fn tracked_take_full_metadata(tracked &mut self) -> (tracked res: (
         MetadataPerms,
-        EmptyFramePermission,
+        EmptyFracMetadataPerm,
     ))
         requires
             old(self).metadata.is_full(),
@@ -337,7 +337,7 @@ impl MetaSlotOwner {
     pub proof fn tracked_restore_full_metadata(
         tracked &mut self,
         tracked metadata: MetadataPerms,
-        tracked empty: EmptyFramePermission,
+        tracked empty: EmptyFracMetadataPerm,
     )
         requires
             old(self).metadata.is_empty(),

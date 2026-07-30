@@ -10,7 +10,7 @@ use crate::specs::{
     mm::{
         frame::{
             mapping::{frame_to_index, index_to_meta, meta_to_index},
-            meta_owners::{FramePermission, MetaSlotStorage, PageUsage},
+            meta_owners::{FracMetadataPerm, MetaSlotStorage, PageUsage},
             meta_region_owners::MetaRegionOwners,
         },
         page_table::{node::entry_view::*, *},
@@ -40,7 +40,7 @@ verus! {
 pub tracked struct FrameEntryOwner {
     pub ghost mapped_pa: usize,
     pub ghost prop: PageProperty,
-    pub permission: Option<FramePermission>,
+    pub permission: Option<FracMetadataPerm>,
 }
 
 pub tracked enum EntryOwnerKind<C: PageTableConfig> {
@@ -94,7 +94,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
         self.kind->Frame_0
     }
 
-    pub open spec fn frame_permission(self) -> Option<FramePermission>
+    pub open spec fn frame_permission(self) -> Option<FracMetadataPerm>
         recommends
             self.is_frame(),
     {
@@ -128,7 +128,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
         path: TreePath<NR_ENTRIES>,
         parent_level: PagingLevel,
         prop: PageProperty,
-        permission: Option<FramePermission>,
+        permission: Option<FracMetadataPerm>,
     ) -> Self {
         EntryOwner {
             kind: EntryOwnerKind::Frame(FrameEntryOwner { mapped_pa: paddr, prop, permission }),
@@ -245,7 +245,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
     }
 
     pub proof fn tracked_take_frame_permission(tracked &mut self) -> (tracked res: Option<
-        FramePermission,
+        FracMetadataPerm,
     >)
         requires
             old(self).is_frame(),
@@ -276,7 +276,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
 
     pub proof fn tracked_put_frame_permission(
         tracked &mut self,
-        tracked permission: Option<FramePermission>,
+        tracked permission: Option<FracMetadataPerm>,
     )
         requires
             old(self).is_frame(),
@@ -304,7 +304,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
         path: TreePath<NR_ENTRIES>,
         parent_level: PagingLevel,
         prop: PageProperty,
-        tracked permission: Option<FramePermission>,
+        tracked permission: Option<FracMetadataPerm>,
     ) -> tracked Self
         returns
             Self::new_frame(paddr, path, parent_level, prop, permission),

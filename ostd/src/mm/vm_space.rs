@@ -27,7 +27,7 @@ use crate::mm::{
 use crate::specs::arch::*;
 
 use crate::specs::mm::frame::{
-    meta_owners::{FramePermission, MetaSlotStorage},
+    meta_owners::{FracMetadataPerm, MetaSlotStorage},
     meta_region_owners::MetaRegionOwners,
 };
 
@@ -1643,17 +1643,17 @@ unsafe impl PageTableConfig for UserPtConfig {
         (item.frame.paddr(), 1, item.prop)
     }
 
-    open spec fn item_permission(item: Self::Item) -> Option<FramePermission> {
+    open spec fn item_permission(item: Self::Item) -> Option<FracMetadataPerm> {
         item.frame.tracked_perm@
     }
 
     #[verifier::external_body]
     fn item_into_raw(item: Self::Item, Tracked(regions): Tracked<&mut MetaRegionOwners>) -> (res: (
         (Paddr, PagingLevel, PageProperty),
-        Tracked<Option<FramePermission>>,
+        Tracked<Option<FracMetadataPerm>>,
     )) {
         proof_decl! {
-            let tracked frame_permission: FramePermission;
+            let tracked frame_permission: FracMetadataPerm;
         }
         let MappedItem { frame, prop } = item;
         let level = frame.map_level();
@@ -1667,7 +1667,7 @@ unsafe impl PageTableConfig for UserPtConfig {
         paddr: Paddr,
         _level: PagingLevel,
         prop: PageProperty,
-        permission: Option<FramePermission>,
+        permission: Option<FracMetadataPerm>,
     ) -> Self::Item {
         MappedItem {
             frame: UFrame {
@@ -1689,7 +1689,7 @@ unsafe impl PageTableConfig for UserPtConfig {
         level: PagingLevel,
         prop: PageProperty,
         Tracked(regions): Tracked<&mut MetaRegionOwners>,
-        Tracked(permission): Tracked<Option<FramePermission>>,
+        Tracked(permission): Tracked<Option<FracMetadataPerm>>,
     ) -> Self::Item {
         let tracked frame_permission = permission.tracked_unwrap();
         proof_with!(Tracked(regions), Tracked(frame_permission));
@@ -1701,7 +1701,7 @@ unsafe impl PageTableConfig for UserPtConfig {
         pa: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        permission: Option<FramePermission>,
+        permission: Option<FracMetadataPerm>,
     ) {
         broadcast use crate::specs::mm::frame::mapping::group_page_meta;
 
@@ -1716,7 +1716,7 @@ unsafe impl PageTableConfig for UserPtConfig {
         paddr: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        permission: Option<FramePermission>,
+        permission: Option<FracMetadataPerm>,
     ) {
         broadcast use crate::specs::mm::frame::mapping::group_page_meta;
 
@@ -1761,7 +1761,7 @@ unsafe impl PageTableConfig for UserPtConfig {
         pa: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        permission: Option<FramePermission>,
+        permission: Option<FracMetadataPerm>,
     ) {
         broadcast use crate::specs::mm::frame::mapping::group_page_meta;
 

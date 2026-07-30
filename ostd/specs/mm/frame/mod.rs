@@ -8,4 +8,4 @@ pub mod meta_specs;
 pub mod segment;
 pub mod unique;
 
-pub use meta_owners::{EmptyFramePermission, FramePermission, FramePermissionResource};
+pub use meta_owners::{EmptyFracMetadataPerm, FracMetadataPerm, FracMetadataPermResource};

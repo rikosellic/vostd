@@ -103,7 +103,7 @@ use self::mapping::{frame_to_meta, meta_to_frame};
 use crate::mm::io::{Infallible, VmReader};
 use crate::specs::arch::*;
 use crate::specs::mm::frame::{
-    EmptyFramePermission, FramePermission, mapping::frame_to_index, meta_owners::*,
+    EmptyFracMetadataPerm, FracMetadataPerm, mapping::frame_to_index, meta_owners::*,
     meta_region_owners::MetaRegionOwners,
 };
 
@@ -425,7 +425,7 @@ impl MetaSlot {
         paddr: Paddr,
         metadata: M,
         as_unique_ptr: bool,
-    ) -> Result<(PPtr<Self>, Tracked<FramePermission>), GetFrameError> {
+    ) -> Result<(PPtr<Self>, Tracked<FracMetadataPerm>), GetFrameError> {
         proof_decl! {
             let ghost idx = frame_to_index(paddr);
             if valid_frame_paddr(paddr) {
@@ -543,7 +543,7 @@ impl MetaSlot {
     #[verifier::exec_allows_no_decreases_clause]
     #[verifier::loop_isolation(false)]
     pub(super) fn get_from_in_use(paddr: Paddr) -> Result<
-        (PPtr<Self>, Tracked<FramePermission>),
+        (PPtr<Self>, Tracked<FracMetadataPerm>),
         GetFrameError,
     > {
         proof_decl! {

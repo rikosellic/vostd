@@ -52,13 +52,13 @@ pub struct Segment<M: AnyFrameMeta + ?Sized> {
     _marker: core::marker::PhantomData<M>,
     /// One metadata fraction for each frame in `range`, in address order.
     #[cfg(verus_keep_ghost_body)]
-    tracked_permissions: Tracked<Seq<FramePermission>>,
+    tracked_permissions: Tracked<Seq<FracMetadataPerm>>,
 }
 
 #[verifier::reject_recursive_types(M)]
 pub closed spec fn segment_iter_frame<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     paddr: Paddr,
-    permission: FramePermission,
+    permission: FracMetadataPerm,
 ) -> Frame<M> {
     Frame {
         ptr: PPtr(frame_to_meta(paddr), core::marker::PhantomData),
@@ -71,7 +71,7 @@ pub closed spec fn segment_iter_frame<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
 #[verifier::reject_recursive_types(M)]
 pub closed spec fn segment_iter_remaining<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     range: Range<Paddr>,
-    permissions: Seq<FramePermission>,
+    permissions: Seq<FracMetadataPerm>,
 ) -> Seq<Frame<M>> {
     Seq::new(
         permissions.len() as nat,
@@ -162,7 +162,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
     fn clone(&self, Tracked(perm): Tracked<&mut MetaRegionOwners>) -> (res: Self) {
         let mut paddr = self.range.start;
         proof_decl! {
-            let tracked mut permissions = Seq::<FramePermission>::tracked_empty();
+            let tracked mut permissions = Seq::<FracMetadataPerm>::tracked_empty();
         }
 
         loop
@@ -357,7 +357,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
     pub closed spec fn from_raw_value(
         range: Range<Paddr>,
-        permissions: Seq<FramePermission>,
+        permissions: Seq<FracMetadataPerm>,
     ) -> Self {
         Segment {
             range,
@@ -433,7 +433,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         Result<Self, GetFrameError>) {
         proof_decl! {
             let tracked mut addrs = Seq::<usize>::tracked_empty();
-            let tracked mut permissions = Seq::<FramePermission>::tracked_empty();
+            let tracked mut permissions = Seq::<FracMetadataPerm>::tracked_empty();
         }
 
         if range.start % PAGE_SIZE != 0 || range.end % PAGE_SIZE != 0 {
@@ -580,7 +580,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             };
 
             proof_decl! {
-                let tracked frame_permission: FramePermission;
+                let tracked frame_permission: FracMetadataPerm;
             }
             let _ = #[verus_spec(with Tracked(regions) => Tracked(frame_permission))]
             frame.into_raw();
@@ -678,7 +678,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
     #[verus_spec(r =>
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(raw_permissions): Tracked<Seq<FramePermission>>,
+            Tracked(raw_permissions): Tracked<Seq<FracMetadataPerm>>,
         requires
             Self::from_raw_value(range, raw_permissions).invariants(*old(regions)),
         ensures
@@ -737,7 +737,7 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
         self.start_paddr()..self.end_paddr()
     }
 
-    pub closed spec fn permissions(&self) -> Seq<FramePermission> {
+    pub closed spec fn permissions(&self) -> Seq<FracMetadataPerm> {
         self.tracked_permissions@
     }
 }
@@ -965,7 +965,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         let ghost last_perm_idx: int = (range.end / PAGE_SIZE) as int;
         let ghost mut i: int = 0;
         proof_decl! {
-            let tracked mut permissions = Seq::<FramePermission>::tracked_empty();
+            let tracked mut permissions = Seq::<FracMetadataPerm>::tracked_empty();
         }
         loop
             invariant
@@ -1138,7 +1138,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
     #[verus_spec(r =>
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            -> raw_permissions: Tracked<Seq<FramePermission>>,
+            -> raw_permissions: Tracked<Seq<FracMetadataPerm>>,
         requires
             self.invariants(*old(regions)),
         ensures
@@ -1233,7 +1233,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> From<Frame<M>> for Segment<M> {
 #[verus_verify]
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
     #[verus_spec(res =>
-        with Tracked(permissions): Tracked<&mut Seq<FramePermission>>,
+        with Tracked(permissions): Tracked<&mut Seq<FracMetadataPerm>>,
         requires
             old(range).start % PAGE_SIZE == 0,
             old(range).end % PAGE_SIZE == 0,

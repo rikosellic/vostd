@@ -58,7 +58,7 @@ use crate::specs::arch::*;
 use crate::specs::mm::{
     frame::{
         mapping::group_page_meta,
-        meta_owners::{FramePermission, MetaSlotStorage},
+        meta_owners::{FracMetadataPerm, MetaSlotStorage},
         meta_region_owners::MetaRegionOwners,
     },
     page_table::{nr_pte_index_bits_spec, pte_index_bit_offset_spec},
@@ -226,7 +226,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
         }
     }
 
-    open spec fn item_permission(item: Self::Item) -> Option<FramePermission> {
+    open spec fn item_permission(item: Self::Item) -> Option<FracMetadataPerm> {
         match item {
             MappedItem::Tracked(frame, _) => frame.tracked_perm@,
             MappedItem::Untracked(_, _, _) => None,
@@ -236,12 +236,12 @@ unsafe impl PageTableConfig for KernelPtConfig {
     #[verifier::external_body]
     fn item_into_raw(item: Self::Item, Tracked(regions): Tracked<&mut MetaRegionOwners>) -> (res: (
         (Paddr, PagingLevel, PageProperty),
-        Tracked<Option<FramePermission>>,
+        Tracked<Option<FracMetadataPerm>>,
     )) {
         match item {
             MappedItem::Tracked(frame, mut prop) => {
                 proof_decl! {
-                    let tracked frame_permission: FramePermission;
+                    let tracked frame_permission: FracMetadataPerm;
                 }
                 debug_assert!(!prop.flags.contains(PageFlags::AVAIL1()));
                 prop.flags = prop.flags | PageFlags::AVAIL1();
@@ -263,7 +263,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
         paddr: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        permission: Option<FramePermission>,
+        permission: Option<FracMetadataPerm>,
     ) -> Self::Item {
         if prop.flags.contains(PageFlags::AVAIL1()) {
             MappedItem::Tracked(
@@ -286,7 +286,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
         level: PagingLevel,
         prop: PageProperty,
         Tracked(regions): Tracked<&mut MetaRegionOwners>,
-        Tracked(permission): Tracked<Option<FramePermission>>,
+        Tracked(permission): Tracked<Option<FracMetadataPerm>>,
     ) -> Self::Item {
         if prop.flags.contains(PageFlags::AVAIL1()) {
             debug_assert_eq!(level, 1);
@@ -307,7 +307,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
         pa: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        permission: Option<FramePermission>,
+        permission: Option<FracMetadataPerm>,
     ) {
         broadcast use group_page_meta;
 
@@ -330,7 +330,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
         paddr: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        permission: Option<FramePermission>,
+        permission: Option<FracMetadataPerm>,
     ) {
         broadcast use group_page_meta;
 
@@ -400,7 +400,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
         pa: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        permission: Option<FramePermission>,
+        permission: Option<FracMetadataPerm>,
     ) {
         broadcast use group_page_meta;
 

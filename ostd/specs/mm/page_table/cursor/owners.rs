@@ -17,7 +17,7 @@ use crate::specs::{
     mm::{
         frame::{
             mapping::{frame_to_index, index_to_meta},
-            meta_owners::{FramePermission, MetaSlotStorage},
+            meta_owners::{FracMetadataPerm, MetaSlotStorage},
             meta_region_owners::MetaRegionOwners,
         },
         page_table::{
@@ -584,7 +584,7 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
         tracked &self,
         paddr: Paddr,
         prop: PageProperty,
-        tracked permission: Option<FramePermission>,
+        tracked permission: Option<FracMetadataPerm>,
         tracked regions: &mut MetaRegionOwners,
     ) -> (tracked res: OwnerSubtree<C>)
         requires

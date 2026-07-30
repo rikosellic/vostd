@@ -60,7 +60,7 @@ use crate::specs::mm::{
     frame::{
         mapping::{frame_to_index, lemma_frame_to_index_injective, meta_to_index},
         meta_owners::{
-            MetaSlotOwner, MetaSlotStorage, RawFramePermissions, typed_meta_value, typed_meta_wf,
+            MetaSlotOwner, MetaSlotStorage, RawFracMetadataPerms, typed_meta_value, typed_meta_wf,
         },
         meta_region_owners::MetaRegionOwners,
     },
@@ -1246,7 +1246,7 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
         reader: crate::mm::VmReader<'_, crate::mm::Infallible>,
         view: crate::specs::mm::virt_mem::MemView,
         regions: MetaRegionOwners,
-        raw_permissions: RawFramePermissions,
+        raw_permissions: RawFracMetadataPerms,
     ) -> bool {
         forall|cursor: usize|
             #![trigger Self::walk_pte_at_view(view, cursor)]

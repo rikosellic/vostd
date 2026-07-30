@@ -7,7 +7,7 @@ use crate::specs::{
     mm::{
         Paddr,
         frame::{
-            EmptyFramePermission,
+            EmptyFracMetadataPerm,
             mapping::{frame_to_index, index_to_meta, max_meta_slots, meta_to_index},
             meta_region_owners::MetaRegionOwners,
         },
@@ -47,7 +47,7 @@ pub tracked struct UniqueFrameOwner<M: AnyFrameMeta + ?Sized + Repr<MetaSlotStor
     pub metadata_perms: Option<MetadataPerms>,
     /// The empty fractional witness used to return `metadata_perms` to the
     /// central pool when the unique frame is released or converted to shared.
-    pub empty_metadata: Option<EmptyFramePermission>,
+    pub empty_metadata: Option<EmptyFracMetadataPerm>,
     pub ghost slot_index: int,
 }
 
@@ -175,7 +175,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
         meta_own: M::Owner,
         repr_perm: M::ReprPerm,
         metadata_perms: MetadataPerms,
-        empty_metadata: EmptyFramePermission,
+        empty_metadata: EmptyFracMetadataPerm,
         slot_index: int,
     ) -> Self {
         Self {
@@ -191,7 +191,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
         tracked meta_own: M::Owner,
         tracked repr_perm: M::ReprPerm,
         tracked metadata_perms: MetadataPerms,
-        tracked empty_metadata: EmptyFramePermission,
+        tracked empty_metadata: EmptyFracMetadataPerm,
         slot_index: int,
     ) -> (tracked res: Self)
         returns

@@ -228,7 +228,7 @@ impl<C: PageTableConfig> OwnerOf for PageTablePageMeta<C> {
 ///   Carried here for convenience, though it can be computed from `level`.
 pub tracked struct NodeOwner<C: PageTableConfig> {
     pub meta_own: PageMetaOwner,
-    pub frame_permission: FramePermission,
+    pub frame_permission: FracMetadataPerm,
     pub children_perm: array_ptr::PointsTo<C::E, NR_ENTRIES>,
     pub ghost level: PagingLevel,
     pub ghost tree_level: int,
@@ -258,8 +258,9 @@ impl<C: PageTableConfig> Inv for NodeOwner<C> {
 }
 
 impl<C: PageTableConfig> NodeOwner<C> {
-    pub proof fn tracked_borrow_frame_storage(tracked permission: &FramePermission) -> (tracked res:
-        &vstd::cell::pcell_maybe_uninit::PointsTo<MetaSlotStorage>)
+    pub proof fn tracked_borrow_frame_storage(
+        tracked permission: &FracMetadataPerm,
+    ) -> (tracked res: &vstd::cell::pcell_maybe_uninit::PointsTo<MetaSlotStorage>)
         ensures
             *res == permission.resource().storage,
     {

@@ -7,7 +7,7 @@ use crate::specs::{
     arch::*,
     mm::frame::{
         mapping::{frame_to_index, meta_to_index},
-        meta_owners::{FramePermission, PageUsage},
+        meta_owners::{FracMetadataPerm, PageUsage},
         meta_region_owners::MetaRegionOwners,
     },
 };
@@ -35,7 +35,7 @@ impl<'a, M: ?Sized> Frame<M> {
     pub open spec fn frame_permission_wf(
         regions: MetaRegionOwners,
         paddr: Paddr,
-        permission: FramePermission,
+        permission: FracMetadataPerm,
     ) -> bool {
         let idx = frame_to_index(paddr);
         &&& regions.contains(idx)
@@ -206,7 +206,7 @@ impl<M: ?Sized> Frame<M> {
 impl<M: ?Sized> TrackDrop for Frame<M> {
     type State = MetaRegionOwners;
 
-    /// The `FramePermission` stored in the frame is the linear ownership
+    /// The `FracMetadataPerm` stored in the frame is the linear ownership
     /// witness. No second drop token is needed.
     type Obligation = ();
 

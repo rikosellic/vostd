@@ -17,7 +17,7 @@ use crate::mm::kspace::kvirt_area::disable_preempt;
 use crate::specs::mm::{
     frame::{
         mapping::frame_to_index,
-        meta_owners::{FramePermission, MetaSlotStorage},
+        meta_owners::{FracMetadataPerm, MetaSlotStorage},
         meta_region_owners::MetaRegionOwners,
     },
     page_table::{
@@ -202,7 +202,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
 
     /// The metadata fraction transferred together with an item's raw
     /// representation. Untracked mappings carry no fraction.
-    spec fn item_permission(item: Self::Item) -> Option<FramePermission>;
+    spec fn item_permission(item: Self::Item) -> Option<FracMetadataPerm>;
 
     /// Consumes the item and returns the physical address, the paging level,
     /// and the page property.
@@ -211,7 +211,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     /// forgotten after this function is called.
     fn item_into_raw(item: Self::Item, Tracked(regions): Tracked<&mut MetaRegionOwners>) -> (res: (
         (Paddr, PagingLevel, PageProperty),
-        Tracked<Option<FramePermission>>,
+        Tracked<Option<FracMetadataPerm>>,
     ))
         requires
             Self::item_well_formed(item),
@@ -234,7 +234,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         paddr: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        permission: Option<FramePermission>,
+        permission: Option<FracMetadataPerm>,
     ) -> Self::Item;
 
     /// Restores the item from the physical address and the paging level.
@@ -266,7 +266,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         level: PagingLevel,
         prop: PageProperty,
         Tracked(regions): Tracked<&mut MetaRegionOwners>,
-        Tracked(permission): Tracked<Option<FramePermission>>,
+        Tracked(permission): Tracked<Option<FracMetadataPerm>>,
     ) -> (res: Self::Item)
         requires
             valid_frame_paddr(paddr),
@@ -356,7 +356,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         pa: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        permission: Option<FramePermission>,
+        permission: Option<FracMetadataPerm>,
     )
         requires
             valid_frame_paddr(pa),
@@ -371,7 +371,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         pa: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        permission: Option<FramePermission>,
+        permission: Option<FracMetadataPerm>,
     )
         requires
             valid_frame_paddr(pa),
@@ -393,7 +393,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         pa: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        permission: Option<FramePermission>,
+        permission: Option<FracMetadataPerm>,
     )
         requires
             valid_frame_paddr(pa),

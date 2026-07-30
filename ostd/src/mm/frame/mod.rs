@@ -84,7 +84,7 @@ use crate::specs::arch::*;
 use crate::specs::mm::frame::meta_owners::*;
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::frame::{
-    FramePermission,
+    FracMetadataPerm,
     frame_specs::*,
     mapping::{frame_to_index, group_page_meta, index_to_meta, max_meta_slots},
 };
@@ -127,7 +127,7 @@ pub struct Frame<M: ?Sized> {
     pub _marker: PhantomData<M>,
     /// One fractional permission for the currently installed metadata.
     #[cfg(verus_keep_ghost_body)]
-    pub tracked_perm: Tracked<Option<FramePermission>>,
+    pub tracked_perm: Tracked<Option<FracMetadataPerm>>,
 }
 
 #[verifier::external]
@@ -504,7 +504,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     /// PTEs.
     #[verus_spec(res =>
         with
-            Tracked(frame_permission): Tracked<&FramePermission>,
+            Tracked(frame_permission): Tracked<&FracMetadataPerm>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
         requires
             self.inv(),
@@ -558,7 +558,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     #[verus_spec(r =>
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            -> raw_permission: Tracked<FramePermission>,
+            -> raw_permission: Tracked<FracMetadataPerm>,
         requires
             self.wf_with_region(*old(regions)),
             old(regions).slot_owners[self.index()].ref_count.value() != REF_COUNT_UNUSED,
@@ -644,7 +644,7 @@ impl<M> Frame<M> {
     #[verus_spec(r =>
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(frame_permission): Tracked<FramePermission>,
+            Tracked(frame_permission): Tracked<FracMetadataPerm>,
         requires
             Self::from_raw_requires_safety(*old(regions), paddr),
             Self::frame_permission_wf(*old(regions), paddr, frame_permission),
@@ -976,7 +976,7 @@ impl TryFrom<Frame<dyn AnyFrameMeta>> for UFrame {
         // obligation ledgers.
 )]
 pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) -> (permission: Tracked<
-    FramePermission,
+    FracMetadataPerm,
 >) {
     let tracked mut slot_own = regions.slot_owners.tracked_remove(frame_to_index(paddr));
     let tracked perm = regions.slots.tracked_borrow(frame_to_index(paddr));

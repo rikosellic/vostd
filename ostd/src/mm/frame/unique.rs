@@ -9,7 +9,7 @@ use vstd_extra::ownership::*;
 
 use crate::specs::arch::*;
 use crate::specs::mm::frame::{
-    EmptyFramePermission,
+    EmptyFracMetadataPerm,
     mapping::{frame_to_index, group_page_meta, index_to_meta, max_meta_slots, meta_to_index},
     meta_owners::{MetaSlotStorage, MetadataPerms, borrow_meta, borrow_meta_mut},
     meta_region_owners::MetaRegionOwners,
@@ -489,7 +489,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
             Tracked(meta_own): Tracked<M::Owner>,
             Tracked(repr_perm): Tracked<M::ReprPerm>,
             Tracked(metadata_perms): Tracked<MetadataPerms>,
-            Tracked(empty_metadata): Tracked<EmptyFramePermission>,
+            Tracked(empty_metadata): Tracked<EmptyFracMetadataPerm>,
         requires
             valid_frame_paddr(paddr),
             old(regions).inv(),

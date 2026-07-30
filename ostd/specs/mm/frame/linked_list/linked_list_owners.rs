@@ -11,7 +11,7 @@ use vstd_extra::{
 use crate::specs::{
     arch::MAX_NR_PAGES,
     mm::frame::{
-        EmptyFramePermission,
+        EmptyFracMetadataPerm,
         mapping::{max_meta_slots, meta_to_index},
         meta_owners::*,
         meta_region_owners::MetaRegionOwners,
@@ -244,7 +244,7 @@ pub tracked struct LinkedListOwner<M: AnyFrameMeta + Repr<MetaSlotSmall>> {
     /// list.
     pub metadata_perms: Seq<MetadataPerms>,
     /// Empty fractional witnesses paired with `metadata_perms`.
-    pub empty_metadata: Seq<EmptyFramePermission>,
+    pub empty_metadata: Seq<EmptyFracMetadataPerm>,
     pub ghost list_id: u64,
     pub ghost _marker: core::marker::PhantomData<M>,
 }
@@ -968,7 +968,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
             final(owner).list == Seq::<LinkOwner>::empty(),
             final(owner).repr_perms == Seq::<LinkInnerPerms<M>>::empty(),
             final(owner).metadata_perms == Seq::<MetadataPerms>::empty(),
-            final(owner).empty_metadata == Seq::<EmptyFramePermission>::empty(),
+            final(owner).empty_metadata == Seq::<EmptyFracMetadataPerm>::empty(),
             final(owner).inv(),
     {
         unimplemented!()
@@ -983,7 +983,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
             self.list =~= Seq::<LinkOwner>::empty(),
             self.repr_perms =~= Seq::<LinkInnerPerms<M>>::empty(),
             self.metadata_perms =~= Seq::<MetadataPerms>::empty(),
-            self.empty_metadata =~= Seq::<EmptyFramePermission>::empty(),
+            self.empty_metadata =~= Seq::<EmptyFracMetadataPerm>::empty(),
     {
         unimplemented!()
     }
@@ -1128,7 +1128,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorOwner<M> {
         link: LinkOwner,
         repr_perm: LinkInnerPerms<M>,
         metadata_perms: MetadataPerms,
-        empty_metadata: EmptyFramePermission,
+        empty_metadata: EmptyFracMetadataPerm,
         list_id: u64,
     ) -> (Self, LinkOwner)
         recommends
@@ -1173,7 +1173,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorOwner<M> {
         tracked link: &mut LinkOwner,
         tracked repr_perm: LinkInnerPerms<M>,
         tracked metadata_perms: MetadataPerms,
-        tracked empty_metadata: EmptyFramePermission,
+        tracked empty_metadata: EmptyFracMetadataPerm,
         list_id: u64,
     )
         requires
