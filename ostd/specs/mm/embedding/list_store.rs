@@ -847,7 +847,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> ListStore<M> {
         let idx = frame_to_index(frame);
         if valid_frame_paddr(frame) {
             // A safe slot is a managed region key.
-            self.regions.inv_implies_correct_addr(frame);
+            self.regions.contains_valid_frame_paddr(frame);
             assert(self.regions.contains(idx));
             if self.lists[id].list_id != 0 {
                 // The registry for list `id` (forward + reverse) from `inv`.

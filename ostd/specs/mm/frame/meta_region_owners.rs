@@ -176,13 +176,63 @@ impl MetaRegionOwners {
         // instantiating the forall in paddr_range_not_mapped at this paddr.
     }
 
-    pub proof fn inv_implies_correct_addr(self, paddr: usize)
+    pub proof fn contains_valid_frame_paddr(self, paddr: usize)
         requires
             valid_frame_paddr(paddr),
             self.inv(),
         ensures
             self.contains(frame_to_index(paddr)),
     {
+    }
+
+    /// Rertuns the `MetaSlotOwner`, indexed by frame paddr.
+    pub open spec fn slot_owner(self, paddr: Paddr) -> MetaSlotOwner {
+        self.slot_owners[frame_to_index(paddr)]
+    }
+
+    /// Borrows the `'static PointsTo<MetaSlot>`, indexed by frame paddr.
+    pub proof fn tracked_borrow_slot(
+        tracked &self,
+        paddr: Paddr,
+    ) -> tracked &'static simple_pptr::PointsTo<MetaSlot>
+        requires
+            valid_frame_paddr(paddr),
+            self.inv(),
+        returns
+            self.slots[frame_to_index(paddr)],
+    {
+        self.contains_valid_frame_paddr(paddr);
+        *self.slots.tracked_borrow(frame_to_index(paddr))
+    }
+
+    /// Borrows the `MetaSlotOwner`, indexed by frame paddr.
+    pub proof fn tracked_borrow_slot_owner(tracked &self, paddr: Paddr) -> (tracked ret:
+        &MetaSlotOwner)
+        requires
+            valid_frame_paddr(paddr),
+            self.inv(),
+        returns
+            self.slot_owners[frame_to_index(paddr)],
+    {
+        self.contains_valid_frame_paddr(paddr);
+        self.slot_owners.tracked_borrow(frame_to_index(paddr))
+    }
+
+    /// Mutably borrows the `MetaSlotOwner`, indexed by frame paddr.
+    pub proof fn tracked_borrow_mut_slot_owner(tracked &mut self, paddr: Paddr) -> (tracked ret:
+        &mut MetaSlotOwner)
+        requires
+            valid_frame_paddr(paddr),
+            self.inv(),
+        ensures
+            *ret == old(self).slot_owners[frame_to_index(paddr)],
+            *final(self) == (Self {
+                slot_owners: old(self).slot_owners.insert(frame_to_index(paddr), *final(ret)),
+                ..*old(self)
+            }),
+    {
+        self.contains_valid_frame_paddr(paddr);
+        self.slot_owners.tracked_borrow_mut(frame_to_index(paddr))
     }
 }
 

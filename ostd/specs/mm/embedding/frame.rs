@@ -19,8 +19,8 @@
 //!
 //! - **Generic `M: AnyFrameMeta`**: `Frame::from_unused` takes a
 //!   `metadata: M` parameter and threads it through the slot's typed storage permission.
-//!   We don't model the metadata type — `get_from_unused_spec` itself
-//!   ignores `M` and just commits to `usage is Frame`.
+//!   We don't model the metadata type, so this layer uses
+//!   `get_from_unused_region_spec` and hides the returned fraction.
 //! - **Drop-last-in-place teardown**: when ref_count == 1`, dropping
 //!   the handle invokes the metadata destructor (which may require
 //!   `storage.is_init`, `in_list.value() == 0`). We model this by
@@ -87,11 +87,11 @@ pub axiom fn frame_from_unused_embedded(
         // the `None` branch below).
         !valid_frame_paddr(paddr) ==> res is None,
         // Success branch is conditioned on the slot being unused
-        // (per `get_from_unused_spec` recommends + the body's
+        // (per `get_from_unused_region_spec` recommends + the body's
         // `MetaSlot::get_from_unused` failing otherwise). The reparked
         // location (`slot_perm_reparked_spec`) keeps the slot perm in
         // `regions.slots` (Design B).
-        res is Some ==> MetaSlot::get_from_unused_spec(
+        res is Some ==> MetaSlot::get_from_unused_region_spec(
             paddr,
             false,
             *old(regions),
@@ -283,7 +283,7 @@ pub(super) proof fn from_unused_step(
         final(regions).inv(),
         !valid_frame_paddr(paddr) ==> res is None,
         res matches Some(e) ==> e.paddr == paddr,
-        res is Some ==> MetaSlot::get_from_unused_spec(
+        res is Some ==> MetaSlot::get_from_unused_region_spec(
             paddr,
             false,
             *old(regions),

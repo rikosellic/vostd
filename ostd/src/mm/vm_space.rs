@@ -1797,7 +1797,7 @@ unsafe impl PageTableConfig for UserPtConfig {
         assert(meta_to_frame(item.frame.ptr.addr()) == pa);
         assert(meta_to_index(item.frame.ptr.addr()) == frame_to_index(pa));
         let idx = frame_to_index(pa);
-        regions.inv_implies_correct_addr(pa);
+        regions.contains_valid_frame_paddr(pa);
         assert(item.frame.index() == idx);
         assert(regions.slots[idx].pptr() == item.frame.ptr);
         assert(item.frame.tracked_perm@ == Self::item_permission(item));

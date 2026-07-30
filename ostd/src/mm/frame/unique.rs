@@ -89,14 +89,18 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
     )]
     pub fn from_unused(paddr: Paddr, metadata: M) -> Result<Self, GetFrameError> {
         let tracked mut repr_perm = repr_perm_in;
-        #[verus_spec(with Tracked(regions), Tracked(&mut repr_perm))]
+        #[verus_spec(with
+            Tracked(regions),
+            Tracked(&mut repr_perm) => Tracked(metadata_permission)
+        )]
         let from_unused = MetaSlot::get_from_unused(paddr, metadata, true);
 
         if let Err(err) = from_unused {
             proof_with!(|= Tracked(None));
             Err(err)
         } else {
-            let (ptr, Tracked(metadata_permission)) = from_unused.unwrap();
+            let ptr = from_unused.unwrap();
+            let tracked metadata_permission = metadata_permission.tracked_unwrap();
             let tracked (metadata_perms, empty_metadata) = metadata_permission.take_resource();
 
             proof_decl! {
@@ -627,7 +631,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
         proof {
             broadcast use group_page_meta;
 
-            regions.inv_implies_correct_addr(meta_to_frame(unique.ptr.addr()));
+            regions.contains_valid_frame_paddr(meta_to_frame(unique.ptr.addr()));
             assert(idx == owner.slot_index);
             assert(regions.slots[idx].addr() == unique.ptr.addr());
             assert(regions.slots[idx].pptr() == unique.ptr);
@@ -699,7 +703,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         proof {
             broadcast use group_page_meta;
 
-            regions.inv_implies_correct_addr(meta_to_frame(frame.ptr.addr()));
+            regions.contains_valid_frame_paddr(meta_to_frame(frame.ptr.addr()));
         }
         let tracked mut slot_own = regions.slot_owners.tracked_borrow_mut(idx);
         let tracked slot_perm = regions.slots.tracked_borrow(idx);

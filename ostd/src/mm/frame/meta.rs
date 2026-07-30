@@ -383,41 +383,28 @@ impl MetaSlot {
     #[verus_spec(res =>
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(repr_perm): Tracked<&mut M::ReprPerm>
+            Tracked(repr_perm): Tracked<&mut M::ReprPerm>,
+            -> perm: Tracked<Option<FracMetadataPerm>>
         requires
             old(regions).inv(),
         ensures
-            res is Err ==> *final(regions) == *old(regions),
+            res is Err ==> {
+                &&& *final(regions) == *old(regions)
+                &&& perm@ is None
+            },
             res matches Ok(res) ==> {
-                &&& res.0.addr() == frame_to_meta(paddr)
+                &&& res.addr() == frame_to_meta(paddr)
                 &&& final(regions).inv()
+                &&& perm@ is Some
                 &&& Self::get_from_unused_spec(
                     paddr,
+                    metadata,
                     as_unique_ptr,
                     *old(regions),
                     *final(regions),
-                )
-                &&& res.1@.frac() == if as_unique_ptr {
-                    REF_COUNT_MAX as int
-                } else {
-                    1int
-                }
-                &&& res.1@.id()
-                    == final(regions).slot_owners[frame_to_index(paddr)].metadata_perm.id()
-                &&& res.1@.resource().storage_perm.id()
-                    == final(regions).slots[frame_to_index(paddr)].value().storage.id()
-                &&& res.1@.resource().storage_perm.is_init()
-                &&& res.1@.resource().vtable_ptr_perm.pptr()
-                    == final(regions).slots[frame_to_index(paddr)].value().vtable_ptr
-                &&& res.1@.resource().vtable_ptr_perm.is_init()
-                &&& <M as Repr<MetaSlotStorage>>::wf(
-                    res.1@.resource().storage_perm.value(),
                     *final(repr_perm),
+                    perm@->0,
                 )
-                &&& M::from_repr_spec(
-                    res.1@.resource().storage_perm.value(),
-                    *final(repr_perm),
-                ) == metadata
             },
             res is Ok ==> valid_frame_paddr(paddr),
     )]
@@ -425,24 +412,29 @@ impl MetaSlot {
         paddr: Paddr,
         metadata: M,
         as_unique_ptr: bool,
-    ) -> Result<(PPtr<Self>, Tracked<FracMetadataPerm>), GetFrameError> {
+    ) -> Result<PPtr<Self>, GetFrameError> {
         proof_decl! {
-            let ghost idx = frame_to_index(paddr);
-            if valid_frame_paddr(paddr) {
-                regions.inv_implies_correct_addr(paddr);
-            }
-
             let tracked slot_perm = if valid_frame_paddr(paddr) {
-                Some(*regions.slots.tracked_borrow(idx))
+                Some(regions.tracked_borrow_slot(paddr))
             } else {
                 None
             };
+            if valid_frame_paddr(paddr) {
+                regions.contains_valid_frame_paddr(paddr);
+            }
         }
 
-        let slot = #[verus_spec(with Tracked(slot_perm))]
-        get_slot(paddr)?;
+        // let slot = get_slot(paddr)?;
+        let slot = match #[verus_spec(with Tracked(slot_perm))]
+        get_slot(paddr) {
+            Ok(slot) => slot,
+            Err(err) => {
+                return #[verus_spec(with |= Tracked(None))]
+                Err(err);
+            },
+        };
 
-        let tracked slot_own = regions.slot_owners.tracked_borrow_mut(idx);
+        let tracked slot_own = regions.tracked_borrow_mut_slot_owner(paddr);
         proof {
             axiom_mmio_usage_iff_mmio_paddr(*slot_own);
         }
@@ -464,6 +456,7 @@ impl MetaSlot {
 
         if let Err(err) = last_ref_cnt {
             proof {
+                let ghost idx = frame_to_index(paddr);
                 // CAS failure leaves ref_count` unchanged (value + id), so the
                 // re-parked slot is exactly the original — region state intact.
                 vstd_extra::auxiliary::axiom_permission_u64_ext_eq(
@@ -472,7 +465,8 @@ impl MetaSlot {
                 );
             }
 
-            return Err(err);
+            return #[verus_spec(with |= Tracked(None))]
+            Err(err);
         }
         // SAFETY: The slot now has a reference count of `0`, other threads will
         // not access the metadata slot so it is safe to have a mutable reference.
@@ -499,13 +493,15 @@ impl MetaSlot {
             // address, so `Relaxed` is fine here.
             slot.ref_count.store(Tracked(&mut slot_own.ref_count_perm), REF_COUNT_UNIQUE);
             let tracked permission = slot_own.metadata_perm.split(REF_COUNT_MAX as int);
-            Ok((PPtr::from_addr(frame_to_meta(paddr)), Tracked(permission)))
+            proof_with!(|= Tracked(Some(permission)));
+            Ok(PPtr::from_addr(frame_to_meta(paddr)))
         } else {
             // `Release` is used to ensure that the metadata initialization
             // won't be reordered after this memory store.
             slot.ref_count.store(Tracked(&mut slot_own.ref_count_perm), 1);
             let tracked permission = slot_own.metadata_perm.split_one();
-            Ok((PPtr::from_addr(frame_to_meta(paddr)), Tracked(permission)))
+            proof_with!(|= Tracked(Some(permission)));
+            Ok(PPtr::from_addr(frame_to_meta(paddr)))
         }
     }
 
@@ -549,7 +545,7 @@ impl MetaSlot {
         proof_decl! {
             let ghost idx = frame_to_index(paddr);
             if valid_frame_paddr(paddr) {
-                regions.inv_implies_correct_addr(paddr);
+                regions.contains_valid_frame_paddr(paddr);
             }
             let tracked slot_perm = if valid_frame_paddr(paddr) {
                 Some(*regions.slots.tracked_borrow(idx))
