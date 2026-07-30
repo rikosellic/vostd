@@ -258,12 +258,12 @@ pub axiom fn cursor_query_embedded<'rcu>(
             &&& final(regions).slot_owners[frame_to_index(paddr)].in_list == old(
                 regions,
             ).slot_owners[frame_to_index(paddr)].in_list
-            &&& final(regions).slot_owners[frame_to_index(paddr)].storage() == old(
+            &&& final(regions).slot_owners[frame_to_index(paddr)].storage_perm() == old(
                 regions,
-            ).slot_owners[frame_to_index(paddr)].storage()
-            &&& final(regions).slot_owners[frame_to_index(paddr)].vtable_ptr() == old(
+            ).slot_owners[frame_to_index(paddr)].storage_perm()
+            &&& final(regions).slot_owners[frame_to_index(paddr)].vtable_ptr_perm() == old(
                 regions,
-            ).slot_owners[frame_to_index(paddr)].vtable_ptr()
+            ).slot_owners[frame_to_index(paddr)].vtable_ptr_perm()
         },
         forall|c: CursorOwner<'rcu, UserPtConfig>|
             #![auto]
@@ -411,9 +411,9 @@ pub axiom fn cursor_mut_map_embedded<'rcu>(
         final(regions).slot_owners[frame_to_index(paddr)].usage == old(
             regions,
         ).slot_owners[frame_to_index(paddr)].usage,
-        final(regions).slot_owners[frame_to_index(paddr)].storage() == old(
+        final(regions).slot_owners[frame_to_index(paddr)].storage_perm() == old(
             regions,
-        ).slot_owners[frame_to_index(paddr)].storage(),
+        ).slot_owners[frame_to_index(paddr)].storage_perm(),
         // Slots that stay UNUSED are fully preserved.
         forall|i: int|
             #![trigger final(regions).slot_owners[i]]
@@ -483,18 +483,18 @@ pub axiom fn cursor_mut_unmap_embedded<'rcu>(
                 ).slot_owners[i].slot_vaddr
                 &&& final(regions).slot_owners[i].usage == old(regions).slot_owners[i].usage
                 &&& final(regions).slot_owners[i].in_list == old(regions).slot_owners[i].in_list
-                &&& final(regions).slot_owners[i].vtable_ptr() == old(
+                &&& final(regions).slot_owners[i].vtable_ptr_perm() == old(
                     regions,
-                ).slot_owners[i].vtable_ptr()
+                ).slot_owners[i].vtable_ptr_perm()
                 // `rc` doesn't bump to UNIQUE.
                 &&& old(regions).slot_owners[i].ref_count.value() != REF_COUNT_UNIQUE
                     ==> final(regions).slot_owners[i].ref_count.value()
                     != REF_COUNT_UNIQUE
                 // Storage preserved at slots that end non-UNUSED.
                 &&& final(regions).slot_owners[i].ref_count.value() != REF_COUNT_UNUSED
-                    ==> final(regions).slot_owners[i].storage() == old(
+                    ==> final(regions).slot_owners[i].storage_perm() == old(
                     regions,
-                ).slot_owners[i].storage()
+                ).slot_owners[i].storage_perm()
             },
         // Unparked (page-table-node) slots are untouched: a slot whose
         // perm is not parked in `regions.slots` is a PT root, an ancestor
@@ -737,9 +737,9 @@ pub(super) proof fn cursor_query_step<'rcu>(
             &&& final(regions).slot_owners[frame_to_index(paddr)].in_list == old(
                 regions,
             ).slot_owners[frame_to_index(paddr)].in_list
-            &&& final(regions).slot_owners[frame_to_index(paddr)].storage() == old(
+            &&& final(regions).slot_owners[frame_to_index(paddr)].storage_perm() == old(
                 regions,
-            ).slot_owners[frame_to_index(paddr)].storage()
+            ).slot_owners[frame_to_index(paddr)].storage_perm()
         },
         forall|c: CursorOwner<'rcu, UserPtConfig>|
             #![auto]
@@ -873,15 +873,15 @@ pub(super) proof fn cursor_mut_regions_step<'rcu>(
                 ).slot_owners[i].slot_vaddr
                 &&& final(regions).slot_owners[i].usage == old(regions).slot_owners[i].usage
                 &&& final(regions).slot_owners[i].in_list == old(regions).slot_owners[i].in_list
-                &&& final(regions).slot_owners[i].vtable_ptr() == old(
+                &&& final(regions).slot_owners[i].vtable_ptr_perm() == old(
                     regions,
-                ).slot_owners[i].vtable_ptr()
+                ).slot_owners[i].vtable_ptr_perm()
                 &&& old(regions).slot_owners[i].ref_count.value() != REF_COUNT_UNIQUE
                     ==> final(regions).slot_owners[i].ref_count.value() != REF_COUNT_UNIQUE
                 &&& final(regions).slot_owners[i].ref_count.value() != REF_COUNT_UNUSED
-                    ==> final(regions).slot_owners[i].storage() == old(
+                    ==> final(regions).slot_owners[i].storage_perm() == old(
                     regions,
-                ).slot_owners[i].storage()
+                ).slot_owners[i].storage_perm()
             },
         // Unparked (page-table-node) slots untouched (see
         // `cursor_mut_unmap_embedded`); preserves the coverage exception.
@@ -973,9 +973,9 @@ pub(super) proof fn map_step<'rcu>(
         final(regions).slot_owners[frame_to_index(paddr)].usage == old(
             regions,
         ).slot_owners[frame_to_index(paddr)].usage,
-        final(regions).slot_owners[frame_to_index(paddr)].storage() == old(
+        final(regions).slot_owners[frame_to_index(paddr)].storage_perm() == old(
             regions,
-        ).slot_owners[frame_to_index(paddr)].storage(),
+        ).slot_owners[frame_to_index(paddr)].storage_perm(),
         forall|i: int|
             #![trigger final(regions).slot_owners[i]]
             final(regions).slot_owners[i].ref_count.value() == REF_COUNT_UNUSED

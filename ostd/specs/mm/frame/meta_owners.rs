@@ -266,21 +266,21 @@ impl MetaSlotOwner {
         self.metadata@
     }
 
-    pub open spec fn storage(self) -> pcell_maybe_uninit::PointsTo<MetaSlotStorage>
+    pub open spec fn storage_perm(self) -> pcell_maybe_uninit::PointsTo<MetaSlotStorage>
         recommends
             self.metadata.not_empty(),
     {
         self.metadata_perms().storage
     }
 
-    pub open spec fn vtable_ptr(self) -> vstd::simple_pptr::PointsTo<usize>
+    pub open spec fn vtable_ptr_perm(self) -> vstd::simple_pptr::PointsTo<usize>
         recommends
             self.metadata.not_empty(),
     {
         self.metadata_perms().vtable_ptr
     }
 
-    pub proof fn tracked_borrow_metadata(tracked &self) -> (tracked res: &MetadataPerms)
+    pub proof fn tracked_borrow_metadata_perms(tracked &self) -> (tracked res: &MetadataPerms)
         requires
             self.metadata.not_empty(),
         ensures
@@ -289,29 +289,29 @@ impl MetaSlotOwner {
         self.metadata.tracked_borrow()
     }
 
-    pub proof fn tracked_borrow_storage(tracked &self) -> (tracked res:
+    pub proof fn tracked_borrow_storage_perm(tracked &self) -> (tracked res:
         &pcell_maybe_uninit::PointsTo<MetaSlotStorage>)
         requires
             self.metadata.not_empty(),
         ensures
-            *res == self.storage(),
+            *res == self.storage_perm(),
     {
         &self.metadata.tracked_borrow().storage
     }
 
-    pub proof fn tracked_borrow_vtable_ptr(tracked &self) -> (tracked res:
+    pub proof fn tracked_borrow_vtable_ptr_perm(tracked &self) -> (tracked res:
         &vstd::simple_pptr::PointsTo<usize>)
         requires
             self.metadata.not_empty(),
         ensures
-            *res == self.vtable_ptr(),
+            *res == self.vtable_ptr_perm(),
     {
         &self.metadata.tracked_borrow().vtable_ptr
     }
 
     /// Extracts the complete metadata permission for a unique owner. The
     /// central pool remains empty but retains its identity.
-    pub proof fn tracked_take_full_metadata(tracked &mut self) -> (tracked res: (
+    pub proof fn tracked_take_full_metadata_perms(tracked &mut self) -> (tracked res: (
         MetadataPerms,
         EmptyFracMetadataPerm,
     ))
@@ -334,7 +334,7 @@ impl MetaSlotOwner {
 
     /// Returns the metadata permission held by a unique owner to the central
     /// pool.
-    pub proof fn tracked_restore_full_metadata(
+    pub proof fn tracked_restore_full_metadata_perms(
         tracked &mut self,
         tracked metadata: MetadataPerms,
         tracked empty: EmptyFracMetadataPerm,
@@ -439,8 +439,8 @@ impl Inv for MetaSlotOwner {
         // `usage == MMIO`.
         &&& self.ref_count.value() == REF_COUNT_UNUSED ==> {
             &&& self.metadata.is_full()
-            &&& self.storage().is_uninit()
-            &&& self.vtable_ptr().is_uninit()
+            &&& self.storage_perm().is_uninit()
+            &&& self.vtable_ptr_perm().is_uninit()
             &&& self.in_list.value() == 0
             &&& (self.usage != PageUsage::MMIO ==> self.paths_in_pt.is_empty())
         }
@@ -465,8 +465,8 @@ impl Inv for MetaSlotOwner {
         &&& 0 < self.ref_count.value() <= REF_COUNT_MAX ==> {
             &&& self.metadata.frac() + self.ref_count.value() as int == REF_COUNT_MAX
             &&& self.metadata.not_empty() ==> {
-                &&& self.vtable_ptr().is_init()
-                &&& self.storage().is_init()
+                &&& self.vtable_ptr_perm().is_init()
+                &&& self.storage_perm().is_init()
             }
             &&& self.in_list.value() == 0
         }
@@ -509,13 +509,13 @@ impl View for MetaSlotOwner {
 
     open spec fn view(&self) -> Self::V {
         let storage = if self.metadata.not_empty() {
-            self.storage().mem_contents()
+            self.storage_perm().mem_contents()
         } else {
             arbitrary()
         };
         let ref_count = self.ref_count.value();
         let vtable_ptr = if self.metadata.not_empty() {
-            self.vtable_ptr().mem_contents()
+            self.vtable_ptr_perm().mem_contents()
         } else {
             arbitrary()
         };
@@ -545,8 +545,8 @@ impl OwnerOf for MetaSlot {
         &&& self.ref_count.id() == owner.ref_count.id()
         &&& self.in_list.id() == owner.in_list.id()
         &&& owner.metadata.not_empty() ==> {
-            &&& self.storage.id() == owner.storage().id()
-            &&& self.vtable_ptr == owner.vtable_ptr().pptr()
+            &&& self.storage.id() == owner.storage_perm().id()
+            &&& self.vtable_ptr == owner.vtable_ptr_perm().pptr()
         }
     }
 }

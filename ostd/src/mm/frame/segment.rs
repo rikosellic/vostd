@@ -1352,7 +1352,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
                 0 <= i < crate::specs::mm::frame::segment::seg_nframes(self.range()) ==> {
                     let idx = frame_to_index((self.start_paddr() + i * PAGE_SIZE) as usize);
                     old(regions).slot_owners[idx].ref_count.value() == 1 ==> {
-                        &&& old(regions).slot_owners[idx].storage().is_init()
+                        &&& old(regions).slot_owners[idx].storage_perm().is_init()
                         &&& old(regions).slot_owners[idx].in_list.value() == 0
                     }
                 },
@@ -1369,7 +1369,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
         assert forall|i: int| #![trigger frame_idx_at(self.range.start, i)] 0 <= i < n implies {
             let idx = frame_idx_at(self.range.start, i);
             old(regions).slot_owners[idx].ref_count.value() == 1 ==> {
-                &&& old(regions).slot_owners[idx].storage().is_init()
+                &&& old(regions).slot_owners[idx].storage_perm().is_init()
                 &&& old(regions).slot_owners[idx].in_list.value() == 0
             }
         } by {};
@@ -1412,7 +1412,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
                     0 <= i < n ==> {
                         let idx = frame_to_index((self.range.start + i * PAGE_SIZE) as usize);
                         old(regions).slot_owners[idx].ref_count.value() == 1 ==> {
-                            &&& old(regions).slot_owners[idx].storage().is_init()
+                            &&& old(regions).slot_owners[idx].storage_perm().is_init()
                             &&& old(regions).slot_owners[idx].in_list.value() == 0
                         }
                     },

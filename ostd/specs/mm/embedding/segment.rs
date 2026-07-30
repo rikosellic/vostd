@@ -111,7 +111,7 @@ pub axiom fn segment_from_unused_embedded(
                     &&& so.ref_count.value() == 1
                     &&& so.paths_in_pt.is_empty()
                     &&& so.in_list.value() == 0
-                    &&& so.storage().is_init()
+                    &&& so.storage_perm().is_init()
                 },
         // Slots OUTSIDE the range are fully preserved.
         res is Some ==> forall|i: int|
@@ -278,8 +278,8 @@ pub proof fn segment_next_embedded(
             &&& so_new.slot_vaddr == so_old.slot_vaddr
             &&& so_new.paths_in_pt == so_old.paths_in_pt
             &&& so_new.in_list == so_old.in_list
-            &&& so_new.storage() == so_old.storage()
-            &&& so_new.vtable_ptr() == so_old.vtable_ptr()
+            &&& so_new.storage_perm() == so_old.storage_perm()
+            &&& so_new.vtable_ptr_perm() == so_old.vtable_ptr_perm()
         },
         // All other slots fully preserved.
         forall|i: int| #![trigger final(regions).slot_owners[i]]
@@ -454,8 +454,8 @@ pub axiom fn segment_clone_embedded(
                     &&& so_new.slot_vaddr == so_old.slot_vaddr
                     &&& so_new.paths_in_pt == so_old.paths_in_pt
                     &&& so_new.in_list == so_old.in_list
-                    &&& so_new.storage() == so_old.storage()
-                    &&& so_new.vtable_ptr() == so_old.vtable_ptr()
+                    &&& so_new.storage_perm() == so_old.storage_perm()
+                    &&& so_new.vtable_ptr_perm() == so_old.vtable_ptr_perm()
                 },
         // Slots OUTSIDE the range are fully preserved.
         forall|i: int|

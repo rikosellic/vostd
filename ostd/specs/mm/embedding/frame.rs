@@ -144,7 +144,7 @@ pub axiom fn frame_from_in_use_embedded(
             let so = final(regions).slot_owners[frame_to_index(paddr)];
             &&& so.ref_count.value() != REF_COUNT_UNUSED
             &&& so.ref_count.value() != REF_COUNT_UNIQUE
-            &&& so.storage().is_init()
+            &&& so.storage_perm().is_init()
             // Op::FrameFromInUse models `Frame::<dyn AnyFrameMeta>::
             // from_in_use` for data frames; success implies the slot
             // is Frame-usage. This matches `VmStore::structural_inv`'s
@@ -191,7 +191,7 @@ pub axiom fn frame_drop_embedded(tracked regions: &mut MetaRegionOwners, paddr: 
         old(regions).slot_owners[frame_to_index(paddr)].ref_count.value() != REF_COUNT_UNUSED,
         old(regions).slot_owners[frame_to_index(paddr)].ref_count.value() <= REF_COUNT_MAX,
         old(regions).slot_owners[frame_to_index(paddr)].ref_count.value() == 1 ==> {
-            &&& old(regions).slot_owners[frame_to_index(paddr)].storage().is_init()
+            &&& old(regions).slot_owners[frame_to_index(paddr)].storage_perm().is_init()
             &&& old(regions).slot_owners[frame_to_index(paddr)].in_list.value()
                 == 0
             // Mirrors the FUTURE-plan strengthening of exec
@@ -259,9 +259,9 @@ pub axiom fn frame_drop_embedded(tracked regions: &mut MetaRegionOwners, paddr: 
         // storage). Needed so the embedding accounting clause's
         // `storage.is_init` carries across non-teardown drops.
         old(regions).slot_owners[frame_to_index(paddr)].ref_count.value() > 1
-            ==> final(regions).slot_owners[frame_to_index(paddr)].storage() == old(
+            ==> final(regions).slot_owners[frame_to_index(paddr)].storage_perm() == old(
             regions,
-        ).slot_owners[frame_to_index(paddr)].storage(),
+        ).slot_owners[frame_to_index(paddr)].storage_perm(),
         // ---- embedding inv chaining ----
         forall|c: CursorOwner<'_, UserPtConfig>|
             #![auto]
@@ -329,7 +329,7 @@ pub(super) proof fn from_in_use_step(
             let so = final(regions).slot_owners[frame_to_index(paddr)];
             &&& so.ref_count.value() != REF_COUNT_UNUSED
             &&& so.ref_count.value() != REF_COUNT_UNIQUE
-            &&& so.storage().is_init()
+            &&& so.storage_perm().is_init()
             &&& so.usage is Frame
         },
         final(regions).slots == old(regions).slots,
@@ -356,7 +356,7 @@ pub open spec fn drop_pre(regions: MetaRegionOwners, paddr: Paddr) -> bool {
     &&& so.ref_count.value() != REF_COUNT_UNUSED
     &&& so.ref_count.value() <= REF_COUNT_MAX
     &&& so.ref_count.value() == 1 ==> {
-        &&& so.storage().is_init()
+        &&& so.storage_perm().is_init()
         &&& so.in_list.value() == 0
         &&& so.paths_in_pt.is_empty()
     }
@@ -407,9 +407,9 @@ pub(super) proof fn drop_step(tracked regions: &mut MetaRegionOwners, tracked en
         ).slot_owners[frame_to_index(entry.paddr)].ref_count.value() - 1) as u64,
         // Storage preservation in the decrement branch (rc>1).
         old(regions).slot_owners[frame_to_index(entry.paddr)].ref_count.value() > 1
-            ==> final(regions).slot_owners[frame_to_index(entry.paddr)].storage() == old(
+            ==> final(regions).slot_owners[frame_to_index(entry.paddr)].storage_perm() == old(
             regions,
-        ).slot_owners[frame_to_index(entry.paddr)].storage(),
+        ).slot_owners[frame_to_index(entry.paddr)].storage_perm(),
         forall|c: CursorOwner<'_, UserPtConfig>|
             #![auto]
             c.metaregion_sound(*old(regions)) ==> c.metaregion_sound(*final(regions)),

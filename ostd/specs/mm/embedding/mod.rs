@@ -2015,7 +2015,7 @@ proof fn step_map<'rcu>(
     assert(pre_rc_target == handle_count(old_frames, target_idx) + pre_paths_target
         + pre_cover_target);
     assert(old_regions.slot_owners[target_idx].metadata.not_empty()
-        ==> old_regions.slot_owners[target_idx].storage().is_init());
+        ==> old_regions.slot_owners[target_idx].storage_perm().is_init());
     let tracked mut entry = s.extract_cursor(c);
     // Consume the FrameEntry: the UFrame's handle ref-count
     // contribution moves to the new PTE; the embedding's `H` at
@@ -2838,8 +2838,8 @@ proof fn step_frame_drop<'rcu>(tracked s: &mut VmStore<'rcu>, fid: FrameId)
                 // drop_step rc>1 branch: post rc = pre - 1, storage preserved.
                 assert(post_rc == (pre_rc - 1) as u64);
                 assert(post_rc as nat == post_h + post_p);
-                assert(s.regions.slot_owners[idx].storage()
-                    == old_regions.slot_owners[idx].storage());
+                assert(s.regions.slot_owners[idx].storage_perm()
+                    == old_regions.slot_owners[idx].storage_perm());
             } else {
                 // pre_rc == 1: pre eqn 1 == pre_h + pre_p with
                 // pre_h >= 1 forces pre_h = 1, pre_p = 0.
@@ -3260,7 +3260,7 @@ proof fn step_segment_drop<'rcu>(tracked s: &mut VmStore<'rcu>, sid: SegmentId)
             // ⟹ MetaSlotOwner::inv SHARED branch ⟹ storage.is_init.
             assert(s.regions.contains(idx));
             assert(s.regions.slot_owners[idx].metadata.not_empty()
-                ==> s.regions.slot_owners[idx].storage().is_init());
+                ==> s.regions.slot_owners[idx].storage_perm().is_init());
         } else {
             assert(s.regions.slot_owners[idx] == old_regions.slot_owners[idx]);
             assert(!(entry.range.start <= paddr < entry.range.end));

@@ -59,8 +59,8 @@ impl MetaSlot {
             (REF_COUNT_MAX - 1) as int
         })
         &&& !as_unique ==> {
-            &&& owner.storage().is_init()
-            &&& owner.vtable_ptr().is_init()
+            &&& owner.storage_perm().is_init()
+            &&& owner.vtable_ptr_perm().is_init()
         }
     }
 
@@ -186,7 +186,7 @@ impl MetaSlot {
     pub open spec fn drop_last_in_place_safety_cond(owner: MetaSlotOwner) -> bool {
         &&& (owner.ref_count.value() == 0 || owner.ref_count.value() == REF_COUNT_UNIQUE)
         &&& owner.metadata.is_full()
-        &&& owner.storage().is_init()
+        &&& owner.storage_perm().is_init()
         &&& owner.in_list.value()
             == 0
         // The slot is torn down to `REF_COUNT_UNUSED`; the strengthened

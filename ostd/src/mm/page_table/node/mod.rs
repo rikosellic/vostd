@@ -1299,7 +1299,7 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
                 &&& so.ref_count.value() != REF_COUNT_UNUSED
                 &&& so.ref_count.value() <= REF_COUNT_MAX
                 &&& so.ref_count.value() == 1 ==> {
-                    &&& so.storage().is_init()
+                    &&& so.storage_perm().is_init()
                     &&& so.in_list.value() == 0
                     &&& so.paths_in_pt.is_empty()
                 }

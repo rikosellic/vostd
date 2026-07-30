@@ -477,7 +477,7 @@ impl MetaSlot {
         // SAFETY: The slot now has a reference count of `0`, other threads will
         // not access the metadata slot so it is safe to have a mutable reference.
 
-        let tracked (mut metadata_perms, empty_metadata) = slot_own.tracked_take_full_metadata();
+        let tracked (mut metadata_perms, empty_metadata) = slot_own.tracked_take_full_metadata_perms();
 
         unsafe {
             #[verus_spec(with
@@ -491,7 +491,7 @@ impl MetaSlot {
         proof {
             slot_own.usage = PageUsage::Frame;
             axiom_mmio_usage_iff_mmio_paddr(*slot_own);
-            slot_own.tracked_restore_full_metadata(metadata_perms, empty_metadata);
+            slot_own.tracked_restore_full_metadata_perms(metadata_perms, empty_metadata);
         }
 
         if as_unique_ptr {
@@ -797,18 +797,18 @@ impl MetaSlot {
         requires
             old(owner).inv(),
             self.ref_count.id() == old(owner).ref_count.id(),
-            self.storage.id() == old(owner).storage().id(),
-            self.vtable_ptr == old(owner).vtable_ptr().pptr(),
+            self.storage.id() == old(owner).storage_perm().id(),
+            self.vtable_ptr == old(owner).vtable_ptr_perm().pptr(),
             Self::drop_last_in_place_safety_cond(*old(owner)),
         ensures
             final(owner).inv(),
             final(owner).ref_count.value() == REF_COUNT_UNUSED,
             final(owner).ref_count.id() == old(owner).ref_count.id(),
             final(owner).metadata.id() == old(owner).metadata.id(),
-            final(owner).storage().id() == old(owner).storage().id(),
-            final(owner).storage().is_uninit(),
-            final(owner).vtable_ptr().is_uninit(),
-            final(owner).vtable_ptr().pptr() == old(owner).vtable_ptr().pptr(),
+            final(owner).storage_perm().id() == old(owner).storage_perm().id(),
+            final(owner).storage_perm().is_uninit(),
+            final(owner).vtable_ptr_perm().is_uninit(),
+            final(owner).vtable_ptr_perm().pptr() == old(owner).vtable_ptr_perm().pptr(),
             final(owner).in_list == old(owner).in_list,
             final(owner).slot_vaddr == old(owner).slot_vaddr,
             final(owner).usage == old(owner).usage,
@@ -817,14 +817,14 @@ impl MetaSlot {
     pub(super) unsafe fn drop_last_in_place(&self) {
         // This should be guaranteed as a safety requirement.
         //        debug_assert_eq!(self.ref_count.load(Tracked(&*rc_perm)), 0);
-        let tracked (mut metadata_perms, empty_metadata) = owner.tracked_take_full_metadata();
+        let tracked (mut metadata_perms, empty_metadata) = owner.tracked_take_full_metadata_perms();
         // SAFETY: The caller ensures safety.
         unsafe {
             #[verus_spec(with Tracked(owner), Tracked(&mut metadata_perms))]
             self.drop_meta_in_place()
         };
         proof {
-            owner.tracked_restore_full_metadata(metadata_perms, empty_metadata);
+            owner.tracked_restore_full_metadata_perms(metadata_perms, empty_metadata);
         }
 
         // `Release` pairs with the `Acquire` in `Frame::from_unused` and ensures
