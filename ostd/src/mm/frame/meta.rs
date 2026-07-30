@@ -457,8 +457,6 @@ impl MetaSlot {
         if let Err(err) = last_ref_cnt {
             proof {
                 let ghost idx = frame_to_index(paddr);
-                // CAS failure leaves ref_count` unchanged (value + id), so the
-                // re-parked slot is exactly the original — region state intact.
                 vstd_extra::auxiliary::axiom_permission_u64_ext_eq(
                     regions.slot_owners[idx].ref_count_perm,
                     old(regions).slot_owners[idx].ref_count_perm,
