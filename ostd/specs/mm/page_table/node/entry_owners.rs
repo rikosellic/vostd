@@ -516,9 +516,9 @@ impl<C: PageTableConfig> EntryOwner<C> {
                 let sub_idx = frame_to_index((pa + j * PAGE_SIZE) as usize);
                 &&& r1.slots.contains_key(sub_idx)
                 &&& self.frame_is_tracked() ==> {
-                    &&& r1.slot_owners[sub_idx].ref_count.value() != REF_COUNT_UNUSED
-                    &&& r1.slot_owners[sub_idx].ref_count.value() > 0
-                    &&& r1.slot_owners[sub_idx].ref_count.value() <= REF_COUNT_MAX
+                    &&& r1.slot_owners[sub_idx].ref_count() != REF_COUNT_UNUSED
+                    &&& r1.slot_owners[sub_idx].ref_count() > 0
+                    &&& r1.slot_owners[sub_idx].ref_count() <= REF_COUNT_MAX
                 }
             } by {
                 let sub_idx = frame_to_index((pa + j * PAGE_SIZE) as usize);
@@ -573,9 +573,9 @@ impl<C: PageTableConfig> EntryOwner<C> {
                     // covered base page. Current configs only permit untracked
                     // huge mappings, so this implication is normally vacuous.
                     &&& self.frame_is_tracked() ==> {
-                        &&& regions.slot_owners[sub_idx].ref_count.value() != REF_COUNT_UNUSED
-                        &&& regions.slot_owners[sub_idx].ref_count.value() > 0
-                        &&& regions.slot_owners[sub_idx].ref_count.value() <= REF_COUNT_MAX
+                        &&& regions.slot_owners[sub_idx].ref_count() != REF_COUNT_UNUSED
+                        &&& regions.slot_owners[sub_idx].ref_count() > 0
+                        &&& regions.slot_owners[sub_idx].ref_count() <= REF_COUNT_MAX
                     }
                 }
         }
@@ -584,8 +584,8 @@ impl<C: PageTableConfig> EntryOwner<C> {
     pub open spec fn metaregion_sound(self, regions: MetaRegionOwners) -> bool {
         if self.is_node() {
             let idx = frame_to_index(self.meta_slot_paddr()->0);
-            &&& regions.slot_owners[idx].ref_count.value() != REF_COUNT_UNUSED
-            &&& 0 < regions.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX
+            &&& regions.slot_owners[idx].ref_count() != REF_COUNT_UNUSED
+            &&& 0 < regions.slot_owners[idx].ref_count() <= REF_COUNT_MAX
             &&& regions.slot_owners[idx].slot_vaddr == self.node().meta_vaddr()
             &&& regions.slots[idx].value().wf(regions.slot_owners[idx])
             &&& regions.slot_owners[idx].paths_in_pt == set![self.path]
@@ -602,14 +602,14 @@ impl<C: PageTableConfig> EntryOwner<C> {
             // `rc > 0`. The slot's `usage == MMIO` is pinned by the paddr's
             // range membership via `axiom_mmio_usage_iff_mmio_paddr`.
             &&& regions.slot_owners[idx].usage !is MMIO ==> {
-                &&& regions.slot_owners[idx].ref_count.value() != REF_COUNT_UNUSED
-                &&& regions.slot_owners[idx].ref_count.value()
+                &&& regions.slot_owners[idx].ref_count() != REF_COUNT_UNUSED
+                &&& regions.slot_owners[idx].ref_count()
                     > 0
                 // A mapped (tracked) frame is SHARED, never the UNIQUE sentinel
                 // (`rc <= MAX < REF_COUNT_UNIQUE`). Lets the UNIQUE-branch
                 // `paths_in_pt`-empty inv clause hold vacuously for mapped
                 // frames whose `paths_in_pt` is non-empty.
-                &&& regions.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX
+                &&& regions.slot_owners[idx].ref_count() <= REF_COUNT_MAX
             }
             &&& regions.slot_owners[idx].paths_in_pt.contains(self.path)
             &&& self.frame_sub_pages_valid(regions)
@@ -636,7 +636,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
             entry.is_node(),
             entry.metaregion_sound(regions),
             regions.slots.contains_key(free_idx),
-            regions.slot_owners[free_idx].ref_count.value() == REF_COUNT_UNUSED,
+            regions.slot_owners[free_idx].ref_count() == REF_COUNT_UNUSED,
         ensures
             frame_to_index(entry.meta_slot_paddr()->0) != free_idx,
     {
@@ -735,9 +735,9 @@ impl<C: PageTableConfig> EntryOwner<C> {
                     0 < j < nr_pages ==> {
                         let sub_idx = #[trigger] frame_to_index((pa + j * PAGE_SIZE) as usize);
                         sub_idx != changed_idx || r1.slot_owners[sub_idx].usage is MMIO || (
-                        r1.slots.contains_key(sub_idx) && r1.slot_owners[sub_idx].ref_count.value()
-                            != REF_COUNT_UNUSED && r1.slot_owners[sub_idx].ref_count.value() > 0
-                            && r1.slot_owners[sub_idx].ref_count.value() <= REF_COUNT_MAX)
+                        r1.slots.contains_key(sub_idx) && r1.slot_owners[sub_idx].ref_count()
+                            != REF_COUNT_UNUSED && r1.slot_owners[sub_idx].ref_count() > 0
+                            && r1.slot_owners[sub_idx].ref_count() <= REF_COUNT_MAX)
                     }
             },
         ensures
@@ -841,9 +841,9 @@ impl<C: PageTableConfig> EntryOwner<C> {
                         let sub_idx = frame_to_index((pa + j * PAGE_SIZE) as usize);
                         &&& r1.slots.contains_key(sub_idx)
                         &&& self.frame_is_tracked() ==> {
-                            &&& r1.slot_owners[sub_idx].ref_count.value() != REF_COUNT_UNUSED
-                            &&& r1.slot_owners[sub_idx].ref_count.value() > 0
-                            &&& r1.slot_owners[sub_idx].ref_count.value() <= REF_COUNT_MAX
+                            &&& r1.slot_owners[sub_idx].ref_count() != REF_COUNT_UNUSED
+                            &&& r1.slot_owners[sub_idx].ref_count() > 0
+                            &&& r1.slot_owners[sub_idx].ref_count() <= REF_COUNT_MAX
                         }
                     } by {
                         let sub_idx = frame_to_index((pa + j * PAGE_SIZE) as usize);
@@ -872,7 +872,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
         assert(set![self.path].contains(other.path));
     }
 
-    /// `metaregion_sound` is preserved when only `ref_count.value()` changes at this entry's slot
+    /// `metaregion_sound` is preserved when only ref_count()` changes at this entry's slot
     /// and `slots` is unchanged.
     pub proof fn metaregion_sound_rc_value_changed(self, r0: MetaRegionOwners, r1: MetaRegionOwners)
         requires
@@ -885,14 +885,15 @@ impl<C: PageTableConfig> EntryOwner<C> {
             ({
                 let idx = frame_to_index(self.meta_slot_paddr()->0);
                 &&& r1.slot_owners.contains_key(idx)
-                &&& r1.slot_owners[idx].ref_count.id() == r0.slot_owners[idx].ref_count.id()
-                &&& r1.slot_owners[idx].ref_count.value() != REF_COUNT_UNUSED
-                &&& r1.slot_owners[idx].ref_count.value()
+                &&& r1.slot_owners[idx].ref_count_perm.id()
+                    == r0.slot_owners[idx].ref_count_perm.id()
+                &&& r1.slot_owners[idx].ref_count() != REF_COUNT_UNUSED
+                &&& r1.slot_owners[idx].ref_count()
                     > 0
                 // Needed to re-establish the node branch's SHARED range (`<= MAX`).
-                &&& r1.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX
-                &&& r1.slot_owners[idx].metadata.id() == r0.slot_owners[idx].metadata.id()
-                &&& r1.slot_owners[idx].in_list == r0.slot_owners[idx].in_list
+                &&& r1.slot_owners[idx].ref_count() <= REF_COUNT_MAX
+                &&& r1.slot_owners[idx].metadata_perm.id() == r0.slot_owners[idx].metadata_perm.id()
+                &&& r1.slot_owners[idx].in_list_perm == r0.slot_owners[idx].in_list_perm
                 &&& r1.slot_owners[idx].slot_vaddr == r0.slot_owners[idx].slot_vaddr
                 &&& r1.slot_owners[idx].paths_in_pt
                     == r0.slot_owners[idx].paths_in_pt
@@ -920,8 +921,8 @@ impl<C: PageTableConfig> EntryOwner<C> {
                 let sub_idx = frame_to_index((pa + j * PAGE_SIZE) as usize);
                 &&& r1.slots.contains_key(sub_idx)
                 &&& self.frame_is_tracked() ==> {
-                    &&& r1.slot_owners[sub_idx].ref_count.value() != REF_COUNT_UNUSED
-                    &&& r1.slot_owners[sub_idx].ref_count.value() > 0
+                    &&& r1.slot_owners[sub_idx].ref_count() != REF_COUNT_UNUSED
+                    &&& r1.slot_owners[sub_idx].ref_count() > 0
                 }
             } by {
                 let sub_idx = frame_to_index((pa + j * PAGE_SIZE) as usize);

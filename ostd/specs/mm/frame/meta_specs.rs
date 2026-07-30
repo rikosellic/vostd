@@ -47,13 +47,13 @@ impl MetaSlot {
     }
 
     pub open spec fn get_from_unused_owner_spec(as_unique: bool, owner: MetaSlotOwner) -> bool {
-        &&& owner.ref_count.value() == (if as_unique {
+        &&& owner.ref_count() == (if as_unique {
             REF_COUNT_UNIQUE as u64
         } else {
             1u64
         })
-        &&& owner.in_list.value() == 0
-        &&& owner.metadata.frac() == (if as_unique {
+        &&& owner.in_list_perm.value() == 0
+        &&& owner.metadata_perm.frac() == (if as_unique {
             0int
         } else {
             (REF_COUNT_MAX - 1) as int
@@ -79,7 +79,7 @@ impl MetaSlot {
         let pre_owner = pre.slot_owners[idx];
         let post_owner = post.slot_owners[idx];
         {
-            &&& pre_owner.ref_count.value() == REF_COUNT_UNUSED
+            &&& pre_owner.ref_count() == REF_COUNT_UNUSED
             &&& MetaSlot::get_from_unused_owner_spec(as_unique, post_owner)
             &&& post_owner.usage is Frame
             &&& post_owner.slot_vaddr == pre_owner.slot_vaddr
@@ -112,7 +112,7 @@ impl MetaSlot {
             &&& post.slot_owners[idx].slot_vaddr == pre.slot_owners[idx].slot_vaddr
             &&& post.slot_owners[idx].paths_in_pt == pre.slot_owners[idx].paths_in_pt
             &&& forall|i: int| i != idx ==> (#[trigger] post.slot_owners[i] == pre.slot_owners[i])
-            &&& pre.slot_owners[idx].ref_count.value() == REF_COUNT_UNUSED
+            &&& pre.slot_owners[idx].ref_count() == REF_COUNT_UNUSED
         }
     }
 
@@ -166,16 +166,18 @@ impl MetaSlot {
             pre.inv(),
     {
         let idx = frame_to_index(paddr);
-        let pre_perms = pre.slot_owners[idx].ref_count.value();
+        let pre_perms = pre.slot_owners[idx].ref_count();
         {
-            &&& post.slot_owners[idx].ref_count.value() == pre_perms + 1
-            &&& post.slot_owners[idx].ref_count.id() == pre.slot_owners[idx].ref_count.id()
-            &&& post.slot_owners[idx].metadata.id() == pre.slot_owners[idx].metadata.id()
-            &&& post.slot_owners[idx].metadata.frac() + 1 == pre.slot_owners[idx].metadata.frac()
-            &&& pre.slot_owners[idx].metadata.frac() > 1 ==> {
-                post.slot_owners[idx].metadata@ == pre.slot_owners[idx].metadata@
+            &&& post.slot_owners[idx].ref_count() == pre_perms + 1
+            &&& post.slot_owners[idx].ref_count_perm.id()
+                == pre.slot_owners[idx].ref_count_perm.id()
+            &&& post.slot_owners[idx].metadata_perm.id() == pre.slot_owners[idx].metadata_perm.id()
+            &&& post.slot_owners[idx].metadata_perm.frac() + 1
+                == pre.slot_owners[idx].metadata_perm.frac()
+            &&& pre.slot_owners[idx].metadata_perm.frac() > 1 ==> {
+                post.slot_owners[idx].metadata_perm@ == pre.slot_owners[idx].metadata_perm@
             }
-            &&& post.slot_owners[idx].in_list == pre.slot_owners[idx].in_list
+            &&& post.slot_owners[idx].in_list_perm == pre.slot_owners[idx].in_list_perm
             &&& post.slot_owners[idx].slot_vaddr == pre.slot_owners[idx].slot_vaddr
             &&& post.slot_owners[idx].usage == pre.slot_owners[idx].usage
             &&& post.slot_owners[idx].paths_in_pt == pre.slot_owners[idx].paths_in_pt
@@ -184,10 +186,10 @@ impl MetaSlot {
     }
 
     pub open spec fn drop_last_in_place_safety_cond(owner: MetaSlotOwner) -> bool {
-        &&& (owner.ref_count.value() == 0 || owner.ref_count.value() == REF_COUNT_UNIQUE)
-        &&& owner.metadata.is_full()
+        &&& (owner.ref_count() == 0 || owner.ref_count() == REF_COUNT_UNIQUE)
+        &&& owner.metadata_perm.is_full()
         &&& owner.storage_perm().is_init()
-        &&& owner.in_list.value()
+        &&& owner.in_list_perm.value()
             == 0
         // The slot is torn down to `REF_COUNT_UNUSED`; the strengthened
         // `MetaSlotOwner::inv` UNUSED branch requires an empty
@@ -198,14 +200,6 @@ impl MetaSlot {
         // threshold).
         &&& owner.paths_in_pt.is_empty()
     }
-
-    pub open spec fn inc_ref_count_spec(&self, pre: MetaSlotModel) -> (MetaSlotModel)
-        recommends
-            pre.inv(),
-            pre.status == MetaSlotStatus::SHARED,
-    {
-        MetaSlotModel { ref_count: (pre.ref_count + 1) as u64, ..pre }
-    }
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
@@ -213,6 +207,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
         Frame::<M> {
             ptr: PPtr::<MetaSlot>(frame_to_meta(paddr), PhantomData),
             _marker: PhantomData,
+            #[cfg(verus_keep_ghost_body)]
             tracked_perm: Tracked(None),
         }
     }

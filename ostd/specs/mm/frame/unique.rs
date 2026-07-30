@@ -115,8 +115,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         &&& owner.inv()
         &&& s.inv()
         &&& owner.global_inv(s)
-        &&& so.ref_count.value() == REF_COUNT_UNIQUE
-        &&& so.in_list.value() == 0
+        &&& so.ref_count() == REF_COUNT_UNIQUE
+        &&& so.in_list_perm.value() == 0
         &&& so.paths_in_pt.is_empty()
     }
 }
@@ -154,15 +154,15 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
         &&& self.meta_wf(regions)
         &&& regions.slots[self.slot_index].addr() == index_to_meta(self.slot_index)
         &&& self.meta_value(regions).wf(self.meta_own)
-        &&& regions.slot_owners[self.slot_index].metadata.is_empty()
-        &&& regions.slot_owners[self.slot_index].metadata.id() == self.empty_metadata->0.id()
-        &&& self.metadata_perms->0.storage.id()
+        &&& regions.slot_owners[self.slot_index].metadata_perm.is_empty()
+        &&& regions.slot_owners[self.slot_index].metadata_perm.id() == self.empty_metadata->0.id()
+        &&& self.metadata_perms->0.storage_perm.id()
             == regions.slots[self.slot_index].value().storage.id()
-        &&& self.metadata_perms->0.vtable_ptr.pptr()
+        &&& self.metadata_perms->0.vtable_ptr_perm.pptr()
             == regions.slots[self.slot_index].value().vtable_ptr
-        &&& self.metadata_perms->0.vtable_ptr.is_init()
+        &&& self.metadata_perms->0.vtable_ptr_perm.is_init()
         &&& regions.slot_owners[self.slot_index].slot_vaddr == index_to_meta(self.slot_index)
-        &&& regions.slot_owners[self.slot_index].ref_count.value()
+        &&& regions.slot_owners[self.slot_index].ref_count()
             == REF_COUNT_UNIQUE
         // Data-frame node-repark discriminator (our change): a unique frame's
         // slot is tracked with `Frame` usage, distinguishing it from page-table

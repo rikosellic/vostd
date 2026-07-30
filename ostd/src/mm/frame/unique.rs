@@ -153,7 +153,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
             self.wf(owner),
             owner.inv(),
             owner.global_inv(*old(regions)),
-            old(regions).slot_owners[self.index()].in_list.value() == 0,
+            old(regions).slot_owners[self.index()].in_list_perm.value() == 0,
             old(regions).inv(),
             <M1 as OwnerOf>::wf(metadata, meta_own_in),
         ensures
@@ -194,7 +194,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         };
 
         proof {
-            assert(metadata_perms.storage.id() == perm_ref.value().storage.id());
+            assert(metadata_perms.storage_perm.id() == perm_ref.value().storage.id());
         }
 
         let slot = self.ptr.borrow(Tracked(perm_ref));
@@ -295,10 +295,10 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
                 == old(regions).slot_owners[old(owner).slot_index].slot_vaddr,
             final(regions).slot_owners[final(owner).slot_index].usage
                 == old(regions).slot_owners[old(owner).slot_index].usage,
-            final(regions).slot_owners[final(owner).slot_index].ref_count
-                == old(regions).slot_owners[old(owner).slot_index].ref_count,
-            final(regions).slot_owners[final(owner).slot_index].in_list
-                == old(regions).slot_owners[old(owner).slot_index].in_list,
+            final(regions).slot_owners[final(owner).slot_index].ref_count_perm
+                == old(regions).slot_owners[old(owner).slot_index].ref_count_perm,
+            final(regions).slot_owners[final(owner).slot_index].in_list_perm
+                == old(regions).slot_owners[old(owner).slot_index].in_list_perm,
             final(regions).slot_owners[final(owner).slot_index].paths_in_pt
                 == old(regions).slot_owners[old(owner).slot_index].paths_in_pt,
             <M as OwnerOf>::wf(final(owner).meta_value(*final(regions)), final(owner).meta_own)
@@ -424,7 +424,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
 
         #[verus_spec(with Tracked(perm_ref))]
         let slot = self.slot();
-        slot.ref_count.store(Tracked(&mut slot_own.ref_count), 0);
+        slot.ref_count.store(Tracked(&mut slot_own.ref_count_perm), 0);
 
         // SAFETY: We are the sole owner and the reference count is 0.
         // The slot is initialized.
@@ -461,7 +461,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
             self.wf(*owner),
             owner.inv(),
             old(regions).inv(),
-            old(regions).slot_owners[self.index()].ref_count.value() != REF_COUNT_UNUSED,
+            old(regions).slot_owners[self.index()].ref_count() != REF_COUNT_UNUSED,
         ensures
             Self::into_raw_ensures(self, *old(regions), *final(regions), r),
             final(regions).inv(),
@@ -493,7 +493,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
             valid_frame_paddr(paddr),
             old(regions).inv(),
             old(regions).contains(frame_to_index(paddr)),
-            old(regions).slot_owners[frame_to_index(paddr)].ref_count.value() == REF_COUNT_UNIQUE,
+            old(regions).slot_owners[frame_to_index(paddr)].ref_count() == REF_COUNT_UNIQUE,
         ensures
             res.0.ptr.addr() == frame_to_meta(paddr),
             res.0.wf(res.1@),
@@ -588,7 +588,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
         // The slot is initialized.
         #[verus_spec(with Tracked(perm_ref))]
         let slot = self.slot();
-        slot.ref_count.store(Tracked(&mut slot_own.ref_count), 0);
+        slot.ref_count.store(Tracked(&mut slot_own.ref_count_perm), 0);
 
         unsafe {
             #[verus_spec(with Tracked(&mut slot_own))]
@@ -641,10 +641,10 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
         proof {
             slot_own.tracked_restore_full_metadata_perms(metadata_perms, empty_metadata);
         }
-        let tracked frame_permission = slot_own.metadata.split_one();
+        let tracked frame_permission = slot_own.metadata_perm.split_one();
         let tracked mut inner_perms = &mut slot_own;
 
-        slot.ref_count.store(Tracked(&mut inner_perms.ref_count), 1);
+        slot.ref_count.store(Tracked(&mut inner_perms.ref_count_perm), 1);
 
         proof {
             regions.slot_owners.tracked_insert(idx, slot_own);
@@ -663,16 +663,16 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
             assert(regions.inv());
             assert(regions.contains(idx));
             assert(regions.slots[idx].pptr() == res.ptr);
-            assert(regions.slot_owners[idx].ref_count.value() == 1);
+            assert(regions.slot_owners[idx].ref_count() == 1);
             assert(res.tracked_perm@ is Some);
             assert(res.tracked_perm@->0.frac() == 1);
-            assert(res.tracked_perm@->0.id() == regions.slot_owners[idx].metadata.id());
-            assert(res.tracked_perm@->0.resource().storage.id()
+            assert(res.tracked_perm@->0.id() == regions.slot_owners[idx].metadata_perm.id());
+            assert(res.tracked_perm@->0.resource().storage_perm.id()
                 == regions.slots[idx].value().storage.id());
-            assert(res.tracked_perm@->0.resource().storage.is_init());
-            assert(res.tracked_perm@->0.resource().vtable_ptr.pptr()
+            assert(res.tracked_perm@->0.resource().storage_perm.is_init());
+            assert(res.tracked_perm@->0.resource().vtable_ptr_perm.pptr()
                 == regions.slots[idx].value().vtable_ptr);
-            assert(res.tracked_perm@->0.resource().vtable_ptr.is_init());
+            assert(res.tracked_perm@->0.resource().vtable_ptr_perm.is_init());
             assert(res.wf_with_region(*regions));
         }
         res
@@ -708,7 +708,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         #[verus_spec(with Tracked(&slot_perm))]
         let slot = frame.slot();
         let res = slot.ref_count.compare_exchange(
-            Tracked(&mut inner_perms.ref_count),
+            Tracked(&mut inner_perms.ref_count_perm),
             1,
             REF_COUNT_UNIQUE,
         );

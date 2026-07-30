@@ -457,9 +457,9 @@ unsafe impl PageTableConfig for KernelPtConfig {
                 assert(regions.slots[idx].pptr() == frame.ptr);
                 assert(frame.inv());
                 assert(regions.contains(idx));
-                assert(regions.slot_owners[idx].ref_count.value() > 0);
-                assert(regions.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX);
-                assert(regions.slot_owners[idx].ref_count.value() != REF_COUNT_UNUSED);
+                assert(regions.slot_owners[idx].ref_count() > 0);
+                assert(regions.slot_owners[idx].ref_count() <= REF_COUNT_MAX);
+                assert(regions.slot_owners[idx].ref_count() != REF_COUNT_UNUSED);
                 assert(frame.tracked_perm@ == Self::item_permission(item));
                 assert(frame.tracked_perm@ is Some);
                 assert(Frame::<MetaSlotStorage>::frame_permission_wf(

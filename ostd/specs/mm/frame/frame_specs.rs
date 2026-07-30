@@ -40,16 +40,16 @@ impl<'a, M: ?Sized> Frame<M> {
         let idx = frame_to_index(paddr);
         &&& regions.contains(idx)
         &&& permission.frac() == 1
-        &&& permission.id() == regions.slot_owners[idx].metadata.id()
-        &&& permission.resource().storage.id() == regions.slots[idx].value().storage.id()
-        &&& permission.resource().storage.is_init()
-        &&& permission.resource().vtable_ptr.pptr() == regions.slots[idx].value().vtable_ptr
-        &&& permission.resource().vtable_ptr.is_init()
+        &&& permission.id() == regions.slot_owners[idx].metadata_perm.id()
+        &&& permission.resource().storage_perm.id() == regions.slots[idx].value().storage.id()
+        &&& permission.resource().storage_perm.is_init()
+        &&& permission.resource().vtable_ptr_perm.pptr() == regions.slots[idx].value().vtable_ptr
+        &&& permission.resource().vtable_ptr_perm.is_init()
     }
 
     // ── from_raw precondition predicates ──
     /// **Safety**: The frame exists, is addressable, and its slot is alive
-    /// (not torn down: `ref_count != REF_COUNT_UNUSED`). Under the
+    /// (not torn down: ref_count != REF_COUNT_UNUSED`). Under the
     /// borrow-protocol redesign this liveness gate replaces the prior
     /// `raw_count <= 1` check — a slot that has not been torn down is safe
     /// to re-materialize as a `Frame` value. (`>= 1` is *not* the right
@@ -60,10 +60,10 @@ impl<'a, M: ?Sized> Frame<M> {
         &&& regions.slot_owners[frame_to_index(paddr)].slot_vaddr == frame_to_meta(paddr)
         &&& valid_frame_paddr(paddr)
         &&& regions.inv()
-        &&& regions.slot_owners[frame_to_index(paddr)].ref_count.value() > 0
-        &&& regions.slot_owners[frame_to_index(paddr)].ref_count.value() <= REF_COUNT_MAX
-        &&& regions.slot_owners[frame_to_index(paddr)].ref_count.value() != REF_COUNT_UNIQUE
-        &&& regions.slot_owners[frame_to_index(paddr)].ref_count.value() != REF_COUNT_UNUSED
+        &&& regions.slot_owners[frame_to_index(paddr)].ref_count() > 0
+        &&& regions.slot_owners[frame_to_index(paddr)].ref_count() <= REF_COUNT_MAX
+        &&& regions.slot_owners[frame_to_index(paddr)].ref_count() != REF_COUNT_UNIQUE
+        &&& regions.slot_owners[frame_to_index(paddr)].ref_count() != REF_COUNT_UNUSED
     }
 
     pub open spec fn from_raw_ensures(
@@ -97,7 +97,7 @@ impl<'a, M: ?Sized> Frame<M> {
 
     /// **Bookkeeping**: The frame must be in use (not unused).
     pub open spec fn into_raw_pre_not_unused(self, regions: MetaRegionOwners) -> bool {
-        regions.slot_owners[self.index()].ref_count.value() != REF_COUNT_UNUSED
+        regions.slot_owners[self.index()].ref_count() != REF_COUNT_UNUSED
     }
 
     /// **Safety**: Frames other than this one are not affected by the call.
@@ -147,7 +147,7 @@ impl<M: ?Sized> Frame<M> {
         let pre_owner = pre.slot_owners[idx];
         let post_owner = post.slot_owners[idx];
         {
-            &&& pre_owner.ref_count.value() == REF_COUNT_UNUSED
+            &&& pre_owner.ref_count() == REF_COUNT_UNUSED
             &&& MetaSlot::get_from_unused_owner_spec(false, post_owner)
             &&& post_owner.usage is Frame
             &&& post_owner.slot_vaddr == pre_owner.slot_vaddr
@@ -189,17 +189,18 @@ impl<M: ?Sized> Frame<M> {
         &&& s.inv()
         &&& s.contains(idx)
         &&& s.slots[idx].pptr() == self.ptr
-        &&& slot_own.ref_count.value() != REF_COUNT_UNUSED
-        &&& slot_own.ref_count.value() != REF_COUNT_UNIQUE
-        &&& slot_own.ref_count.value() > 0
-        &&& slot_own.ref_count.value() <= REF_COUNT_MAX
+        &&& slot_own.ref_count() != REF_COUNT_UNUSED
+        &&& slot_own.ref_count() != REF_COUNT_UNIQUE
+        &&& slot_own.ref_count() > 0
+        &&& slot_own.ref_count() <= REF_COUNT_MAX
         &&& self.tracked_perm@ is Some
         &&& self.tracked_perm@->0.frac() == 1
-        &&& self.tracked_perm@->0.id() == slot_own.metadata.id()
-        &&& self.tracked_perm@->0.resource().storage.id() == s.slots[idx].value().storage.id()
-        &&& self.tracked_perm@->0.resource().storage.is_init()
-        &&& self.tracked_perm@->0.resource().vtable_ptr.pptr() == s.slots[idx].value().vtable_ptr
-        &&& self.tracked_perm@->0.resource().vtable_ptr.is_init()
+        &&& self.tracked_perm@->0.id() == slot_own.metadata_perm.id()
+        &&& self.tracked_perm@->0.resource().storage_perm.id() == s.slots[idx].value().storage.id()
+        &&& self.tracked_perm@->0.resource().storage_perm.is_init()
+        &&& self.tracked_perm@->0.resource().vtable_ptr_perm.pptr()
+            == s.slots[idx].value().vtable_ptr
+        &&& self.tracked_perm@->0.resource().vtable_ptr_perm.is_init()
     }
 }
 
@@ -241,20 +242,20 @@ impl<M: ?Sized> TrackDrop for Frame<M> {
         &&& self.wf_with_region(
             s,
         )
-        // At `ref_count == 1` the teardown branch of `drop_last_in_place`
+        // At ref_count == 1` the teardown branch of `drop_last_in_place`
         // runs, requiring an empty `paths_in_pt` (the strengthened
         // `MetaSlotOwner::inv` UNUSED branch demands it post-teardown,
         // and `drop_last_in_place` doesn't touch paths). Sound: at
-        // `ref_count == 1` the `Frame` being dropped is the sole
+        // ref_count == 1` the `Frame` being dropped is the sole
         // reference, so there is no live PTE mapping (a mapping would
-        // be a further reference, forcing `ref_count >= 2`).
+        // be a further reference, forcing ref_count >= 2`).
         //
         // The other `drop_last_in_place_safety_cond` conjuncts
         // (`storage.is_init`, `in_list == 0`) are subsumed by the
         // strengthened `MetaSlotOwner::inv` SHARED branch
         // (`0 < rc <= REF_COUNT_MAX`) — they hold universally for any
         // in-use slot, not just at `rc == 1`.
-        &&& slot_own.ref_count.value() == 1 ==> {
+        &&& slot_own.ref_count() == 1 ==> {
             &&& slot_own.paths_in_pt.is_empty()
         }
     }
@@ -280,15 +281,14 @@ impl<M: ?Sized> TrackDrop for Frame<M> {
         &&& so1.slot_vaddr == so0.slot_vaddr
         &&& so1.usage == so0.usage
         &&& so1.paths_in_pt == so0.paths_in_pt
-        &&& so1.metadata.id()
-            == so0.metadata.id()
+        &&& so1.metadata_perm.id()
+            == so0.metadata_perm.id()
         // Refcount transition. `drop_requires` guarantees the old value
         // is in `[1, REF_COUNT_MAX]`, so these cases are exhaustive:
         //  - last reference (== 1): the slot is torn down to UNUSED.
         //  - otherwise (> 1): the refcount is decremented by one.
-        &&& so0.ref_count.value() == 1 ==> so1.ref_count.value() == REF_COUNT_UNUSED
-        &&& so0.ref_count.value() > 1 ==> so1.ref_count.value() == (so0.ref_count.value()
-            - 1) as u64
+        &&& so0.ref_count() == 1 ==> so1.ref_count() == REF_COUNT_UNUSED
+        &&& so0.ref_count() > 1 ==> so1.ref_count() == (so0.ref_count() - 1) as u64
     }
 }
 

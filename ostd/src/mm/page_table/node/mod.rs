@@ -683,7 +683,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
                 meta_to_frame(owner@.value().node().meta_vaddr())),
             owner@.value().metaregion_sound(*final(regions)),
             forall|i: int|
-                #[trigger] old(regions).slot_owners[i].ref_count.value() != REF_COUNT_UNUSED
+                #[trigger] old(regions).slot_owners[i].ref_count() != REF_COUNT_UNUSED
                 ==> i != meta_to_index(owner@.value().node().meta_vaddr()),
             owner@.value().match_pte(C::E::new_pt_spec(meta_to_frame(owner@.value().node().meta_vaddr())), level as PagingLevel),
             final(parent_owner).meta_own == old(parent_owner).meta_own,
@@ -1305,12 +1305,12 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
                     paddr,
                 )
                 // Borrow-protocol transition: `raw_count` is dormant.
-                &&& so.ref_count.value() > 0
-                &&& so.ref_count.value() != REF_COUNT_UNUSED
-                &&& so.ref_count.value() <= REF_COUNT_MAX
-                &&& so.ref_count.value() == 1 ==> {
+                &&& so.ref_count() > 0
+                &&& so.ref_count() != REF_COUNT_UNUSED
+                &&& so.ref_count() <= REF_COUNT_MAX
+                &&& so.ref_count() == 1 ==> {
                     &&& so.storage_perm().is_init()
-                    &&& so.in_list.value() == 0
+                    &&& so.in_list_perm.value() == 0
                     &&& so.paths_in_pt.is_empty()
                 }
                 // Borrow-protocol redesign: in steady state between

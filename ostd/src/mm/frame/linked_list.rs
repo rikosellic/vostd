@@ -414,7 +414,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedList<M> {
 
         let tracked mut inner_perms = &mut slot_own;
 
-        slot.in_list.load(Tracked(&mut inner_perms.in_list)) == #[verus_spec(with Tracked(owner))]
+        slot.in_list.load(Tracked(&mut inner_perms.in_list_perm))
+            == #[verus_spec(with Tracked(owner))]
         self.lazy_get_id()
     }
 
@@ -472,7 +473,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedList<M> {
         let tracked mut slot_own = regions.slot_owners.tracked_borrow_mut(idx);
         let tracked mut inner_perms = &mut slot_own;
 
-        let contains = slot.in_list.load(Tracked(&mut inner_perms.in_list))
+        let contains = slot.in_list.load(Tracked(&mut inner_perms.in_list_perm))
             == #[verus_spec(with Tracked(&owner))]
         self.lazy_get_id();
 
@@ -849,10 +850,10 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 let paddr = old(self).current->0.addr();
                 let idx = meta_to_index(paddr);
                 &&& final(regions).slots.dom() == old(regions).slots.dom()
-                &&& final(regions).slot_owners[idx].ref_count.value() == REF_COUNT_UNIQUE
-                &&& final(regions).slot_owners[idx].in_list.value() == 0
-                &&& (res->0).1@.metadata_perms->0.storage.is_init()
-                &&& (res->0).1@.metadata_perms->0.vtable_ptr.is_init()
+                &&& final(regions).slot_owners[idx].ref_count() == REF_COUNT_UNIQUE
+                &&& final(regions).slot_owners[idx].in_list_perm.value() == 0
+                &&& (res->0).1@.metadata_perms->0.storage_perm.is_init()
+                &&& (res->0).1@.metadata_perms->0.vtable_ptr_perm.is_init()
                 &&& final(regions).slot_owners[idx].slot_vaddr == index_to_meta(idx)
                 &&& final(regions).slot_owners[idx].paths_in_pt == old(
                     regions,
@@ -1025,7 +1026,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
         let tracked mut fip = &mut frame_so;
         #[verus_spec(with Tracked(&frame_outer))]
         let slot = frame.slot();
-        slot.in_list.store(Tracked(&mut fip.in_list), 0);
+        slot.in_list.store(Tracked(&mut fip.in_list_perm), 0);
         proof {
             assert(regions.inv());
             assert(regions.slots.dom() == regions0.slots.dom());
@@ -1056,16 +1057,17 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 &&& regions.contains(i)
                 &&& regions.slots[i].addr() == oldl.list[p].paddr
                 &&& regions.slots[i].pptr() == regions0.slots[i].pptr()
-                &&& regions.slot_owners[i].ref_count.value() == REF_COUNT_UNIQUE
-                &&& regions.slot_owners[i].metadata.is_empty()
-                &&& regions.slot_owners[i].metadata.id() == owner.list_own.empty_metadata[np].id()
-                &&& owner.list_own.metadata_perms[np].storage.id()
+                &&& regions.slot_owners[i].ref_count() == REF_COUNT_UNIQUE
+                &&& regions.slot_owners[i].metadata_perm.is_empty()
+                &&& regions.slot_owners[i].metadata_perm.id()
+                    == owner.list_own.empty_metadata[np].id()
+                &&& owner.list_own.metadata_perms[np].storage_perm.id()
                     == regions.slots[i].value().storage.id()
-                &&& owner.list_own.metadata_perms[np].vtable_ptr.pptr()
+                &&& owner.list_own.metadata_perms[np].vtable_ptr_perm.pptr()
                     == regions.slots[i].value().vtable_ptr
-                &&& owner.list_own.metadata_perms[np].vtable_ptr.is_init()
+                &&& owner.list_own.metadata_perms[np].vtable_ptr_perm.is_init()
                 &&& regions.slot_owners[i].usage is Frame
-                &&& regions.slot_owners[i].in_list.value() == owner.list_own.list_id
+                &&& regions.slot_owners[i].in_list_perm.value() == owner.list_own.list_id
                 &&& owner.list_own.meta_wf_at(*regions, np)
                 &&& regions.slots[i].addr() % META_SLOT_SIZE == 0
                 &&& FRAME_METADATA_RANGE.start <= regions.slots[i].addr()
@@ -1167,10 +1169,10 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             ) by {
                 owner0.list_own.relate_region_at_facts(regions0, p);
                 if frame_own.slot_index == meta_to_index(owner0.list_own.list[p].paddr) {
-                    assert(regions0.slot_owners[frame_own.slot_index].in_list.value() == 0);
+                    assert(regions0.slot_owners[frame_own.slot_index].in_list_perm.value() == 0);
                     assert(regions0.slot_owners[meta_to_index(
                         owner0.list_own.list[p].paddr,
-                    )].in_list.value() == owner0.list_own.list_id);
+                    )].in_list_perm.value() == owner0.list_own.list_id);
                     assert(owner0.list_own.list_id != 0);
                 }
             }
@@ -1298,7 +1300,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
         let tracked mut fip = &mut frame_so;
         #[verus_spec(with Tracked(frame_outer))]
         let slot = frame.slot();
-        slot.in_list.store(Tracked(&mut fip.in_list), list_id);
+        slot.in_list.store(Tracked(&mut fip.in_list_perm), list_id);
         proof {
             assert(regions.inv());
         }
@@ -1340,16 +1342,17 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 &&& regions.contains(i)
                 &&& regions.slots[i].addr() == oldl.list[p].paddr
                 &&& regions.slots[i].pptr() == regions0.slots[i].pptr()
-                &&& regions.slot_owners[i].ref_count.value() == REF_COUNT_UNIQUE
-                &&& regions.slot_owners[i].metadata.is_empty()
-                &&& regions.slot_owners[i].metadata.id() == owner.list_own.empty_metadata[np].id()
-                &&& owner.list_own.metadata_perms[np].storage.id()
+                &&& regions.slot_owners[i].ref_count() == REF_COUNT_UNIQUE
+                &&& regions.slot_owners[i].metadata_perm.is_empty()
+                &&& regions.slot_owners[i].metadata_perm.id()
+                    == owner.list_own.empty_metadata[np].id()
+                &&& owner.list_own.metadata_perms[np].storage_perm.id()
                     == regions.slots[i].value().storage.id()
-                &&& owner.list_own.metadata_perms[np].vtable_ptr.pptr()
+                &&& owner.list_own.metadata_perms[np].vtable_ptr_perm.pptr()
                     == regions.slots[i].value().vtable_ptr
-                &&& owner.list_own.metadata_perms[np].vtable_ptr.is_init()
+                &&& owner.list_own.metadata_perms[np].vtable_ptr_perm.is_init()
                 &&& regions.slot_owners[i].usage is Frame
-                &&& regions.slot_owners[i].in_list.value() == owner.list_own.list_id
+                &&& regions.slot_owners[i].in_list_perm.value() == owner.list_own.list_id
                 &&& owner.list_own.meta_wf_at(*regions, np)
                 &&& regions.slots[i].addr() % META_SLOT_SIZE == 0
                 &&& FRAME_METADATA_RANGE.start <= regions.slots[i].addr()
@@ -1452,7 +1455,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> TrackDrop for LinkedList<M> {
             #![trigger s.0.list[i]]
             0 <= i < s.0.list.len() ==> {
                 let idx = meta_to_index(s.0.list[i].paddr);
-                s.1.slot_owners[idx].ref_count.value() == REF_COUNT_UNIQUE
+                s.1.slot_owners[idx].ref_count() == REF_COUNT_UNIQUE
             }
         &&& forall|i: int|
             #![trigger s.0.list[i]]
@@ -1576,7 +1579,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> Drop for LinkedList<M> {
                         let idx = meta_to_index(original_list[j].paddr);
                         &&& original_regions.contains(idx)
                         &&& original_regions.slot_owners[idx].paths_in_pt.is_empty()
-                        &&& original_regions.slot_owners[idx].ref_count.value() == REF_COUNT_UNIQUE
+                        &&& original_regions.slot_owners[idx].ref_count() == REF_COUNT_UNIQUE
                     },
             ensures
                 k == n,

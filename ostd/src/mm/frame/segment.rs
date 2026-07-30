@@ -139,9 +139,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                 let idx = frame_to_index(pa);
                 &&& perm.contains(idx)
                 &&& valid_frame_paddr(pa)
-                &&& perm.slot_owners[idx].ref_count.value() > 0
-                &&& perm.slot_owners[idx].ref_count.value() + 1 < super::meta::REF_COUNT_MAX
-                &&& !MetaSlot::inc_ref_count_panic_cond(perm.slot_owners[idx].ref_count)
+                &&& perm.slot_owners[idx].ref_count() > 0
+                &&& perm.slot_owners[idx].ref_count() + 1 < super::meta::REF_COUNT_MAX
+                &&& !MetaSlot::inc_ref_count_panic_cond(perm.slot_owners[idx].ref_count_perm)
             }
     }
 
@@ -184,8 +184,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                         let idx = frame_to_index((self.range.start + i * PAGE_SIZE) as usize);
                         &&& perm.contains(idx)
                         &&& perm.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                        &&& perm.slot_owners[idx].ref_count.value() > 0
-                        &&& perm.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX
+                        &&& perm.slot_owners[idx].ref_count() > 0
+                        &&& perm.slot_owners[idx].ref_count() <= REF_COUNT_MAX
                         &&& perm.slot_owners[idx].paths_in_pt.is_empty()
                         &&& perm.slot_owners[idx].usage is Frame
                     }),
@@ -198,9 +198,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                         let idx = frame_to_index(pa);
                         &&& perm.contains(idx)
                         &&& valid_frame_paddr(pa)
-                        &&& perm.slot_owners[idx].ref_count.value() > 0
-                        &&& perm.slot_owners[idx].ref_count.value() + 1 < super::meta::REF_COUNT_MAX
-                        &&& !MetaSlot::inc_ref_count_panic_cond(perm.slot_owners[idx].ref_count)
+                        &&& perm.slot_owners[idx].ref_count() > 0
+                        &&& perm.slot_owners[idx].ref_count() + 1 < super::meta::REF_COUNT_MAX
+                        &&& !MetaSlot::inc_ref_count_panic_cond(
+                            perm.slot_owners[idx].ref_count_perm,
+                        )
                     },
                 forall|i: int|
                     #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize)]
@@ -236,8 +238,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                     &&& Frame::<M>::frame_permission_wf(*perm, old_paddr, permissions[i])
                     &&& perm.contains(idx)
                     &&& perm.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                    &&& perm.slot_owners[idx].ref_count.value() > 0
-                    &&& perm.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX
+                    &&& perm.slot_owners[idx].ref_count() > 0
+                    &&& perm.slot_owners[idx].ref_count() <= REF_COUNT_MAX
                     &&& perm.slot_owners[idx].paths_in_pt.is_empty()
                     &&& perm.slot_owners[idx].usage is Frame
                 } by {
@@ -246,8 +248,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                     assert(Frame::<M>::frame_permission_wf(regions_pre, old_paddr, permissions[i]));
                     assert(regions_pre.contains(idx));
                     assert(regions_pre.slot_owners[idx].slot_vaddr == index_to_meta(idx));
-                    assert(regions_pre.slot_owners[idx].ref_count.value() > 0);
-                    assert(regions_pre.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX);
+                    assert(regions_pre.slot_owners[idx].ref_count() > 0);
+                    assert(regions_pre.slot_owners[idx].ref_count() <= REF_COUNT_MAX);
                     assert(regions_pre.slot_owners[idx].paths_in_pt.is_empty());
                     assert(regions_pre.slot_owners[idx].usage is Frame);
                     assert(old_paddr < paddr);
@@ -263,9 +265,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                 assert(regions_pre.contains(idx));
                 assert(regions_pre.slot_owners[idx].inv());
                 assert(regions_pre.slot_owners[idx].slot_vaddr == index_to_meta(idx));
-                assert(regions_pre.slot_owners[idx].ref_count.value() > 0);
-                assert(regions_pre.slot_owners[idx].ref_count.value() < REF_COUNT_MAX);
-                assert(regions_pre.slot_owners[idx].metadata.not_empty());
+                assert(regions_pre.slot_owners[idx].ref_count() > 0);
+                assert(regions_pre.slot_owners[idx].ref_count() < REF_COUNT_MAX);
+                assert(regions_pre.slot_owners[idx].metadata_perm.not_empty());
                 assert(regions_pre.slots[idx].value().wf(regions_pre.slot_owners[idx]));
                 assert(perm.slot_owners[idx].slot_vaddr == regions_pre.slot_owners[idx].slot_vaddr);
                 assert(perm.slot_owners[idx].paths_in_pt
@@ -300,8 +302,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                     let idx = frame_to_index((self.range.start + i * PAGE_SIZE) as usize);
                     &&& perm.contains(idx)
                     &&& perm.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                    &&& perm.slot_owners[idx].ref_count.value() > 0
-                    &&& perm.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX
+                    &&& perm.slot_owners[idx].ref_count() > 0
+                    &&& perm.slot_owners[idx].ref_count() <= REF_COUNT_MAX
                     &&& perm.slot_owners[idx].paths_in_pt.is_empty()
                     &&& perm.slot_owners[idx].usage is Frame
                 }) by {
@@ -310,8 +312,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                         let old_paddr = (self.range.start + i * PAGE_SIZE) as usize;
                         assert(perm.contains(idx));
                         assert(perm.slot_owners[idx].slot_vaddr == index_to_meta(idx));
-                        assert(perm.slot_owners[idx].ref_count.value() > 0);
-                        assert(perm.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX);
+                        assert(perm.slot_owners[idx].ref_count() > 0);
+                        assert(perm.slot_owners[idx].ref_count() <= REF_COUNT_MAX);
                         assert(perm.slot_owners[idx].paths_in_pt.is_empty());
                         assert(perm.slot_owners[idx].usage is Frame);
                     } else {
@@ -319,10 +321,10 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                         assert((self.range.start + i * PAGE_SIZE) as usize == paddr);
                         assert(perm.contains(idx));
                         assert(perm.slot_owners[idx].slot_vaddr == index_to_meta(idx));
-                        assert(perm.slot_owners[idx].ref_count.value()
-                            == regions_pre.slot_owners[idx].ref_count.value() + 1);
-                        assert(perm.slot_owners[idx].ref_count.value() > 0);
-                        assert(perm.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX);
+                        assert(perm.slot_owners[idx].ref_count()
+                            == regions_pre.slot_owners[idx].ref_count() + 1);
+                        assert(perm.slot_owners[idx].ref_count() > 0);
+                        assert(perm.slot_owners[idx].ref_count() <= REF_COUNT_MAX);
                         assert(perm.slot_owners[idx].paths_in_pt.is_empty());
                         assert(perm.slot_owners[idx].usage is Frame);
                     }
@@ -476,8 +478,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                         let idx = frame_to_index(addrs[j]);
                         &&& regions.contains(idx)
                         &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                        &&& regions.slot_owners[idx].ref_count.value() > 0
-                        &&& regions.slot_owners[idx].ref_count.value()
+                        &&& regions.slot_owners[idx].ref_count() > 0
+                        &&& regions.slot_owners[idx].ref_count()
                             <= crate::mm::frame::meta::REF_COUNT_MAX
                         &&& Frame::<M>::frame_permission_wf(*regions, addrs[j], permissions[j])
                         &&& regions.slot_owners[idx].paths_in_pt.is_empty()
@@ -524,8 +526,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                                     let idx = frame_to_index(addrs[j]);
                                     &&& regions.contains(idx)
                                     &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                                    &&& regions.slot_owners[idx].ref_count.value() > 0
-                                    &&& regions.slot_owners[idx].ref_count.value()
+                                    &&& regions.slot_owners[idx].ref_count() > 0
+                                    &&& regions.slot_owners[idx].ref_count()
                                         <= crate::mm::frame::meta::REF_COUNT_MAX
                                     &&& Frame::<M>::frame_permission_wf(
                                         *regions,
@@ -625,9 +627,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 )
                 &&& regions.contains(idx)
                 &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                &&& regions.slot_owners[idx].ref_count.value() > 0
-                &&& regions.slot_owners[idx].ref_count.value()
-                    <= crate::mm::frame::meta::REF_COUNT_MAX
+                &&& regions.slot_owners[idx].ref_count() > 0
+                &&& regions.slot_owners[idx].ref_count() <= crate::mm::frame::meta::REF_COUNT_MAX
                 &&& regions.slot_owners[idx].paths_in_pt.is_empty()
                 &&& regions.slot_owners[idx].usage is Frame
             } by {
@@ -820,9 +821,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 )
                 &&& regions.contains(idx)
                 &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                &&& regions.slot_owners[idx].ref_count.value() > 0
-                &&& regions.slot_owners[idx].ref_count.value()
-                    <= crate::mm::frame::meta::REF_COUNT_MAX
+                &&& regions.slot_owners[idx].ref_count() > 0
+                &&& regions.slot_owners[idx].ref_count() <= crate::mm::frame::meta::REF_COUNT_MAX
                 &&& regions.slot_owners[idx].paths_in_pt.is_empty()
                 &&& regions.slot_owners[idx].usage is Frame
             } by {
@@ -839,9 +839,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 )
                 &&& regions.contains(idx)
                 &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                &&& regions.slot_owners[idx].ref_count.value() > 0
-                &&& regions.slot_owners[idx].ref_count.value()
-                    <= crate::mm::frame::meta::REF_COUNT_MAX
+                &&& regions.slot_owners[idx].ref_count() > 0
+                &&& regions.slot_owners[idx].ref_count() <= crate::mm::frame::meta::REF_COUNT_MAX
                 &&& regions.slot_owners[idx].paths_in_pt.is_empty()
                 &&& regions.slot_owners[idx].usage is Frame
             } by {
@@ -906,7 +905,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             (range.start as int) / (PAGE_SIZE as int) <= j < (range.end as int) / (PAGE_SIZE as int)
                 && regions.slot_owners[frame_to_index(
                 (self.start_paddr() + j * PAGE_SIZE) as usize,
-            )].ref_count.value() >= REF_COUNT_MAX
+            )].ref_count() >= REF_COUNT_MAX
     }
 
     // [FIXED] BUG FOUND BY FV: potential overflow. https://github.com/asterinas/asterinas/pull/3587
@@ -986,8 +985,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                         let idx = frame_to_index((start + j * PAGE_SIZE) as usize);
                         &&& regions.contains(idx)
                         &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                        &&& regions.slot_owners[idx].ref_count.value() > 0
-                        &&& regions.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX
+                        &&& regions.slot_owners[idx].ref_count() > 0
+                        &&& regions.slot_owners[idx].ref_count() <= REF_COUNT_MAX
                         &&& regions.slot_owners[idx].paths_in_pt.is_empty()
                         &&& regions.slot_owners[idx].usage is Frame
                     },
@@ -1010,7 +1009,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                         regions,
                     ).slot_owners[frame_to_index(
                         (self.range.start + j * PAGE_SIZE) as usize,
-                    )].ref_count.value() < REF_COUNT_MAX,
+                    )].ref_count() < REF_COUNT_MAX,
             decreases addr_len - i,
         {
             if paddr >= end {
@@ -1038,8 +1037,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                     &&& Frame::<M>::frame_permission_wf(*regions, old_paddr, permissions[j])
                     &&& regions.contains(idx)
                     &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                    &&& regions.slot_owners[idx].ref_count.value() > 0
-                    &&& regions.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX
+                    &&& regions.slot_owners[idx].ref_count() > 0
+                    &&& regions.slot_owners[idx].ref_count() <= REF_COUNT_MAX
                     &&& regions.slot_owners[idx].paths_in_pt.is_empty()
                     &&& regions.slot_owners[idx].usage is Frame
                 } by {
@@ -1059,8 +1058,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 let idx = frame_to_index(paddr);
                 assert(regions_pre.contains(idx));
                 assert(regions_pre.slot_owners[idx].inv());
-                assert(regions_pre.slot_owners[idx].ref_count.value() < REF_COUNT_MAX);
-                assert(regions_pre.slot_owners[idx].metadata.not_empty());
+                assert(regions_pre.slot_owners[idx].ref_count() < REF_COUNT_MAX);
+                assert(regions_pre.slot_owners[idx].metadata_perm.not_empty());
                 assert(regions_pre.slots[idx].value().wf(regions_pre.slot_owners[idx]));
                 assert(Frame::<M>::frame_permission_wf(*regions, paddr, frame_permission));
                 permissions.tracked_push(frame_permission);
@@ -1075,8 +1074,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                     )
                     &&& regions.contains(idx)
                     &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                    &&& regions.slot_owners[idx].ref_count.value() > 0
-                    &&& regions.slot_owners[idx].ref_count.value() <= REF_COUNT_MAX
+                    &&& regions.slot_owners[idx].ref_count() > 0
+                    &&& regions.slot_owners[idx].ref_count() <= REF_COUNT_MAX
                     &&& regions.slot_owners[idx].paths_in_pt.is_empty()
                     &&& regions.slot_owners[idx].usage is Frame
                 } by {
@@ -1351,9 +1350,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
                 #![trigger frame_to_index((self.start_paddr() + i * PAGE_SIZE) as usize)]
                 0 <= i < crate::specs::mm::frame::segment::seg_nframes(self.range()) ==> {
                     let idx = frame_to_index((self.start_paddr() + i * PAGE_SIZE) as usize);
-                    old(regions).slot_owners[idx].ref_count.value() == 1 ==> {
+                    old(regions).slot_owners[idx].ref_count() == 1 ==> {
                         &&& old(regions).slot_owners[idx].storage_perm().is_init()
-                        &&& old(regions).slot_owners[idx].in_list.value() == 0
+                        &&& old(regions).slot_owners[idx].in_list_perm.value() == 0
                     }
                 },
         ensures
@@ -1368,9 +1367,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
 
         assert forall|i: int| #![trigger frame_idx_at(self.range.start, i)] 0 <= i < n implies {
             let idx = frame_idx_at(self.range.start, i);
-            old(regions).slot_owners[idx].ref_count.value() == 1 ==> {
+            old(regions).slot_owners[idx].ref_count() == 1 ==> {
                 &&& old(regions).slot_owners[idx].storage_perm().is_init()
-                &&& old(regions).slot_owners[idx].in_list.value() == 0
+                &&& old(regions).slot_owners[idx].in_list_perm.value() == 0
             }
         } by {};
 
@@ -1411,9 +1410,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
                     #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize)]
                     0 <= i < n ==> {
                         let idx = frame_to_index((self.range.start + i * PAGE_SIZE) as usize);
-                        old(regions).slot_owners[idx].ref_count.value() == 1 ==> {
+                        old(regions).slot_owners[idx].ref_count() == 1 ==> {
                             &&& old(regions).slot_owners[idx].storage_perm().is_init()
-                            &&& old(regions).slot_owners[idx].in_list.value() == 0
+                            &&& old(regions).slot_owners[idx].in_list_perm.value() == 0
                         }
                     },
             decreases n - k,
@@ -1490,11 +1489,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
                         let idx = frame_to_index(pa);
                         &&& perm.contains(idx)
                         &&& valid_frame_paddr(pa)
-                        &&& perm.slot_owners[idx].ref_count.value() > 0
-                        &&& perm.slot_owners[idx].ref_count.value() + 1
+                        &&& perm.slot_owners[idx].ref_count() > 0
+                        &&& perm.slot_owners[idx].ref_count() + 1
                             < super::meta::REF_COUNT_MAX
                         &&& !MetaSlot::inc_ref_count_panic_cond(
-                            perm.slot_owners[idx].ref_count,
+                            perm.slot_owners[idx].ref_count_perm,
                         )
                     },
             decreases self.range.end - paddr,

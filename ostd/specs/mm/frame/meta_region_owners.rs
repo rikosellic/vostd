@@ -116,7 +116,7 @@ impl MetaRegionOwners {
             self.inv(),
             0 <= i < max_meta_slots(),
     {
-        self.slot_owners[i].ref_count.value()
+        self.slot_owners[i].ref_count()
     }
 
     /// `other` agrees with `self` on every slot owner except the one at index
@@ -183,13 +183,6 @@ impl MetaRegionOwners {
         ensures
             self.contains(frame_to_index(paddr)),
     {
-    }
-
-    /// Boundary invariant. Raw ownership is carried by the corresponding
-    /// counting permissions, so the meta region itself needs no separate drop
-    /// ledger.
-    pub open spec fn clean_inv(self) -> bool {
-        self.inv()
     }
 }
 

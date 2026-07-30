@@ -403,19 +403,19 @@ impl MetaSlot {
                     1int
                 }
                 &&& res.1@.id()
-                    == final(regions).slot_owners[frame_to_index(paddr)].metadata.id()
-                &&& res.1@.resource().storage.id()
+                    == final(regions).slot_owners[frame_to_index(paddr)].metadata_perm.id()
+                &&& res.1@.resource().storage_perm.id()
                     == final(regions).slots[frame_to_index(paddr)].value().storage.id()
-                &&& res.1@.resource().storage.is_init()
-                &&& res.1@.resource().vtable_ptr.pptr()
+                &&& res.1@.resource().storage_perm.is_init()
+                &&& res.1@.resource().vtable_ptr_perm.pptr()
                     == final(regions).slots[frame_to_index(paddr)].value().vtable_ptr
-                &&& res.1@.resource().vtable_ptr.is_init()
+                &&& res.1@.resource().vtable_ptr_perm.is_init()
                 &&& <M as Repr<MetaSlotStorage>>::wf(
-                    res.1@.resource().storage.value(),
+                    res.1@.resource().storage_perm.value(),
                     *final(repr_perm),
                 )
                 &&& M::from_repr_spec(
-                    res.1@.resource().storage.value(),
+                    res.1@.resource().storage_perm.value(),
                     *final(repr_perm),
                 ) == metadata
             },
@@ -450,7 +450,7 @@ impl MetaSlot {
         // `Acquire` pairs with the `Release` in `drop_last_in_place` and ensures the metadata
         // initialization won't be reordered before this memory compare-and-exchange.
         let last_ref_cnt = slot.ref_count.compare_exchange(
-            Tracked(&mut slot_own.ref_count),
+            Tracked(&mut slot_own.ref_count_perm),
             REF_COUNT_UNUSED,
             0,
         ).map_err(
@@ -464,11 +464,11 @@ impl MetaSlot {
 
         if let Err(err) = last_ref_cnt {
             proof {
-                // CAS failure leaves `ref_count` unchanged (value + id), so the
+                // CAS failure leaves ref_count` unchanged (value + id), so the
                 // re-parked slot is exactly the original — region state intact.
                 vstd_extra::auxiliary::axiom_permission_u64_ext_eq(
-                    regions.slot_owners[idx].ref_count,
-                    old(regions).slot_owners[idx].ref_count,
+                    regions.slot_owners[idx].ref_count_perm,
+                    old(regions).slot_owners[idx].ref_count_perm,
                 );
             }
 
@@ -497,14 +497,14 @@ impl MetaSlot {
         if as_unique_ptr {
             // No one can create a `Frame` instance directly from the page
             // address, so `Relaxed` is fine here.
-            slot.ref_count.store(Tracked(&mut slot_own.ref_count), REF_COUNT_UNIQUE);
-            let tracked permission = slot_own.metadata.split(REF_COUNT_MAX as int);
+            slot.ref_count.store(Tracked(&mut slot_own.ref_count_perm), REF_COUNT_UNIQUE);
+            let tracked permission = slot_own.metadata_perm.split(REF_COUNT_MAX as int);
             Ok((PPtr::from_addr(frame_to_meta(paddr)), Tracked(permission)))
         } else {
             // `Release` is used to ensure that the metadata initialization
             // won't be reordered after this memory store.
-            slot.ref_count.store(Tracked(&mut slot_own.ref_count), 1);
-            let tracked permission = slot_own.metadata.split_one();
+            slot.ref_count.store(Tracked(&mut slot_own.ref_count_perm), 1);
+            let tracked permission = slot_own.metadata_perm.split_one();
             Ok((PPtr::from_addr(frame_to_meta(paddr)), Tracked(permission)))
         }
     }
@@ -536,7 +536,7 @@ impl MetaSlot {
                 &&& ptr == old(regions).slots[frame_to_index(paddr)].pptr()
                 &&& permission@.frac() == 1
                 &&& permission@.id()
-                    == final(regions).slot_owners[frame_to_index(paddr)].metadata.id()
+                    == final(regions).slot_owners[frame_to_index(paddr)].metadata_perm.id()
             },
             res is Err ==> *final(regions) == *old(regions),
     )]
@@ -566,14 +566,14 @@ impl MetaSlot {
         {
             proof {
                 vstd_extra::auxiliary::axiom_permission_u64_ext_eq(
-                    regions.slot_owners[idx].ref_count,
-                    old(regions).slot_owners[idx].ref_count,
+                    regions.slot_owners[idx].ref_count_perm,
+                    old(regions).slot_owners[idx].ref_count_perm,
                 );
             }
 
             let tracked slot_own = regions.slot_owners.tracked_borrow_mut(idx);
 
-            match slot.ref_count.load(Tracked(&mut slot_own.ref_count)) {
+            match slot.ref_count.load(Tracked(&mut slot_own.ref_count_perm)) {
                 REF_COUNT_UNUSED => return Err(GetFrameError::Unused),
                 REF_COUNT_UNIQUE => return Err(GetFrameError::Unique),
                 0 => return Err(GetFrameError::Busy),
@@ -589,17 +589,17 @@ impl MetaSlot {
                     // It ensures that the written metadata will be visible to us.
 
                     if slot.ref_count.compare_exchange_weak(
-                        Tracked(&mut slot_own.ref_count),
+                        Tracked(&mut slot_own.ref_count_perm),
                         last_ref_cnt,
                         last_ref_cnt + 1,
                     ).is_ok() {
-                        let tracked permission = slot_own.metadata.split_one();
+                        let tracked permission = slot_own.metadata_perm.split_one();
                         return Ok((PPtr::from_addr(frame_to_meta(paddr)), Tracked(permission)));
                     }
                     proof {
                         vstd_extra::auxiliary::axiom_permission_u64_ext_eq(
-                            slot_own.ref_count,
-                            old(regions).slot_owners[idx].ref_count,
+                            slot_own.ref_count_perm,
+                            old(regions).slot_owners[idx].ref_count_perm,
                         );
                     }
 
@@ -729,20 +729,20 @@ impl MetaSlot {
             Tracked(metadata_perms): Tracked<&mut MetadataPerms>,
             Tracked(repr_perm): Tracked<&mut M::ReprPerm>,
         requires
-            self.storage.id() == old(metadata_perms).storage.id(),
-            self.vtable_ptr == old(metadata_perms).vtable_ptr.pptr(),
-            old(metadata_perms).vtable_ptr.is_uninit(),
+            self.storage.id() == old(metadata_perms).storage_perm.id(),
+            self.vtable_ptr == old(metadata_perms).vtable_ptr_perm.pptr(),
+            old(metadata_perms).vtable_ptr_perm.is_uninit(),
         ensures
-            final(metadata_perms).storage.id() == old(metadata_perms).storage.id(),
-            final(metadata_perms).storage.is_init(),
-            final(metadata_perms).vtable_ptr.pptr() == old(metadata_perms).vtable_ptr.pptr(),
-            final(metadata_perms).vtable_ptr.is_init(),
+            final(metadata_perms).storage_perm.id() == old(metadata_perms).storage_perm.id(),
+            final(metadata_perms).storage_perm.is_init(),
+            final(metadata_perms).vtable_ptr_perm.pptr() == old(metadata_perms).vtable_ptr_perm.pptr(),
+            final(metadata_perms).vtable_ptr_perm.is_init(),
             <M as Repr<MetaSlotStorage>>::wf(
-                final(metadata_perms).storage.value(),
+                final(metadata_perms).storage_perm.value(),
                 *final(repr_perm),
             ),
             M::from_repr_spec(
-                final(metadata_perms).storage.value(),
+                final(metadata_perms).storage_perm.value(),
                 *final(repr_perm),
             ) == metadata,
     )]
@@ -753,7 +753,7 @@ impl MetaSlot {
         // SAFETY: Caller ensures that the access to the fields are exclusive.
         //        let vtable_ptr = unsafe { &mut *self.vtable_ptr.get() };
         //        vtable_ptr.write(core::ptr::metadata(&metadata as &dyn AnyFrameMeta));
-        self.vtable_ptr.put(Tracked(&mut metadata_perms.vtable_ptr), 0);
+        self.vtable_ptr.put(Tracked(&mut metadata_perms.vtable_ptr_perm), 0);
 
         // SAFETY:
         // 1. `ptr` points to the metadata storage.
@@ -781,7 +781,7 @@ impl MetaSlot {
     /// ## Preconditions
     /// - **Safety Invariant**: The metadata slot must satisfy the safety invariants.
     /// - **Safety**: The caller must provide an owner object for the metadata slot, which must include the permission for the
-    /// slot's `ref_count` field.
+    /// slot's ref_count` field.
     /// - **Safety**: The owner must satisfy [`drop_last_in_place_safety_cond`], which ensures that its reference count is 0
     /// and it has no dangling raw pointers.
     /// ## Postconditions
@@ -795,27 +795,27 @@ impl MetaSlot {
             Tracked(owner): Tracked<&mut MetaSlotOwner>,
         requires
             old(owner).inv(),
-            self.ref_count.id() == old(owner).ref_count.id(),
+            self.ref_count.id() == old(owner).ref_count_perm.id(),
             self.storage.id() == old(owner).storage_perm().id(),
             self.vtable_ptr == old(owner).vtable_ptr_perm().pptr(),
             Self::drop_last_in_place_safety_cond(*old(owner)),
         ensures
             final(owner).inv(),
-            final(owner).ref_count.value() == REF_COUNT_UNUSED,
-            final(owner).ref_count.id() == old(owner).ref_count.id(),
-            final(owner).metadata.id() == old(owner).metadata.id(),
+            final(owner).ref_count() == REF_COUNT_UNUSED,
+            final(owner).ref_count_perm.id() == old(owner).ref_count_perm.id(),
+            final(owner).metadata_perm.id() == old(owner).metadata_perm.id(),
             final(owner).storage_perm().id() == old(owner).storage_perm().id(),
             final(owner).storage_perm().is_uninit(),
             final(owner).vtable_ptr_perm().is_uninit(),
             final(owner).vtable_ptr_perm().pptr() == old(owner).vtable_ptr_perm().pptr(),
-            final(owner).in_list == old(owner).in_list,
+            final(owner).in_list_perm == old(owner).in_list_perm,
             final(owner).slot_vaddr == old(owner).slot_vaddr,
             final(owner).usage == old(owner).usage,
             final(owner).paths_in_pt == old(owner).paths_in_pt,
     )]
     pub(super) unsafe fn drop_last_in_place(&self) {
         // This should be guaranteed as a safety requirement.
-        //        debug_assert_eq!(self.ref_count.load(Tracked(&*rc_perm)), 0);
+        //        debug_assert_eq!(self ref_count.load(Tracked(&*rc_perm)), 0);
         let tracked (mut metadata_perms, empty_metadata) = owner.tracked_take_full_metadata_perms();
         // SAFETY: The caller ensures safety.
         unsafe {
@@ -828,7 +828,7 @@ impl MetaSlot {
 
         // `Release` pairs with the `Acquire` in `Frame::from_unused` and ensures
         // `drop_meta_in_place` won't be reordered after this memory store.
-        self.ref_count.store(Tracked(&mut owner.ref_count), REF_COUNT_UNUSED);
+        self.ref_count.store(Tracked(&mut owner.ref_count_perm), REF_COUNT_UNUSED);
     }
 
     /// Drops the metadata of a slot in place.
@@ -854,19 +854,20 @@ impl MetaSlot {
             Tracked(slot_own): Tracked<&mut MetaSlotOwner>,
             Tracked(metadata_perms): Tracked<&mut MetadataPerms>,
         requires
-            old(slot_own).ref_count.value() == 0 || old(slot_own).ref_count.value() == REF_COUNT_UNIQUE,
-            old(metadata_perms).storage.is_init(),
-            old(metadata_perms).storage.id() == self.storage.id(),
-            old(metadata_perms).vtable_ptr.pptr() == self.vtable_ptr,
-            old(slot_own).in_list.value() == 0,
+            old(slot_own).ref_count() == 0 || old(slot_own).ref_count() == REF_COUNT_UNIQUE,
+            old(metadata_perms).storage_perm.is_init(),
+            old(metadata_perms).storage_perm.id() == self.storage.id(),
+            old(metadata_perms).vtable_ptr_perm.pptr() == self.vtable_ptr,
+            old(slot_own).in_list_perm.value() == 0,
         ensures
-            final(slot_own).ref_count == old(slot_own).ref_count,
-            final(slot_own).in_list == old(slot_own).in_list,
-            final(slot_own).metadata == old(slot_own).metadata,
-            final(metadata_perms).storage.is_uninit(),
-            final(metadata_perms).storage.id() == old(metadata_perms).storage.id(),
-            final(metadata_perms).vtable_ptr.is_uninit(),
-            final(metadata_perms).vtable_ptr.pptr() == old(metadata_perms).vtable_ptr.pptr(),
+            final(slot_own).ref_count_perm == old(slot_own).ref_count_perm,
+            final(slot_own).in_list_perm == old(slot_own).in_list_perm,
+            final(slot_own).metadata_perm == old(slot_own).metadata_perm,
+            final(metadata_perms).storage_perm.is_uninit(),
+            final(metadata_perms).storage_perm.id() == old(metadata_perms).storage_perm.id(),
+            final(metadata_perms).vtable_ptr_perm.is_uninit(),
+            final(metadata_perms).vtable_ptr_perm.pptr()
+                == old(metadata_perms).vtable_ptr_perm.pptr(),
             final(slot_own).slot_vaddr == old(slot_own).slot_vaddr,
             final(slot_own).usage == old(slot_own).usage,
             final(slot_own).paths_in_pt == old(slot_own).paths_in_pt,
