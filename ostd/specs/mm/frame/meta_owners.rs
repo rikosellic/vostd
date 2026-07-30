@@ -159,44 +159,6 @@ impl Repr<MetaSlotStorage> for MetaSlotStorage {
     }
 }
 
-impl MetaSlotStorage {
-    pub open spec fn get_link_spec(self) -> Option<StoredLink> {
-        match self {
-            MetaSlotStorage::FrameLink(link) => Some(link),
-            _ => None,
-        }
-    }
-
-    #[verifier::when_used_as_spec(get_link_spec)]
-    pub fn get_link(self) -> (res: Option<StoredLink>)
-        ensures
-            res == self.get_link_spec(),
-    {
-        match self {
-            MetaSlotStorage::FrameLink(link) => Some(link),
-            _ => None,
-        }
-    }
-
-    pub open spec fn get_node_spec(self) -> Option<StoredPageTablePageMeta> {
-        match self {
-            MetaSlotStorage::PTNode(node) => Some(node),
-            _ => None,
-        }
-    }
-
-    #[verifier::when_used_as_spec(get_node_spec)]
-    pub fn get_node(self) -> (res: Option<StoredPageTablePageMeta>)
-        ensures
-            res == self.get_node_spec(),
-    {
-        match self {
-            MetaSlotStorage::PTNode(node) => Some(node),
-            _ => None,
-        }
-    }
-}
-
 /// Permissions whose initialized contents belong to one installed metadata
 /// value. Shared frames receive fractional access to this bundle, while a
 /// unique frame owns the bundle exclusively.
@@ -264,8 +226,8 @@ impl MetaSlotOwner {
     pub proof fn tracked_borrow_metadata_perms(tracked &self) -> (tracked res: &MetadataPerms)
         requires
             self.metadata.not_empty(),
-        ensures
-            *res == self.metadata_perms(),
+        returns
+            self.metadata_perms(),
     {
         self.metadata.tracked_borrow()
     }
@@ -274,8 +236,8 @@ impl MetaSlotOwner {
         &pcell_maybe_uninit::PointsTo<MetaSlotStorage>)
         requires
             self.metadata.not_empty(),
-        ensures
-            *res == self.storage_perm(),
+        returns
+            self.storage_perm(),
     {
         &self.metadata.tracked_borrow().storage
     }
@@ -284,8 +246,8 @@ impl MetaSlotOwner {
         &vstd::simple_pptr::PointsTo<usize>)
         requires
             self.metadata.not_empty(),
-        ensures
-            *res == self.vtable_ptr_perm(),
+        returns
+            self.vtable_ptr_perm(),
     {
         &self.metadata.tracked_borrow().vtable_ptr
     }
@@ -355,11 +317,7 @@ pub open spec fn typed_meta_wf<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
 pub open spec fn typed_meta_value<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     metadata_perms: MetadataPerms,
     repr_perm: M::ReprPerm,
-) -> M
-    recommends
-        metadata_perms.storage.is_init(),
-        M::wf(metadata_perms.storage.value(), repr_perm),
-{
+) -> M {
     M::from_repr_spec(metadata_perms.storage.value(), repr_perm)
 }
 
@@ -372,8 +330,8 @@ pub fn borrow_meta<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     requires
         typed_meta_wf::<M>(*points_to, *metadata_perms, *repr_perm),
         ptr.addr() == points_to.addr(),
-    ensures
-        *res == typed_meta_value::<M>(*metadata_perms, *repr_perm),
+    returns
+        typed_meta_value::<M>(*metadata_perms, *repr_perm),
 {
     let slot = PPtr::<MetaSlot>::from_addr(ptr.addr()).borrow(Tracked(points_to));
     M::from_borrowed(slot.storage.borrow(Tracked(&metadata_perms.storage)), Tracked(repr_perm))
@@ -407,42 +365,25 @@ pub fn borrow_meta_mut<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>>(
 
 impl Inv for MetaSlotOwner {
     open spec fn inv(self) -> bool {
-        // A managed slot at `REF_COUNT_UNUSED` is free — it has no live
-        // PTE mapping, since a mapping is itself a reference that would
-        // keep the count above the unused sentinel. Hence `paths_in_pt`
-        // is empty. Maintained by the teardown path: the sole transition
-        // *into* `UNUSED` is `drop_last_in_place`, whose
-        // `drop_last_in_place_safety_cond` requires an empty
-        // `paths_in_pt`. MMIO slots are excluded — they are not
-        // ref-counted as ordinary frames (an MMIO region may sit at the
-        // `UNUSED` sentinel while still mapped), exactly as the embedding
-        // accounting and the huge-page split loop invariant scope out
-        // `usage == MMIO`.
         &&& self.ref_count.value() == REF_COUNT_UNUSED ==> {
             &&& self.metadata.is_full()
             &&& self.storage_perm().is_uninit()
             &&& self.vtable_ptr_perm().is_uninit()
-            &&& self.in_list.value() == 0
+            &&& self.in_list.value()
+                == 0
+            // A managed slot at `REF_COUNT_UNUSED` has no live PTE mapping. Hence `paths_in_pt` is empty.
+            // MMIO slots are excluded — they are not  ref-counted as ordinary frames.
             &&& (self.usage != PageUsage::MMIO ==> self.paths_in_pt.is_empty())
         }
         &&& self.ref_count.value() == REF_COUNT_UNIQUE ==> {
             &&& self.metadata.is_empty()
-            // A UNIQUE non-MMIO slot has no live PTE mapping (same rationale as
-            // the UNUSED branch): a mapping would be a reference keeping the
-            // count above the unique sentinel. Lets the list-store embedding
-            // discharge `paths_in_pt.is_empty()` for linked-list frames.
+            // A UNIQUE non-MMIO slot has no live PTE mapping.
             &&& (self.usage != PageUsage::MMIO ==> self.paths_in_pt.is_empty())
         }
-        // A SHARED slot (`0 < rc <= REF_COUNT_MAX`) is genuinely in use:
+        // A SHARED slot is genuinely in use:
         // metadata storage is written, `vtable_ptr` resolves the
         // dynamic type, and the slot is *not* on the allocator's free
-        // list. `storage.is_init()` and `in_list.value() == 0` were
-        // previously asserted only in the `UNIQUE` branch and via the
-        // `rc == 1 ⟹ ...` guard on `Frame::drop_requires`; they are
-        // universally true of any in-use slot, so they live here. Once
-        // these are invariants, the embedding's `op_pre[FrameDrop]` can
-        // drop its `rc == 1 ⟹ storage.is_init ∧ in_list == 0` residual
-        // (it follows from `regions.inv() ⟹ slot_owners[idx].inv()`).
+        // list.
         &&& 0 < self.ref_count.value() <= REF_COUNT_MAX ==> {
             &&& self.metadata.frac() + self.ref_count.value() as int == REF_COUNT_MAX
             &&& self.metadata.not_empty() ==> {
