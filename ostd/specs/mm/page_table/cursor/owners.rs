@@ -941,6 +941,18 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         }
     }
 
+    /// Incrementing a nonterminal cursor index preserves the abstract-VA invariant.
+    pub proof fn lemma_inc_index_va_inv(self)
+        requires
+            self.inv(),
+            self.index() + 1 < NR_ENTRIES,
+        ensures
+            self.inc_index().va.inv(),
+    {
+        let new_index = self.continuations[self.level - 1].inc_index().idx as int;
+        self.va.lemma_insert_preserves_inv(self.level - 1, new_index);
+    }
+
     #[verifier::spinoff_prover]
     pub proof fn do_inc_index(tracked &mut self)
         requires
@@ -954,6 +966,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             final(self).inv(),
             *final(self) == old(self).inc_index(),
     {
+        old(self).lemma_inc_index_va_inv();
         self.popped_too_high = false;
         let tracked mut cont = self.continuations.tracked_remove(self.level - 1);
         cont.do_inc_index();
@@ -1423,7 +1436,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     /// When the cursor is in the locked range, va.index[guard_level - 1]
     /// matches prefix.index[guard_level - 1]. This is because both va and
     /// prefix are within the same page_size(guard_level)-aligned block.
-    #[verifier::rlimit(2000)]
+    #[verifier::rlimit(200)]
     pub proof fn in_locked_range_guard_index_eq_prefix(self)
         requires
             self.inv(),
@@ -1690,7 +1703,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     }
 
     /// The node at `level+1` containing `va` fits within the locked range.
-    #[verifier::rlimit(20000)]
+    #[verifier::rlimit(200)]
     pub proof fn node_within_locked_range(self, level: PagingLevel)
         requires
             self.inv(),
