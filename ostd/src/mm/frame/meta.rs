@@ -46,9 +46,6 @@ pub(crate) mod mapping {
             frame_to_meta(paddr),
         no_unwind
     {
-        proof {
-            MetaSlot::lemma_layout();
-        }
         let base = FRAME_METADATA_RANGE.start;
         let offset = paddr / PAGE_SIZE;
         base + offset * size_of::<MetaSlot>()
@@ -65,9 +62,6 @@ pub(crate) mod mapping {
         returns
             meta_to_frame(vaddr),
     {
-        proof {
-            MetaSlot::lemma_layout();
-        }
         let base = FRAME_METADATA_RANGE.start;
         let offset = (vaddr - base) / size_of::<MetaSlot>();
         offset * PAGE_SIZE
@@ -103,8 +97,7 @@ use self::mapping::{frame_to_meta, meta_to_frame};
 use crate::mm::io::{Infallible, VmReader};
 use crate::specs::arch::*;
 use crate::specs::mm::frame::{
-    FracMetadataPerm, mapping::frame_to_index, meta_owners::*,
-    meta_region_owners::MetaRegionOwners,
+    FracMetadataPerm, mapping::frame_to_index, meta_owners::*, meta_region_owners::MetaRegionOwners,
 };
 
 use crate::{
@@ -433,10 +426,6 @@ impl MetaSlot {
                 Err(err);
             },
         };
-        proof {
-            assert(valid_frame_paddr(paddr));
-            regions.contains_valid_frame_paddr(paddr);
-        }
 
         let tracked slot_own = regions.tracked_borrow_mut_slot_owner(paddr);
         proof {
@@ -494,51 +483,6 @@ impl MetaSlot {
             // address, so `Relaxed` is fine here.
             slot.ref_count.store(Tracked(&mut slot_own.ref_count_perm), REF_COUNT_UNIQUE);
             let tracked metadata_perms = slot_own.metadata_perm.take_resource();
-            proof {
-                slot_own.metadata_perm.lemma_resource_vacant_implies_empty();
-                let ghost idx = frame_to_index(paddr);
-                assert(old(regions).slot_owners[idx].ref_count() == REF_COUNT_UNUSED);
-                assert(regions.slot_owners[idx].ref_count() == REF_COUNT_UNIQUE);
-                assert(regions.slot_owners[idx].in_list_perm.value() == 0);
-                assert(regions.slot_owners[idx].metadata_perm.frac() == 0);
-                assert(regions.slot_owners[idx].metadata_perm.is_resource_vacant());
-                assert(Self::get_from_unused_owner_spec(as_unique_ptr, regions.slot_owners[idx]));
-                assert(regions.slot_owners[idx].usage is Frame);
-                assert(regions.slot_owners[idx].slot_vaddr
-                    == old(regions).slot_owners[idx].slot_vaddr);
-                assert(regions.slot_owners[idx].paths_in_pt
-                    == old(regions).slot_owners[idx].paths_in_pt);
-                assert(*regions =~= old(regions).insert_slot_owner(
-                    paddr,
-                    regions.slot_owners[idx],
-                ));
-                assert(Self::get_from_unused_region_spec(
-                    paddr,
-                    as_unique_ptr,
-                    *old(regions),
-                    *regions,
-                ));
-                assert(metadata_perms.storage_perm.id() == regions.slots[idx].value().storage.id());
-                assert(metadata_perms.storage_perm.is_init());
-                assert(metadata_perms.vtable_ptr_perm.pptr()
-                    == regions.slots[idx].value().vtable_ptr);
-                assert(metadata_perms.vtable_ptr_perm.is_init());
-                assert(<M as Repr<MetaSlotStorage>>::wf(
-                    metadata_perms.storage_perm.value(),
-                    *repr_perm,
-                ));
-                assert(M::from_repr_spec(metadata_perms.storage_perm.value(), *repr_perm)
-                    == metadata);
-                assert(Self::get_from_unused_spec(
-                    paddr,
-                    metadata,
-                    as_unique_ptr,
-                    *old(regions),
-                    *regions,
-                    *repr_perm,
-                    (None, Some(metadata_perms)),
-                ));
-            }
             proof_with!(|= Tracked((None, Some(metadata_perms))));
             Ok(PPtr::from_addr(frame_to_meta(paddr)))
         } else {
@@ -546,17 +490,6 @@ impl MetaSlot {
             // won't be reordered after this memory store.
             slot.ref_count.store(Tracked(&mut slot_own.ref_count_perm), 1);
             let tracked permission = slot_own.metadata_perm.split_one();
-            proof {
-                assert(Self::get_from_unused_spec(
-                    paddr,
-                    metadata,
-                    as_unique_ptr,
-                    *old(regions),
-                    *regions,
-                    *repr_perm,
-                    (Some(permission), None),
-                ));
-            }
             proof_with!(|= Tracked((Some(permission), None)));
             Ok(PPtr::from_addr(frame_to_meta(paddr)))
         }
@@ -617,13 +550,6 @@ impl MetaSlot {
             invariant
                 *regions == *old(regions),
         {
-            proof {
-                vstd_extra::auxiliary::axiom_permission_u64_ext_eq(
-                    regions.slot_owners[idx].ref_count_perm,
-                    old(regions).slot_owners[idx].ref_count_perm,
-                );
-            }
-
             let tracked slot_own = regions.slot_owners.tracked_borrow_mut(idx);
 
             match slot.ref_count.load(Tracked(&mut slot_own.ref_count_perm)) {

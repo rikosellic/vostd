@@ -182,9 +182,8 @@ proof fn lemma_insert_before_slot_distinct<M: AnyFrameMeta + Repr<MetaSlotSmall>
     ) by {
         owner0.relate_region_at_facts(regions0, p);
         if frame_idx == meta_to_index(owner0.list[p].paddr) {
-            assert(regions0.slot_owners[meta_to_index(
-                owner0.list[p].paddr,
-            )].in_list_perm.value() == owner0.list_id);
+            assert(regions0.slot_owners[meta_to_index(owner0.list[p].paddr)].in_list_perm.value()
+                == owner0.list_id);
         }
     }
 }

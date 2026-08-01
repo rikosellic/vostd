@@ -495,7 +495,7 @@ impl<T, const TOTAL: u64> Count<T, TOTAL> {
     {
         let tracked (res, _) = self.take_resource();
         res
-    } 
+    }
 }
 
 impl<T, const TOTAL: u64> EmptyCount<T, TOTAL> {

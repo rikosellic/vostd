@@ -758,7 +758,9 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> Deref for RwLockReadGuard<'_, T, G> {
         // unsafe { &*self.inner.val.get() }
         // The internal implementation of `PCell<T>::borrow` is exactly unsafe { &(*(*self.ucell).get()) },
         // and here we verify that we have the permission to call `borrow`.
-        self.inner.val.borrow(Tracked(self.tracked_token.borrow().tracked_borrow().0.tracked_borrow()))
+        self.inner.val.borrow(
+            Tracked(self.tracked_token.borrow().tracked_borrow().0.tracked_borrow()),
+        )
     }
 }
 
@@ -1110,7 +1112,9 @@ impl<T  /*: ?Sized*/ , G: SpinGuardian> Deref for RwLockUpgradeableGuard<'_, T, 
         // unsafe { &*self.inner.val.get() }
         // The internal implementation of `PCell<T>::borrow` is exactly unsafe { &(*(*self.ucell).get()) },
         // and here we verify that we have the permission to call `borrow`.
-        self.inner.val.borrow(Tracked(self.tracked_token.borrow().tracked_borrow().tracked_borrow()))
+        self.inner.val.borrow(
+            Tracked(self.tracked_token.borrow().tracked_borrow().tracked_borrow()),
+        )
     }
 }
 

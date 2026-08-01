@@ -248,7 +248,6 @@ impl MetaSlotOwner {
     {
         &self.metadata_perm.tracked_borrow().vtable_ptr_perm
     }
-
 }
 
 /// Well-formedness of a concrete metadata representation. The outer slot

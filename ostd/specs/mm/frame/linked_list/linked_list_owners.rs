@@ -680,10 +680,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
         } else {
             p + 1
         };
-        let fp = typed_meta_value::<Link<M>>(
-            self.metadata_perms[np],
-            self.repr_perms[np],
-        );
+        let fp = typed_meta_value::<Link<M>>(self.metadata_perms[np], self.repr_perms[np]);
         &&& fr.contains(i)
         &&& fr.slots[i].is_init()
         &&& fr.slots[i].addr() == old.list[p].paddr

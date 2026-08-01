@@ -618,7 +618,9 @@ impl<T  /*: ?Sized*/ > Deref for RwMutexReadGuard<'_, T> {
             use_type_invariant(self);
         }
         // unsafe { &*self.inner.val.get() }
-        self.inner.val.borrow(Tracked(self.tracked_token.borrow().tracked_borrow().0.tracked_borrow()))
+        self.inner.val.borrow(
+            Tracked(self.tracked_token.borrow().tracked_borrow().0.tracked_borrow()),
+        )
     }
 }
 
@@ -1032,7 +1034,9 @@ impl<T  /*: ?Sized*/ > Deref for RwMutexUpgradeableGuard<'_, T> {
             use_type_invariant(self);
         }
         // unsafe { &*self.inner.val.get() }
-        self.inner.val.borrow(Tracked(self.tracked_token.borrow().tracked_borrow().tracked_borrow()))
+        self.inner.val.borrow(
+            Tracked(self.tracked_token.borrow().tracked_borrow().tracked_borrow()),
+        )
     }
 }
 

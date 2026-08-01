@@ -183,12 +183,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
         slot_index: int,
     ) -> (tracked res: Self)
         returns
-            Self::from_unused_owner(
-                meta_own,
-                repr_perm,
-                metadata_perms,
-                slot_index,
-            ),
+            Self::from_unused_owner(meta_own, repr_perm, metadata_perms, slot_index),
     {
         Self {
             meta_own,
