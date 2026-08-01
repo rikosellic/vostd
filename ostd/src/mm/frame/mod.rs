@@ -209,7 +209,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
         ensures
             *res == self.tracked_perm@->0.resource(),
     {
-        self.tracked_perm.borrow().tracked_borrow().borrow()
+        self.tracked_perm.borrow().tracked_borrow().tracked_borrow()
     }
 
     /// Gets a [`Frame`] with a specific usage from a raw, unused page.

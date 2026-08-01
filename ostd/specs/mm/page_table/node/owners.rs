@@ -264,14 +264,14 @@ impl<C: PageTableConfig> NodeOwner<C> {
         ensures
             *res == permission.resource(),
     {
-        permission.borrow()
+        permission.tracked_borrow()
     }
 
     pub proof fn tracked_borrow_metadata_perms(tracked &self) -> (tracked res: &MetadataPerms)
         ensures
             *res == self.frame_permission.resource(),
     {
-        self.frame_permission.borrow()
+        self.frame_permission.tracked_borrow()
     }
 
     /// The meta address of this node's slot, computed from `slot_index`.

@@ -384,14 +384,14 @@ impl MetaSlot {
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(repr_perm): Tracked<&mut M::ReprPerm>,
-            -> Tracked(permissions): Tracked<(Option<FracMetadataPerm>, Option<MetadataPerms>)>
+            -> permissions: Tracked<(Option<FracMetadataPerm>, Option<MetadataPerms>)>
         requires
             old(regions).inv(),
         ensures
             res is Err ==> {
                 &&& *final(regions) == *old(regions)
-                &&& permissions.0 is None
-                &&& permissions.1 is None
+                &&& permissions@.0 is None
+                &&& permissions@.1 is None
             },
             res matches Ok(res) ==> {
                 &&& res.addr() == frame_to_meta(paddr)
@@ -403,7 +403,7 @@ impl MetaSlot {
                     *old(regions),
                     *final(regions),
                     *final(repr_perm),
-                    permissions,
+                    permissions@,
                 )
             },
             res is Ok ==> valid_frame_paddr(paddr),
