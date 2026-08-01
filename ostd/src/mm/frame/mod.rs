@@ -249,14 +249,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
     pub fn from_unused(paddr: Paddr, metadata: M) -> Result<Self, GetFrameError> {
         #[verus_spec(with
             Tracked(regions),
-            Tracked(repr_perm) => Tracked(frame_permission)
+            Tracked(repr_perm) => Tracked(permissions)
         )]
         let from_unused = MetaSlot::get_from_unused(paddr, metadata, false);
         if let Err(err) = from_unused {
             Err(err)
         } else {
             let ptr = from_unused.unwrap();
-            let tracked frame_permission = frame_permission.tracked_unwrap();
+            let tracked frame_permission = permissions.0.tracked_unwrap();
             proof {
                 let ghost idx = frame_to_index(paddr);
                 assert(frame_to_index(paddr) < max_meta_slots());

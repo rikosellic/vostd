@@ -9,10 +9,7 @@ use vstd_extra::{
     cast_ptr::{self, Repr},
     ghost_tree::TreePath,
     ownership::*,
-    resource::ghost_resource::{
-        count::{Count, EmptyCount},
-        tokens::CountResource,
-    },
+    resource::ghost_resource::{count::Count, tokens::CountResource},
 };
 
 use crate::specs::{arch::NR_ENTRIES, mm::frame::linked_list::linked_list_owners::StoredLink};
@@ -173,10 +170,6 @@ pub type FracMetadataPerm = Count<MetadataPerms, REF_COUNT_MAX>;
 /// The undistributed part of a metadata permission.
 pub type FracMetadataPermResource = CountResource<MetadataPerms, REF_COUNT_MAX>;
 
-/// The witness left after a unique frame extracts the complete metadata
-/// permission from a full [`FracMetadataPermResource`].
-pub type EmptyFracMetadataPerm = EmptyCount<MetadataPerms, REF_COUNT_MAX>;
-
 /// Permissions that remain under the authority of `MetaRegionOwners`.
 ///
 /// `ref_count` and `in_list` exist for the complete lifetime of the
@@ -256,52 +249,6 @@ impl MetaSlotOwner {
         &self.metadata_perm.tracked_borrow().vtable_ptr_perm
     }
 
-    /// Extracts the complete metadata permission for a unique owner. The
-    /// central pool remains empty but retains its identity.
-    pub proof fn tracked_take_full_metadata_perms(tracked &mut self) -> (tracked res: (
-        MetadataPerms,
-        EmptyFracMetadataPerm,
-    ))
-        requires
-            old(self).metadata_perm.is_full(),
-        ensures
-            final(self).metadata_perm.is_empty(),
-            final(self).metadata_perm.id() == old(self).metadata_perm.id(),
-            final(self).ref_count_perm == old(self).ref_count_perm,
-            final(self).in_list_perm == old(self).in_list_perm,
-            final(self).slot_vaddr == old(self).slot_vaddr,
-            final(self).usage == old(self).usage,
-            final(self).paths_in_pt == old(self).paths_in_pt,
-            res.0 == old(self).metadata_perm@,
-            res.1.id() == final(self).metadata_perm.id(),
-    {
-        let tracked full = self.metadata_perm.split(REF_COUNT_MAX as int);
-        full.take_resource()
-    }
-
-    /// Returns the metadata permission held by a unique owner to the central
-    /// pool.
-    pub proof fn tracked_restore_full_metadata_perms(
-        tracked &mut self,
-        tracked metadata: MetadataPerms,
-        tracked empty: EmptyFracMetadataPerm,
-    )
-        requires
-            old(self).metadata_perm.is_empty(),
-            old(self).metadata_perm.id() == empty.id(),
-        ensures
-            final(self).metadata_perm.is_full(),
-            final(self).metadata_perm@ == metadata,
-            final(self).metadata_perm.id() == old(self).metadata_perm.id(),
-            final(self).ref_count_perm == old(self).ref_count_perm,
-            final(self).in_list_perm == old(self).in_list_perm,
-            final(self).slot_vaddr == old(self).slot_vaddr,
-            final(self).usage == old(self).usage,
-            final(self).paths_in_pt == old(self).paths_in_pt,
-    {
-        let tracked full = empty.put_resource(metadata);
-        self.metadata_perm.combine(full);
-    }
 }
 
 /// Well-formedness of a concrete metadata representation. The outer slot
@@ -322,7 +269,7 @@ pub open spec fn typed_meta_value<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     metadata_perms: MetadataPerms,
     repr_perm: M::ReprPerm,
 ) -> M {
-    M::from_repr_spec(storage.value(), repr_perm)
+    M::from_repr_spec(metadata_perms.storage_perm.value(), repr_perm)
 }
 
 pub fn borrow_meta<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>>(
@@ -380,7 +327,7 @@ impl Inv for MetaSlotOwner {
             &&& (self.usage != PageUsage::MMIO ==> self.paths_in_pt.is_empty())
         }
         &&& self.ref_count() == REF_COUNT_UNIQUE ==> {
-            &&& self.metadata_perm.is_empty()
+            &&& self.metadata_perm.is_resource_vacant()
             // A UNIQUE non-MMIO slot has no live PTE mapping.
             &&& (self.usage != PageUsage::MMIO ==> self.paths_in_pt.is_empty())
         }

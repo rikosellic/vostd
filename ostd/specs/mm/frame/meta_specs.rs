@@ -29,7 +29,8 @@ use crate::mm::{
 };
 
 use super::meta_owners::{
-    FracMetadataPerm, MetaSlotModel, MetaSlotOwner, MetaSlotStatus, MetaSlotStorage, PageUsage,
+    FracMetadataPerm, MetaSlotModel, MetaSlotOwner, MetaSlotStatus, MetaSlotStorage, MetadataPerms,
+    PageUsage,
 };
 
 verus! {
@@ -58,6 +59,7 @@ impl MetaSlot {
         } else {
             (REF_COUNT_MAX - 1) as int
         })
+        &&& as_unique ==> owner.metadata_perm.is_resource_vacant()
         &&& !as_unique ==> {
             &&& owner.storage_perm().is_init()
             &&& owner.vtable_ptr_perm().is_init()
@@ -93,22 +95,31 @@ impl MetaSlot {
         pre: MetaRegionOwners,
         post: MetaRegionOwners,
         repr_perm: M::ReprPerm,
-        perm: FracMetadataPerm,
+        permissions: (Option<FracMetadataPerm>, Option<MetadataPerms>),
     ) -> bool {
         let idx = frame_to_index(paddr);
-        &&& Self::get_from_unused_region_spec(paddr, as_unique, pre, post)
-        &&& perm.frac() == if as_unique {
-            REF_COUNT_MAX as int
+        let metadata_perms = if as_unique {
+            permissions.1->0
         } else {
-            1int
+            permissions.0->0.resource()
+        };
+        &&& Self::get_from_unused_region_spec(paddr, as_unique, pre, post)
+        &&& as_unique ==> {
+            &&& permissions.0 is None
+            &&& permissions.1 is Some
         }
-        &&& perm.id() == post.slot_owners[idx].metadata_perm.id()
-        &&& perm.resource().storage_perm.id() == post.slots[idx].value().storage.id()
-        &&& perm.resource().storage_perm.is_init()
-        &&& perm.resource().vtable_ptr_perm.pptr() == post.slots[idx].value().vtable_ptr
-        &&& perm.resource().vtable_ptr_perm.is_init()
-        &&& <M as Repr<MetaSlotStorage>>::wf(perm.resource().storage_perm.value(), repr_perm)
-        &&& M::from_repr_spec(perm.resource().storage_perm.value(), repr_perm) == metadata
+        &&& !as_unique ==> {
+            &&& permissions.0 is Some
+            &&& permissions.1 is None
+            &&& permissions.0->0.frac() == 1
+            &&& permissions.0->0.id() == post.slot_owners[idx].metadata_perm.id()
+        }
+        &&& metadata_perms.storage_perm.id() == post.slots[idx].value().storage.id()
+        &&& metadata_perms.storage_perm.is_init()
+        &&& metadata_perms.vtable_ptr_perm.pptr() == post.slots[idx].value().vtable_ptr
+        &&& metadata_perms.vtable_ptr_perm.is_init()
+        &&& <M as Repr<MetaSlotStorage>>::wf(metadata_perms.storage_perm.value(), repr_perm)
+        &&& M::from_repr_spec(metadata_perms.storage_perm.value(), repr_perm) == metadata
     }
 
     /// Variant of [`get_from_unused_region_spec`] for allocating a page-table *node*

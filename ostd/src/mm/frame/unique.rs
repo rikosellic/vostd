@@ -9,7 +9,6 @@ use vstd_extra::ownership::*;
 
 use crate::specs::arch::*;
 use crate::specs::mm::frame::{
-    EmptyFracMetadataPerm,
     mapping::{frame_to_index, group_page_meta, index_to_meta, max_meta_slots, meta_to_index},
     meta_owners::{MetaSlotStorage, MetadataPerms, borrow_meta, borrow_meta_mut},
     meta_region_owners::MetaRegionOwners,
@@ -91,7 +90,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         let tracked mut repr_perm = repr_perm_in;
         #[verus_spec(with
             Tracked(regions),
-            Tracked(&mut repr_perm) => Tracked(metadata_permission)
+            Tracked(&mut repr_perm) => Tracked(permissions)
         )]
         let from_unused = MetaSlot::get_from_unused(paddr, metadata, true);
 
@@ -100,15 +99,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
             Err(err)
         } else {
             let ptr = from_unused.unwrap();
-            let tracked metadata_permission = metadata_permission.tracked_unwrap();
-            let tracked (metadata_perms, empty_metadata) = metadata_permission.take_resource();
+            let tracked metadata_perms = permissions.1.tracked_unwrap();
 
             proof_decl! {
                 let tracked owner = UniqueFrameOwner::<M>::tracked_from_unused_owner(
                     meta_own_in,
                     repr_perm,
                     metadata_perms,
-                    empty_metadata,
                     frame_to_index(paddr),
                 );
                 let ghost idx = frame_to_index(paddr);
@@ -181,7 +178,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         let tracked mut slot_own = regions.slot_owners.tracked_remove(idx);
         let tracked perm_ref = regions.slots.tracked_borrow(idx);
         let tracked mut metadata_perms = owner.metadata_perms.tracked_take();
-        let tracked empty_metadata = owner.empty_metadata.tracked_take();
 
         #[verus_spec(with Tracked(perm_ref))]
         let slot = self.slot();
@@ -219,7 +215,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
             meta_own_in,
             repr_perm,
             metadata_perms,
-            empty_metadata,
             meta_to_index(self.ptr.addr()),
         );
 
@@ -420,9 +415,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
 
         let tracked slot_own = regions.slot_owners.tracked_borrow_mut(idx);
         let tracked metadata_perms = owner.metadata_perms.tracked_take();
-        let tracked empty_metadata = owner.empty_metadata.tracked_take();
         proof {
-            slot_own.tracked_restore_full_metadata_perms(metadata_perms, empty_metadata);
+            slot_own.metadata_perm.put_resource(metadata_perms);
         }
         let tracked perm_ref = regions.slots.tracked_borrow(idx);
 
@@ -492,7 +486,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
             Tracked(meta_own): Tracked<M::Owner>,
             Tracked(repr_perm): Tracked<M::ReprPerm>,
             Tracked(metadata_perms): Tracked<MetadataPerms>,
-            Tracked(empty_metadata): Tracked<EmptyFracMetadataPerm>,
         requires
             valid_frame_paddr(paddr),
             old(regions).inv(),
@@ -504,7 +497,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
             res.1@.meta_own == meta_own,
             res.1@.repr_perm == Some(repr_perm),
             res.1@.metadata_perms == Some(metadata_perms),
-            res.1@.empty_metadata == Some(empty_metadata),
             res.1@.slot_index == frame_to_index(paddr),
             final(regions).inv(),
             final(regions).slots == old(regions).slots,
@@ -518,7 +510,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
             meta_own,
             repr_perm: Some(repr_perm),
             metadata_perms: Some(metadata_perms),
-            empty_metadata: Some(empty_metadata),
             slot_index: frame_to_index(paddr),
         };
 
@@ -582,9 +573,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
 
         let tracked mut slot_own = regions.slot_owners.tracked_remove(idx);
         let tracked metadata_perms = owner.metadata_perms.tracked_take();
-        let tracked empty_metadata = owner.empty_metadata.tracked_take();
         proof {
-            slot_own.tracked_restore_full_metadata_perms(metadata_perms, empty_metadata);
+            slot_own.metadata_perm.put_resource(metadata_perms);
         }
         let tracked perm_ref = regions.slots.tracked_borrow(idx);
 
@@ -641,9 +631,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
         #[verus_spec(with Tracked(&slot_perm))]
         let slot = unique.slot();
         let tracked metadata_perms = owner.metadata_perms.tracked_take();
-        let tracked empty_metadata = owner.empty_metadata.tracked_take();
         proof {
-            slot_own.tracked_restore_full_metadata_perms(metadata_perms, empty_metadata);
+            slot_own.metadata_perm.put_resource(metadata_perms);
         }
         let tracked frame_permission = slot_own.metadata_perm.split_one();
         let tracked mut inner_perms = &mut slot_own;

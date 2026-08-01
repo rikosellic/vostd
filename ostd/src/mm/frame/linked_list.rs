@@ -110,7 +110,7 @@ verus! {
 /// ## Invariant
 /// The linked list uniquely owns the raw frames that it contains, so they cannot be used by other
 /// data structures. The frame metadata field `in_list` is equal to `list_id` for all links in the list.
-/// The per-link well-formedness against the region (pptr/inner_perms wiring,
+/// The per-link well-formedness against the region (pptr/permission wiring,
 /// `next`/`prev` pointer chain) is captured by
 /// [`LinkedListOwner::relate_region`] (opaque, with per-position
 /// [`LinkedListOwner::relate_region_at`]). The cursor exposes this via
@@ -166,7 +166,7 @@ proof fn lemma_insert_before_slot_distinct<M: AnyFrameMeta + Repr<MetaSlotSmall>
         owner0.relate_region(regions0),
         regions0.inv(),
         regions0.contains(frame_idx),
-        regions0.slot_owners[frame_idx].inner_perms.in_list.value() == 0,
+        regions0.slot_owners[frame_idx].in_list_perm.value() == 0,
         0 <= nn <= owner0.list.len() as int,
     ensures
         forall|p: int|
@@ -184,7 +184,7 @@ proof fn lemma_insert_before_slot_distinct<M: AnyFrameMeta + Repr<MetaSlotSmall>
         if frame_idx == meta_to_index(owner0.list[p].paddr) {
             assert(regions0.slot_owners[meta_to_index(
                 owner0.list[p].paddr,
-            )].inner_perms.in_list.value() == owner0.list_id);
+            )].in_list_perm.value() == owner0.list_id);
         }
     }
 }
@@ -952,7 +952,6 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
         let tracked mut cur_own = owner.list_own.list.tracked_remove(owner.index);
         let tracked cur_repr_perm = owner.list_own.repr_perms.tracked_remove(owner.index);
         let tracked cur_metadata_perms = owner.list_own.metadata_perms.tracked_remove(owner.index);
-        let tracked cur_empty_metadata = owner.list_own.empty_metadata.tracked_remove(owner.index);
 
         let (mut frame, Tracked(mut frame_own)) = unsafe {
             // SAFETY: The frame was forgotten when inserted into the linked list.
@@ -960,8 +959,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 Tracked(regions),
                 Tracked(cur_own),
                 Tracked(cur_repr_perm),
-                Tracked(cur_metadata_perms),
-                Tracked(cur_empty_metadata)
+                Tracked(cur_metadata_perms)
             )]
             UniqueFrame::<Link<M>>::from_raw(paddr)
         };
@@ -1109,9 +1107,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 &&& regions.slots[i].addr() == oldl.list[p].paddr
                 &&& regions.slots[i].pptr() == regions0.slots[i].pptr()
                 &&& regions.slot_owners[i].ref_count() == REF_COUNT_UNIQUE
-                &&& regions.slot_owners[i].metadata_perm.is_empty()
-                &&& regions.slot_owners[i].metadata_perm.id()
-                    == owner.list_own.empty_metadata[np].id()
+                &&& regions.slot_owners[i].metadata_perm.is_resource_vacant()
                 &&& owner.list_own.metadata_perms[np].storage_perm.id()
                     == regions.slots[i].value().storage.id()
                 &&& owner.list_own.metadata_perms[np].vtable_ptr_perm.pptr()
@@ -1209,6 +1205,9 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
 
         proof {
             assert(owner0.list_own.repr_perms.len() == owner0.list_own.list.len()) by {
+                reveal(LinkedListOwner::relate_region);
+            };
+            assert(owner0.list_own.metadata_perms.len() == owner0.list_own.list.len()) by {
                 reveal(LinkedListOwner::relate_region);
             };
             assert(owner0.list_own.list.len() > 0 ==> owner0.list_own.list_id != 0) by {
@@ -1382,13 +1381,11 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
         proof {
             let tracked frame_repr_perm = frame_own.repr_perm.tracked_take();
             let tracked frame_metadata_perms = frame_own.metadata_perms.tracked_take();
-            let tracked frame_empty_metadata = frame_own.empty_metadata.tracked_take();
             CursorOwner::<M>::tracked_list_insert(
                 owner,
                 &mut frame_own.meta_own,
                 frame_repr_perm,
                 frame_metadata_perms,
-                frame_empty_metadata,
                 list_id,
             );
 

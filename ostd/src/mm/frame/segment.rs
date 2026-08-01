@@ -158,7 +158,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
     }
 
     #[verifier::loop_isolation(false)]
-    #[verifier::rlimit(50)]
+    #[verifier::rlimit(200)]
     fn clone(&self, Tracked(perm): Tracked<&mut MetaRegionOwners>) -> (res: Self) {
         let mut paddr = self.range.start;
         proof_decl! {
