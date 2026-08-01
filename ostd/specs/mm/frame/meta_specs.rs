@@ -164,11 +164,7 @@ impl MetaSlot {
         paddr: Paddr,
         pre: MetaRegionOwners,
         post: MetaRegionOwners,
-    ) -> bool
-        recommends
-            valid_frame_paddr(paddr),
-            pre.inv(),
-    {
+    ) -> bool {
         let idx = frame_to_index(paddr);
         let pre_perms = pre.slot_owners[idx].ref_count();
         {
@@ -203,6 +199,13 @@ impl MetaSlot {
         // reference — it would keep the count above the teardown
         // threshold).
         &&& owner.paths_in_pt.is_empty()
+    }
+
+    pub open spec fn inc_ref_count_spec(&self, pre: MetaSlotModel) -> (MetaSlotModel)
+        recommends
+            pre.status == MetaSlotStatus::SHARED,
+    {
+        MetaSlotModel { ref_count: (pre.ref_count + 1) as u64, ..pre }
     }
 }
 

@@ -322,7 +322,7 @@ pub open spec fn typed_meta_value<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     metadata_perms: MetadataPerms,
     repr_perm: M::ReprPerm,
 ) -> M {
-    M::from_repr_spec(metadata_perms.storage_perm.value(), repr_perm)
+    M::from_repr_spec(storage.value(), repr_perm)
 }
 
 pub fn borrow_meta<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>>(

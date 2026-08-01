@@ -130,10 +130,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
         )
     }
 
-    pub open spec fn meta_value(self, regions: MetaRegionOwners) -> M
-        recommends
-            self.meta_wf(regions),
-    {
+    pub open spec fn meta_value(self, regions: MetaRegionOwners) -> M {
         typed_meta_value::<M>(self.metadata_perms->0, self.repr_perm->0)
     }
 
