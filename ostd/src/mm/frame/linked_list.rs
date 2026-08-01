@@ -138,7 +138,8 @@ pub struct CursorMut<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> {
     pub current: Option<ReprPtr<MetaSlotStorage, Link<M>>>,
 }
 
-proof fn meta_region_inv_at(regions: MetaRegionOwners, i: int)
+#[verifier::spinoff_prover]
+proof fn lemma_meta_region_inv_at(regions: MetaRegionOwners, i: int)
     requires
         regions.inv(),
         regions.contains(i),
@@ -149,7 +150,43 @@ proof fn meta_region_inv_at(regions: MetaRegionOwners, i: int)
         regions.slots[i].value().wf(regions.slot_owners[i]),
         regions.slot_owners[i].slot_vaddr == regions.slots[i].addr(),
 {
-    reveal(<MetaRegionOwners as Inv>::inv);
+}
+
+/// Localizes the "no existing slot aliases the inserted frame" universal fact
+/// into its own prover query, so the `MetaRegionOwners::inv` and map-insert
+/// quantifiers do not get over-instantiated inside `insert_before`'s body.
+#[verifier::spinoff_prover]
+proof fn lemma_insert_before_slot_distinct<M: AnyFrameMeta + Repr<MetaSlotSmall>>(
+    owner0: LinkedListOwner<M>,
+    regions0: MetaRegionOwners,
+    frame_idx: int,
+    nn: int,
+)
+    requires
+        owner0.relate_region(regions0),
+        regions0.inv(),
+        regions0.contains(frame_idx),
+        regions0.slot_owners[frame_idx].inner_perms.in_list.value() == 0,
+        0 <= nn <= owner0.list.len() as int,
+    ensures
+        forall|p: int|
+            #![trigger regions0.slot_owners[meta_to_index(owner0.list[p].paddr)]]
+            (0 <= p < owner0.list.len() as int) ==> frame_idx != meta_to_index(
+                owner0.list[p].paddr,
+            ),
+{
+    assert forall|p: int|
+        #![trigger regions0.slot_owners[meta_to_index(owner0.list[p].paddr)]]
+        0 <= p < owner0.list.len() as int implies frame_idx != meta_to_index(
+        owner0.list[p].paddr,
+    ) by {
+        owner0.relate_region_at_facts(regions0, p);
+        if frame_idx == meta_to_index(owner0.list[p].paddr) {
+            assert(regions0.slot_owners[meta_to_index(
+                owner0.list[p].paddr,
+            )].inner_perms.in_list.value() == owner0.list_id);
+        }
+    }
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedList<M> {
@@ -1110,7 +1147,6 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             Tracked(frame_own): Tracked<&mut UniqueFrameOwner<Link<M>>>
     )]
     #[verifier::spinoff_prover]
-    #[verifier::rlimit(200)]
     pub fn insert_before(&mut self, mut frame: UniqueFrame<Link<M>>)
         requires
             old(self).wf_region(*old(owner), *old(regions)),
@@ -1153,21 +1189,24 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 reveal(LinkedListOwner::relate_region);
             };
             assert(regions0.contains(frame_own.slot_index));
-            meta_region_inv_at(regions0, frame_own.slot_index);
+            lemma_meta_region_inv_at(regions0, frame_own.slot_index);
             owner0.list_own.length_lt_usize_max(regions0);
             if nn > 0 {
                 assert(owner0.list_own.relate_region_at(regions0, nn - 1)) by {
                     reveal(LinkedListOwner::relate_region);
                 };
                 owner.list_own.relate_region_at_facts(*regions, nn - 1);
-                meta_region_inv_at(regions0, meta_to_index(owner0.list_own.list[nn - 1].paddr));
+                lemma_meta_region_inv_at(
+                    regions0,
+                    meta_to_index(owner0.list_own.list[nn - 1].paddr),
+                );
             }
             if nn < owner.list_own.list.len() {
                 assert(owner0.list_own.relate_region_at(regions0, nn)) by {
                     reveal(LinkedListOwner::relate_region);
                 };
                 owner.list_own.relate_region_at_facts(*regions, nn);
-                meta_region_inv_at(regions0, meta_to_index(owner0.list_own.list[nn].paddr));
+                lemma_meta_region_inv_at(regions0, meta_to_index(owner0.list_own.list[nn].paddr));
             }
             assert forall|p: int|
                 #![trigger
@@ -1175,18 +1214,12 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 0 <= p < owner0.list_own.list.len() implies frame_own.slot_index != meta_to_index(
                 owner0.list_own.list[p].paddr,
             ) by {
-                assert(owner0.list_own.relate_region_at(regions0, p)) by {
-                    reveal(LinkedListOwner::relate_region);
-                };
-                owner0.list_own.relate_region_at_facts(regions0, p);
-                if frame_own.slot_index == meta_to_index(owner0.list_own.list[p].paddr) {
-                    assert(regions0.slot_owners[frame_own.slot_index].inner_perms.in_list.value()
-                        == 0);
-                    assert(regions0.slot_owners[meta_to_index(
-                        owner0.list_own.list[p].paddr,
-                    )].inner_perms.in_list.value() == owner0.list_own.list_id);
-                    assert(owner0.list_own.list_id != 0);
-                }
+                lemma_insert_before_slot_distinct(
+                    owner0.list_own,
+                    regions0,
+                    frame_own.slot_index,
+                    nn,
+                );
             }
         }
 
@@ -1248,18 +1281,6 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                     Tracked(current_repr_perm),
                 );
                 current_meta.prev = Some(frame_ptr);
-                proof {
-                    assert(frame_own.slot_index != meta_to_index(owner0.list_own.list[nn].paddr));
-                    let fpn_local = frame_own.meta_value(*regions);
-                    assert(fpn_local.prev.unwrap().addr() == owner0.list_own.list[nn - 1].paddr);
-                    assert(fpn_local.prev.unwrap().ptr.addr() == regions0.slots[meta_to_index(
-                        owner0.list_own.list[nn - 1].paddr,
-                    )].pptr().addr());
-                    assert(fpn_local.next.unwrap().addr() == owner0.list_own.list[nn].paddr);
-                    assert(fpn_local.next.unwrap().ptr.addr() == regions0.slots[meta_to_index(
-                        owner0.list_own.list[nn].paddr,
-                    )].pptr().addr());
-                }
             } else {
                 (#[verus_spec(with Tracked(frame_own), Tracked(regions))]
                 frame.meta_mut()).next = Some(current);
@@ -1310,7 +1331,6 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
         let list_id = self.list.lazy_get_id();
 
         proof {
-            assert(regions.contains(frame_own.slot_index));
             assert(owner0.list_own.list.len() > 0 ==> list_id == owner0.list_own.list_id);
         }
         let tracked frame_outer = regions.slots.tracked_borrow_mut(frame_own.slot_index);
@@ -1331,7 +1351,6 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
         self.list.size = self.list.size + 1;
 
         proof {
-            assert(owner.list_own.repr_perms.len() == owner.list_own.list.len());
             let tracked frame_repr_perm = frame_own.repr_perm.tracked_take();
             CursorOwner::<M>::tracked_list_insert(
                 owner,
@@ -1345,75 +1364,55 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             let flink = frame_own.meta_own;
             let ins = frame_own.slot_index;
 
-            assert forall|p: int|
-                #![trigger
-                    owner.list_own.insert_old_slot_post_at(
-                        *regions,
-                        oldl,
-                        regions0,
-                        nn,
-                        flink,
-                        p,
-                    )]
-                (0 <= p < oldl.list.len()) implies owner.list_own.insert_old_slot_post_at(
-                *regions,
-                oldl,
-                regions0,
-                nn,
-                flink,
-                p,
-            ) by {
-                reveal(LinkedListOwner::insert_old_slot_post_at);
-                let i = meta_to_index(oldl.list[p].paddr);
-                assert(oldl.relate_region_at(regions0, p)) by {
-                    reveal(LinkedListOwner::relate_region);
-                };
-                oldl.relate_region_at_facts(regions0, p);
-                if nn - 1 >= 0 && nn - 1 < oldl.list.len() && p != nn - 1 {
-                    assert(meta_to_index(oldl.list[p].paddr) != meta_to_index(
-                        oldl.list[nn - 1].paddr,
-                    )) by {
+            assert(owner.list_own.relate_region(*regions)) by {
+                assert forall|p: int|
+                    #![trigger
+                        owner.list_own.insert_old_slot_post_at(
+                            *regions,
+                            oldl,
+                            regions0,
+                            nn,
+                            flink,
+                            p,
+                        )]
+                    (0 <= p < oldl.list.len()) implies owner.list_own.insert_old_slot_post_at(
+                    *regions,
+                    oldl,
+                    regions0,
+                    nn,
+                    flink,
+                    p,
+                ) by {
+                    reveal(LinkedListOwner::insert_old_slot_post_at);
+                    assert(oldl.relate_region_at(regions0, p)) by {
                         reveal(LinkedListOwner::relate_region);
                     };
+                    oldl.relate_region_at_facts(regions0, p);
+                    if nn - 1 >= 0 && nn - 1 < oldl.list.len() && p != nn - 1 {
+                        assert(meta_to_index(oldl.list[p].paddr) != meta_to_index(
+                            oldl.list[nn - 1].paddr,
+                        )) by {
+                            reveal(LinkedListOwner::relate_region);
+                        };
+                    }
+                    if nn >= 0 && nn < oldl.list.len() && p != nn {
+                        assert(meta_to_index(oldl.list[p].paddr) != meta_to_index(
+                            oldl.list[nn].paddr,
+                        )) by {
+                            reveal(LinkedListOwner::relate_region);
+                        };
+                    }
                 }
-                if nn >= 0 && nn < oldl.list.len() && p != nn {
-                    assert(meta_to_index(oldl.list[p].paddr) != meta_to_index(oldl.list[nn].paddr))
-                        by {
-                        reveal(LinkedListOwner::relate_region);
-                    };
-                }
-                if nn - 1 >= 0 && nn - 1 < oldl.list.len() {
-                    assert(oldl.relate_region_at(regions0, nn - 1)) by {
-                        reveal(LinkedListOwner::relate_region);
-                    };
-                    oldl.relate_region_at_facts(regions0, nn - 1);
-                }
-                if nn >= 0 && nn < oldl.list.len() {
-                    assert(oldl.relate_region_at(regions0, nn)) by {
-                        reveal(LinkedListOwner::relate_region);
-                    };
-                    oldl.relate_region_at_facts(regions0, nn);
-                }
-                if nn - 1 >= 0 && nn - 1 < oldl.list.len() && p != nn - 1 {
-                    assert(meta_to_index(oldl.list[p].paddr) != meta_to_index(
-                        oldl.list[nn - 1].paddr,
-                    )) by {
-                        reveal(LinkedListOwner::relate_region);
-                    };
-                }
-                assert(regions.contains(i));
-            }
 
-            assert(regions.contains(ins));
-
-            LinkedListOwner::insert_preserves_relate_region(
-                oldl,
-                regions0,
-                owner.list_own,
-                *regions,
-                nn,
-                flink,
-            );
+                LinkedListOwner::insert_preserves_relate_region(
+                    oldl,
+                    regions0,
+                    owner.list_own,
+                    *regions,
+                    nn,
+                    flink,
+                );
+            };
 
             owner0.insert_owner_spec_implies_model_spec(flink, *owner);
         }
