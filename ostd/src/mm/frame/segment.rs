@@ -1314,12 +1314,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> IteratorSpecImpl for Seg
         Some(seg_nframes(self.range) as nat)
     }
 
-    #[verifier::prophetic]
-    open spec fn initial_value_relation(&self, init: &Self) -> bool {
-        &&& init.range() == self.range()
-        &&& init.permissions() == self.permissions()
-    }
-
     open spec fn peek(&self, index: int) -> Option<Self::Item> {
         if 0 <= index < self.permissions().len() {
             Some(
