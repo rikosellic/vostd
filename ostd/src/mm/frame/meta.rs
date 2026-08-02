@@ -46,6 +46,9 @@ pub(crate) mod mapping {
             frame_to_meta(paddr),
         no_unwind
     {
+        proof {
+            MetaSlot::lemma_layout();
+        }
         let base = FRAME_METADATA_RANGE.start;
         let offset = paddr / PAGE_SIZE;
         base + offset * size_of::<MetaSlot>()
@@ -62,6 +65,9 @@ pub(crate) mod mapping {
         returns
             meta_to_frame(vaddr),
     {
+        proof {
+            MetaSlot::lemma_layout();
+        }
         let base = FRAME_METADATA_RANGE.start;
         let offset = (vaddr - base) / size_of::<MetaSlot>();
         offset * PAGE_SIZE
