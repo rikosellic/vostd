@@ -49,7 +49,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'_, M> {
     )]
     pub(in crate::mm) unsafe fn borrow_paddr(raw: Paddr) -> Self {
         proof {
-            old(regions).contains_valid_frame_paddr(raw);
+            old(regions).lemma_contains_valid_frame_paddr(raw);
         }
 
         let frame = Frame::<M> {

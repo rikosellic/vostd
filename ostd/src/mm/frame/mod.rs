@@ -183,8 +183,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     )]
     pub fn eq(&self, other: &Self) -> bool {
         proof {
-            regions.contains_valid_frame_paddr(self.paddr());
-            regions.contains_valid_frame_paddr(other.paddr());
+            regions.lemma_contains_valid_frame_paddr(self.paddr());
+            regions.lemma_contains_valid_frame_paddr(other.paddr());
         }
         let tracked self_perm = regions.slots.tracked_borrow(self.index());
         let tracked other_perm = regions.slots.tracked_borrow(other.index());
@@ -477,7 +477,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     )]
     pub fn borrow<'a>(&self) -> FrameRef<'a, M> {
         proof {
-            regions.contains_valid_frame_paddr(self.paddr());
+            regions.lemma_contains_valid_frame_paddr(self.paddr());
         }
         let tracked slot_perm = regions.slots.tracked_borrow(self.index());
 
@@ -508,7 +508,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     )]
     pub(in crate::mm) fn borrow_with_permission<'a>(&self) -> FrameRef<'a, M> {
         proof {
-            regions.contains_valid_frame_paddr(self.paddr());
+            regions.lemma_contains_valid_frame_paddr(self.paddr());
             crate::specs::mm::frame::mapping::lemma_meta_to_paddr_biinjective(self.ptr.addr());
             assert(frame_to_meta(self.paddr()) == self.ptr.addr());
             assert(regions.slot_owners[self.index()].slot_vaddr == self.ptr.addr());
@@ -570,7 +570,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         broadcast use group_page_meta;
 
         proof {
-            regions.contains_valid_frame_paddr(self.paddr());
+            regions.lemma_contains_valid_frame_paddr(self.paddr());
         }
 
         let tracked perm = regions.slots.tracked_borrow(self.index());
@@ -667,7 +667,7 @@ impl<M> Frame<M> {
         proof {
             broadcast use group_page_meta;
 
-            regions.contains_valid_frame_paddr(paddr);
+            regions.lemma_contains_valid_frame_paddr(paddr);
             assert(regions.slots[frame_to_index(paddr)].pptr() == frame.ptr);
             assert(frame.wf_with_region(*regions));
         }
@@ -722,7 +722,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> RCClone for Frame<M> {
 
     fn clone(&self, Tracked(perm): Tracked<&mut MetaRegionOwners>) -> Self {
         proof {
-            perm.contains_valid_frame_paddr(self.paddr());
+            perm.lemma_contains_valid_frame_paddr(self.paddr());
         }
 
         let paddr = meta_to_frame(self.ptr.addr());

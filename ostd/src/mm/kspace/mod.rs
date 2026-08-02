@@ -453,7 +453,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
                 crate::specs::mm::frame::mapping::lemma_paddr_to_meta_biinjective(pa);
                 assert(frame.paddr() == pa);
                 assert(frame.index() == idx);
-                regions.contains_valid_frame_paddr(pa);
+                regions.lemma_contains_valid_frame_paddr(pa);
                 assert(regions.slots[idx].pptr() == frame.ptr);
                 assert(frame.inv());
                 assert(regions.contains(idx));

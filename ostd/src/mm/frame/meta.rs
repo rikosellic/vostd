@@ -419,7 +419,7 @@ impl MetaSlot {
                 None
             };
             if valid_frame_paddr(paddr) {
-                regions.contains_valid_frame_paddr(paddr);
+                regions.lemma_contains_valid_frame_paddr(paddr);
             }
         }
 
@@ -541,7 +541,7 @@ impl MetaSlot {
         proof_decl! {
             let ghost idx = frame_to_index(paddr);
             if valid_frame_paddr(paddr) {
-                regions.contains_valid_frame_paddr(paddr);
+                regions.lemma_contains_valid_frame_paddr(paddr);
             }
             let tracked slot_perm = if valid_frame_paddr(paddr) {
                 Some(*regions.slots.tracked_borrow(idx))

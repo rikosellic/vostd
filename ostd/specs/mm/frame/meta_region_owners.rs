@@ -172,7 +172,7 @@ impl MetaRegionOwners {
         // instantiating the forall in paddr_range_not_mapped at this paddr.
     }
 
-    pub proof fn contains_valid_frame_paddr(self, paddr: usize)
+    pub proof fn lemma_contains_valid_frame_paddr(self, paddr: usize)
         requires
             valid_frame_paddr(paddr),
             self.inv(),
@@ -197,7 +197,7 @@ impl MetaRegionOwners {
         returns
             self.slots[frame_to_index(paddr)],
     {
-        self.contains_valid_frame_paddr(paddr);
+        self.lemma_contains_valid_frame_paddr(paddr);
         *self.slots.tracked_borrow(frame_to_index(paddr))
     }
 
@@ -210,7 +210,7 @@ impl MetaRegionOwners {
         returns
             self.slot_owners[frame_to_index(paddr)],
     {
-        self.contains_valid_frame_paddr(paddr);
+        self.lemma_contains_valid_frame_paddr(paddr);
         self.slot_owners.tracked_borrow(frame_to_index(paddr))
     }
 
@@ -227,7 +227,7 @@ impl MetaRegionOwners {
                 ..*old(self)
             }),
     {
-        self.contains_valid_frame_paddr(paddr);
+        self.lemma_contains_valid_frame_paddr(paddr);
         self.slot_owners.tracked_borrow_mut(frame_to_index(paddr))
     }
 }

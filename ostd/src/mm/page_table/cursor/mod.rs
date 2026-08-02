@@ -663,7 +663,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
                     proof {
                         let idx = frame_to_index(pa);
-                        old(regions).contains_valid_frame_paddr(pa);
+                        old(regions).lemma_contains_valid_frame_paddr(pa);
                         assert(regions.slot_owners.contains_key(idx));
                         assert(owner_before_permission_take.cur_entry_owner().inv_base());
                         if C::tracked(item) && regions.slot_owners[idx].ref_count()
@@ -778,7 +778,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     *regions,
                 ) by {
                     if e.is_node() || e.is_frame() {
-                        regions.contains_valid_frame_paddr(e.meta_slot_paddr().unwrap());
+                        regions.lemma_contains_valid_frame_paddr(e.meta_slot_paddr().unwrap());
                     }
                     if e.is_frame() && e.parent_level > 1 {
                         C::lemma_huge_raw_item_untracked(

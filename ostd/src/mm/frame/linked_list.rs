@@ -447,7 +447,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedList<M> {
         proof_decl! {
         let ghost idx = frame_to_index(frame);
             if valid_frame_paddr(frame) {
-                regions.contains_valid_frame_paddr(frame);
+                regions.lemma_contains_valid_frame_paddr(frame);
             }
         let tracked slot_perm = if valid_frame_paddr(frame) {
             Some(*regions.slots.tracked_borrow(idx))
@@ -503,7 +503,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedList<M> {
         proof_decl! {
             let ghost idx = frame_to_index(frame);
             if valid_frame_paddr(frame) {
-                regions.contains_valid_frame_paddr(frame);
+                regions.lemma_contains_valid_frame_paddr(frame);
             }
 
             let tracked slot_perm = if valid_frame_paddr(frame) {
