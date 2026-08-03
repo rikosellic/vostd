@@ -81,12 +81,11 @@ use crate::mm::{
     kspace::{LINEAR_MAPPING_BASE_VADDR, VMALLOC_BASE_VADDR},
 };
 use crate::specs::arch::*;
-use crate::specs::mm::frame::meta_owners::*;
-use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::frame::{
-    FracMetadataPerm,
     frame_specs::*,
     mapping::{frame_to_index, group_page_meta, index_to_meta, max_meta_slots},
+    meta_owners::*,
+    meta_region_owners::MetaRegionOwners,
 };
 
 verus! {
