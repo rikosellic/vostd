@@ -49,21 +49,17 @@ impl<'a, M: ?Sized> Frame<M> {
 
     // ── from_raw precondition predicates ──
     /// **Safety**: The frame exists, is addressable, and its slot is alive
-    /// (not torn down: ref_count != REF_COUNT_UNUSED`). Under the
+    /// (not torn down: `ref_count != REF_COUNT_UNUSED`). Under the
     /// borrow-protocol redesign this liveness gate replaces the prior
     /// `raw_count <= 1` check — a slot that has not been torn down is safe
     /// to re-materialize as a `Frame` value. (`>= 1` is *not* the right
     /// gate, since the `UNUSED` sentinel `u64::MAX` also satisfies it; and
     /// the PT-node ownership model only exposes `!= UNUSED`.)
     pub open spec fn from_raw_requires_safety(regions: MetaRegionOwners, paddr: Paddr) -> bool {
-        &&& regions.contains(frame_to_index(paddr))
         &&& regions.slot_owners[frame_to_index(paddr)].slot_vaddr == frame_to_meta(paddr)
         &&& valid_frame_paddr(paddr)
         &&& regions.inv()
-        &&& regions.slot_owners[frame_to_index(paddr)].ref_count() > 0
-        &&& regions.slot_owners[frame_to_index(paddr)].ref_count() <= REF_COUNT_MAX
-        &&& regions.slot_owners[frame_to_index(paddr)].ref_count() != REF_COUNT_UNIQUE
-        &&& regions.slot_owners[frame_to_index(paddr)].ref_count() != REF_COUNT_UNUSED
+        &&& 0 < regions.slot_owners[frame_to_index(paddr)].ref_count() <= REF_COUNT_MAX
     }
 
     pub open spec fn from_raw_ensures(
