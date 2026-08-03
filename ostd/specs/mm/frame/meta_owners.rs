@@ -173,7 +173,7 @@ pub type FracMetadataPermResource = CountResource<MetadataPerms, REF_COUNT_MAX>;
 /// Permissions that remain under the authority of `MetaRegionOwners`.
 ///
 /// `ref_count` and `in_list` exist for the complete lifetime of the
-/// corresponding `MetaSlot`. `metadata` owns the undistributed fractions of
+/// corresponding `MetaSlot` (i.e., `'static`). `metadata` owns the undistributed fractions of
 /// the currently installed [`MetadataPerms`].
 pub tracked struct MetaSlotOwner {
     pub metadata_perm: FracMetadataPermResource,
@@ -227,26 +227,6 @@ impl MetaSlotOwner {
             self.metadata_perms(),
     {
         self.metadata_perm.tracked_borrow()
-    }
-
-    pub proof fn tracked_borrow_storage_perm(tracked &self) -> (tracked res:
-        &pcell_maybe_uninit::PointsTo<MetaSlotStorage>)
-        requires
-            self.metadata_perm.not_empty(),
-        returns
-            self.storage_perm(),
-    {
-        &self.metadata_perm.tracked_borrow().storage_perm
-    }
-
-    pub proof fn tracked_borrow_vtable_ptr_perm(tracked &self) -> (tracked res:
-        &vstd::simple_pptr::PointsTo<usize>)
-        requires
-            self.metadata_perm.not_empty(),
-        returns
-            self.vtable_ptr_perm(),
-    {
-        &self.metadata_perm.tracked_borrow().vtable_ptr_perm
     }
 }
 

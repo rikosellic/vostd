@@ -126,17 +126,6 @@ impl MetaRegionOwners {
             i != idx ==> other.slot_owners[i] == self.slot_owners[i]
     }
 
-    pub open spec fn paddr_range_in_region(self, range: Range<Paddr>) -> bool
-        recommends
-            range.start < range.end < MAX_PADDR,
-    {
-        forall|paddr: Paddr|
-            #![trigger frame_to_index(paddr)]
-            (range.start <= paddr < range.end && paddr % PAGE_SIZE == 0) ==> self.contains(
-                frame_to_index(paddr),
-            )
-    }
-
     pub open spec fn paddr_range_not_mapped(self, range: Range<Paddr>) -> bool
         recommends
             range.start < range.end < MAX_PADDR,
@@ -145,17 +134,6 @@ impl MetaRegionOwners {
             #![trigger frame_to_index(paddr)]
             (range.start <= paddr < range.end && paddr % PAGE_SIZE == 0)
                 ==> self.slot_owners[frame_to_index(paddr)].paths_in_pt.is_empty()
-    }
-
-    pub open spec fn paddr_range_not_in_region(self, range: Range<Paddr>) -> bool
-        recommends
-            range.start < range.end < MAX_PADDR,
-    {
-        forall|paddr: Paddr|
-            #![trigger frame_to_index(paddr)]
-            (range.start <= paddr < range.end && paddr % PAGE_SIZE == 0) ==> !self.contains(
-                frame_to_index(paddr),
-            )
     }
 
     /// Instantiates `paddr_range_not_mapped` at a specific paddr in the range.
