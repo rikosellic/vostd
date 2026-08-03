@@ -487,7 +487,7 @@ impl<T, const TOTAL: u64> Count<T, TOTAL> {
     }
 
     /// Consumes the `Count` and returns the resource value, the id is lost because the `EmptyCount` is not returned.
-    pub proof fn as_resource(tracked self) -> (tracked res: T)
+    pub proof fn into_resource(tracked self) -> (tracked res: T)
         requires
             self.frac() == TOTAL,
         returns
