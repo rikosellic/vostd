@@ -287,6 +287,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
         with
             Tracked(points_to): Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>,
             Tracked(metadata_perms): Tracked<&'a MetadataPerms>,
+            Tracked(metadata_perms): Tracked<&'a MetadataPerms>,
             Tracked(repr_perm): Tracked<&'a M::ReprPerm>,
         requires
             self.ptr == points_to.pptr(),
@@ -999,7 +1000,7 @@ pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) -> (permission: Tr
         // slot_own.inv() holds: rc in (0, REF_COUNT_MAX), vtable_ptr init, slot_vaddr ok
         assert(slot_own.inv());
 
-        // wf: the slot's cell ids still match the (updated) inner_perms ids
+        // wf: the slot's cell ids still match the updated owner permissions.
         assert(regions.slots[idx].value().wf(slot_own));
 
         regions.slot_owners.tracked_insert(idx, slot_own);

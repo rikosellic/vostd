@@ -106,7 +106,7 @@ pub axiom fn frame_from_unused_embedded(
 ;
 
 /// Mirror of [`crate::mm::frame::Frame::from_in_use`]. On `Some`,
-/// `inner_perms ref_count` increments by 1 at `frame_to_index(paddr)`
+/// `ref_count` increments by 1 at `frame_to_index(paddr)`
 /// and all other slots are preserved.
 pub axiom fn frame_from_in_use_embedded(
     tracked regions: &mut MetaRegionOwners,

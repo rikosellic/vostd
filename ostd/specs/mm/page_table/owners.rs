@@ -1286,7 +1286,6 @@ impl<C: PageTableConfig> PageTableOwner<C> {
 
         if self.0.value().is_frame() {
             lemma_page_size_spec_values();
-            ;
             let frame = self.0.value().frame();
             let pt_level = (INC_LEVELS - path.len()) as PagingLevel;
             Self::lemma_vaddr_path_alignment_and_bound(path);
@@ -1305,7 +1304,6 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             assert(self.view_rec(path) == set![m]);
             let ps = page_size(pt_level) as int;
             vstd_extra::arithmetic::lemma_mod_0_add(frame.mapped_pa as int, ps, ps);
-            // Bridge `vaddr_of(path) == vaddr(path) + LB * 2^48`.
             lemma_vaddr_of_eq_int::<C>(path);
             C::lemma_page_table_config_constant_properties();
             lemma_vaddr_strict_bound(path);
@@ -1350,9 +1348,13 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             ;
             vstd::arithmetic::mul::lemma_mul_inequality(1, q, ps);
             vstd::arithmetic::mul::lemma_mul_inequality(lb, 0xffffint, 0x1_0000_0000_0000int);
-            assert(0x1_0000_0000_0000int + 0xffffint * 0x1_0000_0000_0000int
-                == 0x1_0000_0000_0000_0000int) by (compute_only);
             vstd_extra::arithmetic::lemma_mod_0_add(m.va_range.start, ps, ps);
+            assert(set![4096, 2097152, 1073741824].contains(m.page_size));
+            assert forall|m2: Mapping| #[trigger]
+                self.view_rec(path).contains(m2) implies m2.inv() by {
+                assert(self.view_rec(path).contains(m2) <==> m2 == m);
+                assert(m.inv());
+            };
         } else if self.0.value().is_node() && path.len() < INC_LEVELS - 1 {
             assert forall|m: Mapping| #[trigger]
                 self.view_rec(path).contains(m) implies m.inv() by {

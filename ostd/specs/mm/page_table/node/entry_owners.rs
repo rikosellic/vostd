@@ -824,8 +824,8 @@ impl<C: PageTableConfig> EntryOwner<C> {
     {
         if self.meta_slot_paddr() is Some {
             let eidx = frame_to_index(self.meta_slot_paddr().unwrap());
-            // Bridge `rc > 0` from r0 to r1: at `eidx == changed_idx` inner_perms
-            // are identical; elsewhere the entire slot_owner is identical.
+            // Bridge `rc > 0` from r0 to r1: at `eidx == changed_idx` the
+            // permissions are preserved; elsewhere the entire slot owner is identical.
             if self.is_frame() {
                 // Sub-page validity for huge frames: slot existence (unconditional)
                 // plus `rc` bookkeeping when tracked.

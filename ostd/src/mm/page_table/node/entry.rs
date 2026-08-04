@@ -326,8 +326,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             // ref_count is preserved per-slot. `into_pte_regions_spec` and
             // `from_pte_regions_spec` only ever rewrite `raw_count` (and the
             // ghost `paths_in_pt` is touched by the surrounding body, never
-            // `inner_perms`); both use the `..old_slot` struct-update form
-            // so `inner_perms ref_count` is preserved across the rewrite.
+            // the permissions); both use the `..old_slot` struct-update form,
+            // so `ref_count` is preserved across the rewrite.
             forall|idx: int|
                 #![trigger final(regions).slot_owners[idx].ref_count()]
                 final(regions).slot_owners[idx].ref_count() == old(
@@ -1297,7 +1297,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 };
                 assert(new_owner.inv());
 
-                // `replace` of a frame child preserves every slot's `inner_perms`
+                // `replace` of a frame child preserves every slot's permissions
                 // (unconditional) and `paths_in_pt` (non-node child), so the new
                 // node's own-slot rc + paths_in_pt are unchanged — re-establish
                 // the loop invariant's node-slot clauses for the next iteration.

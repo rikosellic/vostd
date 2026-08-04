@@ -40,8 +40,8 @@
 //!
 //! 1. **Strengthen [`crate::specs::mm::frame::meta_owners::MetaSlotOwner::inv`]'s
 //!    SHARED branch** — DONE. The branch (`0 < rc <= REF_COUNT_MAX`)
-//!    now carries `inner_perms.storage().is_init()` and
-//!    `inner_perms.in_list_perm.value() == 0`. The `rc == 1 ⟹ ...` guards
+//!    now carries `storage_perm().is_init()` and
+//!    `in_list_perm.value() == 0`. The `rc == 1 ⟹ ...` guards
 //!    on `storage`/`in_list` in
 //!    [`crate::mm::frame::Frame::drop_requires`] were dropped.
 //!
@@ -219,7 +219,7 @@ pub type UniqueId = int;
 /// `regions.slot_owners[frame_to_index(paddr)]`.
 ///
 /// Multiple `FrameEntry`s may share the same `paddr`; each contributes
-/// `+1` to that slot's `inner_perms ref_count`.
+/// `+1` to that slot's `ref_count`.
 pub tracked struct FrameEntry {
     pub ghost paddr: Paddr,
 }
@@ -458,6 +458,8 @@ pub proof fn lemma_frame_drop_pre_derivable<'rcu>(s: VmStore<'rcu>, fid: FrameId
 {
     let paddr = s.frames[fid].paddr;
     let idx = frame_to_index(paddr);
+    assert(s.regions.slot_owners[idx].ref_count()
+        == s.regions.slot_owners[idx].ref_count_perm.value());
 
     assert(s.frames.dom().filter(
         |gid: FrameId| frame_to_index(s.frames[gid].paddr) == idx,
@@ -2992,7 +2994,7 @@ proof fn lemma_step_segment_from_unused_accounting<'rcu>(
                 &&& so.usage is Frame
                 &&& so.ref_count() == 1
                 &&& so.paths_in_pt.is_empty()
-                &&& so.metadata_perm@.storage_perm.is_init()
+                &&& so.storage_perm().is_init()
             },
         // Outside-range slots are fully preserved by the allocation axiom.
         forall|i: int|
@@ -3256,6 +3258,7 @@ proof fn lemma_drop_segment_with_store_inv<'rcu>(
 /// releases the segment's forgotten reference at each covered frame.
 /// Frames whose `rc` reaches 1 transition to UNUSED.
 #[verifier::spinoff_prover]
+#[verifier::rlimit(50)]
 proof fn lemma_step_segment_drop<'rcu>(tracked s: &mut VmStore<'rcu>, sid: SegmentId)
     requires
         old(s).inv(),
@@ -3263,6 +3266,8 @@ proof fn lemma_step_segment_drop<'rcu>(tracked s: &mut VmStore<'rcu>, sid: Segme
     ensures
         final(s).inv(),
 {
+    hide(MetaSlotOwner::storage_perm);
+    hide(MetaSlotOwner::vtable_ptr_perm);
     hide(VmStore::inv);
     hide(VmStore::structural_inv);
     hide(VmStore::accounting_inv);

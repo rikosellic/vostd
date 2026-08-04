@@ -110,7 +110,7 @@ verus! {
 /// ## Invariant
 /// The linked list uniquely owns the raw frames that it contains, so they cannot be used by other
 /// data structures. The frame metadata field `in_list` is equal to `list_id` for all links in the list.
-/// The per-link well-formedness against the region (pptr/permission wiring,
+/// The per-link well-formedness against the region (pointer/permission wiring,
 /// `next`/`prev` pointer chain) is captured by
 /// [`LinkedListOwner::relate_region`] (opaque, with per-position
 /// [`LinkedListOwner::relate_region_at`]). The cursor exposes this via

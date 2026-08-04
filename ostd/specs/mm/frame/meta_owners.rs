@@ -293,6 +293,23 @@ pub fn borrow_meta_mut<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     )
 }
 
+/// Permissions that remain under the authority of `MetaRegionOwners`.
+///
+/// `ref_count` and `in_list` exist for the complete lifetime of the
+/// corresponding `MetaSlot` (i.e., `'static`).
+pub tracked struct MetaSlotOwner {
+    pub metadata_perm: MetadataPerms,
+    pub ref_count_perm: PermissionU64,
+    pub in_list_perm: PermissionU64,
+    pub ghost slot_vaddr: Vaddr,
+    pub ghost usage: PageUsage,
+    /// The set of tree paths at which this slot is referenced. For PT-node
+    /// slots this is a singleton. For data-frame slots this tracks every
+    /// location the frame is currently mapped — allowing a single frame to be
+    /// mapped at multiple addresses.
+    pub ghost paths_in_pt: Set<TreePath<NR_ENTRIES>>,
+}
+
 impl Inv for MetaSlotOwner {
     open spec fn inv(self) -> bool {
         &&& self.ref_count() == REF_COUNT_UNUSED ==> {

@@ -1305,9 +1305,7 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
                     paddr,
                 )
                 // Borrow-protocol transition: `raw_count` is dormant.
-                &&& so.ref_count() > 0
-                &&& so.ref_count() != REF_COUNT_UNUSED
-                &&& so.ref_count() <= REF_COUNT_MAX
+                &&& 0 < so.ref_count() <= REF_COUNT_MAX
                 &&& so.ref_count() == 1 ==> {
                     &&& so.storage_perm().is_init()
                     &&& so.in_list_perm.value() == 0
