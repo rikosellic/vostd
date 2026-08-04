@@ -287,7 +287,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
         with
             Tracked(points_to): Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>,
             Tracked(metadata_perms): Tracked<&'a MetadataPerms>,
-            Tracked(metadata_perms): Tracked<&'a MetadataPerms>,
             Tracked(repr_perm): Tracked<&'a M::ReprPerm>,
         requires
             self.ptr == points_to.pptr(),

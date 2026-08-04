@@ -168,7 +168,7 @@ use crate::specs::{
     mm::{
         frame::{
             mapping::{frame_to_index, index_to_frame, index_to_meta, max_meta_slots},
-            meta_owners::PageUsage,
+            meta_owners::{MetaSlotOwner, PageUsage},
             meta_region_owners::MetaRegionOwners,
         },
         io::VmIoOwner,
