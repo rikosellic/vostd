@@ -913,7 +913,7 @@ impl TryFrom<Frame<dyn AnyFrameMeta>> for UFrame {
         ).slot_owner(paddr).ref_count() + 1,
         final(regions).slot_owner(paddr).ref_count_perm.id() == old(
             regions,
-        ).slot_owners[frame_to_index(paddr)].ref_count_perm.id(),
+        ).slot_owner(paddr).ref_count_perm.id(),
         final(regions).slot_owners[
             frame_to_index(paddr)
         ].metadata_perm.id() == old(regions).slot_owners[
@@ -931,7 +931,7 @@ impl TryFrom<Frame<dyn AnyFrameMeta>> for UFrame {
         permission@.resource() == old(regions).slot_owners[
             frame_to_index(paddr)
         ].metadata_perm@,
-        final(regions).slot_owners[frame_to_index(paddr)].in_list_perm == old(
+        final(regions).slot_owner(paddr).in_list_perm == old(
             regions,
         ).slot_owner(paddr).in_list_perm,
         final(regions).slot_owner(paddr).paths_in_pt == old(

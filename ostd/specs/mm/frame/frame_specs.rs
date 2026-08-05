@@ -56,10 +56,10 @@ impl<'a, M: ?Sized> Frame<M> {
     /// gate, since the `UNUSED` sentinel `u64::MAX` also satisfies it; and
     /// the PT-node ownership model only exposes `!= UNUSED`.)
     pub open spec fn from_raw_requires_safety(regions: MetaRegionOwners, paddr: Paddr) -> bool {
-        &&& regions.slot_owners[frame_to_index(paddr)].slot_vaddr == frame_to_meta(paddr)
+        &&& regions.slot_owner(paddr).slot_vaddr == frame_to_meta(paddr)
         &&& valid_frame_paddr(paddr)
         &&& regions.inv()
-        &&& 0 < regions.slot_owners[frame_to_index(paddr)].ref_count() <= REF_COUNT_MAX
+        &&& 0 < regions.slot_owner(paddr).ref_count() <= REF_COUNT_MAX
     }
 
     pub open spec fn from_raw_ensures(

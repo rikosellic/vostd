@@ -208,11 +208,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                     #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize)]
                     permissions.len() <= i < crate::specs::mm::frame::segment::seg_nframes(
                         self.range,
-                    ) ==> perm.slot_owners[frame_to_index(
-                        (self.range.start + i * PAGE_SIZE) as usize,
-                    )] == old(perm).slot_owners[frame_to_index(
-                        (self.range.start + i * PAGE_SIZE) as usize,
-                    )],
+                    ) ==> perm.slot_owner(
+                        (self.range.start + i * PAGE_SIZE) as usize
+                    ) == old(perm).slot_owner(
+                        (self.range.start + i * PAGE_SIZE) as usize
+                    ),
             decreases self.range.end - paddr,
         {
             if paddr >= self.range.end {
@@ -222,9 +222,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
             let ghost permissions_len: int = permissions.len() as int;
             proof {
                 self.relate_regions_at(*old(perm), permissions_len);
-                assert(regions_pre.slot_owners[frame_to_index(paddr)] == old(
+                assert(regions_pre.slot_owner(paddr) == old(
                     perm,
-                ).slot_owners[frame_to_index(paddr)]);
+                ).slot_owner(paddr));
             }
             let tracked_permission = unsafe {
                 #[verus_spec(with Tracked(perm))]
@@ -247,35 +247,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                     let idx = frame_to_index(old_paddr);
                     assert(Frame::<M>::frame_permission_wf(regions_pre, old_paddr, permissions[i]));
                     assert(regions_pre.contains(idx));
-                    assert(regions_pre.slot_owners[idx].slot_vaddr == index_to_meta(idx));
-                    assert(regions_pre.slot_owners[idx].ref_count() > 0);
-                    assert(regions_pre.slot_owners[idx].ref_count() <= REF_COUNT_MAX);
-                    assert(regions_pre.slot_owners[idx].paths_in_pt.is_empty());
-                    assert(regions_pre.slot_owners[idx].usage is Frame);
-                    assert(old_paddr < paddr);
                     crate::specs::mm::frame::mapping::lemma_frame_to_index_injective(
                         old_paddr,
                         paddr,
                     );
-                    assert(perm.slots == regions_pre.slots);
-                    assert(perm.slot_owners[frame_to_index(old_paddr)]
-                        == regions_pre.slot_owners[frame_to_index(old_paddr)]);
                 }
                 let idx = frame_to_index(paddr);
                 assert(regions_pre.contains(idx));
-                assert(regions_pre.slot_owners[idx].inv());
-                assert(regions_pre.slot_owners[idx].slot_vaddr == index_to_meta(idx));
-                assert(regions_pre.slot_owners[idx].ref_count() > 0);
-                assert(regions_pre.slot_owners[idx].ref_count() < REF_COUNT_MAX);
-                assert(regions_pre.slot_owners[idx].metadata_perm.not_empty());
-                assert(regions_pre.slots[idx].value().wf(regions_pre.slot_owners[idx]));
-                assert(perm.slot_owners[idx].slot_vaddr == regions_pre.slot_owners[idx].slot_vaddr);
-                assert(perm.slot_owners[idx].paths_in_pt
-                    == regions_pre.slot_owners[idx].paths_in_pt);
-                assert(perm.slot_owners[idx].usage == regions_pre.slot_owners[idx].usage);
-                assert(regions_pre.slot_owners[idx].paths_in_pt.is_empty());
-                assert(regions_pre.slot_owners[idx].usage is Frame);
-                assert(Frame::<M>::frame_permission_wf(*perm, paddr, frame_permission));
                 permissions.tracked_push(frame_permission);
                 assert forall|i: int|
                     #![trigger permissions[i]]
@@ -1046,16 +1024,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                         paddr,
                     );
                     assert(regions.slots == regions_pre.slots);
-                    assert(regions.slot_owners[frame_to_index(old_paddr)]
-                        == regions_pre.slot_owners[frame_to_index(old_paddr)]);
                 }
                 let idx = frame_to_index(paddr);
                 assert(regions_pre.contains(idx));
-                assert(regions_pre.slot_owners[idx].inv());
-                assert(regions_pre.slot_owners[idx].ref_count() < REF_COUNT_MAX);
-                assert(regions_pre.slot_owners[idx].metadata_perm.not_empty());
-                assert(regions_pre.slots[idx].value().wf(regions_pre.slot_owners[idx]));
-                assert(Frame::<M>::frame_permission_wf(*regions, paddr, frame_permission));
                 permissions.tracked_push(frame_permission);
                 assert forall|j: int|
                     #![trigger permissions[j]]
