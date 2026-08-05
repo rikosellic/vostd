@@ -243,7 +243,7 @@ pub axiom fn cursor_query_embedded<'rcu>(
                 i != frame_to_index(paddr) ==> final(regions).slot_owners[i] == old(
                     regions,
                 ).slot_owners[i]
-            // At the cloned slot, only ref_count` changes — everything
+            // At the cloned slot, only `ref_count` changes — everything
             // else (`raw_count`, `in_list`, `usage`, `paths_in_pt`,
             // `storage`, `slot_vaddr`, `vtable_ptr`) is preserved.
             &&& final(regions).slot_owners[frame_to_index(paddr)].slot_vaddr == old(

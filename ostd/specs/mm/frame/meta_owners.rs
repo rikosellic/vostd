@@ -172,10 +172,10 @@ pub type FracMetadataPermResource = CountResource<MetadataPerms, REF_COUNT_MAX>;
 
 /// Permissions that remain under the authority of `MetaRegionOwners`.
 ///
-/// `ref_count` and `in_list` exist for the complete lifetime of the
-/// corresponding `MetaSlot` (i.e., `'static`). `metadata` owns the undistributed fractions of
-/// the currently installed [`MetadataPerms`].
+/// `ref_count_perm` and `in_list_perm` exist for the complete lifetime of the
+/// corresponding `MetaSlot` (i.e., `'static`).
 pub tracked struct MetaSlotOwner {
+    /// The undistributed fractions of the currently installed [`MetadataPerms`].
     pub metadata_perm: FracMetadataPermResource,
     pub ref_count_perm: PermissionU64,
     pub in_list_perm: PermissionU64,
@@ -221,9 +221,7 @@ impl MetaSlotOwner {
     }
 }
 
-/// Well-formedness of a concrete metadata representation. The outer slot
-/// permission remains permanently in `MetaRegionOwners`; the metadata bundle
-/// comes from either a shared fraction or the unique owner.
+/// Well-formedness of a concrete metadata representation.
 pub open spec fn typed_meta_wf<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     points_to: vstd::simple_pptr::PointsTo<MetaSlot>,
     metadata_perms: MetadataPerms,
@@ -235,6 +233,7 @@ pub open spec fn typed_meta_wf<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     &&& M::wf(metadata_perms.storage_perm.value(), repr_perm)
 }
 
+/// The value of a concrete metadata.
 pub open spec fn typed_meta_value<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     metadata_perms: MetadataPerms,
     repr_perm: M::ReprPerm,
@@ -265,8 +264,6 @@ pub fn borrow_meta_mut<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     Tracked(repr_perm): Tracked<&'a mut M::ReprPerm>,
 ) -> (res: &'a mut M)
     requires
-        points_to.is_init(),
-        points_to.value().storage.id() == old(metadata_perms).storage_perm.id(),
         points_to.value().vtable_ptr == old(metadata_perms).vtable_ptr_perm.pptr(),
         typed_meta_wf::<M>(*points_to, *old(metadata_perms), *old(repr_perm)),
         ptr.addr() == points_to.addr(),
@@ -301,10 +298,6 @@ impl Inv for MetaSlotOwner {
             // A UNIQUE non-MMIO slot has no live PTE mapping.
             &&& (self.usage != PageUsage::MMIO ==> self.paths_in_pt.is_empty())
         }
-        // A SHARED slot is genuinely in use:
-        // metadata storage is written, `vtable_ptr` resolves the
-        // dynamic type, and the slot is *not* on the allocator's free
-        // list.
         &&& 0 < self.ref_count() <= REF_COUNT_MAX ==> {
             &&& self.metadata_perm.frac() + self.ref_count() == REF_COUNT_MAX
             &&& self.vtable_ptr_perm().is_init()
