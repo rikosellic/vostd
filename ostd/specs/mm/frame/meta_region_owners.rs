@@ -184,7 +184,7 @@ impl MetaRegionOwners {
             valid_frame_paddr(paddr),
             self.inv(),
         returns
-            self.slot_owners[frame_to_index(paddr)],
+            self.slot_owner(paddr),
     {
         self.lemma_contains_valid_frame_paddr(paddr);
         self.slot_owners.tracked_borrow(frame_to_index(paddr))
@@ -197,7 +197,7 @@ impl MetaRegionOwners {
             valid_frame_paddr(paddr),
             self.inv(),
         ensures
-            *ret == old(self).slot_owners[frame_to_index(paddr)],
+            *ret == old(self).slot_owner(paddr),
             *final(self) == (Self {
                 slot_owners: old(self).slot_owners.insert(frame_to_index(paddr), *final(ret)),
                 ..*old(self)
