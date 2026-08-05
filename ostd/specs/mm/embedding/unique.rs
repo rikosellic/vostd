@@ -127,7 +127,7 @@ pub axiom fn unique_drop_embedded(tracked regions: &mut MetaRegionOwners, paddr:
     requires
         old(regions).inv(),
         old(regions).contains(frame_to_index(paddr)),
-        old(regions).slot_owners[frame_to_index(paddr)].ref_count()
+        old(regions).slot_owner(paddr).ref_count()
             == REF_COUNT_UNIQUE,
         old(regions).slot_owners[frame_to_index(paddr)].in_list_perm.value() == 0,
         old(regions).slot_owners[frame_to_index(paddr)].paths_in_pt.is_empty(),
@@ -168,7 +168,7 @@ pub axiom fn from_unique_embedded(tracked regions: &mut MetaRegionOwners, paddr:
     requires
         old(regions).inv(),
         old(regions).contains(frame_to_index(paddr)),
-        old(regions).slot_owners[frame_to_index(paddr)].ref_count()
+        old(regions).slot_owner(paddr).ref_count()
             == REF_COUNT_UNIQUE,
     ensures
         final(regions).inv(),
@@ -204,9 +204,9 @@ pub axiom fn try_from_shared_embedded(tracked regions: &mut MetaRegionOwners, pa
     requires
         old(regions).inv(),
         old(regions).contains(frame_to_index(paddr)),
-        old(regions).slot_owners[frame_to_index(paddr)].ref_count() == 1,
-        old(regions).slot_owners[frame_to_index(paddr)].usage is Frame,
-        old(regions).slot_owners[frame_to_index(paddr)].paths_in_pt.is_empty(),
+        old(regions).slot_owner(paddr).ref_count() == 1,
+        old(regions).slot_owner(paddr).usage is Frame,
+        old(regions).slot_owner(paddr).paths_in_pt.is_empty(),
     ensures
         final(regions).inv(),
         final(regions).slots =~= old(regions).slots,

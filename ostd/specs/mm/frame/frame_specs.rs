@@ -70,9 +70,8 @@ impl<'a, M: ?Sized> Frame<M> {
     ) -> bool {
         &&& new_regions.inv()
         &&& new_regions.contains(frame_to_index(paddr))
-        &&& new_regions.slot_owners[frame_to_index(paddr)]
-            =~= old_regions.slot_owners[frame_to_index(paddr)]
-        &&& new_regions.slot_owners[frame_to_index(paddr)].slot_vaddr == r.ptr.addr()
+        &&& new_regions.slot_owner(paddr) =~= old_regions.slot_owner(paddr)
+        &&& new_regions.slot_owner(paddr).slot_vaddr == r.ptr.addr()
         &&& forall|i: int|
             #![trigger new_regions.slot_owners[i], old_regions.slot_owners[i]]
             i != frame_to_index(paddr) ==> new_regions.slot_owners[i] == old_regions.slot_owners[i]

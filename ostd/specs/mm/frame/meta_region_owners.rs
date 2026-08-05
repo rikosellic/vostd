@@ -132,8 +132,20 @@ impl MetaRegionOwners {
     {
         forall|paddr: Paddr|
             #![trigger frame_to_index(paddr)]
-            (range.start <= paddr < range.end && paddr % PAGE_SIZE == 0)
-                ==> self.slot_owners[frame_to_index(paddr)].paths_in_pt.is_empty()
+            (range.start <= paddr < range.end && paddr % PAGE_SIZE == 0) ==> self.slot_owner(
+                paddr,
+            ).paths_in_pt.is_empty()
+    }
+
+    pub open spec fn paddr_range_not_in_region(self, range: Range<Paddr>) -> bool
+        recommends
+            range.start < range.end < MAX_PADDR,
+    {
+        forall|paddr: Paddr|
+            #![trigger frame_to_index(paddr)]
+            (range.start <= paddr < range.end && paddr % PAGE_SIZE == 0) ==> !self.contains(
+                frame_to_index(paddr),
+            )
     }
 
     /// Instantiates `paddr_range_not_mapped` at a specific paddr in the range.
@@ -144,7 +156,7 @@ impl MetaRegionOwners {
             paddr < range.end,
             paddr % PAGE_SIZE == 0,
         ensures
-            self.slot_owners[frame_to_index(paddr)].paths_in_pt.is_empty(),
+            self.slot_owner(paddr).paths_in_pt.is_empty(),
     {
     }
 
@@ -162,16 +174,36 @@ impl MetaRegionOwners {
         self.slot_owners[frame_to_index(paddr)]
     }
 
-    /// Borrows the `'static PointsTo<MetaSlot>`, indexed by frame paddr.
-    pub proof fn tracked_borrow_slot(
-        tracked &self,
-        paddr: Paddr,
-    ) -> tracked &'static simple_pptr::PointsTo<MetaSlot>
-        requires
-            valid_frame_paddr(paddr),
-            self.inv(),
-        returns
-            self.slots[frame_to_index(paddr)],
+    // ----------------------------------------------------------------------
+    // Per-frame linear-drop ledger machinery.
+    // ----------------------------------------------------------------------
+    /// "Clean" boundary invariant: standard invariant plus an empty per-frame
+    /// obligation multiset (every minted token has been redeemed via
+    /// `Drop::drop` or `ManuallyDrop::new`; and every `Segment` has been
+    /// dropped, draining its per-frame entries).
+    ///
+    /// Functions that should leave no outstanding `Frame`/`Segment` obligations
+    /// (e.g., top-of-call-stack entry points, or any helper that opens fresh
+    /// resources locally) should require this in their postcondition instead of
+    /// the plain `inv()`.
+    pub open spec fn clean_inv(self) -> bool {
+        &&& self.inv()
+        // Per-frame linear-drop discipline via the multiset ledger: every
+        // `ManuallyDrop::new` / segment-frame mint adds one entry, every
+        // `Drop::drop` / `ManuallyDrop::new` / segment-frame redeem removes one.
+        &&& self.frame_obligations.len() == 0
+    }
+
+    // ----------------------------------------------------------------------
+    // Frame-side per-instance ledger.
+    // ----------------------------------------------------------------------
+    pub open spec fn mint_frame_obligation(self, slot_idx: int) -> Self {
+        Self { frame_obligations: self.frame_obligations.insert(slot_idx), ..self }
+    }
+
+    pub open spec fn redeem_frame_obligation(self, slot_idx: int) -> Self
+        recommends
+            self.frame_obligations.count(slot_idx) > 0,
     {
         self.lemma_contains_valid_frame_paddr(paddr);
         *self.slots.tracked_borrow(frame_to_index(paddr))

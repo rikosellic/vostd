@@ -436,10 +436,10 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
                     == old_regions.slot_owners[frame_to_index(pa)].ref_count() + 1
                 &&& new_regions.slot_owners[frame_to_index(pa)].ref_count_perm.id()
                     == old_regions.slot_owners[frame_to_index(pa)].ref_count_perm.id()
-                &&& new_regions.slot_owners[frame_to_index(pa)].metadata_perm.id()
-                    == old_regions.slot_owners[frame_to_index(pa)].metadata_perm.id()
-                &&& new_regions.slot_owners[frame_to_index(pa)].metadata_perm.frac() + 1
-                    == old_regions.slot_owners[frame_to_index(pa)].metadata_perm.frac()
+                &&& new_regions.slot_owners[frame_to_index(pa)].storage_perm()
+                    == old_regions.slot_owners[frame_to_index(pa)].storage_perm()
+                &&& new_regions.slot_owners[frame_to_index(pa)].vtable_ptr_perm()
+                    == old_regions.slot_owners[frame_to_index(pa)].vtable_ptr_perm()
                 &&& new_regions.slot_owners[frame_to_index(pa)].in_list_perm
                     == old_regions.slot_owners[frame_to_index(pa)].in_list_perm
                 &&& new_regions.slot_owners[frame_to_index(pa)].paths_in_pt
@@ -485,8 +485,8 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             ),
             !Self::tracked(item) ==> Self::item_permission(item) is None,
             // Saturation aborts (Arc-style) via `inc_ref_count`'s diverging panic.
-            Self::tracked(item) ==> (regions.slot_owners[frame_to_index(pa)].ref_count()
-                < REF_COUNT_MAX || may_panic()),
+            Self::tracked(item) ==> (regions.slot_owner(pa).ref_count() < REF_COUNT_MAX
+                || may_panic()),
         ensures
             item.clone_requires(regions),
     ;
