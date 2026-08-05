@@ -9,7 +9,7 @@ use vstd_extra::{
     cast_ptr::{self, Repr},
     ghost_tree::TreePath,
     ownership::*,
-    resource::ghost_resource::{count::Count, tokens::CountResource},
+    resource::ghost_resource::count_auth::{Count, CountResource},
 };
 
 use crate::specs::{arch::NR_ENTRIES, mm::frame::linked_list::linked_list_owners::StoredLink};
@@ -199,30 +199,21 @@ impl MetaSlotOwner {
         self.ref_count_perm.value()
     }
 
-    pub open spec fn metadata_perms(self) -> MetadataPerms
-        recommends
-            self.metadata_perm.not_empty(),
-    {
-        self.metadata_perm@
+    pub open spec fn metadata_perms(self) -> MetadataPerms {
+        self.metadata_perm.resource()
     }
 
-    pub open spec fn storage_perm(self) -> pcell_maybe_uninit::PointsTo<MetaSlotStorage>
-        recommends
-            self.metadata_perm.not_empty(),
-    {
+    pub open spec fn storage_perm(self) -> pcell_maybe_uninit::PointsTo<MetaSlotStorage> {
         self.metadata_perms().storage_perm
     }
 
-    pub open spec fn vtable_ptr_perm(self) -> vstd::simple_pptr::PointsTo<usize>
-        recommends
-            self.metadata_perm.not_empty(),
-    {
+    pub open spec fn vtable_ptr_perm(self) -> vstd::simple_pptr::PointsTo<usize> {
         self.metadata_perms().vtable_ptr_perm
     }
 
     pub proof fn tracked_borrow_metadata_perms(tracked &self) -> (tracked res: &MetadataPerms)
         requires
-            self.metadata_perm.not_empty(),
+            !self.metadata_perm.is_resource_vacant(),
         returns
             self.metadata_perms(),
     {
@@ -316,10 +307,8 @@ impl Inv for MetaSlotOwner {
         // list.
         &&& 0 < self.ref_count() <= REF_COUNT_MAX ==> {
             &&& self.metadata_perm.frac() + self.ref_count() == REF_COUNT_MAX
-            &&& self.metadata_perm.not_empty() ==> {
-                &&& self.vtable_ptr_perm().is_init()
-                &&& self.storage_perm().is_init()
-            }
+            &&& self.vtable_ptr_perm().is_init()
+            &&& self.storage_perm().is_init()
             &&& self.in_list_perm.value() == 0
         }
         &&& REF_COUNT_MAX < self.ref_count() < REF_COUNT_UNIQUE ==> { false }

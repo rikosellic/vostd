@@ -56,7 +56,7 @@ pub open spec fn frame_as_dynframe<T: AnyFrameMeta + Repr<MetaSlotStorage>>(
         ptr: frame.ptr,
         _marker: PhantomData,
         #[cfg(verus_keep_ghost_body)]
-        tracked_perm: Tracked(None),
+        tracked_perm: frame.tracked_perm,
     }
 }
 
@@ -67,7 +67,12 @@ fn frame_into_dynframe<T: AnyUFrameMeta>(frame: Frame<T>) -> (res: DynFrame)
         res == frame_as_dynframe(frame),
 {
     /* frame.into() */
-    DynFrame { ptr: frame.ptr, _marker: PhantomData }
+    DynFrame {
+        ptr: frame.ptr,
+        _marker: PhantomData,
+        #[cfg(verus_keep_ghost_body)]
+        tracked_perm: frame.tracked_perm,
+    }
 }
 
 /// Spec function: the entry owner correctly matches the frame and property for mapping.
@@ -81,7 +86,7 @@ pub open spec fn frame_entry_wf<T: AnyFrameMeta + Repr<MetaSlotStorage>>(
         ptr: frame.ptr,
         _marker: PhantomData,
         #[cfg(verus_keep_ghost_body)]
-        tracked_perm: Tracked(None),
+        tracked_perm: frame.tracked_perm,
     };
     let item = MappedItem::Tracked(frame_mss, prop);
     let (pa, level, prop_from_item) = KernelPtConfig::item_into_raw_spec(item);
