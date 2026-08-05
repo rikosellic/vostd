@@ -782,7 +782,7 @@ impl MetaSlot {
     /// ## Preconditions
     /// - **Safety Invariant**: The metadata slot must satisfy the safety invariants.
     /// - **Safety**: The caller must provide an owner object for the metadata slot, which must include the permission for the
-    /// slot's ref_count` field.
+    /// slot's `ref_count` field.
     /// - **Safety**: The owner must satisfy [`drop_last_in_place_safety_cond`], which ensures that its reference count is 0
     /// and it has no dangling raw pointers.
     /// ## Postconditions
