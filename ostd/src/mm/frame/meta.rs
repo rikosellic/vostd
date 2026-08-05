@@ -393,6 +393,7 @@ impl MetaSlot {
                 &&& permissions@.1 is None
             },
             res matches Ok(res) ==> {
+                &&& valid_frame_paddr(paddr)
                 &&& res.addr() == frame_to_meta(paddr)
                 &&& final(regions).inv()
                 &&& Self::get_from_unused_spec(
@@ -405,7 +406,6 @@ impl MetaSlot {
                     permissions@,
                 )
             },
-            res is Ok ==> valid_frame_paddr(paddr),
     )]
     pub(super) fn get_from_unused<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf>(
         paddr: Paddr,
@@ -455,21 +455,19 @@ impl MetaSlot {
 
         if let Err(err) = last_ref_cnt {
             proof {
-                let ghost idx = frame_to_index(paddr);
                 vstd_extra::auxiliary::axiom_permission_u64_ext_eq(
-                    regions.slot_owners[idx].ref_count_perm,
-                    old(regions).slot_owners[idx].ref_count_perm,
+                    regions.slot_owner(paddr).ref_count_perm,
+                    old(regions).slot_owner(paddr).ref_count_perm,
                 );
             }
 
             return #[verus_spec(with |= Tracked((None, None)))]
             Err(err);
         }
-        // SAFETY: The slot now has a reference count of `0`, other threads will
-        // not access the metadata slot so it is safe to have a mutable reference.
-
         let tracked mut metadata_perms = slot_own.metadata_perm.take_resource();
 
+        // SAFETY: The slot now has a reference count of `0`, other threads will
+        // not access the metadata slot so it is safe to have a mutable reference.
         unsafe {
             #[verus_spec(with
                 Tracked(&mut metadata_perms),
