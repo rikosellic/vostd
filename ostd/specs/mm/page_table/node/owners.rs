@@ -241,6 +241,7 @@ impl<C: PageTableConfig> Inv for NodeOwner<C> {
         &&& self.frame_permission.frac() == 1
         &&& 0 <= self.meta_own.nr_children.value() <= NR_ENTRIES
         &&& 1 <= self.level <= NR_LEVELS
+        &&& self.children_perm.wf()
         &&& self.children_perm.is_init_all()
         &&& self.children_perm.addr() == paddr_to_vaddr(
             meta_to_frame(index_to_meta(self.slot_index)),

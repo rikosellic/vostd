@@ -1041,6 +1041,9 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             #[verus_spec(with Tracked(&mut owner.children_perm))]
             store_pte(ptr.add(idx), pte, Ordering::Release)
         }
+        proof {
+            assert(owner.children_perm.wf());
+        }
     }
 
     /// Gets the mutable reference to the number of valid PTEs in the node.
