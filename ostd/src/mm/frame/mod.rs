@@ -29,7 +29,6 @@
 //! module. The reference count and usage of a frame are stored in the metadata
 //! as well, leaving the handle only a pointer to the metadata slot. Users
 //! can create custom metadata types by implementing the [`AnyFrameMeta`] trait.
-//pub mod allocator;
 use vstd::atomic::PermissionU64;
 use vstd::prelude::*;
 use vstd::simple_pptr::{self, PPtr};
@@ -63,7 +62,6 @@ pub use untyped::{AnyUFrameMeta, UFrame};
 
 use super::PagingLevel;
 
-// Re-export commonly used types
 use crate::mm::kspace::FRAME_METADATA_RANGE;
 pub use linked_list::{CursorMut, Link, LinkedList};
 pub use meta::{AnyFrameMeta, GetFrameError, MetaSlot};
@@ -119,8 +117,8 @@ fn acquire_fence() {
 /// determines the kind of the frame. If `M` implements [`AnyUFrameMeta`], the
 /// frame is a untyped frame. Otherwise, it is a typed frame.
 /// # Verification Design
-#[repr(transparent)]
 #[allow(repr_transparent_non_zst_fields)]
+#[repr(transparent)]
 pub struct Frame<M: ?Sized> {
     pub ptr: PPtr<MetaSlot>,
     pub _marker: PhantomData<M>,
