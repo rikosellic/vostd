@@ -146,8 +146,6 @@ impl MetaRegionOwners {
         ensures
             self.slot_owners[frame_to_index(paddr)].paths_in_pt.is_empty(),
     {
-        // The trigger frame_to_index(paddr) fires from the ensures clause,
-        // instantiating the forall in paddr_range_not_mapped at this paddr.
     }
 
     pub proof fn lemma_contains_valid_frame_paddr(self, paddr: usize)

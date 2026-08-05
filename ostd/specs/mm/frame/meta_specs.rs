@@ -185,9 +185,7 @@ impl MetaSlot {
             &&& post.slot_owners[idx].metadata_perm.id() == pre.slot_owners[idx].metadata_perm.id()
             &&& post.slot_owners[idx].metadata_perm.frac() + 1
                 == pre.slot_owners[idx].metadata_perm.frac()
-            &&& pre.slot_owners[idx].metadata_perm.frac() > 1 ==> {
-                post.slot_owners[idx].metadata_perm@ == pre.slot_owners[idx].metadata_perm@
-            }
+            &&& post.slot_owners[idx].metadata_perm@ == pre.slot_owners[idx].metadata_perm@
             &&& post.slot_owners[idx].in_list_perm == pre.slot_owners[idx].in_list_perm
             &&& post.slot_owners[idx].slot_vaddr == pre.slot_owners[idx].slot_vaddr
             &&& post.slot_owners[idx].usage == pre.slot_owners[idx].usage
