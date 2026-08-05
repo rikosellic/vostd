@@ -239,13 +239,13 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                 ).slot_owners[i]),
             // The frame's slot: bumped if the item is ref-counted, otherwise unchanged.
             C::tracked(*item) ==> {
-                &&& final(regions).slot_owners[frame_to_index(pa)].ref_count_perm.id()
-                    == old(regions).slot_owners[frame_to_index(pa)].ref_count_perm.id()
-                &&& final(regions).slot_owners[frame_to_index(pa)].metadata_perm.id()
-                    == old(regions).slot_owners[frame_to_index(pa)].metadata_perm.id()
-                &&& final(regions).slot_owners[frame_to_index(pa)].metadata_perm.frac() + 1
-                    == old(regions).slot_owners[frame_to_index(pa)].metadata_perm.frac()
-                &&& final(regions).slot_owners[frame_to_index(pa)].in_list_perm == old(
+                &&& final(regions).slot_owner(pa).ref_count_perm.id()
+                    == old(regions).slot_owner(pa).ref_count_perm.id()
+                &&& final(regions).slot_owner(pa).metadata_perm.id()
+                    == old(regions).slot_owner(pa).metadata_perm.id()
+                &&& final(regions).slot_owner(pa).metadata_perm.frac() + 1
+                    == old(regions).slot_owner(pa).metadata_perm.frac()
+                &&& final(regions).slot_owner(pa).in_list_perm == old(
                     regions,
                 ).slot_owner(pa).in_list_perm
                 &&& final(regions).slot_owner(pa).paths_in_pt == old(

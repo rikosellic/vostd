@@ -208,11 +208,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                     #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize)]
                     permissions.len() <= i < crate::specs::mm::frame::segment::seg_nframes(
                         self.range,
-                    ) ==> perm.slot_owner(
-                        (self.range.start + i * PAGE_SIZE) as usize
-                    ) == old(perm).slot_owner(
-                        (self.range.start + i * PAGE_SIZE) as usize
-                    ),
+                    ) ==> perm.slot_owner((self.range.start + i * PAGE_SIZE) as usize) == old(
+                        perm,
+                    ).slot_owner((self.range.start + i * PAGE_SIZE) as usize),
             decreases self.range.end - paddr,
         {
             if paddr >= self.range.end {
@@ -222,9 +220,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
             let ghost permissions_len: int = permissions.len() as int;
             proof {
                 self.relate_regions_at(*old(perm), permissions_len);
-                assert(regions_pre.slot_owner(paddr) == old(
-                    perm,
-                ).slot_owner(paddr));
+                assert(regions_pre.slot_owner(paddr) == old(perm).slot_owner(paddr));
             }
             let tracked_permission = unsafe {
                 #[verus_spec(with Tracked(perm))]
