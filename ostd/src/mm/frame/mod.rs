@@ -194,21 +194,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
 
 #[verus_verify]
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
-    /// Borrows the metadata bundle carried by this shared frame handle.
-    ///
-    /// This is the permission-level reason that reading `&M` does not need
-    /// mutable access to `MetaRegionOwners`: every live `Frame` owns one
-    /// counting fraction, and every fraction guards the same
-    /// `MetadataPerms` value.
-    pub proof fn tracked_borrow_metadata_perms(tracked &self) -> (tracked res: &MetadataPerms)
-        requires
-            self.tracked_perm@ is Some,
-        ensures
-            *res == self.tracked_perm@->0.resource(),
-    {
-        self.tracked_perm.borrow().tracked_borrow().tracked_borrow()
-    }
-
     /// Gets a [`Frame`] with a specific usage from a raw, unused page.
     ///
     /// The caller should provide the initial metadata of the page.
