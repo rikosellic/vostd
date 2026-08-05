@@ -514,28 +514,30 @@ impl MetaSlot {
     /// ## Safety
     /// The potential data race is avoided by the spin-lock.
     #[verus_spec(res =>
-        with Tracked(regions): Tracked<&mut MetaRegionOwners>
+        with
+            Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            -> permission: Tracked<Option<FracMetadataPerm>>,
         requires
             old(regions).inv(),
             valid_frame_paddr(paddr) ==> old(regions).ref_count(frame_to_index(paddr)) >= REF_COUNT_MAX ==> may_panic(),
         ensures
             final(regions).inv(),
-            res is Ok ==> valid_frame_paddr(paddr),
-            res is Ok ==> Self::get_from_in_use_success(paddr, *old(regions), *final(regions)),
-            res matches Ok((ptr, permission)) ==> {
+            res matches Ok(ptr) ==> {
+                &&& Self::get_from_in_use_success(paddr, *old(regions), *final(regions))
+                &&& valid_frame_paddr(paddr)
+                &&& permission@ is Some
                 &&& ptr == old(regions).slots[frame_to_index(paddr)].pptr()
-                &&& permission@.frac() == 1
-                &&& permission@.id()
-                    == final(regions).slot_owners[frame_to_index(paddr)].metadata_perm.id()
+                &&& permission@->0.frac() == 1
+                &&& permission@->0.id() == final(regions).slot_owner(paddr).metadata_perm.id()
             },
-            res is Err ==> *final(regions) == *old(regions),
+            res is Err ==> {
+                &&& *final(regions) == *old(regions)
+                &&& permission@ is None
+            }
     )]
     #[verifier::exec_allows_no_decreases_clause]
     #[verifier::loop_isolation(false)]
-    pub(super) fn get_from_in_use(paddr: Paddr) -> Result<
-        (PPtr<Self>, Tracked<FracMetadataPerm>),
-        GetFrameError,
-    > {
+    pub(super) fn get_from_in_use(paddr: Paddr) -> Result<PPtr<Self>, GetFrameError> {
         proof_decl! {
             let ghost idx = frame_to_index(paddr);
             if valid_frame_paddr(paddr) {
@@ -547,8 +549,14 @@ impl MetaSlot {
                 None
             };
         }
-        let slot = #[verus_spec(with Tracked(slot_perm))]
-        get_slot(paddr)?;
+        let slot = match #[verus_spec(with Tracked(slot_perm))]
+        get_slot(paddr) {
+            Ok(slot) => slot,
+            Err(err) => {
+                return #[verus_spec(with |= Tracked(None))]
+                Err(err);
+            },
+        };
 
         loop
             invariant
@@ -557,9 +565,18 @@ impl MetaSlot {
             let tracked slot_own = regions.slot_owners.tracked_borrow_mut(idx);
 
             match slot.ref_count.load(Tracked(&mut slot_own.ref_count_perm)) {
-                REF_COUNT_UNUSED => return Err(GetFrameError::Unused),
-                REF_COUNT_UNIQUE => return Err(GetFrameError::Unique),
-                0 => return Err(GetFrameError::Busy),
+                REF_COUNT_UNUSED => {
+                    return #[verus_spec(with |= Tracked(None))]
+                    Err(GetFrameError::Unused);
+                },
+                REF_COUNT_UNIQUE => {
+                    return #[verus_spec(with |= Tracked(None))]
+                    Err(GetFrameError::Unique);
+                },
+                0 => {
+                    return #[verus_spec(with |= Tracked(None))]
+                    Err(GetFrameError::Busy);
+                },
                 last_ref_cnt => {
                     if last_ref_cnt >= REF_COUNT_MAX {
                         // See `Self::inc_ref_count` for the explanation.
@@ -577,7 +594,8 @@ impl MetaSlot {
                         last_ref_cnt + 1,
                     ).is_ok() {
                         let tracked permission = slot_own.metadata_perm.split_one();
-                        return Ok((PPtr::from_addr(frame_to_meta(paddr)), Tracked(permission)));
+                        return #[verus_spec(with |= Tracked(Some(permission)))]
+                        Ok(PPtr::from_addr(frame_to_meta(paddr)));
                     }
                     proof {
                         vstd_extra::auxiliary::axiom_permission_u64_ext_eq(

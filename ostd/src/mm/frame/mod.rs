@@ -344,17 +344,19 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Frame<M> {
             res is Err ==> *old(regions) == *final(regions),
     )]
     pub fn from_in_use(paddr: Paddr) -> Result<Self, GetFrameError> {
-        let res = #[verus_spec(with Tracked(regions))]
+        proof_decl!{
+            let tracked frame_permission: Option<FracMetadataPerm>;
+        }
+        let res = #[verus_spec(with Tracked(regions) => Tracked(frame_permission))]
         MetaSlot::get_from_in_use(paddr);
         match res {
-            Ok((ptr, tracked_permission)) => {
-                let tracked frame_permission = tracked_permission.get();
+            Ok(ptr) => {
                 Ok(
                     Self {
                         ptr,
                         _marker: PhantomData,
                         #[cfg(verus_keep_ghost_body)]
-                        tracked_perm: Tracked(Some(frame_permission)),
+                        tracked_perm: Tracked(frame_permission),
                     },
                 )
             },
