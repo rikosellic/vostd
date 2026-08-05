@@ -797,6 +797,7 @@ impl MetaSlot {
         requires
             old(owner).inv(),
             self.ref_count.id() == old(owner).ref_count_perm.id(),
+            self.in_list.id() == old(owner).in_list_perm.id(),
             self.storage.id() == old(owner).storage_perm().id(),
             self.vtable_ptr == old(owner).vtable_ptr_perm().pptr(),
             Self::drop_last_in_place_safety_cond(*old(owner)),
@@ -816,11 +817,15 @@ impl MetaSlot {
     )]
     pub(super) unsafe fn drop_last_in_place(&self) {
         // This should be guaranteed as a safety requirement.
-        //        debug_assert_eq!(self ref_count.load(Tracked(&*rc_perm)), 0);
+        //        debug_assert_eq!(self.ref_count.load(Ordering::Relaxed), 0);
         let tracked mut metadata_perms = owner.metadata_perm.take_resource();
         // SAFETY: The caller ensures safety.
         unsafe {
-            #[verus_spec(with Tracked(owner), Tracked(&mut metadata_perms))]
+            #[verus_spec(with
+                Tracked(&owner.ref_count_perm),
+                Tracked(&owner.in_list_perm),
+                Tracked(&mut metadata_perms)
+            )]
             self.drop_meta_in_place()
         };
         proof {
@@ -842,36 +847,34 @@ impl MetaSlot {
     /// The latter dependency makes it part of the "bootstrap gap".
     /// Now that Verus better supports the `dyn Trait` pattern and we have verified `VmReader`, we can revisit it.
     /// ## Preconditions
-    /// - The caller must provide an owner object for the metadata slot.
-    /// - The reference count must be 0
+    /// - The caller must provide the concrete permissions for the metadata slot.
+    /// - The reference count must be `0` or [`REF_COUNT_UNIQUE`].
     /// ## Safety
     ///
     /// The caller should ensure that:
-    ///  - the reference count is `0` (so we are the sole owner of the frame);
+    ///  - the reference count grants exclusive access (`0` or [`REF_COUNT_UNIQUE`]);
     ///  - the metadata is initialized;
     #[verifier::external_body]
     #[verus_spec(
         with
-            Tracked(slot_own): Tracked<&mut MetaSlotOwner>,
+            Tracked(ref_count_perm): Tracked<&PermissionU64>,
+            Tracked(in_list_perm): Tracked<&PermissionU64>,
             Tracked(metadata_perms): Tracked<&mut MetadataPerms>,
         requires
-            old(slot_own).ref_count() == 0 || old(slot_own).ref_count() == REF_COUNT_UNIQUE,
+            self.ref_count.id() == ref_count_perm.id(),
+            ref_count_perm.value() == 0 || ref_count_perm.value() == REF_COUNT_UNIQUE,
+            self.in_list.id() == in_list_perm.id(),
+            in_list_perm.value() == 0,
             old(metadata_perms).storage_perm.is_init(),
             old(metadata_perms).storage_perm.id() == self.storage.id(),
+            old(metadata_perms).vtable_ptr_perm.is_init(),
             old(metadata_perms).vtable_ptr_perm.pptr() == self.vtable_ptr,
-            old(slot_own).in_list_perm.value() == 0,
         ensures
-            final(slot_own).ref_count_perm == old(slot_own).ref_count_perm,
-            final(slot_own).in_list_perm == old(slot_own).in_list_perm,
-            final(slot_own).metadata_perm == old(slot_own).metadata_perm,
             final(metadata_perms).storage_perm.is_uninit(),
             final(metadata_perms).storage_perm.id() == old(metadata_perms).storage_perm.id(),
             final(metadata_perms).vtable_ptr_perm.is_uninit(),
             final(metadata_perms).vtable_ptr_perm.pptr()
                 == old(metadata_perms).vtable_ptr_perm.pptr(),
-            final(slot_own).slot_vaddr == old(slot_own).slot_vaddr,
-            final(slot_own).usage == old(slot_own).usage,
-            final(slot_own).paths_in_pt == old(slot_own).paths_in_pt,
     )]
     #[verifier::external_body]
     pub(super) unsafe fn drop_meta_in_place(&self) {

@@ -189,7 +189,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
 
         // SAFETY: We are the sole owner and the metadata is initialized.
         unsafe {
-            #[verus_spec(with Tracked(&mut slot_own), Tracked(&mut metadata_perms))]
+            #[verus_spec(with
+                Tracked(&slot_own.ref_count_perm),
+                Tracked(&slot_own.in_list_perm),
+                Tracked(&mut metadata_perms)
+            )]
             slot.drop_meta_in_place()
         };
 

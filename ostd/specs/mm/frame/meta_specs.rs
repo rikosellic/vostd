@@ -195,9 +195,10 @@ impl MetaSlot {
     }
 
     pub open spec fn drop_last_in_place_safety_cond(owner: MetaSlotOwner) -> bool {
-        &&& (owner.ref_count() == 0 || owner.ref_count() == REF_COUNT_UNIQUE)
+        &&& owner.ref_count() == 0
         &&& owner.metadata_perm.is_full()
         &&& owner.storage_perm().is_init()
+        &&& owner.vtable_ptr_perm().is_init()
         &&& owner.in_list_perm.value()
             == 0
         // The slot is torn down to `REF_COUNT_UNUSED`; the strengthened
