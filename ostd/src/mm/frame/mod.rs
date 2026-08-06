@@ -688,6 +688,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> RCClone for Frame<M> {
             == old_perm.slot_owners[idx].metadata_perm.id()
         &&& new_perm.slot_owners[idx].metadata_perm.frac() + 1
             == old_perm.slot_owners[idx].metadata_perm.frac()
+        &&& new_perm.slot_owners[idx].metadata_perm@ == old_perm.slot_owners[idx].metadata_perm@
         &&& res.tracked_perm@ is Some
         &&& res.tracked_perm@->0.frac() == 1
         &&& res.tracked_perm@->0.id() == new_perm.slot_owners[idx].metadata_perm.id()
@@ -924,6 +925,11 @@ impl TryFrom<Frame<dyn AnyFrameMeta>> for UFrame {
         ].metadata_perm.frac() + 1 == old(regions).slot_owners[
             frame_to_index(paddr)
         ].metadata_perm.frac(),
+        final(regions).slot_owners[
+            frame_to_index(paddr)
+        ].metadata_perm@ == old(regions).slot_owners[
+            frame_to_index(paddr)
+        ].metadata_perm@,
         permission@.frac() == 1,
         permission@.id() == final(regions).slot_owners[
             frame_to_index(paddr)

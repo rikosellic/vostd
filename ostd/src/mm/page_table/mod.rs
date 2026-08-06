@@ -437,6 +437,12 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
                 &&& new_regions.slot_owner(pa).ref_count_perm.id() == old_regions.slot_owner(
                     pa,
                 ).ref_count_perm.id()
+                &&& new_regions.slot_owner(pa).metadata_perm.id() == old_regions.slot_owner(
+                    pa,
+                ).metadata_perm.id()
+                &&& new_regions.slot_owner(pa).metadata_perm.frac() + 1 == old_regions.slot_owner(
+                    pa,
+                ).metadata_perm.frac()
                 &&& new_regions.slot_owner(pa).storage_perm() == old_regions.slot_owner(
                     pa,
                 ).storage_perm()

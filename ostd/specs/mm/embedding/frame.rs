@@ -187,11 +187,9 @@ pub axiom fn frame_drop_embedded(tracked regions: &mut MetaRegionOwners, paddr: 
     requires
         old(regions).inv(),
         old(regions).contains(frame_to_index(paddr)),
-        old(regions).slot_owner(paddr).ref_count() > 0,
-        old(regions).slot_owner(paddr).ref_count() != REF_COUNT_UNUSED,
-        old(regions).slot_owner(paddr).ref_count() <= REF_COUNT_MAX,
+        0 < old(regions).slot_owner(paddr).ref_count() <= REF_COUNT_MAX,
+        old(regions).slot_owner(paddr).storage_perm().is_init(),
         old(regions).slot_owner(paddr).ref_count() == 1 ==> {
-            &&& old(regions).slot_owner(paddr).storage_perm().is_init()
             &&& old(regions).slot_owner(paddr).in_list_perm.value()
                 == 0
             // Mirrors the FUTURE-plan strengthening of exec
@@ -233,9 +231,6 @@ pub axiom fn frame_drop_embedded(tracked regions: &mut MetaRegionOwners, paddr: 
         final(regions).slot_owner(paddr).in_list_perm == old(regions).slot_owner(
             paddr,
         ).in_list_perm,
-        old(regions).slot_owner(paddr).ref_count() == 1 ==> final(regions).slot_owner(
-            paddr,
-        ).paths_in_pt.is_empty(),
         // `drop` never touches the free-list `in_list` field (the
         // decrement branch leaves it; `drop_last_in_place` preserves
         // it). Needed for `VmStore::inv`'s `in_list` coverage (#4).
@@ -346,11 +341,9 @@ pub(super) proof fn from_in_use_step(
 pub open spec fn drop_pre(regions: MetaRegionOwners, paddr: Paddr) -> bool {
     let so = regions.slot_owner(paddr);
     &&& regions.contains(frame_to_index(paddr))
-    &&& so.ref_count() > 0
-    &&& so.ref_count() != REF_COUNT_UNUSED
-    &&& so.ref_count() <= REF_COUNT_MAX
+    &&& 0 < so.ref_count() <= REF_COUNT_MAX
+    &&& so.storage_perm().is_init()
     &&& so.ref_count() == 1 ==> {
-        &&& so.storage_perm().is_init()
         &&& so.in_list_perm.value() == 0
         &&& so.paths_in_pt.is_empty()
     }
