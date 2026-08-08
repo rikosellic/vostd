@@ -164,11 +164,12 @@ pub tracked struct MetadataPerms {
     pub vtable_ptr_perm: vstd::simple_pptr::PointsTo<usize>,
 }
 
-/// One unit of shared ownership of the currently installed metadata.
-pub type FracMetadataPerm = Count<MetadataPerms, REF_COUNT_MAX>;
+pub const REF_COUNT_MAX_USIZE: usize = REF_COUNT_MAX as usize; 
 
+/// One unit of shared ownership of the currently installed metadata.
+pub type FracMetadataPerm = Count<MetadataPerms, REF_COUNT_MAX_USIZE>;
 /// The undistributed part of a metadata permission.
-pub type FracMetadataPermResource = CountResource<MetadataPerms, REF_COUNT_MAX>;
+pub type FracMetadataPermResource = CountResource<MetadataPerms, REF_COUNT_MAX_USIZE>;
 
 /// Permissions that remain under the authority of `MetaRegionOwners`.
 ///

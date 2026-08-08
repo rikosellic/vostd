@@ -571,7 +571,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
 
         }
 
-        let tracked mut slot_own = regions.slot_owners.tracked_remove(idx);
+        let tracked slot_own = regions.slot_owners.tracked_borrow_mut(idx);
         let tracked metadata_perms = owner.metadata_perms.tracked_take();
         proof {
             slot_own.metadata_perm.put_resource(metadata_perms);
