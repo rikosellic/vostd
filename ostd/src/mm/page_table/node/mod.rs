@@ -443,9 +443,6 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                             pte.lemma_paddr_is_page_aligned();
                             pte_j.lemma_paddr_is_page_aligned();
                         };
-                        // Pinning these in SMT context lets `tracked_remove`'s
-                        // dom-containment precondition and `from_raw`'s
-                        // `from_raw_requires_safety` (via embedding) discharge.
 
                         assert(regions.slot_owner(paddr).ref_count() == 1 ==> {
                             &&& regions.slot_owner(paddr).in_list_perm.value() == 0

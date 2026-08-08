@@ -175,7 +175,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
 
             assert(idx == owner.slot_index);
         }
-        let tracked mut slot_own = regions.slot_owners.tracked_remove(idx);
+        let tracked slot_own = regions.slot_owners.tracked_borrow_mut(idx);
         let tracked perm_ref = regions.slots.tracked_borrow(idx);
         let tracked mut metadata_perms = owner.metadata_perms.tracked_take();
 
@@ -210,10 +210,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
             )]
             slot.write_meta(metadata)
         };
-
-        proof {
-            regions.slot_owners.tracked_insert(idx, slot_own);
-        }
 
         let tracked mut new_owner = UniqueFrameOwner::<M1>::tracked_from_unused_owner(
             meta_own_in,
@@ -593,10 +589,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
             slot.drop_last_in_place()
         };
 
-        proof {
-            regions.slot_owners.tracked_insert(idx, slot_own);
-        }
-
         //        super::allocator::get_global_frame_allocator().dealloc(self.start_paddr(), PAGE_SIZE);
     }
 }
@@ -630,7 +622,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
             assert(regions.slots[idx].addr() == unique.ptr.addr());
             assert(regions.slots[idx].pptr() == unique.ptr);
         }
-        let tracked mut slot_own = regions.slot_owners.tracked_remove(idx);
+        let tracked slot_own = regions.slot_owners.tracked_borrow_mut(idx);
         let tracked slot_perm = regions.slots.tracked_borrow(idx);
         #[verus_spec(with Tracked(&slot_perm))]
         let slot = unique.slot();
@@ -642,10 +634,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
         let tracked mut inner_perms = &mut slot_own;
 
         slot.ref_count.store(Tracked(&mut inner_perms.ref_count_perm), 1);
-
-        proof {
-            regions.slot_owners.tracked_insert(idx, slot_own);
-        }
 
         // UniqueFrame and Frame have identical layout (ptr + PhantomData),
         // so reconstructing Frame from unique's ptr preserves the handle.
