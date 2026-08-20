@@ -941,7 +941,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> ListStore<M> {
 
         // Discharge the axiom's unmapped-link precondition: every link's
         // slot is a non-MMIO UNIQUE frame (via `relate_region_at`:
-        // ref_count == REF_COUNT_UNIQUE` + `usage == Frame`), and
+        // `ref_count == REF_COUNT_UNIQUE` + `usage == Frame`), and
         // `regions.inv()`'s UNIQUE branch (`usage != MMIO ==> empty`) then
         // gives it an empty `paths_in_pt`.
         assert forall|i: int|

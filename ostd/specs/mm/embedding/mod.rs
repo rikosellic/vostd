@@ -1315,7 +1315,7 @@ impl<'rcu> VmStore<'rcu> {
     ///
     /// Requires / ensures only [`structural_inv`] — not full [`inv`].
     /// Removing a frame handle without coordinating with the slot's
-    /// ref_count` breaks [`accounting_inv`] transiently; the *step*
+    /// `ref_count` breaks [`accounting_inv`] transiently; the *step*
     /// that calls this is responsible for pairing it with the matching
     /// `frame::drop_step` (or `cursor::map_step` once Op::Map consumes
     /// a tracked frame) and re-establishing accounting at the end.
