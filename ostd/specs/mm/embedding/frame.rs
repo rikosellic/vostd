@@ -21,7 +21,7 @@
 //!   `metadata: M` parameter and threads it through the slot's typed storage permission.
 //!   We don't model the metadata type, so this layer uses
 //!   `get_from_unused_region_spec` and hides the returned fraction.
-//! - **Drop-last-in-place teardown**: when ref_count == 1`, dropping
+//! - **Drop-last-in-place teardown**: when `ref_count == 1`, dropping
 //!   the handle invokes the metadata destructor (which may require
 //!   `storage.is_init`, `in_list.value() == 0`). We model this by
 //!   carrying the relevant precondition into the drop axiom but
@@ -132,12 +132,12 @@ pub axiom fn frame_from_in_use_embedded(
         res is Some ==> MetaSlot::get_from_in_use_success(paddr, *old(regions), *final(regions)),
         res is None ==> *final(regions) == *old(regions),
         // 2b: faithful axiom-strengthening. The exec `get_from_in_use`
-        // returns `Ok` only when the pre ref_count` is a live SHARED
+        // returns `Ok` only when the pre `ref_count` is a live SHARED
         // count in `[1, REF_COUNT_MAX-1]` — `UNUSED` / `UNIQUE` / `0` /
         // saturated all `Err` or `panic_diverge` — and the `Acquire`
         // compare-exchange makes the slot's written metadata visible.
         // So on `Some` the acquired slot is live (non-sentinel
-        // ref_count`) with initialised storage. `get_from_in_use_success`
+        // `ref_count`) with initialised storage. `get_from_in_use_success`
         // does not surface this, and `MetaSlotOwner::inv` only gives
         // `vtable_ptr.is_init()` for SHARED slots, not `storage`.
         res is Some ==> {
@@ -176,10 +176,10 @@ pub axiom fn frame_from_in_use_embedded(
 /// the refcount semantics*, not because of any caller obligation: a
 /// page-table mapping is itself a reference (`reference_count()` counts
 /// "all the mappings in the page table that point to the frame"). So
-/// ref_count == 1` already implies no cursor's `OwnerSubtree` maps the
-/// slot — were it mapped, that mapping would push ref_count >= 2`.
-/// Hence the ref_count == 1` UNUSED transition cannot break any
-/// cursor's `EntryOwner::metaregion_sound`, and ref_count > 1` keeps
+/// `ref_count == 1` already implies no cursor's `OwnerSubtree` maps the
+/// slot — were it mapped, that mapping would push `ref_count >= 2`.
+/// Hence the `ref_count == 1` UNUSED transition cannot break any
+/// cursor's `EntryOwner::metaregion_sound`, and `ref_count > 1` keeps
 /// the slot SHARED. (Not provable from `drop_ensures` alone, but sound
 /// to assert here — same epistemic status as the other `_embedded`
 /// axioms reflecting real exec behavior.)
@@ -215,10 +215,10 @@ pub axiom fn frame_drop_embedded(tracked regions: &mut MetaRegionOwners, paddr: 
         final(regions).slot_owner(paddr).slot_vaddr == old(regions).slot_owner(paddr).slot_vaddr,
         final(regions).slot_owner(paddr).usage == old(regions).slot_owner(paddr).usage,
         final(regions).slot_owner(paddr).paths_in_pt == old(regions).slot_owner(paddr).paths_in_pt,
-        // ref_count == 1` ⟹ the torn-down slot has no page-table
+        // `ref_count == 1` ⟹ the torn-down slot has no page-table
         // mappings. A mapping is itself a reference (see the doc
         // comment above: `reference_count()` counts the mappings), so a
-        // mapped slot would have ref_count >= 2`. Hence `paths_in_pt`
+        // mapped slot would have `ref_count >= 2`. Hence `paths_in_pt`
         // is empty — same epistemic status as the `metaregion_sound`-
         // preserves clause (sound to assert, reflecting real exec; not
         // derivable from the incomplete `drop_pre` predicate alone).
@@ -244,7 +244,7 @@ pub axiom fn frame_drop_embedded(tracked regions: &mut MetaRegionOwners, paddr: 
             paddr,
         ).ref_count() == (old(regions).slot_owner(paddr).ref_count() - 1) as u64,
         // Storage preservation in the decrement branch (rc>1): the
-        // exec `fetch_sub` only touches ref_count`; only the rc==1
+        // exec `fetch_sub` only touches `ref_count`; only the rc==1
         // teardown branch invokes `drop_last_in_place` (which uninits
         // storage). Needed so the embedding accounting clause's
         // `storage.is_init` carries across non-teardown drops.
@@ -366,7 +366,7 @@ pub(super) proof fn drop_step(tracked regions: &mut MetaRegionOwners, tracked en
                 regions,
             ).slot_owners[i],
         // `in_list` preserved at the dropped slot too — `drop` touches
-        // only ref_count` (+ storage on teardown). Keeps `VmStore::inv`'s
+        // only `ref_count` (+ storage on teardown). Keeps `VmStore::inv`'s
         // `in_list` coverage (#4).
         final(regions).slot_owner(entry.paddr).in_list_perm == old(regions).slot_owner(
             entry.paddr,
@@ -378,7 +378,7 @@ pub(super) proof fn drop_step(tracked regions: &mut MetaRegionOwners, tracked en
         final(regions).slot_owner(entry.paddr).paths_in_pt == old(regions).slot_owner(
             entry.paddr,
         ).paths_in_pt,
-        // ref_count == 1` ⟹ no mappings ⟹ empty `paths_in_pt` at the
+        // `ref_count == 1` ⟹ no mappings ⟹ empty `paths_in_pt` at the
         // torn-down slot — see [`frame_drop_embedded`].
         old(regions).slot_owner(entry.paddr).ref_count() == 1 ==> final(regions).slot_owner(
             entry.paddr,
