@@ -5,7 +5,7 @@
 //! A `UniqueFrame` handle in the embedding is a `paddr`-bearing
 //! [`super::UniqueEntry`] in [`super::VmStore::unique_frames`]. Unlike a
 //! shared [`super::FrameEntry`], a unique handle drives its slot's
-//! ref_count` to the `REF_COUNT_UNIQUE` sentinel (`u64::MAX - 1`),
+//! `ref_count` to the `REF_COUNT_UNIQUE` sentinel (`u64::MAX - 1`),
 //! which is *not* a participant in the `rc == H + P + cover_count`
 //! accounting equation. Exclusivity (`rc == REF_COUNT_UNIQUE ⟹ no
 //! shared users`: `handle_count == 0`, `paths_in_pt` empty,

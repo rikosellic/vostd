@@ -233,13 +233,13 @@ impl<M: ?Sized> TrackDrop for Frame<M> {
         &&& self.wf_with_region(
             s,
         )
-        // At ref_count == 1` the teardown branch of `drop_last_in_place`
+        // At `ref_count == 1` the teardown branch of `drop_last_in_place`
         // runs, requiring an empty `paths_in_pt` (the strengthened
         // `MetaSlotOwner::inv` UNUSED branch demands it post-teardown,
         // and `drop_last_in_place` doesn't touch paths). Sound: at
-        // ref_count == 1` the `Frame` being dropped is the sole
+        // `ref_count == 1` the `Frame` being dropped is the sole
         // reference, so there is no live PTE mapping (a mapping would
-        // be a further reference, forcing ref_count >= 2`).
+        // be a further reference, forcing `ref_count >= 2`).
         //
         // The other `drop_last_in_place_safety_cond` conjuncts
         // (`storage.is_init`, `in_list == 0`) are subsumed by the
