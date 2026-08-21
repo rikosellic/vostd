@@ -156,9 +156,7 @@ impl Repr<MetaSlotStorage> for MetaSlotStorage {
     }
 }
 
-/// Permissions whose initialized contents belong to one installed metadata
-/// value. Shared frames receive fractional access to this bundle, while a
-/// unique frame owns the bundle exclusively.
+/// Permissions to access metadata.
 pub tracked struct MetadataPerms {
     pub storage_perm: pcell_maybe_uninit::PointsTo<MetaSlotStorage>,
     pub vtable_ptr_perm: vstd::simple_pptr::PointsTo<usize>,
@@ -166,7 +164,7 @@ pub tracked struct MetadataPerms {
 
 pub const REF_COUNT_MAX_USIZE: usize = REF_COUNT_MAX as usize; 
 
-/// One unit of shared ownership of the currently installed metadata.
+/// Fractional metadata permission.
 pub type FracMetadataPerm = Count<MetadataPerms, REF_COUNT_MAX_USIZE>;
 /// The undistributed part of a metadata permission.
 pub type FracMetadataPermResource = CountResource<MetadataPerms, REF_COUNT_MAX_USIZE>;
@@ -176,7 +174,6 @@ pub type FracMetadataPermResource = CountResource<MetadataPerms, REF_COUNT_MAX_U
 /// `ref_count_perm` and `in_list_perm` exist for the complete lifetime of the
 /// corresponding `MetaSlot` (i.e., `'static`).
 pub tracked struct MetaSlotOwner {
-    /// The undistributed fractions of the currently installed [`MetadataPerms`].
     pub metadata_perm: FracMetadataPermResource,
     pub ref_count_perm: PermissionU64,
     pub in_list_perm: PermissionU64,
@@ -379,10 +376,8 @@ impl OwnerOf for MetaSlot {
     open spec fn wf(self, owner: Self::Owner) -> bool {
         &&& self.ref_count.id() == owner.ref_count_perm.id()
         &&& self.in_list.id() == owner.in_list_perm.id()
-        &&& owner.metadata_perm.not_empty() ==> {
-            &&& self.storage.id() == owner.storage_perm().id()
-            &&& self.vtable_ptr == owner.vtable_ptr_perm().pptr()
-        }
+        &&& self.storage.id() == owner.storage_perm().id()
+        &&& self.vtable_ptr == owner.vtable_ptr_perm().pptr()
     }
 }
 
