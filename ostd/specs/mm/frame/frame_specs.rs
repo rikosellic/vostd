@@ -80,19 +80,15 @@ impl<'a, M: ?Sized> Frame<M> {
         &&& r.ptr.addr() == frame_to_meta(paddr)
         &&& r.paddr() == paddr
         &&& r.inv()
-        &&& r.wf_with_region(new_regions)
-        &&& new_regions == old_regions
-    }
-
-    // ── into_raw precondition predicates ──
-    /// **Safety Invariant**: The frame's structural invariant must hold.
-    pub open spec fn into_raw_pre_frame_inv(self) -> bool {
-        self.inv()
-    }
-
-    /// **Bookkeeping**: The frame must be in use (not unused).
-    pub open spec fn into_raw_pre_not_unused(self, regions: MetaRegionOwners) -> bool {
-        regions.slot_owners[self.index()].ref_count() != REF_COUNT_UNUSED
+        // Borrow-protocol: `from_raw` mints exactly one entry in
+        // `frame_obligations` at the recovered slot's index. The returned
+        // `DropObligation` token is the receipt; the entry will be
+        // consumed by either `ManuallyDrop::new` (FrameRef-style borrow)
+        // or `Frame::drop` (reclaim-and-drop). Segment-level ledger is
+        // untouched.
+        &&& new_regions.frame_obligations =~= old_regions.frame_obligations.insert(
+            frame_to_index(paddr),
+        )
     }
 
     /// **Safety**: Frames other than this one are not affected by the call.
@@ -221,8 +217,7 @@ impl<M: ?Sized> TrackDrop for Frame<M> {
 
     // It is unsound to drop a `Frame` while raw paddrs to it remain
     // outstanding (`raw_count > 0`), since those raw paddrs could be revived
-    // via `from_raw` after the slot has been torn down. Hence the drop is
-    // only permitted when `raw_count == 0`.
+    // via `from_raw`. Hence the drop is only permitted when `raw_count == 0`.
     open spec fn drop_requires(self, s: Self::State, obl: Self::Obligation) -> bool {
         let idx = self.index();
         let slot_own = s.slot_owners[idx];
@@ -230,22 +225,7 @@ impl<M: ?Sized> TrackDrop for Frame<M> {
         // the slot is in the SHARED rc range. `wf_with_region` carries the
         // slot identity + pointer agreement + `rc ∈ (0, MAX] ∧ ≠ UNIQUE`
         // bounds.
-        &&& self.wf_with_region(
-            s,
-        )
-        // At `ref_count == 1` the teardown branch of `drop_last_in_place`
-        // runs, requiring an empty `paths_in_pt` (the strengthened
-        // `MetaSlotOwner::inv` UNUSED branch demands it post-teardown,
-        // and `drop_last_in_place` doesn't touch paths). Sound: at
-        // `ref_count == 1` the `Frame` being dropped is the sole
-        // reference, so there is no live PTE mapping (a mapping would
-        // be a further reference, forcing `ref_count >= 2`).
-        //
-        // The other `drop_last_in_place_safety_cond` conjuncts
-        // (`storage.is_init`, `in_list == 0`) are subsumed by the
-        // strengthened `MetaSlotOwner::inv` SHARED branch
-        // (`0 < rc <= REF_COUNT_MAX`) — they hold universally for any
-        // in-use slot, not just at `rc == 1`.
+        &&& self.wf_with_region(s)
         &&& slot_own.ref_count() == 1 ==> {
             &&& slot_own.paths_in_pt.is_empty()
         }
@@ -272,12 +252,7 @@ impl<M: ?Sized> TrackDrop for Frame<M> {
         &&& so1.slot_vaddr == so0.slot_vaddr
         &&& so1.usage == so0.usage
         &&& so1.paths_in_pt == so0.paths_in_pt
-        &&& so1.metadata_perm.id()
-            == so0.metadata_perm.id()
-        // Refcount transition. `drop_requires` guarantees the old value
-        // is in `[1, REF_COUNT_MAX]`, so these cases are exhaustive:
-        //  - last reference (== 1): the slot is torn down to UNUSED.
-        //  - otherwise (> 1): the refcount is decremented by one.
+        &&& so1.metadata_perm.id() == so0.metadata_perm.id()
         &&& so0.ref_count() == 1 ==> so1.ref_count() == REF_COUNT_UNUSED
         &&& so0.ref_count() > 1 ==> so1.ref_count() == (so0.ref_count() - 1) as u64
     }
