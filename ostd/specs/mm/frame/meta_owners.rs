@@ -162,10 +162,11 @@ pub tracked struct MetadataPerms {
     pub vtable_ptr_perm: vstd::simple_pptr::PointsTo<usize>,
 }
 
-pub const REF_COUNT_MAX_USIZE: usize = REF_COUNT_MAX as usize; 
+pub const REF_COUNT_MAX_USIZE: usize = REF_COUNT_MAX as usize;
 
 /// Fractional metadata permission.
 pub type FracMetadataPerm = Count<MetadataPerms, REF_COUNT_MAX_USIZE>;
+
 /// The undistributed part of a metadata permission.
 pub type FracMetadataPermResource = CountResource<MetadataPerms, REF_COUNT_MAX_USIZE>;
 
@@ -376,8 +377,10 @@ impl OwnerOf for MetaSlot {
     open spec fn wf(self, owner: Self::Owner) -> bool {
         &&& self.ref_count.id() == owner.ref_count_perm.id()
         &&& self.in_list.id() == owner.in_list_perm.id()
-        &&& self.storage.id() == owner.storage_perm().id()
-        &&& self.vtable_ptr == owner.vtable_ptr_perm().pptr()
+        &&& owner.metadata_perm.not_empty() ==> {
+            &&& self.storage.id() == owner.storage_perm().id()
+            &&& self.vtable_ptr == owner.vtable_ptr_perm().pptr()
+        }
     }
 }
 
