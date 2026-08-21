@@ -539,12 +539,11 @@ impl MetaSlot {
     #[verifier::loop_isolation(false)]
     pub(super) fn get_from_in_use(paddr: Paddr) -> Result<PPtr<Self>, GetFrameError> {
         proof_decl! {
-            let ghost idx = frame_to_index(paddr);
             if valid_frame_paddr(paddr) {
                 regions.lemma_contains_valid_frame_paddr(paddr);
             }
             let tracked slot_perm = if valid_frame_paddr(paddr) {
-                Some(*regions.slots.tracked_borrow(idx))
+                Some(regions.tracked_borrow_slot(paddr))
             } else {
                 None
             };
@@ -562,7 +561,7 @@ impl MetaSlot {
             invariant
                 *regions == *old(regions),
         {
-            let tracked slot_own = regions.slot_owners.tracked_borrow_mut(idx);
+            let tracked slot_own = regions.tracked_borrow_mut_slot_owner(paddr);
 
             match slot.ref_count.load(Tracked(&mut slot_own.ref_count_perm)) {
                 REF_COUNT_UNUSED => {
@@ -600,7 +599,7 @@ impl MetaSlot {
                     proof {
                         vstd_extra::auxiliary::axiom_permission_u64_ext_eq(
                             slot_own.ref_count_perm,
-                            old(regions).slot_owners[idx].ref_count_perm,
+                            old(regions).slot_owner(paddr).ref_count_perm,
                         );
                     }
 
