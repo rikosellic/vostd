@@ -152,8 +152,10 @@ impl MetaRegionOwners {
     }
 
     /// Borrows the metadata slot permission, indexed by frame paddr.
-    pub proof fn tracked_borrow_slot(tracked &self, paddr: Paddr) -> (tracked ret:
-        &'static simple_pptr::PointsTo<MetaSlot>)
+    pub proof fn tracked_borrow_slot(
+        tracked &self,
+        paddr: Paddr,
+    ) -> tracked &'static simple_pptr::PointsTo<MetaSlot>
         requires
             valid_frame_paddr(paddr),
             self.inv(),
@@ -165,8 +167,7 @@ impl MetaRegionOwners {
     }
 
     /// Borrows the `MetaSlotOwner`, indexed by frame paddr.
-    pub proof fn tracked_borrow_slot_owner(tracked &self, paddr: Paddr) -> (tracked ret:
-        &MetaSlotOwner)
+    pub proof fn tracked_borrow_slot_owner(tracked &self, paddr: Paddr) -> tracked &MetaSlotOwner
         requires
             valid_frame_paddr(paddr),
             self.inv(),

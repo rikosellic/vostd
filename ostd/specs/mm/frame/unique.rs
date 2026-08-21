@@ -220,11 +220,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
         }
     }
 
-    pub proof fn tracked_borrow_metadata_perms(tracked &self) -> (tracked res: &MetadataPerms)
+    pub proof fn tracked_borrow_metadata_perms(tracked &self) -> tracked &MetadataPerms
         requires
             self.metadata_perms is Some,
-        ensures
-            *res == self.metadata_perms->0,
+        returns
+            self.metadata_perms->0,
     {
         self.metadata_perms.tracked_borrow()
     }
