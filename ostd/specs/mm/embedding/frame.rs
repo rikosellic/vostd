@@ -166,8 +166,8 @@ pub axiom fn frame_from_in_use_embedded(
 /// it reflects verbatim. One axiom; the refcount transition is a single
 /// postcondition that covers both behaviors the exec `drop` performs:
 ///
-/// - `old ref_count == 1`: last-ref teardown — slot → `REF_COUNT_UNUSED`.
-/// - `old ref_count > 1`: refcount decremented by one (slot stays SHARED).
+/// - `old.ref_count == 1`: last-ref teardown — slot → `REF_COUNT_UNUSED`.
+/// - `old.ref_count > 1`: refcount decremented by one (slot stays SHARED).
 ///
 /// `requires` mirrors `Frame::drop_requires` (the expressible parts)
 /// verbatim — no extra conjunct.
