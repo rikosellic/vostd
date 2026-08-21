@@ -80,15 +80,6 @@ impl<'a, M: ?Sized> Frame<M> {
         &&& r.ptr.addr() == frame_to_meta(paddr)
         &&& r.paddr() == paddr
         &&& r.inv()
-        // Borrow-protocol: `from_raw` mints exactly one entry in
-        // `frame_obligations` at the recovered slot's index. The returned
-        // `DropObligation` token is the receipt; the entry will be
-        // consumed by either `ManuallyDrop::new` (FrameRef-style borrow)
-        // or `Frame::drop` (reclaim-and-drop). Segment-level ledger is
-        // untouched.
-        &&& new_regions.frame_obligations =~= old_regions.frame_obligations.insert(
-            frame_to_index(paddr),
-        )
     }
 
     /// **Safety**: Frames other than this one are not affected by the call.

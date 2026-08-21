@@ -137,18 +137,6 @@ impl MetaRegionOwners {
             ).paths_in_pt.is_empty()
     }
 
-    /// Instantiates `paddr_range_not_mapped` at a specific paddr in the range.
-    pub proof fn paddr_not_mapped_at(self, range: Range<Paddr>, paddr: Paddr)
-        requires
-            self.paddr_range_not_mapped(range),
-            range.start <= paddr,
-            paddr < range.end,
-            paddr % PAGE_SIZE == 0,
-        ensures
-            self.slot_owner(paddr).paths_in_pt.is_empty(),
-    {
-    }
-
     pub proof fn lemma_contains_valid_frame_paddr(self, paddr: usize)
         requires
             valid_frame_paddr(paddr),
