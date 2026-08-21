@@ -66,7 +66,7 @@ impl MetaSlot {
         }
     }
 
-    /// The metadata-region transition of claiming an unused slot.
+    /// The metadata region transition of claiming an unused slot.
     pub open spec fn get_from_unused_region_spec(
         paddr: Paddr,
         as_unique: bool,
