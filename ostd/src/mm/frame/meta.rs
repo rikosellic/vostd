@@ -486,17 +486,19 @@ impl MetaSlot {
             // No one can create a `Frame` instance directly from the page
             // address, so `Relaxed` is fine here.
             slot.ref_count.store(Tracked(&mut slot_own.ref_count_perm), REF_COUNT_UNIQUE);
-            let tracked metadata_perms = slot_own.metadata_perm.take_resource();
-            proof_with!(|= Tracked((None, Some(metadata_perms))));
-            Ok(PPtr::from_addr(frame_to_meta(paddr)))
         } else {
             // `Release` is used to ensure that the metadata initialization
             // won't be reordered after this memory store.
             slot.ref_count.store(Tracked(&mut slot_own.ref_count_perm), 1);
-            let tracked permission = slot_own.metadata_perm.split_one();
-            proof_with!(|= Tracked((Some(permission), None)));
-            Ok(PPtr::from_addr(frame_to_meta(paddr)))
         }
+        let tracked perm = if as_unique_ptr {
+            (None, Some(slot_own.metadata_perm.take_resource()))
+        } else {
+            (Some(slot_own.metadata_perm.split_one()), None)
+        };
+        // Ok(slot as *const MetaSlot)
+        proof_with!(|= Tracked(perm));
+        Ok(PPtr::from_addr(frame_to_meta(paddr)))
     }
 
     /// Gets another owning pointer to the metadata slot from the given page.
