@@ -563,12 +563,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
         let ghost idx = owner.slot_index;
 
         proof {
-            // Unfold `wf_with_region` to recover the per-slot facts.
-            // `owner.inv()` gives `idx < max_meta_slots`, so `regions.inv()`
-            // delivers `contains_key(idx)` and the `slot_vaddr` shape.
             assert(regions.slot_owners.contains_key(idx));
             assert(regions.slot_owners[idx].slot_vaddr == index_to_meta(idx));
-
         }
 
         let tracked slot_own = regions.slot_owners.tracked_borrow_mut(idx);
@@ -589,7 +585,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
             slot.drop_last_in_place()
         };
 
-        //        super::allocator::get_global_frame_allocator().dealloc(self.start_paddr(), PAGE_SIZE);
+        // super::allocator::get_global_frame_allocator().dealloc(self.start_paddr(), PAGE_SIZE);
     }
 }
 
@@ -635,8 +631,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
 
         slot.ref_count.store(Tracked(&mut inner_perms.ref_count_perm), 1);
 
-        // UniqueFrame and Frame have identical layout (ptr + PhantomData),
-        // so reconstructing Frame from unique's ptr preserves the handle.
         let res = Frame {
             ptr,
             _marker: PhantomData,
