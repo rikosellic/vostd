@@ -143,9 +143,7 @@ impl MetaSlot {
     }
 
     /// Permission-location clause for the static `MetaSlot` permissions.
-    /// They remain parked in `regions.slots`; `get_from_unused` only returns a
-    /// fractional metadata permission. Pair this with
-    /// [`get_from_unused_region_spec`] to fully describe the region post-state.
+    /// Only the slot at `paddr` is changed.
     pub open spec fn slot_perm_reparked_spec(
         paddr: Paddr,
         pre: MetaRegionOwners,
