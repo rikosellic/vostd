@@ -47,14 +47,7 @@ impl<'a, M: ?Sized> Frame<M> {
         &&& permission.resource().vtable_ptr_perm.is_init()
     }
 
-    // ── from_raw precondition predicates ──
-    /// **Safety**: The frame exists, is addressable, and its slot is alive
-    /// (not torn down: `ref_count != REF_COUNT_UNUSED`). Under the
-    /// borrow-protocol redesign this liveness gate replaces the prior
-    /// `raw_count <= 1` check — a slot that has not been torn down is safe
-    /// to re-materialize as a `Frame` value. (`>= 1` is *not* the right
-    /// gate, since the `UNUSED` sentinel `u64::MAX` also satisfies it; and
-    /// the PT-node ownership model only exposes `!= UNUSED`.)
+    // [`Frame::from_raw`] precondition
     pub open spec fn from_raw_requires_safety(regions: MetaRegionOwners, paddr: Paddr) -> bool {
         &&& regions.slot_owner(paddr).slot_vaddr == frame_to_meta(paddr)
         &&& valid_frame_paddr(paddr)
@@ -139,27 +132,6 @@ impl<M: ?Sized> Frame<M> {
     /// Cross-object well-formedness predicate: this `Frame` handle and
     /// the supplied [`MetaRegionOwners`] state are mutually consistent.
     /// Packages the static "Frame ⟷ state" conjuncts (slot/pointer
-    /// identity, slot in-use range) so that consumer specs
-    /// ([`drop_requires`], [`clone_requires`]) read uniformly.
-    ///
-    /// **Name**: `wf_with_region` (not just `wf`) to avoid clashing with the
-    /// `OwnerOf::wf(self, Self::Owner)` impl that
-    /// [`PageTableNode<C> = Frame<PageTablePageMeta<C>>`] inherits — the
-    /// two predicates take different argument types and serve different
-    /// purposes (per-handle vs. per-owner well-formedness).
-    ///
-    /// The rc range (`> 0 ∧ ≠ UNUSED ∧ ≠ UNIQUE ∧ ≤ MAX`) captures the
-    /// fact that holding a `Frame<M>` is itself evidence that the slot
-    /// is in the SHARED state — no UNUSED, no UNIQUE (which is reserved
-    /// for [`UniqueFrame`]). Combined with
-    /// [`MetaSlotOwner::inv`]'s SHARED branch (post Item 1), `wf_with_region`
-    /// implies `storage.is_init`, `in_list == 0`, and `vtable_ptr.is_init`
-    /// at the slot, so consumers don't have to repeat those.
-    ///
-    /// **Not preserved by `drop` for `self`**: dropping `self` releases
-    /// the reference; for *other* handles to the same slot, `wf_with_region`
-    /// is preserved by `drop`'s `>1` branch (post rc ∈ [1, MAX-1]) and
-    /// vacuous in the `==1` branch (no other handles to break).
     pub open spec fn wf_with_region(self, s: MetaRegionOwners) -> bool {
         let idx = self.index();
         let slot_own = s.slot_owners[idx];
@@ -167,10 +139,7 @@ impl<M: ?Sized> Frame<M> {
         &&& s.inv()
         &&& s.contains(idx)
         &&& s.slots[idx].pptr() == self.ptr
-        &&& slot_own.ref_count() != REF_COUNT_UNUSED
-        &&& slot_own.ref_count() != REF_COUNT_UNIQUE
-        &&& slot_own.ref_count() > 0
-        &&& slot_own.ref_count() <= REF_COUNT_MAX
+        &&& 0 < slot_own.ref_count() <= REF_COUNT_MAX
         &&& self.tracked_perm@ is Some
         &&& self.tracked_perm@->0.frac() == 1
         &&& self.tracked_perm@->0.id() == slot_own.metadata_perm.id()
