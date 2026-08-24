@@ -48,7 +48,7 @@ impl<'a, M: ?Sized> Frame<M> {
     }
 
     // [`Frame::from_raw`] precondition
-    pub open spec fn from_raw_requires_safety(regions: MetaRegionOwners, paddr: Paddr) -> bool {
+    pub open spec fn from_raw_requires(regions: MetaRegionOwners, paddr: Paddr) -> bool {
         &&& regions.slot_owner(paddr).slot_vaddr == frame_to_meta(paddr)
         &&& valid_frame_paddr(paddr)
         &&& regions.inv()

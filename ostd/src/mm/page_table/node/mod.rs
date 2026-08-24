@@ -484,7 +484,7 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                                 ) implies {
                                 let idx = frame_to_index(child_paddr);
                                 let so = regions.slot_owners[idx];
-                                &&& <Frame<Self>>::from_raw_requires_safety(*regions, child_paddr)
+                                &&& <Frame<Self>>::from_raw_requires(*regions, child_paddr)
                                 &&& 0 < so.ref_count() <= REF_COUNT_MAX
                                 &&& so.storage_perm().is_init()
                                 &&& so.ref_count() == 1 ==> {
@@ -493,7 +493,7 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                                 }
                             } by {
                                 let idx = frame_to_index(child_paddr);
-                                assert(<Frame<Self>>::from_raw_requires_safety(
+                                assert(<Frame<Self>>::from_raw_requires(
                                     regions_pre_drop,
                                     child_paddr,
                                 ));
@@ -1326,7 +1326,7 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
             ) ==> {
                 let idx = frame_to_index(paddr);
                 let so = regions.slot_owners[idx];
-                &&& <Frame<Self>>::from_raw_requires_safety(regions, paddr)
+                &&& <Frame<Self>>::from_raw_requires(regions, paddr)
                 &&& 0 < so.ref_count() <= REF_COUNT_MAX
                 &&& so.storage_perm().is_init()
                 &&& so.ref_count() == 1 ==> {

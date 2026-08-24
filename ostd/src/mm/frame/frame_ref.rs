@@ -39,7 +39,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'_, M> {
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
         requires
-            Frame::<M>::from_raw_requires_safety(*old(regions), raw),
+            Frame::<M>::from_raw_requires(*old(regions), raw),
         ensures
             final(regions).inv(),
             r.inner@.ptr.addr() == frame_to_meta(raw),

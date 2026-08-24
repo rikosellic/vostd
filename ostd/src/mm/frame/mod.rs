@@ -484,7 +484,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
         requires
             self.inv(),
-            Self::from_raw_requires_safety(*old(regions), self.start_paddr_spec()),
+            Self::from_raw_requires(*old(regions), self.start_paddr_spec()),
             Self::frame_permission_wf(*old(regions), self.start_paddr_spec(), *frame_permission),
         ensures
             *final(regions) == *old(regions),
@@ -619,11 +619,8 @@ impl<M> Frame<M> {
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(frame_permission): Tracked<FracMetadataPerm>,
         requires
-            Self::from_raw_requires_safety(*old(regions), paddr),
+            Self::from_raw_requires(*old(regions), paddr),
             Self::frame_permission_wf(*old(regions), paddr, frame_permission),
-            old(regions).contains(frame_to_index(paddr)),
-            old(regions).slot_owner(paddr).ref_count()
-                != REF_COUNT_UNUSED,
         ensures
             Self::from_raw_ensures(*old(regions), *final(regions), paddr, r),
             final(regions).slots == old(regions).slots,
@@ -632,23 +629,20 @@ impl<M> Frame<M> {
     pub(in crate::mm) unsafe fn from_raw(paddr: Paddr) -> Self
         no_unwind
     {
+        // debug_assert!(paddr < max_paddr());
+        proof {
+            regions.lemma_contains_valid_frame_paddr(paddr);
+        }
         let vaddr = frame_to_meta(paddr);
+        // let ptr = vaddr as *const MetaSlot;
         let ptr = PPtr(vaddr, PhantomData);
 
-        let frame = Self {
+        Self {
             ptr,
             _marker: PhantomData,
             #[cfg(verus_keep_ghost_body)]
             tracked_perm: Tracked(Some(frame_permission)),
-        };
-        proof {
-            broadcast use group_page_meta;
-
-            regions.lemma_contains_valid_frame_paddr(paddr);
-            assert(regions.slots[frame_to_index(paddr)].pptr() == frame.ptr);
-            assert(frame.wf_with_region(*regions));
         }
-        frame
     }
 }
 
