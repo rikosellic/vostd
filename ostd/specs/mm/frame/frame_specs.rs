@@ -197,8 +197,7 @@ impl<M: ?Sized> TrackDrop for Frame<M> {
             #![trigger s1.slot_owners[i]]
             i != idx ==> s1.slot_owners[i] == s0.slot_owners[i]
         &&& s1.slots =~= s0.slots
-        &&& s1.slot_owners.dom()
-            =~= s0.slot_owners.dom()
+        &&& s1.slot_owners.dom() =~= s0.slot_owners.dom()
         &&& so1.slot_vaddr == so0.slot_vaddr
         &&& so1.usage == so0.usage
         &&& so1.paths_in_pt == so0.paths_in_pt
