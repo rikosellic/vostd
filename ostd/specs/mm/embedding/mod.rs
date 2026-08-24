@@ -228,7 +228,7 @@ pub tracked struct FrameEntry {
 /// `Segment<M>` covering the contiguous physical range `range`.
 ///
 /// Per exec [`Segment::relate_regions`], every frame in `range` is owned by
-/// the segment. The frame's ref_count >= 1` is bumped by that reference
+/// the segment. The frame's `ref_count >= 1` is bumped by that reference
 /// (one per frame); the segment does *not* hold a separate `Frame`
 /// handle, so the embedding's `frames` map is unrelated to per-segment
 /// frame refcounting.
@@ -292,7 +292,7 @@ pub proof fn lemma_segment_cover_witness(
 
 /// Number of outstanding `Frame` handles whose paddr maps to slot
 /// `idx` — i.e. the `#handles(idx)` term of the exact reference-count
-/// accounting ref_count(idx) == #handles(idx) + paths_in_pt(idx).len()`
+/// accounting `ref_count(idx) == #handles(idx) + paths_in_pt(idx).len()`
 /// (Stage 5 / full #4).
 pub open spec fn handle_count(frames: Map<FrameId, FrameEntry>, idx: int) -> nat {
     frames.dom().filter(|fid: FrameId| frame_to_index(frames[fid].paddr) == idx).len()

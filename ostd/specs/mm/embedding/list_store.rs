@@ -720,19 +720,8 @@ pub axiom fn take_at_embedded<M: AnyFrameMeta + Repr<MetaSlotSmall>>(
                 && fo.slot_index != meta_to_index(old(owner).list[n].paddr),
 ;
 
-/// Trusted reflection of the (now-strengthened, verified) whole-list
-/// teardown [`crate::mm::frame::LinkedList`]'s `Drop`/`TrackDrop`. The
-/// destructor pops every link via `take_current` and `UniqueFrame::drop`s
-/// the recovered frame, so each former link's slot is **freed** —
-/// `rc → REF_COUNT_UNUSED`, `in_list → 0` — not orphaned. `owner` is
-/// consumed (emptied).
-///
-/// `ensures` mirror the verified `drop_ensures` (freed slots + full
-/// preservation of every out-of-list slot, `slots.dom()`, `inv()`) plus
-/// the sound companion frames (cf. the push/pop axioms): other lists /
-/// cursors keep `relate_region` + [`list_registry_ok`], other loose
-/// frames are untouched, and — when the list was empty — the region is
-/// unchanged outright.
+/// Trusted reflection of [`crate::mm::frame::LinkedList`]'s `Drop`/`TrackDrop`. 
+/// `ensures` mirror the verified `drop_ensures`.
 pub axiom fn list_drop_embedded<M: AnyFrameMeta + Repr<MetaSlotSmall>>(
     tracked regions: &mut MetaRegionOwners,
     tracked owner: LinkedListOwner<M>,
@@ -741,13 +730,6 @@ pub axiom fn list_drop_embedded<M: AnyFrameMeta + Repr<MetaSlotSmall>>(
         old(regions).inv(),
         owner.inv(),
         owner.relate_region(*old(regions)),
-        // Mirrors the exec `TrackDrop for LinkedList::drop_requires`
-        // conjunct (`linked_list.rs`): each link's slot has no live PTE
-        // mapping. The destructor `UniqueFrame::drop`s each link to
-        // `REF_COUNT_UNUSED`, which is only valid for an unmapped frame
-        // (a mapping is itself a reference). Discharged in `step_list_drop`
-        // from `MetaSlotOwner::inv`'s UNIQUE branch (a UNIQUE slot — which
-        // every link is, via `relate_region`) has empty `paths_in_pt`).
         forall|i: int|
             #![trigger meta_to_index(owner.list[i].paddr)]
             0 <= i < owner.list.len() ==> old(regions).slot_owners[meta_to_index(
