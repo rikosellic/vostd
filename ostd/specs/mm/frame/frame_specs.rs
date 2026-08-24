@@ -71,7 +71,7 @@ impl<'a, M: ?Sized> Frame<M> {
         &&& forall|i: int|
             i != frame_to_index(paddr) ==> new_regions.contains(i) == old_regions.contains(i)
         &&& r.ptr.addr() == frame_to_meta(paddr)
-        &&& r.paddr() == paddr
+        &&& r.start_paddr_spec() == paddr
         &&& r.inv()
     }
 
@@ -101,12 +101,12 @@ impl<M: ?Sized> Inv for Frame<M> {
 }
 
 impl<M: ?Sized> Frame<M> {
-    pub open spec fn paddr(self) -> Paddr {
-        meta_to_frame(self.ptr.addr())
+    pub open spec fn index(self) -> int {
+        frame_to_index(self.start_paddr_spec())
     }
 
-    pub open spec fn index(self) -> int {
-        frame_to_index(self.paddr())
+    pub open spec fn start_paddr_spec(self) -> Paddr {
+        meta_to_frame(self.ptr.addr())
     }
 
     pub open spec fn from_unused_spec(

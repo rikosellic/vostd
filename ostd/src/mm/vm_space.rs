@@ -1640,7 +1640,7 @@ unsafe impl PageTableConfig for UserPtConfig {
     type Item = MappedItem;
 
     open spec fn item_into_raw_spec(item: Self::Item) -> (Paddr, PagingLevel, PageProperty) {
-        (item.frame.paddr(), 1, item.prop)
+        (item.frame.start_paddr_spec(), 1, item.prop)
     }
 
     open spec fn item_permission(item: Self::Item) -> Option<FracMetadataPerm> {

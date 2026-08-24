@@ -1206,7 +1206,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                     &&& old(range).start < old(range).end
                     &&& final(range).start == old(range).start + PAGE_SIZE
                     &&& final(range).end == old(range).end
-                    &&& frame.paddr() == old(range).start
+                    &&& frame.start_paddr_spec() == old(range).start
                     &&& frame
                         == segment_iter_remaining::<M>(*old(range), *old(permissions))[0]
                 },
