@@ -720,7 +720,7 @@ pub axiom fn take_at_embedded<M: AnyFrameMeta + Repr<MetaSlotSmall>>(
                 && fo.slot_index != meta_to_index(old(owner).list[n].paddr),
 ;
 
-/// Trusted reflection of [`crate::mm::frame::LinkedList`]'s `Drop`/`TrackDrop`. 
+/// Trusted reflection of [`crate::mm::frame::LinkedList`]'s `Drop`/`TrackDrop`.
 /// `ensures` mirror the verified `drop_ensures`.
 pub axiom fn list_drop_embedded<M: AnyFrameMeta + Repr<MetaSlotSmall>>(
     tracked regions: &mut MetaRegionOwners,

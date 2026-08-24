@@ -124,11 +124,7 @@ impl MetaSlot {
 
     /// Variant of [`get_from_unused_region_spec`] for allocating a page-table *node*
     /// (always non-unique). Identical except the claimed slot becomes
-    /// `PageUsage::PageTable` rather than `PageUsage::Frame`: a page-table
-    /// node is tracked with `PageTable` usage, which gives a clean
-    /// usage-based discriminator between node slots and data-frame slots
-    /// (the latter are `Frame`/MMIO). Used by the node allocators
-    /// (`PageTableNode::alloc`, `PageTable::empty_with_owner`).
+    /// `PageUsage::PageTable` rather than `PageUsage::Frame`.
     pub open spec fn get_node_from_unused_spec(
         paddr: Paddr,
         pre: MetaRegionOwners,

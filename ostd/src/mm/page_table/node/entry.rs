@@ -910,17 +910,6 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         let ghost new_owner_meta_addr = new_owner.value().node().meta_vaddr();
 
         proof {
-            // Carry the huge frame's slot facts (the precondition's
-            // `metaregion_sound`/`frame_sub_pages_valid`, stated about
-            // `old(regions)`) across `alloc` to post-alloc `regions`,
-            // establishing the split loop's j=0 and sub-page invariants.
-            //
-            // `alloc` (get_node_from_unused_spec + slot_perm_reparked_spec) only
-            // mutates the freshly-allocated node's slot `new_idx`; the huge
-            // frame's own slot and every sub-page slot is distinct from
-            // `new_idx`: non-MMIO slots have `rc != UNUSED` while `new_idx` was
-            // UNUSED pre-alloc; MMIO slots are `is_mmio` while the new node is
-            // `!is_mmio`.
             broadcast use crate::specs::mm::frame::mapping::lemma_frame_to_index_injective;
             broadcast use crate::specs::mm::frame::meta_owners::axiom_mmio_usage_iff_mmio_paddr;
             broadcast use group_page_meta;
