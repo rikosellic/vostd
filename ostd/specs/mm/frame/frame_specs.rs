@@ -114,9 +114,8 @@ impl<M: ?Sized> Frame<M> {
         pre: MetaRegionOwners,
         post: MetaRegionOwners,
     ) -> bool {
-        let idx = frame_to_index(paddr);
-        let pre_owner = pre.slot_owners[idx];
-        let post_owner = post.slot_owners[idx];
+        let pre_owner = pre.slot_owner(paddr);
+        let post_owner = post.slot_owner(paddr);
         {
             &&& pre_owner.ref_count() == REF_COUNT_UNUSED
             &&& MetaSlot::get_from_unused_owner_spec(false, post_owner)

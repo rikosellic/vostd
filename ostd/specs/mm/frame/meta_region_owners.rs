@@ -117,14 +117,6 @@ impl MetaRegionOwners {
         self.slot_owners[i].ref_count()
     }
 
-    /// `other` agrees with `self` on every slot owner except the one at index
-    /// `idx`: a single-slot operation leaves all other slots' owners untouched.
-    pub open spec fn slot_owners_agree_except(self, other: MetaRegionOwners, idx: int) -> bool {
-        forall|i: int|
-            #![trigger other.slot_owners[i]]
-            i != idx ==> other.slot_owners[i] == self.slot_owners[i]
-    }
-
     pub open spec fn paddr_range_not_mapped(self, range: Range<Paddr>) -> bool
         recommends
             range.start < range.end < MAX_PADDR,

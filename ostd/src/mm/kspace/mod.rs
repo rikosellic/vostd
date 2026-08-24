@@ -451,8 +451,6 @@ unsafe impl PageTableConfig for KernelPtConfig {
                 let idx = frame_to_index(pa);
                 assert(frame.ptr.addr() == frame_to_meta(pa));
                 crate::specs::mm::frame::mapping::lemma_paddr_to_meta_biinjective(pa);
-                assert(frame.paddr() == pa);
-                assert(frame.index() == idx);
                 regions.lemma_contains_valid_frame_paddr(pa);
                 assert(regions.slots[idx].pptr() == frame.ptr);
                 assert(frame.inv());

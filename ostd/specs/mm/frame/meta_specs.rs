@@ -184,7 +184,7 @@ impl MetaSlot {
             &&& post.slot_owners[idx].slot_vaddr == pre.slot_owners[idx].slot_vaddr
             &&& post.slot_owners[idx].usage == pre.slot_owners[idx].usage
             &&& post.slot_owners[idx].paths_in_pt == pre.slot_owners[idx].paths_in_pt
-            &&& forall|i: int| i != idx ==> (#[trigger] post.slot_owners[i] == pre.slot_owners[i])
+            &&& post =~= pre.insert_slot_owner(paddr, post.slot_owners[idx])
         }
     }
 

@@ -321,9 +321,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Frame<M> {
                 &&& final(regions).ref_count(frame_to_index(paddr)) ==
                     old(regions).ref_count(frame_to_index(paddr)) + 1
                 &&& res.ptr == old(regions).slots[frame_to_index(paddr)].pptr()
+                &&& MetaSlot::get_from_in_use_success(paddr, *old(regions), *final(regions))
+                &&& valid_frame_paddr(paddr)
             },
-            !valid_frame_paddr(paddr) ==> res is Err,
-            old(regions).slot_owners_agree_except(*final(regions), frame_to_index(paddr)),
             res is Err ==> *old(regions) == *final(regions),
     )]
     pub fn from_in_use(paddr: Paddr) -> Result<Self, GetFrameError> {
@@ -484,18 +484,15 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
         requires
             self.inv(),
-            Self::from_raw_requires_safety(*old(regions), self.paddr()),
-            Self::frame_permission_wf(*old(regions), self.paddr(), *frame_permission),
+            Self::from_raw_requires_safety(*old(regions), self.start_paddr_spec()),
+            Self::frame_permission_wf(*old(regions), self.start_paddr_spec(), *frame_permission),
         ensures
             *final(regions) == *old(regions),
             res.inner@.ptr.addr() == self.ptr.addr(),
     )]
     pub(in crate::mm) fn borrow_with_permission<'a>(&self) -> FrameRef<'a, M> {
         proof {
-            regions.lemma_contains_valid_frame_paddr(self.paddr());
             crate::specs::mm::frame::mapping::lemma_meta_to_paddr_biinjective(self.ptr.addr());
-            assert(frame_to_meta(self.paddr()) == self.ptr.addr());
-            assert(regions.slot_owners[self.index()].slot_vaddr == self.ptr.addr());
             assert(regions.slots[self.index()].addr() == self.ptr.addr());
         }
         let tracked slot_perm = regions.slots.tracked_borrow(self.index());
