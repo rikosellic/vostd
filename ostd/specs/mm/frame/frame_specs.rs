@@ -131,7 +131,6 @@ impl<M: ?Sized> Frame<M> {
 impl<M: ?Sized> Frame<M> {
     /// Cross-object well-formedness predicate: this `Frame` handle and
     /// the supplied [`MetaRegionOwners`] state are mutually consistent.
-    /// Packages the static "Frame ⟷ state" conjuncts (slot/pointer
     pub open spec fn wf_with_region(self, s: MetaRegionOwners) -> bool {
         let idx = self.index();
         let slot_own = s.slot_owners[idx];
