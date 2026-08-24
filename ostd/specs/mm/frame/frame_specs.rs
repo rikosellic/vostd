@@ -153,8 +153,6 @@ impl<M: ?Sized> Frame<M> {
 impl<M: ?Sized> TrackDrop for Frame<M> {
     type State = MetaRegionOwners;
 
-    /// The `FracMetadataPerm` stored in the frame is the linear ownership
-    /// witness. No second drop token is needed.
     type Obligation = ();
 
     open spec fn tracked_redeem_requires(self, s: Self::State) -> bool {
@@ -180,10 +178,6 @@ impl<M: ?Sized> TrackDrop for Frame<M> {
     open spec fn drop_requires(self, s: Self::State, obl: Self::Obligation) -> bool {
         let idx = self.index();
         let slot_own = s.slot_owners[idx];
-        // Cross-object validity: this Frame is consistent with `s` and
-        // the slot is in the SHARED rc range. `wf_with_region` carries the
-        // slot identity + pointer agreement + `rc ∈ (0, MAX] ∧ ≠ UNIQUE`
-        // bounds.
         &&& self.wf_with_region(s)
         &&& slot_own.ref_count() == 1 ==> {
             &&& slot_own.paths_in_pt.is_empty()
@@ -206,8 +200,6 @@ impl<M: ?Sized> TrackDrop for Frame<M> {
         &&& s1.slots =~= s0.slots
         &&& s1.slot_owners.dom()
             =~= s0.slot_owners.dom()
-        // The slot's identity / page-table linkage is preserved by a
-        // drop (it only adjusts refcount and, on teardown, storage).
         &&& so1.slot_vaddr == so0.slot_vaddr
         &&& so1.usage == so0.usage
         &&& so1.paths_in_pt == so0.paths_in_pt
