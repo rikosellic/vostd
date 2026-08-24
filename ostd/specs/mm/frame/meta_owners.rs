@@ -288,13 +288,11 @@ impl Inv for MetaSlotOwner {
             &&& self.vtable_ptr_perm().is_uninit()
             &&& self.in_list_perm.value()
                 == 0
-            // A managed slot at `REF_COUNT_UNUSED` has no live PTE mapping. Hence `paths_in_pt` is empty.
-            // MMIO slots are excluded — they are not  ref-counted as ordinary frames.
+            // A managed slot at `REF_COUNT_UNUSED` has no live PTE mapping.
             &&& (self.usage != PageUsage::MMIO ==> self.paths_in_pt.is_empty())
         }
         &&& self.ref_count() == REF_COUNT_UNIQUE ==> {
             &&& self.metadata_perm.is_resource_vacant()
-            // A UNIQUE non-MMIO slot has no live PTE mapping.
             &&& (self.usage != PageUsage::MMIO ==> self.paths_in_pt.is_empty())
         }
         &&& 0 < self.ref_count() <= REF_COUNT_MAX ==> {

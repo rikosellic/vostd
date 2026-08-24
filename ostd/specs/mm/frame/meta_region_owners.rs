@@ -34,8 +34,7 @@ verus! {
 /// # Verification Design
 /// ## Slot owners and permissions
 /// Every metadata slot has its owner ([`MetaSlotOwner`]) tracked by the `slot_owners` map at all times.
-/// This makes the `MetaRegionOwners` the one place that tracks every frame, whether or not it is
-/// in use. Likewise, every slot has an permission stored in `slots`.
+/// Likewise, every slot has an permission stored in `slots`.
 #[verifier::ext_equal]
 pub tracked struct MetaRegionOwners {
     pub slots: Map<int, &'static simple_pptr::PointsTo<MetaSlot>>,
