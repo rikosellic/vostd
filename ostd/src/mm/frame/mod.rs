@@ -576,10 +576,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     pub fn slot<'a>(&'a self) -> &'a MetaSlot {
         // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
         // mutably borrowed, so taking an immutable reference to it is safe.
-        proof_decl! {
-            let tracked slot_perm = *self.tracked_slot_perm;
-        }
-        self.ptr.borrow(Tracked(slot_perm))
+        // unsafe { &*self.ptr }
+        self.ptr.borrow(self.tracked_slot_perm)
     }
 }
 
