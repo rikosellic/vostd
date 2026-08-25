@@ -448,24 +448,8 @@ unsafe impl PageTableConfig for KernelPtConfig {
         Self::lemma_item_from_raw_well_formed(pa, level, prop, Self::item_permission(item));
         match item {
             MappedItem::Tracked(frame, _) => {
-                let idx = frame_to_index(pa);
-                assert(frame.ptr.addr() == frame_to_meta(pa));
                 crate::specs::mm::frame::mapping::lemma_paddr_to_meta_biinjective(pa);
                 regions.lemma_contains_valid_frame_paddr(pa);
-                assert(regions.slots[idx].pptr() == frame.ptr);
-                assert(frame.inv());
-                assert(regions.contains(idx));
-                assert(regions.slot_owners[idx].ref_count() > 0);
-                assert(regions.slot_owners[idx].ref_count() <= REF_COUNT_MAX);
-                assert(regions.slot_owners[idx].ref_count() != REF_COUNT_UNUSED);
-                assert(frame.tracked_metadata_perm@ == Self::item_permission(item));
-                assert(frame.tracked_metadata_perm@ is Some);
-                assert(Frame::<MetaSlotStorage>::frame_permission_wf(
-                    regions,
-                    pa,
-                    frame.tracked_metadata_perm@->0,
-                ));
-                assert(frame.wf_with_region(regions));
             },
             MappedItem::Untracked(_, _, _) => {},
         }
