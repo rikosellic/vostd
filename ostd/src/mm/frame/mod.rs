@@ -175,23 +175,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         with
             Tracked(regions): Tracked<&MetaRegionOwners>,
         requires
-            self.inv(),
-            other.inv(),
-            regions.inv(),
-        ensures
-            res == (meta_to_frame(self.ptr.addr()) == meta_to_frame(other.ptr.addr())),
+            self.ptr_inv(),
+            other.ptr_inv(),
+        returns
+            self.start_paddr_spec() == other.start_paddr_spec(),
     )]
     pub fn eq(&self, other: &Self) -> bool {
-        proof {
-            regions.lemma_contains_valid_frame_paddr(self.start_paddr_spec());
-            regions.lemma_contains_valid_frame_paddr(other.start_paddr_spec());
-        }
-        let tracked self_perm = regions.slots.tracked_borrow(self.index());
-        let tracked other_perm = regions.slots.tracked_borrow(other.index());
-
-        (#[verus_spec(with Tracked(self_perm))]
-        self.start_paddr() == #[verus_spec(with Tracked(other_perm))]
-        other.start_paddr())
+        self.start_paddr() == other.start_paddr()
     }
 }
 
@@ -370,19 +360,15 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     /// The caller cannot obtain a frame that doesn't have a valid permission,
     /// and this function does not mutate any state, so it is always sound to call.
     #[verus_spec(
-        with Tracked(perm): Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>,
     requires
-        perm.addr() == self.ptr.addr(),
-        perm.is_init(),
         self.ptr_inv(),
     returns
         self.start_paddr_spec(),
     )]
     pub fn start_paddr(&self) -> Paddr {
-        #[verus_spec(with Tracked(perm))]
         let slot = self.slot();
 
-        #[verus_spec(with Tracked(perm))]
+        #[verus_spec(with self.tracked_slot_perm)]
         slot.frame_paddr()
     }
 
@@ -436,17 +422,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     #[verus_spec(
         with
             Tracked(slot_own): Tracked<&MetaSlotOwner>,
-            Tracked(points_to): Tracked<&vstd::simple_pptr::PointsTo<MetaSlot>>,
         requires
-            points_to.pptr() == self.ptr,
-            points_to.is_init(),
-            points_to.value().wf(*slot_own),
+            self.ptr_inv(),
+            self.tracked_slot_perm@.value().wf(*slot_own),
         returns
             slot_own.ref_count(),
     )]
     pub fn reference_count(&self) -> u64 {
-        let refcnt = (#[verus_spec(with Tracked(points_to))]
-        self.slot()).ref_count.load(Tracked(&slot_own.ref_count_perm));
+        let refcnt = self.slot().ref_count.load(Tracked(&slot_own.ref_count_perm));
         refcnt
     }
 
@@ -476,15 +459,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         proof {
             regions.lemma_contains_valid_frame_paddr(self.start_paddr_spec());
         }
-        let tracked slot_perm = regions.slots.tracked_borrow(self.index());
 
         // SAFETY: Both the lifetime and the type matches `self`.
         unsafe {
             #[verus_spec(with Tracked(regions))]
-            FrameRef::borrow_paddr(
-                #[verus_spec(with Tracked(slot_perm))]
-                self.start_paddr(),
-            )
+            FrameRef::borrow_paddr(self.start_paddr())
         }
     }
 
@@ -518,16 +497,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
             crate::specs::mm::frame::mapping::lemma_meta_to_paddr_biinjective(self.ptr.addr());
             assert(regions.slots[self.index()].addr() == self.ptr.addr());
         }
-        let tracked slot_perm = regions.slots.tracked_borrow(self.index());
-        proof {
-            assert(slot_perm.addr() == self.ptr.addr());
-        }
         unsafe {
             #[verus_spec(with Tracked(regions))]
-            FrameRef::borrow_paddr(
-                #[verus_spec(with Tracked(slot_perm))]
-                self.start_paddr(),
-            )
+            FrameRef::borrow_paddr(self.start_paddr())
         }
     }
 
@@ -589,9 +561,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
             regions.lemma_contains_valid_frame_paddr(self.start_paddr_spec());
         }
 
-        let tracked perm = regions.slots.tracked_borrow(self.index());
-
-        #[verus_spec(with Tracked(perm))]
         let paddr = self.start_paddr();
 
         let ptr = self.ptr;
@@ -621,18 +590,18 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     /// ## Safety
     /// - There is no way to mutably borrow the metadata slot, so taking an immutable reference is safe.
     /// (The fields of the slot can be mutably borrowed, but not the slot itself.)
-    #[verus_spec(slot =>
-        with
-            Tracked(slot_perm): Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>,
+    #[verus_spec(
         requires
-            slot_perm.pptr() == self.ptr,
-            slot_perm.is_init(),
+            self.ptr_inv(),
         returns
-            slot_perm.value(),
+            self.tracked_slot_perm@.value(),
     )]
     pub fn slot<'a>(&'a self) -> &'a MetaSlot {
         // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
         // mutably borrowed, so taking an immutable reference to it is safe.
+        proof_decl! {
+            let tracked slot_perm = *self.tracked_slot_perm;
+        }
         self.ptr.borrow(Tracked(slot_perm))
     }
 }

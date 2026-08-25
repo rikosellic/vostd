@@ -620,9 +620,6 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 C::E::lemma_page_table_entry_properties();
             }
 
-            let ghost new_node_slot_idx = new_node_owner.value().node().slot_index;
-            let tracked new_node_slot_perm = regions.slots.tracked_borrow(new_node_slot_idx);
-            #[verus_spec(with Tracked(new_node_slot_perm))]
             let paddr = new_page.start_paddr();
 
             let new_pte = {
@@ -876,9 +873,6 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             };
         }
 
-        let ghost new_owner_slot_idx = new_owner.value().node().slot_index;
-        let tracked new_owner_slot_perm = regions.slots.tracked_borrow(new_owner_slot_idx);
-        #[verus_spec(with Tracked(new_owner_slot_perm))]
         let paddr = new_page.start_paddr();
 
         proof {
@@ -1765,9 +1759,6 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             C::E::lemma_page_table_entry_properties();
         }
 
-        let ghost new_node_slot_idx = new_node_owner.value().node().slot_index;
-        let tracked new_node_slot_perm = regions.slots.tracked_borrow(new_node_slot_idx);
-        #[verus_spec(with Tracked(new_node_slot_perm))]
         let paddr = new_page.start_paddr();
 
         let new_pte = {

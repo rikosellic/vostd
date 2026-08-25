@@ -662,6 +662,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         requires
             frame.inv(),
             old(regions).inv(),
+            frame.wf_with_region(*old(regions)),
         ensures
             final(regions).slots == old(regions).slots,
             final(regions).slot_owners.dom() == old(regions).slot_owners.dom(),
@@ -674,10 +675,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
             regions.lemma_contains_valid_frame_paddr(frame.start_paddr_spec());
         }
         let tracked mut slot_own = regions.slot_owners.tracked_borrow_mut(idx);
-        let tracked slot_perm = regions.slots.tracked_borrow(idx);
         let tracked inner_perms = &mut slot_own;
 
-        #[verus_spec(with Tracked(&slot_perm))]
+        proof {
+            assert(frame.tracked_slot_perm@ == regions.slots[idx]);
+            assert(frame.tracked_slot_perm@.value().wf(**inner_perms));
+        }
         let slot = frame.slot();
         let res = slot.ref_count.compare_exchange(
             Tracked(&mut inner_perms.ref_count_perm),

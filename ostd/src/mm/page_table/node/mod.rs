@@ -357,13 +357,7 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                     assert(raw_permissions_pre[cursor_pre_read] is Some <==> if pte.is_last(
                         self.level,
                     ) {
-                        C::tracked(C::item_from_raw_spec(
-                            paddr,
-                            self.level,
-                            pte.prop(),
-                            None,
-                            None,
-                        ))
+                        C::tracked(C::item_from_raw_spec(paddr, self.level, pte.prop(), None, None))
                     } else {
                         true
                     });
@@ -1011,12 +1005,8 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     )]
     pub unsafe fn read_pte(&self, idx: usize) -> C::E {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let tracked owner_slot_perm = regions.slots.tracked_borrow(owner.slot_index);
         let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, NR_ENTRIES>::from_addr(
-            paddr_to_vaddr(
-                #[verus_spec(with Tracked(owner_slot_perm))]
-                self.start_paddr(),
-            ),
+            paddr_to_vaddr(self.start_paddr()),
         );
 
         // SAFETY:
@@ -1062,13 +1052,9 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     )]
     pub unsafe fn write_pte(&mut self, idx: usize, pte: C::E) {
         // debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let tracked owner_slot_perm = regions.slots.tracked_borrow(owner.slot_index);
         #[verusfmt::skip]
         let ptr = vstd_extra::array_ptr::ArrayPtr::<C::E, NR_ENTRIES>::from_addr(
-            paddr_to_vaddr(
-                #[verus_spec(with Tracked(owner_slot_perm))]
-                self.start_paddr()
-            ),
+            paddr_to_vaddr(self.start_paddr())
         );
 
         // SAFETY:

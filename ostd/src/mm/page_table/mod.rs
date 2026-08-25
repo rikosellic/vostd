@@ -205,9 +205,9 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     spec fn item_permission(item: Self::Item) -> Option<FracMetadataPerm>;
 
     /// The metadata-slot permission carried by a tracked item.
-    spec fn item_slot_perm(
-        item: Self::Item,
-    ) -> Option<&'static vstd::simple_pptr::PointsTo<MetaSlot>>;
+    spec fn item_slot_perm(item: Self::Item) -> Option<
+        &'static vstd::simple_pptr::PointsTo<MetaSlot>,
+    >;
 
     /// Consumes the item and returns the physical address, the paging level,
     /// and the page property.
@@ -334,9 +334,8 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         requires
             valid_frame_paddr(pa),
             Self::raw_item_well_formed(pa, level, old_prop),
-            Self::tracked(Self::item_from_raw_spec(pa, level, new_prop, None, None)) == Self::tracked(
-                Self::item_from_raw_spec(pa, level, old_prop, None, None),
-            ),
+            Self::tracked(Self::item_from_raw_spec(pa, level, new_prop, None, None))
+                == Self::tracked(Self::item_from_raw_spec(pa, level, old_prop, None, None)),
         ensures
             Self::raw_item_well_formed(pa, level, new_prop),
     ;
@@ -360,13 +359,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             Self::raw_item_well_formed(child_pa, (level - 1) as PagingLevel, prop),
             Self::E::new_page_req(child_pa, (level - 1) as PagingLevel, prop),
             Self::tracked(
-                Self::item_from_raw_spec(
-                    child_pa,
-                    (level - 1) as PagingLevel,
-                    prop,
-                    None,
-                    None,
-                ),
+                Self::item_from_raw_spec(child_pa, (level - 1) as PagingLevel, prop, None, None),
             ) == Self::tracked(Self::item_from_raw_spec(pa, level, prop, None, None)),
     ;
 
@@ -425,16 +418,9 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             Self::item_into_raw_spec(
                 Self::item_from_raw_spec(pa, level, prop, slot_perm, permission),
             ) == (pa, level, prop),
-            Self::item_slot_perm(
-                Self::item_from_raw_spec(pa, level, prop, slot_perm, permission),
-            ) == slot_perm,
-            Self::item_permission(Self::item_from_raw_spec(
-                pa,
-                level,
-                prop,
-                slot_perm,
-                permission,
-            ))
+            Self::item_slot_perm(Self::item_from_raw_spec(pa, level, prop, slot_perm, permission))
+                == slot_perm,
+            Self::item_permission(Self::item_from_raw_spec(pa, level, prop, slot_perm, permission))
                 == permission,
     ;
 
@@ -541,8 +527,9 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             // `rc != UNUSED` is needed only for tracked frames (untracked clone is a no-op).
             Self::tracked(item) ==> regions.slot_owner(pa).ref_count() != REF_COUNT_UNUSED,
             Self::tracked(item) ==> Self::item_permission(item) is Some,
-            Self::tracked(item) ==> Self::item_slot_perm(item)
-                == Some(regions.slots[frame_to_index(pa)]),
+            Self::tracked(item) ==> Self::item_slot_perm(item) == Some(
+                regions.slots[frame_to_index(pa)],
+            ),
             Self::tracked(item) ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
                 pa,
                 regions.slots[frame_to_index(pa)],
@@ -1345,9 +1332,6 @@ impl PageTable<KernelPtConfig> {
                 _ => vstd::pervasive::unreached(),
             };
 
-            let ghost entry_node_slot_idx = entry_owner.tracked_borrow_node().slot_index;
-            let tracked entry_node_slot_perm = regions.slots.tracked_borrow(entry_node_slot_idx);
-            #[verus_spec(with Tracked(entry_node_slot_perm))]
             let pt_addr = pt.start_paddr();
             let pte = PageTableEntry::new_pt(pt_addr);
 

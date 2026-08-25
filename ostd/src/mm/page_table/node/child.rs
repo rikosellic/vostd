@@ -85,10 +85,7 @@ impl<C: PageTableConfig> Child<C> {
         match self {
             Child::PageTable(node) => {
                 let ghost node_owner = owner.node();
-                let ghost node_index = meta_to_index(node.ptr.addr());
 
-                let tracked node_slot_perm = regions.slots.tracked_borrow(node_index);
-                #[verus_spec(with Tracked(node_slot_perm))]
                 let paddr = node.start_paddr();
 
                 proof_with!(Tracked(()));
