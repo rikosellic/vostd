@@ -597,7 +597,7 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
             C::raw_item_well_formed(paddr, self.level(), prop),
             C::E::new_page_req(paddr, self.level(), prop),
             permission is Some <==> C::tracked(
-                C::item_from_raw_spec(paddr, self.level(), prop, None),
+                C::item_from_raw_spec(paddr, self.level(), prop, None, None),
             ),
             self.path().push_tail(self.idx as int).inv(),
         ensures
@@ -1134,8 +1134,17 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.metaregion_sound(regions),
             self.cur_entry_owner().is_frame(),
             pa == self.cur_entry_owner().frame().mapped_pa,
-            C::item_from_raw_spec(pa, level, prop, C::item_permission(item)) == item,
+            C::item_from_raw_spec(
+                pa,
+                level,
+                prop,
+                C::item_slot_perm(item),
+                C::item_permission(item),
+            ) == item,
             C::item_permission(item) == self.cur_entry_owner().frame_permission(),
+            C::tracked(item) ==> C::item_slot_perm(item)
+                == Some(regions.slots[frame_to_index(pa)]),
+            !C::tracked(item) ==> C::item_slot_perm(item) is None,
             valid_frame_paddr(pa),
             C::raw_item_well_formed(pa, level, prop),
             // The recorded entry trackedness matches the item being cloned.

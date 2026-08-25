@@ -82,12 +82,14 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
     /// - distinct frames in the segment map to distinct slot indices.
     pub open spec fn relate_regions(&self, regions: MetaRegionOwners) -> bool {
         &&& self.permissions().len() == seg_nframes(self.range())
+        &&& self.slot_perms().len() == seg_nframes(self.range())
         &&& forall|i: int|
             #![trigger frame_to_index((self.range().start + i * PAGE_SIZE) as usize)]
             0 <= i < seg_nframes(self.range()) ==> {
                 let idx = frame_to_index((self.range().start + i * PAGE_SIZE) as usize);
                 let frame = Frame::<M>::from_raw_parts_spec(
                     (self.range().start + i * PAGE_SIZE) as usize,
+                    self.slot_perms()[i],
                     self.permissions()[i],
                 );
                 &&& frame.inv()
@@ -118,6 +120,7 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
                 let idx = frame_to_index((self.range().start + i * PAGE_SIZE) as usize);
                 let frame = Frame::<M>::from_raw_parts_spec(
                     (self.range().start + i * PAGE_SIZE) as usize,
+                    self.slot_perms()[i],
                     self.permissions()[i],
                 );
                 &&& frame.inv()

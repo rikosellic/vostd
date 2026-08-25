@@ -357,7 +357,13 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                     assert(raw_permissions_pre[cursor_pre_read] is Some <==> if pte.is_last(
                         self.level,
                     ) {
-                        C::tracked(C::item_from_raw_spec(paddr, self.level, pte.prop(), None))
+                        C::tracked(C::item_from_raw_spec(
+                            paddr,
+                            self.level,
+                            pte.prop(),
+                            None,
+                            None,
+                        ))
                     } else {
                         true
                     });
@@ -462,9 +468,12 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                             &&& frame_to_index(paddr) == frame_to_index(pte_j.paddr())
                         });
                     }
+                    let tracked slot_perm = regions.tracked_borrow_slot(paddr);
                     let frame = Frame::<Self> {
                         ptr: PPtr::from_addr(frame_to_meta(paddr)),
                         _marker: PhantomData,
+                        #[cfg(verus_keep_ghost_body)]
+                        tracked_slot_perm: Tracked(slot_perm),
                         #[cfg(verus_keep_ghost_body)]
                         tracked_metadata_perm: Tracked(Some(raw_permission.tracked_unwrap())),
                     };
@@ -567,6 +576,7 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                                             self.level,
                                             future_pte.prop(),
                                             None,
+                                            None,
                                         ),
                                     )
                                 } else {
@@ -574,11 +584,16 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                                 }
                                 &&& permission is Some ==> Frame::<
                                     MetaSlotStorage,
-                                >::from_raw_parts_spec(future_pte.paddr(), permission->0).inv()
+                                >::from_raw_parts_spec(
+                                    future_pte.paddr(),
+                                    regions.slots[frame_to_index(future_pte.paddr())],
+                                    permission->0,
+                                ).inv()
                                 &&& permission is Some ==> Frame::<
                                     MetaSlotStorage,
                                 >::from_raw_parts_spec(
                                     future_pte.paddr(),
+                                    regions.slots[frame_to_index(future_pte.paddr())],
                                     permission->0,
                                 ).wf_with_region(*regions)
                             }
@@ -606,6 +621,7 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                                         future_pte.paddr(),
                                         self.level,
                                         future_pte.prop(),
+                                        None,
                                         None,
                                     ),
                                 )
@@ -692,6 +708,8 @@ impl<C: PageTableConfig> PageTableNode<C> {
             allocated_empty_node_owner(owner@, level),
             allocated_empty_node_grandchildren_none(owner@),
             res.ptr.addr() == owner@.value().node().meta_vaddr(),
+            res.inv(),
+            res.wf_with_region(*final(regions)),
             guards.unlocked(owner@.value().node().meta_vaddr()),
             MetaSlot::get_node_from_unused_spec(meta_to_frame(owner@.value().node().meta_vaddr()), *old(regions), *final(regions)),
             MetaSlot::slot_perm_reparked_spec(meta_to_frame(owner@.value().node().meta_vaddr()), *old(regions), *final(regions)),
@@ -1292,17 +1310,25 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
                         let permission = raw_permissions[cursor];
                         &&& if pte.is_last(self.level) {
                             permission is Some <==> C::tracked(
-                                C::item_from_raw_spec(pte.paddr(), self.level, pte.prop(), None),
+                                C::item_from_raw_spec(
+                                    pte.paddr(),
+                                    self.level,
+                                    pte.prop(),
+                                    None,
+                                    None,
+                                ),
                             )
                         } else {
                             permission is Some
                         }
                         &&& permission is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
                             pte.paddr(),
+                            regions.slots[frame_to_index(pte.paddr())],
                             permission->0,
                         ).inv()
                         &&& permission is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
                             pte.paddr(),
+                            regions.slots[frame_to_index(pte.paddr())],
                             permission->0,
                         ).wf_with_region(regions)
                     }

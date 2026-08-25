@@ -300,10 +300,12 @@ impl<C: PageTableConfig> NodeOwner<C> {
         &&& regions.contains(idx)
         &&& Frame::<PageTablePageMeta<C>>::from_raw_parts_spec(
             meta_to_frame(self.meta_vaddr()),
+            regions.slots[idx],
             self.frame_permission,
         ).inv()
         &&& Frame::<PageTablePageMeta<C>>::from_raw_parts_spec(
             meta_to_frame(self.meta_vaddr()),
+            regions.slots[idx],
             self.frame_permission,
         ).wf_with_region(regions)
         &&& self.meta_wf(regions)
@@ -404,6 +406,7 @@ impl<C: PageTableConfig> OwnerOf for PageTableNode<C> {
 
     open spec fn wf(self, owner: Self::Owner) -> bool {
         &&& self.ptr.addr() == owner.meta_vaddr()
+        &&& self.ptr_inv()
     }
 }
 

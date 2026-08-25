@@ -20,6 +20,7 @@ impl<C: PageTableConfig> OwnerOf for Child<C> {
                 &&& owner.is_node()
                 &&& node.ptr.addr() == owner.node().meta_vaddr()
                 &&& node.index() == meta_to_index(node.ptr.addr())
+                &&& node.ptr_inv()
             },
             Self::Frame(paddr, level, prop) => {
                 &&& owner.is_frame()
@@ -40,6 +41,7 @@ impl<'a, C: PageTableConfig> OwnerOf for ChildRef<'a, C> {
             Self::PageTable(node) => {
                 &&& owner.is_node()
                 &&& node.inner@.ptr.addr() == owner.node().meta_vaddr()
+                &&& node.inner@.ptr_inv()
             },
             Self::Frame(paddr, level, prop) => {
                 &&& owner.is_frame()
@@ -85,7 +87,10 @@ impl<C: PageTableConfig> Child<C> {
         } else if pte.is_last(level) {
             Self::Frame(pte.paddr(), level, pte.prop())
         } else {
-            Self::PageTable(PageTableNode::from_raw_spec(pte.paddr()))
+            Self::PageTable(PageTableNode::from_raw_spec(
+                pte.paddr(),
+                regions.slots[crate::specs::mm::frame::mapping::frame_to_index(pte.paddr())],
+            ))
         }
     }
 
@@ -94,7 +99,10 @@ impl<C: PageTableConfig> Child<C> {
     }
 
     pub open spec fn from_pte_pt_spec(paddr: Paddr, regions: MetaRegionOwners) -> Self {
-        Self::PageTable(PageTableNode::from_raw_spec(paddr))
+        Self::PageTable(PageTableNode::from_raw_spec(
+            paddr,
+            regions.slots[crate::specs::mm::frame::mapping::frame_to_index(paddr)],
+        ))
     }
 
     pub open spec fn invariants(self, owner: EntryOwner<C>, regions: MetaRegionOwners) -> bool {

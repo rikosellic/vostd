@@ -637,6 +637,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
             ptr,
             _marker: PhantomData,
             #[cfg(verus_keep_ghost_body)]
+            tracked_slot_perm: Tracked(slot_perm),
+            #[cfg(verus_keep_ghost_body)]
             tracked_metadata_perm: Tracked(Some(frame_permission)),
         };
         proof {

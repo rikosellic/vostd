@@ -123,8 +123,8 @@ pub struct Frame<M: ?Sized> {
     pub ptr: PPtr<MetaSlot>,
     pub _marker: PhantomData<M>,
     /// The permission to access the `MetaSlot` fields.
-    // #[cfg(verus_keep_ghost_body)]
-    // pub tracked_slot_perm: Tracked<simple_pptr::PointsTo<MetaSlot>>,
+    #[cfg(verus_keep_ghost_body)]
+    pub tracked_slot_perm: Tracked<&'static simple_pptr::PointsTo<MetaSlot>>,
     /// One fractional permission for the currently installed metadata.
     #[cfg(verus_keep_ghost_body)]
     pub tracked_metadata_perm: Tracked<Option<FracMetadataPerm>>,
@@ -249,10 +249,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
                 assert(regions.slot_owners.contains_key(idx));
                 assert(Self::from_unused_spec(paddr, *old(regions), *regions));
             }
+            let tracked slot_perm = regions.tracked_borrow_slot(paddr);
             Ok(
                 Self {
                     ptr,
                     _marker: PhantomData,
+                    #[cfg(verus_keep_ghost_body)]
+                    tracked_slot_perm: Tracked(slot_perm),
                     #[cfg(verus_keep_ghost_body)]
                     tracked_metadata_perm: Tracked(Some(frame_permission)),
                 },
@@ -338,10 +341,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Frame<M> {
         MetaSlot::get_from_in_use(paddr);
         match res {
             Ok(ptr) => {
+                let tracked slot_perm = regions.tracked_borrow_slot(paddr);
                 Ok(
                     Self {
                         ptr,
                         _marker: PhantomData,
+                        #[cfg(verus_keep_ghost_body)]
+                        tracked_slot_perm: Tracked(slot_perm),
                         #[cfg(verus_keep_ghost_body)]
                         tracked_metadata_perm: Tracked(frame_permission),
                     },
@@ -494,15 +500,18 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
             Self::from_raw_requires(*old(regions), self.start_paddr_spec()),
             Self::from_raw_parts_spec(
                 self.start_paddr_spec(),
+                old(regions).slots[self.index()],
                 *frame_permission,
             ).inv(),
             Self::from_raw_parts_spec(
                 self.start_paddr_spec(),
+                old(regions).slots[self.index()],
                 *frame_permission,
             ).wf_with_region(*old(regions)),
         ensures
             *final(regions) == *old(regions),
             res.inner@.ptr.addr() == self.ptr.addr(),
+            res.inner@.ptr_inv(),
     )]
     pub(in crate::mm) fn borrow_with_permission<'a>(&self) -> FrameRef<'a, M> {
         proof {
@@ -562,8 +571,16 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
             final(regions).slots == old(regions).slots,
             *final(regions) == *old(regions),
             raw_permission@.frac() == 1,
-            Self::from_raw_parts_spec(r, raw_permission@).inv(),
-            Self::from_raw_parts_spec(r, raw_permission@).wf_with_region(*final(regions)),
+            Self::from_raw_parts_spec(
+                r,
+                final(regions).slots[self.index()],
+                raw_permission@,
+            ).inv(),
+            Self::from_raw_parts_spec(
+                r,
+                final(regions).slots[self.index()],
+                raw_permission@,
+            ).wf_with_region(*final(regions)),
     )]
     pub(in crate::mm) fn into_raw(self) -> Paddr {
         broadcast use group_page_meta;
@@ -582,6 +599,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         let raw_frame = Self {
             ptr,
             _marker: PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_slot_perm: self.tracked_slot_perm,
             #[cfg(verus_keep_ghost_body)]
             tracked_metadata_perm: Tracked(None),
         };
@@ -634,13 +653,19 @@ impl<M> Frame<M> {
     /// no checking of the usage in this function.
     #[verus_spec(r =>
         with
+            Tracked(slot_perm): Tracked<&'static simple_pptr::PointsTo<MetaSlot>>,
             Tracked(frame_permission): Tracked<FracMetadataPerm>,
         requires
             valid_frame_paddr(paddr),
+            slot_perm.addr() == frame_to_meta(paddr),
+            slot_perm.is_init(),
             frame_permission.frac() == 1,
             frame_permission.resource().storage_perm.is_init(),
+            frame_permission.resource().storage_perm.id() == slot_perm.value().storage.id(),
             frame_permission.resource().vtable_ptr_perm.is_init(),
+            frame_permission.resource().vtable_ptr_perm.pptr() == slot_perm.value().vtable_ptr,
         ensures
+            r.tracked_slot_perm@ == slot_perm,
             r.tracked_metadata_perm@ == Some(frame_permission),
             r.start_paddr_spec() == paddr,
             r.inv(),
@@ -656,6 +681,8 @@ impl<M> Frame<M> {
         Self {
             ptr,
             _marker: PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_slot_perm: Tracked(slot_perm),
             #[cfg(verus_keep_ghost_body)]
             tracked_metadata_perm: Tracked(Some(frame_permission)),
         }
@@ -696,6 +723,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> RCClone for Frame<M> {
         &&& res.tracked_metadata_perm@ is Some
         &&& res.tracked_metadata_perm@->0.frac() == 1
         &&& res.tracked_metadata_perm@->0.id() == new_perm.slot_owners[idx].metadata_perm.id()
+        &&& res.tracked_slot_perm@ == new_perm.slots[idx]
         &&& res.ptr == self.ptr
         &&& new_perm.slot_owners[idx].in_list_perm == old_perm.slot_owners[idx].in_list_perm
         &&& new_perm.slot_owners[idx].paths_in_pt == old_perm.slot_owners[idx].paths_in_pt
@@ -722,10 +750,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> RCClone for Frame<M> {
             inc_frame_ref_count(paddr)
         };
         let tracked frame_permission = tracked_permission.get();
+        let tracked slot_perm = perm.tracked_borrow_slot(paddr);
 
         Self {
             ptr: PPtr::<MetaSlot>::from_addr(self.ptr.0),
             _marker: PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_slot_perm: Tracked(slot_perm),
             #[cfg(verus_keep_ghost_body)]
             tracked_metadata_perm: Tracked(Some(frame_permission)),
         }

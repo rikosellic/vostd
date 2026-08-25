@@ -27,21 +27,29 @@ use crate::mm::{
 verus! {
 
 impl<'a, M: ?Sized> Frame<M> {
-    /// Address-only invariant shared by owning frames and non-owning
+    /// Address-related invariant shared by owning frames and non-owning
     /// `ManuallyDrop<Frame>` values embedded in `FrameRef`.
     pub open spec fn ptr_inv(self) -> bool {
         &&& self.ptr.addr() % META_SLOT_SIZE == 0
         &&& FRAME_METADATA_RANGE.start <= self.ptr.addr() < FRAME_METADATA_RANGE.start
             + MAX_NR_PAGES * META_SLOT_SIZE
+        &&& self.tracked_slot_perm@.pptr() == self.ptr
+        &&& self.tracked_slot_perm@.is_init()
     }
 
     /// Models an owning frame reconstructed from its raw representation.
-    pub open spec fn from_raw_parts_spec(paddr: Paddr, permission: FracMetadataPerm) -> Self {
+    pub open spec fn from_raw_parts_spec(
+        paddr: Paddr,
+        slot_perm: &'static vstd::simple_pptr::PointsTo<MetaSlot>,
+        metadata_perm: FracMetadataPerm,
+    ) -> Self {
         Self {
             ptr: vstd::simple_pptr::PPtr(frame_to_meta(paddr), PhantomData),
             _marker: PhantomData,
             #[cfg(verus_keep_ghost_body)]
-            tracked_metadata_perm: Tracked(Some(permission)),
+            tracked_slot_perm: Tracked(slot_perm),
+            #[cfg(verus_keep_ghost_body)]
+            tracked_metadata_perm: Tracked(Some(metadata_perm)),
         }
     }
 
@@ -76,7 +84,11 @@ impl<M: ?Sized> Inv for Frame<M> {
         &&& self.tracked_metadata_perm@ is Some
         &&& self.tracked_metadata_perm@->0.frac() == 1
         &&& self.tracked_metadata_perm@->0.resource().storage_perm.is_init()
+        &&& self.tracked_metadata_perm@->0.resource().storage_perm.id()
+            == self.tracked_slot_perm@.value().storage.id()
         &&& self.tracked_metadata_perm@->0.resource().vtable_ptr_perm.is_init()
+        &&& self.tracked_metadata_perm@->0.resource().vtable_ptr_perm.pptr()
+            == self.tracked_slot_perm@.value().vtable_ptr
     }
 }
 
@@ -113,12 +125,8 @@ impl<M: ?Sized> Frame<M> {
         let idx = self.index();
         let slot_own = s.slot_owners[idx];
         &&& s.contains(idx)
-        &&& s.slots[idx].pptr() == self.ptr
+        &&& self.tracked_slot_perm@ == s.slots[idx]
         &&& self.tracked_metadata_perm@->0.id() == slot_own.metadata_perm.id()
-        &&& self.tracked_metadata_perm@->0.resource().storage_perm.id()
-            == s.slots[idx].value().storage.id()
-        &&& self.tracked_metadata_perm@->0.resource().vtable_ptr_perm.pptr()
-            == s.slots[idx].value().vtable_ptr
     }
 }
 

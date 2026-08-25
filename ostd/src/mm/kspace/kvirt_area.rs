@@ -56,6 +56,8 @@ pub open spec fn frame_as_dynframe<T: AnyFrameMeta + Repr<MetaSlotStorage>>(
         ptr: frame.ptr,
         _marker: PhantomData,
         #[cfg(verus_keep_ghost_body)]
+        tracked_slot_perm: frame.tracked_slot_perm,
+        #[cfg(verus_keep_ghost_body)]
         tracked_metadata_perm: frame.tracked_metadata_perm,
     }
 }
@@ -71,6 +73,8 @@ fn frame_into_dynframe<T: AnyUFrameMeta>(frame: Frame<T>) -> (res: DynFrame)
         ptr: frame.ptr,
         _marker: PhantomData,
         #[cfg(verus_keep_ghost_body)]
+        tracked_slot_perm: frame.tracked_slot_perm,
+        #[cfg(verus_keep_ghost_body)]
         tracked_metadata_perm: frame.tracked_metadata_perm,
     }
 }
@@ -85,6 +89,8 @@ pub open spec fn frame_entry_wf<T: AnyFrameMeta + Repr<MetaSlotStorage>>(
     let frame_mss = DynFrame {
         ptr: frame.ptr,
         _marker: PhantomData,
+        #[cfg(verus_keep_ghost_body)]
+        tracked_slot_perm: frame.tracked_slot_perm,
         #[cfg(verus_keep_ghost_body)]
         tracked_metadata_perm: frame.tracked_metadata_perm,
     };

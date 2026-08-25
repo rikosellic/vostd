@@ -211,8 +211,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             forall|pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty|
                 #![auto]
                 op.ensures((p_in,), p_out) ==> C::tracked(
-                    C::item_from_raw_spec(pa, level, p_out, None),
-                ) == C::tracked(C::item_from_raw_spec(pa, level, p_in, None)),
+                    C::item_from_raw_spec(pa, level, p_out, None, None),
+                ) == C::tracked(C::item_from_raw_spec(pa, level, p_in, None, None)),
             forall|pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty|
                 #![auto]
                 op.ensures((p_in,), p_out) && C::E::new_page_req(pa, level, p_in)
@@ -1341,8 +1341,8 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             forall|pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty|
                 #![auto]
                 op.ensures((p_in,), p_out) ==> C::tracked(
-                    C::item_from_raw_spec(pa, level, p_out, None),
-                ) == C::tracked(C::item_from_raw_spec(pa, level, p_in, None)),
+                    C::item_from_raw_spec(pa, level, p_out, None, None),
+                ) == C::tracked(C::item_from_raw_spec(pa, level, p_in, None, None)),
             forall|pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty|
                 #![auto]
                 op.ensures((p_in,), p_out) && C::E::new_page_req(pa, level, p_in)

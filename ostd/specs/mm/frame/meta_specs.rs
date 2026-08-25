@@ -206,10 +206,15 @@ impl MetaSlot {
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
-    pub open spec fn from_raw_spec(paddr: Paddr) -> Self {
+    pub open spec fn from_raw_spec(
+        paddr: Paddr,
+        slot_perm: &'static vstd::simple_pptr::PointsTo<MetaSlot>,
+    ) -> Self {
         Frame::<M> {
             ptr: PPtr::<MetaSlot>(frame_to_meta(paddr), PhantomData),
             _marker: PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_slot_perm: Tracked(slot_perm),
             #[cfg(verus_keep_ghost_body)]
             tracked_metadata_perm: Tracked(None),
         }

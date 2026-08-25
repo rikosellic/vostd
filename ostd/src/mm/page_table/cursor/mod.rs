@@ -629,8 +629,25 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     };
 
                     proof {
-                        C::lemma_item_from_raw_well_formed(pa, level, prop, raw_permission);
-                        C::lemma_item_into_raw_roundtrip(pa, level, prop, raw_permission);
+                        let raw_slot_perm = if raw_permission is Some {
+                            Some(regions.slots[frame_to_index(pa)])
+                        } else {
+                            None
+                        };
+                        C::lemma_item_from_raw_well_formed(
+                            pa,
+                            level,
+                            prop,
+                            raw_slot_perm,
+                            raw_permission,
+                        );
+                        C::lemma_item_into_raw_roundtrip(
+                            pa,
+                            level,
+                            prop,
+                            raw_slot_perm,
+                            raw_permission,
+                        );
                     }
 
                     let ghost old_regions = *regions;
@@ -651,6 +668,12 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                         }
                         assert(C::raw_item_well_formed(pa, level, prop));
                         assert(C::item_permission(item) == raw_permission);
+                        let raw_slot_perm = if raw_permission is Some {
+                            Some(regions.slots[frame_to_index(pa)])
+                        } else {
+                            None
+                        };
+                        assert(C::item_slot_perm(item) == raw_slot_perm);
                         assert(raw_permission == entry_before_permission_take.frame_permission());
                         assert(owner_before_permission_take.cur_entry_owner()
                             == entry_before_permission_take);
@@ -2128,8 +2151,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             forall |p: PageProperty| op.requires((p,)),
             forall |pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty| #![auto]
                 op.ensures((p_in,), p_out) ==>
-                    C::tracked(C::item_from_raw_spec(pa, level, p_out, None))
-                    == C::tracked(C::item_from_raw_spec(pa, level, p_in, None)),
+                    C::tracked(C::item_from_raw_spec(pa, level, p_out, None, None))
+                    == C::tracked(C::item_from_raw_spec(pa, level, p_in, None, None)),
             forall |pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty| #![auto]
                 op.ensures((p_in,), p_out) && C::E::new_page_req(pa, level, p_in) ==>
                     C::E::new_page_req(pa, level, p_out),
@@ -3107,7 +3130,14 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         assert!(self.0.va < self.0.barrier_va.end);
         let ((pa, level, prop), Tracked(raw_permission)) = C::item_into_raw(item, Tracked(regions));
         proof {
-            C::lemma_item_from_raw_roundtrip(item, pa, level, prop, raw_permission);
+            C::lemma_item_from_raw_roundtrip(
+                item,
+                pa,
+                level,
+                prop,
+                C::item_slot_perm(item),
+                raw_permission,
+            );
         }
         assert!(level <= C::HIGHEST_TRANSLATION_LEVEL());
         assert!(level < self.0.guard_level);
@@ -3754,8 +3784,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             forall |p: PageProperty| op.requires((p,)),
             forall |pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty| #![auto]
                 op.ensures((p_in,), p_out) ==>
-                    C::tracked(C::item_from_raw_spec(pa, level, p_out, None))
-                    == C::tracked(C::item_from_raw_spec(pa, level, p_in, None)),
+                    C::tracked(C::item_from_raw_spec(pa, level, p_out, None, None))
+                    == C::tracked(C::item_from_raw_spec(pa, level, p_in, None, None)),
             forall |pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty| #![auto]
                 op.ensures((p_in,), p_out) && C::E::new_page_req(pa, level, p_in) ==>
                     C::E::new_page_req(pa, level, p_out),
@@ -4234,8 +4264,25 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                     C::item_from_raw(pa, level, prop, Tracked(regions), Tracked(raw_permission))
                 };
                 proof {
-                    C::lemma_item_from_raw_well_formed(pa, level, prop, raw_permission);
-                    C::lemma_item_into_raw_roundtrip(pa, level, prop, raw_permission);
+                    let raw_slot_perm = if raw_permission is Some {
+                        Some(regions.slots[frame_to_index(pa)])
+                    } else {
+                        None
+                    };
+                    C::lemma_item_from_raw_well_formed(
+                        pa,
+                        level,
+                        prop,
+                        raw_slot_perm,
+                        raw_permission,
+                    );
+                    C::lemma_item_into_raw_roundtrip(
+                        pa,
+                        level,
+                        prop,
+                        raw_slot_perm,
+                        raw_permission,
+                    );
                 }
                 Some(PageTableFrag::Mapped { va, item })
             },

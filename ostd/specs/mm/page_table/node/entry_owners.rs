@@ -111,6 +111,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
                 self.parent_level,
                 self.frame().prop,
                 None,
+                None,
             ),
         )
     }
@@ -364,7 +365,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
             paddr + page_size(parent_level) <= MAX_PADDR,
             C::raw_item_well_formed(paddr, parent_level, prop),
             C::E::new_page_req(paddr, parent_level, prop),
-            !C::tracked(C::item_from_raw_spec(paddr, parent_level, prop, None)),
+            !C::tracked(C::item_from_raw_spec(paddr, parent_level, prop, None, None)),
         ensures
             res.is_frame(),
             res.frame().mapped_pa == paddr,
@@ -609,10 +610,12 @@ impl<C: PageTableConfig> EntryOwner<C> {
             &&& self.frame_sub_pages_valid(regions)
             &&& self.frame_permission() is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
                 self.frame().mapped_pa,
+                regions.slots[idx],
                 self.frame_permission()->0,
             ).inv()
             &&& self.frame_permission() is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
                 self.frame().mapped_pa,
+                regions.slots[idx],
                 self.frame_permission()->0,
             ).wf_with_region(regions)
         } else {

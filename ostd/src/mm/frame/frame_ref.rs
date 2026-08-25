@@ -43,6 +43,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'_, M> {
         ensures
             final(regions).inv(),
             r.inner@.ptr.addr() == frame_to_meta(raw),
+            r.inner@.ptr_inv(),
             final(regions).slot_owners == old(regions).slot_owners,
             final(regions).slots == old(regions).slots,
             *final(regions) == *old(regions),
@@ -51,10 +52,13 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'_, M> {
         proof {
             old(regions).lemma_contains_valid_frame_paddr(raw);
         }
+        let tracked slot_perm = regions.tracked_borrow_slot(raw);
 
         let frame = Frame::<M> {
             ptr: PPtr::<MetaSlot>::from_addr(frame_to_meta(raw)),
             _marker: PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_slot_perm: Tracked(slot_perm),
             #[cfg(verus_keep_ghost_body)]
             tracked_metadata_perm: Tracked(None),
         };
@@ -126,7 +130,14 @@ pub unsafe trait NonNullPtr: 'static + Sized + TrackDrop<State = MetaRegionOwner
     /// resulting value has not (yet) been dropped, the pointer cannot be
     /// used because it may break Rust aliasing rules (e.g., `Box<T>`
     /// requires the pointer to be unique and thus _never_ aliased).
-    unsafe fn from_raw(ptr: PPtr<Self::Target>) -> Self;
+    unsafe fn from_raw(
+        ptr: PPtr<Self::Target>,
+        Tracked(regions): Tracked<&mut MetaRegionOwners>,
+    ) -> Self
+        requires
+            old(regions).inv(),
+            old(regions).contains(meta_to_index(ptr.addr())),
+    ;
 
     /// Obtains a shared reference to the original pointer.
     ///
@@ -168,10 +179,16 @@ unsafe impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + 'static> NonNullPtr for Fr
         PPtr::<Self::Target>::from_addr(ptr.addr())
     }
 
-    unsafe fn from_raw(raw: PPtr<Self::Target>) -> Self {
+    unsafe fn from_raw(
+        raw: PPtr<Self::Target>,
+        Tracked(regions): Tracked<&mut MetaRegionOwners>,
+    ) -> Self {
+        let tracked slot_perm = regions.slots.tracked_borrow(meta_to_index(raw.addr()));
         Self {
             ptr: PPtr::<MetaSlot>::from_addr(raw.addr()),
             _marker: PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_slot_perm: Tracked(slot_perm),
             #[cfg(verus_keep_ghost_body)]
             tracked_metadata_perm: Tracked(None),
         }
@@ -181,9 +198,12 @@ unsafe impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + 'static> NonNullPtr for Fr
         raw: PPtr<Self::Target>,
         Tracked(regions): Tracked<&mut MetaRegionOwners>,
     ) -> Self::Ref<'a> {
+        let tracked slot_perm = regions.slots.tracked_borrow(meta_to_index(raw.addr()));
         let frame = Frame::<M> {
             ptr: PPtr::<MetaSlot>::from_addr(raw.addr()),
             _marker: PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_slot_perm: Tracked(slot_perm),
             #[cfg(verus_keep_ghost_body)]
             tracked_metadata_perm: Tracked(None),
         };
