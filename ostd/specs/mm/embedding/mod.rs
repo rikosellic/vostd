@@ -3715,6 +3715,7 @@ proof fn lemma_step_segment_split<'rcu>(
 ///   post at popped: `(pre raw - 1) == (pre cover - 1)`. ✓
 ///   post elsewhere: unchanged.
 #[verifier::spinoff_prover]
+#[verifier::rlimit(200)]
 proof fn lemma_step_segment_next<'rcu>(tracked s: &mut VmStore<'rcu>, sid: SegmentId)
     requires
         old(s).inv(),
@@ -3785,6 +3786,7 @@ proof fn lemma_step_segment_next<'rcu>(tracked s: &mut VmStore<'rcu>, sid: Segme
     ) == 0 by {
         let paddr_c = index_to_frame(idx);
         if idx == target_idx {
+            lemma_segment_cover_contains(old_segments, sid, paddr);
             assert(false);
         } else {
             lemma_handle_count_insert_fresh(old_frames, fid, frame_entry, idx);

@@ -312,7 +312,6 @@ unsafe impl PageTableConfig for KernelPtConfig {
         broadcast use group_page_meta;
 
         assert(Self::raw_item_well_formed(pa, level, prop));
-        Self::lemma_item_from_raw_well_formed(pa, level, prop, permission);
         prop.lemma_avail1_tag_encoding();
         assert(Self::tracked(Self::item_from_raw_spec(pa, level, prop, permission))
             == prop.flags.contains(PageFlags::AVAIL1()));

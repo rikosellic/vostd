@@ -26,10 +26,15 @@ use crate::mm::{
 
 verus! {
 
-// Unbounded so `from_raw` (which lives in an unbounded `impl Frame<M>` block
-// to break the AnyFrameMeta trait-resolution cycle in PT-node on_drop) can
-// reference these helpers via `Self::from_raw_*`.
 impl<'a, M: ?Sized> Frame<M> {
+    /// Address-only invariant shared by owning frames and non-owning
+    /// `ManuallyDrop<Frame>` values embedded in `FrameRef`.
+    pub open spec fn ptr_inv(self) -> bool {
+        &&& self.ptr.addr() % META_SLOT_SIZE == 0
+        &&& FRAME_METADATA_RANGE.start <= self.ptr.addr() < FRAME_METADATA_RANGE.start
+            + MAX_NR_PAGES * META_SLOT_SIZE
+    }
+
     /// The one-unit metadata permission carried by a shared frame or by its
     /// raw representation.
     pub open spec fn frame_permission_wf(
@@ -74,9 +79,11 @@ impl<'a, M: ?Sized> Frame<M> {
 
 impl<M: ?Sized> Inv for Frame<M> {
     open spec fn inv(self) -> bool {
-        &&& self.ptr.addr() % META_SLOT_SIZE == 0
-        &&& FRAME_METADATA_RANGE.start <= self.ptr.addr() < FRAME_METADATA_RANGE.start
-            + MAX_NR_PAGES * META_SLOT_SIZE
+        &&& self.ptr_inv()
+        &&& self.tracked_metadata_perm@ is Some
+        &&& self.tracked_metadata_perm@->0.frac() == 1
+        &&& self.tracked_metadata_perm@->0.resource().storage_perm.is_init()
+        &&& self.tracked_metadata_perm@->0.resource().vtable_ptr_perm.is_init()
     }
 }
 
@@ -118,15 +125,11 @@ impl<M: ?Sized> Frame<M> {
         &&& s.contains(idx)
         &&& s.slots[idx].pptr() == self.ptr
         &&& 0 < slot_own.ref_count() <= REF_COUNT_MAX
-        &&& self.tracked_metadata_perm@ is Some
-        &&& self.tracked_metadata_perm@->0.frac() == 1
         &&& self.tracked_metadata_perm@->0.id() == slot_own.metadata_perm.id()
         &&& self.tracked_metadata_perm@->0.resource().storage_perm.id()
             == s.slots[idx].value().storage.id()
-        &&& self.tracked_metadata_perm@->0.resource().storage_perm.is_init()
         &&& self.tracked_metadata_perm@->0.resource().vtable_ptr_perm.pptr()
             == s.slots[idx].value().vtable_ptr
-        &&& self.tracked_metadata_perm@->0.resource().vtable_ptr_perm.is_init()
     }
 }
 

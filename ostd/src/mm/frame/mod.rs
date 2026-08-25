@@ -367,7 +367,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     requires
         perm.addr() == self.ptr.addr(),
         perm.is_init(),
-        self.inv(),
+        self.ptr_inv(),
     returns
         self.start_paddr_spec(),
     )]
@@ -486,7 +486,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
             Tracked(frame_permission): Tracked<&FracMetadataPerm>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
         requires
-            self.inv(),
+            self.ptr_inv(),
             Self::from_raw_requires(*old(regions), self.start_paddr_spec()),
             Self::frame_permission_wf(*old(regions), self.start_paddr_spec(), *frame_permission),
         ensures

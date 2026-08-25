@@ -362,6 +362,9 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             valid_frame_paddr(pa),
             Self::raw_item_well_formed(pa, level, prop),
             permission is Some <==> Self::tracked(Self::item_from_raw_spec(pa, level, prop, None)),
+            permission is Some ==> permission->0.frac() == 1,
+            permission is Some ==> permission->0.resource().storage_perm.is_init(),
+            permission is Some ==> permission->0.resource().vtable_ptr_perm.is_init(),
         ensures
             Self::item_well_formed(Self::item_from_raw_spec(pa, level, prop, permission)),
     ;
