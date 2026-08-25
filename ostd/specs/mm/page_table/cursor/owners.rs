@@ -1152,16 +1152,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let idx = frame_to_index(pa);
         EntryOwner::<C>::axiom_frame_is_tracked_iff_not_mmio(entry);
         assert(entry.inv_base());
-        assert(entry.frame_permission() is Some <==> entry.frame_is_tracked());
-        assert(C::tracked(item) ==> C::item_permission(item) is Some);
-        assert(!C::tracked(item) ==> C::item_permission(item) is None);
-        if C::tracked(item) {
-            assert(Frame::<MetaSlotStorage>::frame_permission_wf(
-                regions,
-                pa,
-                C::item_permission(item)->0,
-            ));
-        }
         C::lemma_clone_requires_concrete(item, pa, level, prop, regions);
     }
 

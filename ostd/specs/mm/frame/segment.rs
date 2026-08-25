@@ -86,11 +86,12 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
             #![trigger frame_to_index((self.range().start + i * PAGE_SIZE) as usize)]
             0 <= i < seg_nframes(self.range()) ==> {
                 let idx = frame_to_index((self.range().start + i * PAGE_SIZE) as usize);
-                &&& Frame::<M>::frame_permission_wf(
-                    regions,
+                let frame = Frame::<M>::from_raw_parts_spec(
                     (self.range().start + i * PAGE_SIZE) as usize,
                     self.permissions()[i],
-                )
+                );
+                &&& frame.inv()
+                &&& frame.wf_with_region(regions)
                 &&& regions.contains(idx)
                 &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
                 &&& 0 < regions.slot_owners[idx].ref_count()
@@ -115,18 +116,15 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
         ensures
             ({
                 let idx = frame_to_index((self.range().start + i * PAGE_SIZE) as usize);
-                &&& Frame::<M>::frame_permission_wf(
-                    regions,
+                let frame = Frame::<M>::from_raw_parts_spec(
                     (self.range().start + i * PAGE_SIZE) as usize,
                     self.permissions()[i],
-                )
-                &&& regions.contains(
-                    idx,
-                )
-                // Borrow-protocol transition: `raw_count` is dormant.
+                );
+                &&& frame.inv()
+                &&& frame.wf_with_region(regions)
+                &&& regions.contains(idx)
                 &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                &&& regions.slot_owners[idx].ref_count() > 0
-                &&& regions.slot_owners[idx].ref_count() <= crate::mm::frame::meta::REF_COUNT_MAX
+                &&& 0 < regions.slot_owners[idx].ref_count() <= crate::mm::frame::meta::REF_COUNT_MAX
                 &&& regions.slot_owners[idx].paths_in_pt.is_empty()
                 &&& regions.slot_owners[idx].usage is Frame
             }),

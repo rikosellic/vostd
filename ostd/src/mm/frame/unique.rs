@@ -602,6 +602,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
         requires
             unique.wf_with_region(owner, *old(regions)),
         ensures
+            res.inv(),
+            final(regions).inv(),
             res.wf_with_region(*final(regions)),
             final(regions).slots == old(regions).slots,
             final(regions).slot_owners.dom() == old(regions).slot_owners.dom(),

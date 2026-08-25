@@ -619,6 +619,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     {
     }
 
+    #[verifier::rlimit(200)]
     pub proof fn pop_level_owner_preserves_invs(
         self,
         guards: Guards<'rcu>,

@@ -186,7 +186,10 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         &&& C::tracked(item) ==> C::item_permission(item) is Some
         &&& C::tracked(item) ==> Frame::<
             crate::specs::mm::frame::meta_owners::MetaSlotStorage,
-        >::frame_permission_wf(regions, pa, C::item_permission(item)->0)
+        >::from_raw_parts_spec(pa, C::item_permission(item)->0).inv()
+        &&& C::tracked(item) ==> Frame::<
+            crate::specs::mm::frame::meta_owners::MetaSlotStorage,
+        >::from_raw_parts_spec(pa, C::item_permission(item)->0).wf_with_region(regions)
         &&& !C::tracked(item) ==> C::item_permission(
             item,
         ) is None

@@ -1798,11 +1798,6 @@ unsafe impl PageTableConfig for UserPtConfig {
         assert(meta_to_index(item.frame.ptr.addr()) == frame_to_index(pa));
         let idx = frame_to_index(pa);
         regions.lemma_contains_valid_frame_paddr(pa);
-        assert(Frame::<MetaSlotStorage>::frame_permission_wf(
-            regions,
-            pa,
-            item.frame.tracked_metadata_perm@->0,
-        ));
         assert(item.frame.wf_with_region(regions));
     }
 

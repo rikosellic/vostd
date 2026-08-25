@@ -607,11 +607,18 @@ impl<C: PageTableConfig> EntryOwner<C> {
             }
             &&& regions.slot_owners[idx].paths_in_pt.contains(self.path)
             &&& self.frame_sub_pages_valid(regions)
-            &&& self.frame_permission() is Some ==> Frame::<MetaSlotStorage>::frame_permission_wf(
-                regions,
+            &&& self.frame_permission() is Some ==> Frame::<
+                MetaSlotStorage,
+            >::from_raw_parts_spec(
                 self.frame().mapped_pa,
                 self.frame_permission()->0,
-            )
+            ).inv()
+            &&& self.frame_permission() is Some ==> Frame::<
+                MetaSlotStorage,
+            >::from_raw_parts_spec(
+                self.frame().mapped_pa,
+                self.frame_permission()->0,
+            ).wf_with_region(regions)
         } else {
             true
         }
@@ -745,19 +752,9 @@ impl<C: PageTableConfig> EntryOwner<C> {
             assert(r1.slots.contains_key(idx));
             assert(r0.slots[idx] == r1.slots[idx]);
             if self.is_node() {
-                assert(Frame::<PageTablePageMeta<C>>::frame_permission_wf(
-                    r1,
-                    self.meta_slot_paddr()->0,
-                    self.node().frame_permission,
-                ));
                 assert(self.node().meta_wf(r1));
                 assert(self.node().metaregion_sound_node(r1));
             } else if self.is_frame() && self.frame_permission() is Some {
-                assert(Frame::<MetaSlotStorage>::frame_permission_wf(
-                    r1,
-                    self.frame().mapped_pa,
-                    self.frame_permission()->0,
-                ));
             }
         }
         if self.is_frame() && self.parent_level > 1 {

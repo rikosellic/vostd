@@ -274,11 +274,14 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             permission is Some <==> Self::tracked(
                 Self::item_from_raw_spec(paddr, level, prop, None),
             ),
-            permission is Some ==> Frame::<MetaSlotStorage>::frame_permission_wf(
-                *old(regions),
+            permission is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
                 paddr,
                 permission->0,
-            ),
+            ).inv(),
+            permission is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
+                paddr,
+                permission->0,
+            ).wf_with_region(*old(regions)),
         ensures
             *final(regions) == *old(regions),
             Self::item_well_formed(res),
@@ -362,9 +365,10 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             valid_frame_paddr(pa),
             Self::raw_item_well_formed(pa, level, prop),
             permission is Some <==> Self::tracked(Self::item_from_raw_spec(pa, level, prop, None)),
-            permission is Some ==> permission->0.frac() == 1,
-            permission is Some ==> permission->0.resource().storage_perm.is_init(),
-            permission is Some ==> permission->0.resource().vtable_ptr_perm.is_init(),
+            permission is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
+                pa,
+                permission->0,
+            ).inv(),
         ensures
             Self::item_well_formed(Self::item_from_raw_spec(pa, level, prop, permission)),
     ;
@@ -485,11 +489,14 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             // `rc != UNUSED` is needed only for tracked frames (untracked clone is a no-op).
             Self::tracked(item) ==> regions.slot_owner(pa).ref_count() != REF_COUNT_UNUSED,
             Self::tracked(item) ==> Self::item_permission(item) is Some,
-            Self::tracked(item) ==> Frame::<MetaSlotStorage>::frame_permission_wf(
-                regions,
+            Self::tracked(item) ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
                 pa,
                 Self::item_permission(item)->0,
-            ),
+            ).inv(),
+            Self::tracked(item) ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
+                pa,
+                Self::item_permission(item)->0,
+            ).wf_with_region(regions),
             !Self::tracked(item) ==> Self::item_permission(item) is None,
             // Saturation aborts (Arc-style) via `inc_ref_count`'s diverging panic.
             Self::tracked(item) ==> (regions.slot_owner(pa).ref_count() < REF_COUNT_MAX

@@ -226,6 +226,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
             r matches Ok(res) ==> {
                 &&& res.ptr.addr() == frame_to_meta(paddr)
                 &&& Self::from_unused_spec(paddr, *old(regions), *final(regions))
+                &&& res.inv()
                 &&& res.wf_with_region(*final(regions))
             },
             !valid_frame_paddr(paddr) ==> r is Err,
@@ -456,7 +457,10 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
         requires
+            self.inv(),
+            old(regions).inv(),
             self.wf_with_region(*old(regions)),
+            0 < old(regions).slot_owners[self.index()].ref_count() <= REF_COUNT_MAX,
         ensures
             final(regions).inv(),
             res.inner@.ptr.addr() == self.ptr.addr(),
@@ -488,7 +492,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         requires
             self.ptr_inv(),
             Self::from_raw_requires(*old(regions), self.start_paddr_spec()),
-            Self::frame_permission_wf(*old(regions), self.start_paddr_spec(), *frame_permission),
+            Self::from_raw_parts_spec(
+                self.start_paddr_spec(),
+                *frame_permission,
+            ).inv(),
+            Self::from_raw_parts_spec(
+                self.start_paddr_spec(),
+                *frame_permission,
+            ).wf_with_region(*old(regions)),
         ensures
             *final(regions) == *old(regions),
             res.inner@.ptr.addr() == self.ptr.addr(),
@@ -536,7 +547,10 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             -> raw_permission: Tracked<FracMetadataPerm>,
         requires
+            self.inv(),
+            old(regions).inv(),
             self.wf_with_region(*old(regions)),
+            0 < old(regions).slot_owners[self.index()].ref_count() <= REF_COUNT_MAX,
             old(regions).slot_owners[self.index()].ref_count() != REF_COUNT_UNUSED,
             old(regions).slot_owners[self.index()].usage !is PageTable,
         ensures
@@ -548,7 +562,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
             final(regions).slots == old(regions).slots,
             *final(regions) == *old(regions),
             raw_permission@.frac() == 1,
-            Self::frame_permission_wf(*final(regions), r, raw_permission@),
+            Self::from_raw_parts_spec(r, raw_permission@).inv(),
+            Self::from_raw_parts_spec(r, raw_permission@).wf_with_region(*final(regions)),
     )]
     pub(in crate::mm) fn into_raw(self) -> Paddr {
         broadcast use group_page_meta;
@@ -652,6 +667,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> RCClone for Frame<M> {
     open spec fn clone_requires(self, regions: MetaRegionOwners) -> bool {
         let paddr = self.start_paddr_spec();
         let ref_count = regions.slot_owner(paddr).ref_count();
+        &&& self.inv()
+        &&& regions.inv()
         &&& self.wf_with_region(regions)
         &&& ref_count > 0
         &&& ref_count != REF_COUNT_UNUSED

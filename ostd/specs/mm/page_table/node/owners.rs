@@ -298,11 +298,14 @@ impl<C: PageTableConfig> NodeOwner<C> {
     pub open spec fn metaregion_sound_node(self, regions: MetaRegionOwners) -> bool {
         let idx = self.slot_index;
         &&& regions.contains(idx)
-        &&& Frame::<PageTablePageMeta<C>>::frame_permission_wf(
-            regions,
+        &&& Frame::<PageTablePageMeta<C>>::from_raw_parts_spec(
             meta_to_frame(self.meta_vaddr()),
             self.frame_permission,
-        )
+        ).inv()
+        &&& Frame::<PageTablePageMeta<C>>::from_raw_parts_spec(
+            meta_to_frame(self.meta_vaddr()),
+            self.frame_permission,
+        ).wf_with_region(regions)
         &&& self.meta_wf(regions)
         &&& self.meta_value(regions).wf(self.meta_own)
         &&& self.level == self.meta_value(regions).level

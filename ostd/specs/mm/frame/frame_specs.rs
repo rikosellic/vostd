@@ -35,21 +35,17 @@ impl<'a, M: ?Sized> Frame<M> {
             + MAX_NR_PAGES * META_SLOT_SIZE
     }
 
-    /// The one-unit metadata permission carried by a shared frame or by its
-    /// raw representation.
-    pub open spec fn frame_permission_wf(
-        regions: MetaRegionOwners,
+    /// Models an owning frame reconstructed from its raw representation.
+    pub open spec fn from_raw_parts_spec(
         paddr: Paddr,
         permission: FracMetadataPerm,
-    ) -> bool {
-        let idx = frame_to_index(paddr);
-        &&& regions.contains(idx)
-        &&& permission.frac() == 1
-        &&& permission.id() == regions.slot_owners[idx].metadata_perm.id()
-        &&& permission.resource().storage_perm.id() == regions.slots[idx].value().storage.id()
-        &&& permission.resource().storage_perm.is_init()
-        &&& permission.resource().vtable_ptr_perm.pptr() == regions.slots[idx].value().vtable_ptr
-        &&& permission.resource().vtable_ptr_perm.is_init()
+    ) -> Self {
+        Self {
+            ptr: vstd::simple_pptr::PPtr(frame_to_meta(paddr), PhantomData),
+            _marker: PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_metadata_perm: Tracked(Some(permission)),
+        }
     }
 
     // [`Frame::from_raw`] precondition
@@ -115,16 +111,12 @@ impl<M: ?Sized> Frame<M> {
 }
 
 impl<M: ?Sized> Frame<M> {
-    /// Cross-object well-formedness predicate: this `Frame` handle and
-    /// the supplied [`MetaRegionOwners`] state are mutually consistent.
+    /// Relates this `Frame` handle to its metadata in the supplied region.
     pub open spec fn wf_with_region(self, s: MetaRegionOwners) -> bool {
         let idx = self.index();
         let slot_own = s.slot_owners[idx];
-        &&& self.inv()
-        &&& s.inv()
         &&& s.contains(idx)
         &&& s.slots[idx].pptr() == self.ptr
-        &&& 0 < slot_own.ref_count() <= REF_COUNT_MAX
         &&& self.tracked_metadata_perm@->0.id() == slot_own.metadata_perm.id()
         &&& self.tracked_metadata_perm@->0.resource().storage_perm.id()
             == s.slots[idx].value().storage.id()
@@ -161,7 +153,10 @@ impl<M: ?Sized> TrackDrop for Frame<M> {
     open spec fn drop_requires(self, s: Self::State, obl: Self::Obligation) -> bool {
         let idx = self.index();
         let slot_own = s.slot_owners[idx];
+        &&& self.inv()
+        &&& s.inv()
         &&& self.wf_with_region(s)
+        &&& 0 < slot_own.ref_count() <= REF_COUNT_MAX
         &&& slot_own.ref_count() == 1 ==> {
             &&& slot_own.paths_in_pt.is_empty()
         }

@@ -574,7 +574,16 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                                 }
                                 &&& permission is Some ==> Frame::<
                                     MetaSlotStorage,
-                                >::frame_permission_wf(*regions, future_pte.paddr(), permission->0)
+                                >::from_raw_parts_spec(
+                                    future_pte.paddr(),
+                                    permission->0,
+                                ).inv()
+                                &&& permission is Some ==> Frame::<
+                                    MetaSlotStorage,
+                                >::from_raw_parts_spec(
+                                    future_pte.paddr(),
+                                    permission->0,
+                                ).wf_with_region(*regions)
                             }
                         }
                     } by {
@@ -607,16 +616,6 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                                 true
                             });
                             if future_permission is Some {
-                                assert(Frame::<MetaSlotStorage>::frame_permission_wf(
-                                    regions_pre_read,
-                                    future_pte.paddr(),
-                                    future_permission->0,
-                                ));
-                                assert(Frame::<MetaSlotStorage>::frame_permission_wf(
-                                    *regions,
-                                    future_pte.paddr(),
-                                    future_permission->0,
-                                ));
                             }
                         }
                     };
@@ -1301,11 +1300,18 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
                         } else {
                             permission is Some
                         }
-                        &&& permission is Some ==> Frame::<MetaSlotStorage>::frame_permission_wf(
-                            regions,
+                        &&& permission is Some ==> Frame::<
+                            MetaSlotStorage,
+                        >::from_raw_parts_spec(
                             pte.paddr(),
                             permission->0,
-                        )
+                        ).inv()
+                        &&& permission is Some ==> Frame::<
+                            MetaSlotStorage,
+                        >::from_raw_parts_spec(
+                            pte.paddr(),
+                            permission->0,
+                        ).wf_with_region(regions)
                     }
                 }
             }

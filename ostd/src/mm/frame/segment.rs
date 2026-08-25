@@ -173,11 +173,15 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                 perm.slot_owners.dom() == old(perm).slot_owners.dom(),
                 permissions.len() == (paddr - self.range.start) / (PAGE_SIZE as int),
                 forall|i: int|
-                    0 <= i < permissions.len() ==> Frame::<M>::frame_permission_wf(
-                        *perm,
-                        (self.range.start + i * PAGE_SIZE) as usize,
-                        permissions[i],
-                    ),
+                    #![trigger permissions[i]]
+                    0 <= i < permissions.len() ==> {
+                        let frame = Frame::<M>::from_raw_parts_spec(
+                            (self.range.start + i * PAGE_SIZE) as usize,
+                            permissions[i],
+                        );
+                        &&& frame.inv()
+                        &&& frame.wf_with_region(*perm)
+                    },
                 forall|i: int|
                     #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize)]
                     0 <= i < permissions.len() ==> ({
@@ -231,7 +235,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                 assert forall|i: int| #![trigger permissions[i]] 0 <= i < permissions_len implies {
                     let old_paddr = (self.range.start + i * PAGE_SIZE) as usize;
                     let idx = frame_to_index(old_paddr);
-                    &&& Frame::<M>::frame_permission_wf(*perm, old_paddr, permissions[i])
+                    &&& Frame::<M>::from_raw_parts_spec(old_paddr, permissions[i]).inv()
+                    &&& Frame::<M>::from_raw_parts_spec(
+                        old_paddr,
+                        permissions[i],
+                    ).wf_with_region(*perm)
                     &&& perm.contains(idx)
                     &&& perm.slot_owners[idx].slot_vaddr == index_to_meta(idx)
                     &&& perm.slot_owners[idx].ref_count() > 0
@@ -241,7 +249,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                 } by {
                     let old_paddr = (self.range.start + i * PAGE_SIZE) as usize;
                     let idx = frame_to_index(old_paddr);
-                    assert(Frame::<M>::frame_permission_wf(regions_pre, old_paddr, permissions[i]));
                     assert(regions_pre.contains(idx));
                     crate::specs::mm::frame::mapping::lemma_frame_to_index_injective(
                         old_paddr,
@@ -253,17 +260,15 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                 permissions.tracked_push(frame_permission);
                 assert forall|i: int|
                     #![trigger permissions[i]]
-                    0 <= i < permissions.len() implies Frame::<M>::frame_permission_wf(
-                    *perm,
-                    (self.range.start + i * PAGE_SIZE) as usize,
-                    permissions[i],
-                ) by {
-                    if i < permissions_len {
-                        assert(Frame::<M>::frame_permission_wf(
-                            *perm,
+                    0 <= i < permissions.len() implies {
+                        let frame = Frame::<M>::from_raw_parts_spec(
                             (self.range.start + i * PAGE_SIZE) as usize,
                             permissions[i],
-                        ));
+                        );
+                        &&& frame.inv()
+                        &&& frame.wf_with_region(*perm)
+                    } by {
+                    if i < permissions_len {
                     } else {
                         assert(i == permissions_len);
                         assert((self.range.start + i * PAGE_SIZE) as usize == paddr);
@@ -453,7 +458,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                         &&& regions.contains(idx)
                         &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
                         &&& 0 < regions.slot_owners[idx].ref_count() <= REF_COUNT_MAX
-                        &&& Frame::<M>::frame_permission_wf(*regions, addrs[j], permissions[j])
+                        &&& Frame::<M>::from_raw_parts_spec(addrs[j], permissions[j]).inv()
+                        &&& Frame::<M>::from_raw_parts_spec(
+                            addrs[j],
+                            permissions[j],
+                        ).wf_with_region(*regions)
                         &&& regions.slot_owners[idx].paths_in_pt.is_empty()
                         &&& regions.slot_owners[idx].usage is Frame
                         &&& addrs[j] % PAGE_SIZE == 0
@@ -499,11 +508,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                                     &&& regions.contains(idx)
                                     &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
                                     &&& 0 < regions.slot_owners[idx].ref_count() <= REF_COUNT_MAX
-                                    &&& Frame::<M>::frame_permission_wf(
-                                        *regions,
+                                    &&& Frame::<M>::from_raw_parts_spec(
                                         addrs[j],
                                         permissions[j - k],
-                                    )
+                                    ).inv()
+                                    &&& Frame::<M>::from_raw_parts_spec(
+                                        addrs[j],
+                                        permissions[j - k],
+                                    ).wf_with_region(*regions)
                                     &&& regions.slot_owners[idx].paths_in_pt.is_empty()
                                     &&& regions.slot_owners[idx].usage is Frame
                                     &&& addrs[j] % PAGE_SIZE == 0
@@ -590,11 +602,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 #![trigger frame_to_index((segment_range.start + i * PAGE_SIZE) as usize)]
                 0 <= i < crate::specs::mm::frame::segment::seg_nframes(segment_range) implies {
                 let idx = frame_to_index((segment_range.start + i * PAGE_SIZE) as usize);
-                &&& Frame::<M>::frame_permission_wf(
-                    *regions,
+                &&& Frame::<M>::from_raw_parts_spec(
                     (segment_range.start + i * PAGE_SIZE) as usize,
                     permissions[i],
-                )
+                ).inv()
+                &&& Frame::<M>::from_raw_parts_spec(
+                    (segment_range.start + i * PAGE_SIZE) as usize,
+                    permissions[i],
+                ).wf_with_region(*regions)
                 &&& regions.contains(idx)
                 &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
                 &&& regions.slot_owners[idx].ref_count() > 0
@@ -784,11 +799,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 #![trigger frame_to_index((seg1.range.start + i * PAGE_SIZE) as usize)]
                 0 <= i < crate::specs::mm::frame::segment::seg_nframes(seg1.range) implies {
                 let idx = frame_to_index((seg1.range.start + i * PAGE_SIZE) as usize);
-                &&& Frame::<M>::frame_permission_wf(
-                    *regions,
+                &&& Frame::<M>::from_raw_parts_spec(
                     (seg1.range.start + i * PAGE_SIZE) as usize,
                     seg1.tracked_permissions@[i],
-                )
+                ).inv()
+                &&& Frame::<M>::from_raw_parts_spec(
+                    (seg1.range.start + i * PAGE_SIZE) as usize,
+                    seg1.tracked_permissions@[i],
+                ).wf_with_region(*regions)
                 &&& regions.contains(idx)
                 &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
                 &&& regions.slot_owners[idx].ref_count() > 0
@@ -802,11 +820,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 #![trigger frame_to_index((seg2.range.start + i * PAGE_SIZE) as usize)]
                 0 <= i < crate::specs::mm::frame::segment::seg_nframes(seg2.range) implies {
                 let idx = frame_to_index((seg2.range.start + i * PAGE_SIZE) as usize);
-                &&& Frame::<M>::frame_permission_wf(
-                    *regions,
+                &&& Frame::<M>::from_raw_parts_spec(
                     (seg2.range.start + i * PAGE_SIZE) as usize,
                     seg2.tracked_permissions@[i],
-                )
+                ).inv()
+                &&& Frame::<M>::from_raw_parts_spec(
+                    (seg2.range.start + i * PAGE_SIZE) as usize,
+                    seg2.tracked_permissions@[i],
+                ).wf_with_region(*regions)
                 &&& regions.contains(idx)
                 &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
                 &&& regions.slot_owners[idx].ref_count() > 0
@@ -943,11 +964,15 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 regions.slot_owners.dom() == old(regions).slot_owners.dom(),
                 permissions.len() == i,
                 forall|j: int|
-                    0 <= j < permissions.len() ==> Frame::<M>::frame_permission_wf(
-                        *regions,
-                        (start + j * PAGE_SIZE) as usize,
-                        permissions[j],
-                    ),
+                    #![trigger permissions[j]]
+                    0 <= j < permissions.len() ==> {
+                        let frame = Frame::<M>::from_raw_parts_spec(
+                            (start + j * PAGE_SIZE) as usize,
+                            permissions[j],
+                        );
+                        &&& frame.inv()
+                        &&& frame.wf_with_region(*regions)
+                    },
                 forall|j: int|
                     #![trigger frame_to_index((start + j * PAGE_SIZE) as usize)]
                     0 <= j < permissions.len() ==> {
@@ -998,7 +1023,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 assert forall|j: int| #![trigger permissions[j]] 0 <= j < permissions_len implies {
                     let old_paddr = (start + j * PAGE_SIZE) as usize;
                     let idx = frame_to_index(old_paddr);
-                    &&& Frame::<M>::frame_permission_wf(*regions, old_paddr, permissions[j])
+                    &&& Frame::<M>::from_raw_parts_spec(old_paddr, permissions[j]).inv()
+                    &&& Frame::<M>::from_raw_parts_spec(
+                        old_paddr,
+                        permissions[j],
+                    ).wf_with_region(*regions)
                     &&& regions.contains(idx)
                     &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
                     &&& regions.slot_owners[idx].ref_count() > 0
@@ -1008,7 +1037,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 } by {
                     let old_paddr = (start + j * PAGE_SIZE) as usize;
                     let idx = frame_to_index(old_paddr);
-                    assert(Frame::<M>::frame_permission_wf(regions_pre, old_paddr, permissions[j]));
                     assert(regions_pre.contains(idx));
                     assert(old_paddr < paddr);
                     crate::specs::mm::frame::mapping::lemma_frame_to_index_injective(
@@ -1024,11 +1052,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                     #![trigger permissions[j]]
                     0 <= j < permissions.len() implies {
                     let idx = frame_to_index((start + j * PAGE_SIZE) as usize);
-                    &&& Frame::<M>::frame_permission_wf(
-                        *regions,
+                    &&& Frame::<M>::from_raw_parts_spec(
                         (start + j * PAGE_SIZE) as usize,
                         permissions[j],
-                    )
+                    ).inv()
+                    &&& Frame::<M>::from_raw_parts_spec(
+                        (start + j * PAGE_SIZE) as usize,
+                        permissions[j],
+                    ).wf_with_region(*regions)
                     &&& regions.contains(idx)
                     &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
                     &&& regions.slot_owners[idx].ref_count() > 0
@@ -1325,11 +1356,15 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
                 self.inv(),
                 permissions.len() == n - k,
                 forall|j: int|
-                    0 <= j < permissions.len() ==> Frame::<M>::frame_permission_wf(
-                        *regions,
-                        (self.range.start + (k + j) * PAGE_SIZE) as usize,
-                        permissions[j],
-                    ),
+                    #![trigger permissions[j]]
+                    0 <= j < permissions.len() ==> {
+                        let frame = Frame::<M>::from_raw_parts_spec(
+                            (self.range.start + (k + j) * PAGE_SIZE) as usize,
+                            permissions[j],
+                        );
+                        &&& frame.inv()
+                        &&& frame.wf_with_region(*regions)
+                    },
                 self.range.start <= paddr <= self.range.end,
                 paddr == (self.range.start + k * PAGE_SIZE) as usize,
                 paddr % PAGE_SIZE == 0,
