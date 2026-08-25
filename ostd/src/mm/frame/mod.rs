@@ -616,23 +616,21 @@ impl<M> Frame<M> {
     /// no checking of the usage in this function.
     #[verus_spec(r =>
         with
-            Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(frame_permission): Tracked<FracMetadataPerm>,
         requires
-            Self::from_raw_requires(*old(regions), paddr),
-            Self::frame_permission_wf(*old(regions), paddr, frame_permission),
+            valid_frame_paddr(paddr),
+            frame_permission.frac() == 1,
+            frame_permission.resource().storage_perm.is_init(),
+            frame_permission.resource().vtable_ptr_perm.is_init(),
         ensures
-            Self::from_raw_ensures(*old(regions), *final(regions), paddr, r),
-            final(regions).slots == old(regions).slots,
             r.tracked_perm@ == Some(frame_permission),
+            r.start_paddr_spec() == paddr,
+            r.inv(),
     )]
     pub(in crate::mm) unsafe fn from_raw(paddr: Paddr) -> Self
         no_unwind
     {
         // debug_assert!(paddr < max_paddr());
-        proof {
-            regions.lemma_contains_valid_frame_paddr(paddr);
-        }
         let vaddr = frame_to_meta(paddr);
         // let ptr = vaddr as *const MetaSlot;
         let ptr = PPtr(vaddr, PhantomData);

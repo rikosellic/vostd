@@ -523,7 +523,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                         }
                         let tracked frame_permission = permissions.tracked_remove(0);
                         let frame = unsafe {
-                            #[verus_spec(with Tracked(regions), Tracked(frame_permission))]
+                            #[verus_spec(with Tracked(frame_permission))]
                             Frame::<M>::from_raw(p)
                         };
                         frame.drop(Tracked(regions), Tracked(()));
@@ -1372,7 +1372,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
 
             let tracked frame_permission = permissions.tracked_remove(0);
             let frame = unsafe {
-                #[verus_spec(with Tracked(regions), Tracked(frame_permission))]
+                #[verus_spec(with Tracked(frame_permission))]
                 Frame::<M>::from_raw(paddr)
             };
 
