@@ -607,15 +607,11 @@ impl<C: PageTableConfig> EntryOwner<C> {
             }
             &&& regions.slot_owners[idx].paths_in_pt.contains(self.path)
             &&& self.frame_sub_pages_valid(regions)
-            &&& self.frame_permission() is Some ==> Frame::<
-                MetaSlotStorage,
-            >::from_raw_parts_spec(
+            &&& self.frame_permission() is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
                 self.frame().mapped_pa,
                 self.frame_permission()->0,
             ).inv()
-            &&& self.frame_permission() is Some ==> Frame::<
-                MetaSlotStorage,
-            >::from_raw_parts_spec(
+            &&& self.frame_permission() is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
                 self.frame().mapped_pa,
                 self.frame_permission()->0,
             ).wf_with_region(regions)

@@ -36,10 +36,7 @@ impl<'a, M: ?Sized> Frame<M> {
     }
 
     /// Models an owning frame reconstructed from its raw representation.
-    pub open spec fn from_raw_parts_spec(
-        paddr: Paddr,
-        permission: FracMetadataPerm,
-    ) -> Self {
+    pub open spec fn from_raw_parts_spec(paddr: Paddr, permission: FracMetadataPerm) -> Self {
         Self {
             ptr: vstd::simple_pptr::PPtr(frame_to_meta(paddr), PhantomData),
             _marker: PhantomData,

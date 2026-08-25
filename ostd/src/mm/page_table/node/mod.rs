@@ -574,10 +574,7 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                                 }
                                 &&& permission is Some ==> Frame::<
                                     MetaSlotStorage,
-                                >::from_raw_parts_spec(
-                                    future_pte.paddr(),
-                                    permission->0,
-                                ).inv()
+                                >::from_raw_parts_spec(future_pte.paddr(), permission->0).inv()
                                 &&& permission is Some ==> Frame::<
                                     MetaSlotStorage,
                                 >::from_raw_parts_spec(
@@ -1300,15 +1297,11 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
                         } else {
                             permission is Some
                         }
-                        &&& permission is Some ==> Frame::<
-                            MetaSlotStorage,
-                        >::from_raw_parts_spec(
+                        &&& permission is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
                             pte.paddr(),
                             permission->0,
                         ).inv()
-                        &&& permission is Some ==> Frame::<
-                            MetaSlotStorage,
-                        >::from_raw_parts_spec(
+                        &&& permission is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
                             pte.paddr(),
                             permission->0,
                         ).wf_with_region(regions)

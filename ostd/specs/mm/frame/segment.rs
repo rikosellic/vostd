@@ -124,7 +124,8 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
                 &&& frame.wf_with_region(regions)
                 &&& regions.contains(idx)
                 &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                &&& 0 < regions.slot_owners[idx].ref_count() <= crate::mm::frame::meta::REF_COUNT_MAX
+                &&& 0 < regions.slot_owners[idx].ref_count()
+                    <= crate::mm::frame::meta::REF_COUNT_MAX
                 &&& regions.slot_owners[idx].paths_in_pt.is_empty()
                 &&& regions.slot_owners[idx].usage is Frame
             }),
