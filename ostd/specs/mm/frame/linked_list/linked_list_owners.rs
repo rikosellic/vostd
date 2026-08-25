@@ -858,28 +858,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
                 let _ = old.list[n];
                 old.relate_region_at_facts(r0, n);
             }
-            let idx = meta_to_index(new.list[k].paddr);
-            let value = new.meta_value_at(fr, k);
-            assert(fr.contains(idx));
-            assert(new.repr_perms.len() == new.list.len());
-            assert(new.metadata_perms.len() == new.list.len());
-            assert(fr.slots[idx].addr() == new.list[k].paddr);
-            assert(fr.slot_owners[idx].ref_count() == REF_COUNT_UNIQUE);
-            assert(fr.slot_owners[idx].metadata_perm.is_resource_vacant());
-            assert(new.metadata_perms[k].storage_perm.id() == fr.slots[idx].value().storage.id());
-            assert(new.metadata_perms[k].vtable_ptr_perm.pptr()
-                == fr.slots[idx].value().vtable_ptr);
-            assert(new.metadata_perms[k].vtable_ptr_perm.is_init());
-            assert(fr.slot_owners[idx].usage is Frame);
-            assert(fr.slot_owners[idx].in_list_perm.value() == new.list_id);
-            assert(new.meta_wf_at(fr, k));
-            assert(value.wf(new.list[k]));
-            assert(new.list[k].inv());
-            assert(new.list[k].in_list == new.list_id);
             new.relate_region_at_from_clauses(fr, k);
         }
-
-        // `new` has `old.len + 1 ≥ 1 > 0` elements and a non-zero id by hypothesis.
     }
 
     pub open spec fn view_helper(owners: Seq<LinkOwner>) -> Seq<LinkModel>
