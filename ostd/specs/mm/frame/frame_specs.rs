@@ -60,22 +60,6 @@ impl<'a, M: ?Sized> Frame<M> {
         &&& regions.inv()
         &&& 0 < regions.slot_owner(paddr).ref_count() <= REF_COUNT_MAX
     }
-
-    /// **Safety**: Frames other than this one are not affected by the call.
-    pub open spec fn into_raw_post_noninterference(
-        self,
-        old_regions: MetaRegionOwners,
-        new_regions: MetaRegionOwners,
-    ) -> bool {
-        &&& forall|i: int|
-            #![trigger new_regions.slots[i], old_regions.slots[i]]
-            i != self.index() && old_regions.contains(i) ==> new_regions.contains(i)
-                && new_regions.slots[i] == old_regions.slots[i]
-        &&& forall|i: int|
-            #![trigger new_regions.slot_owners[i], old_regions.slot_owners[i]]
-            i != self.index() ==> new_regions.slot_owners[i] == old_regions.slot_owners[i]
-        &&& new_regions.slot_owners.dom() =~= old_regions.slot_owners.dom()
-    }
 }
 
 impl<M: ?Sized> Inv for Frame<M> {

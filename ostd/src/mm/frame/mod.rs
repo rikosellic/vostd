@@ -171,9 +171,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     /// ## Verification Design
     /// This is an inherent impl equivalent to `PartialEq::eq` for `Frame<M>`: freed from the
     /// trait signature so that this version can thread the tracked `MetaRegionOwners` via `verus_spec`.
-    #[verus_spec(res =>
-        with
-            Tracked(regions): Tracked<&MetaRegionOwners>,
+    #[verus_spec(
         requires
             self.ptr_inv(),
             other.ptr_inv(),
@@ -525,41 +523,20 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     /// - The owner's raw count is incremented so that we can enforce the safety requirement on `Frame::from_raw`.
     #[verus_spec(r =>
         with
-            Tracked(regions): Tracked<&mut MetaRegionOwners>,
             -> raw_permission: Tracked<FracMetadataPerm>,
         requires
             self.inv(),
-            old(regions).inv(),
-            self.wf_with_region(*old(regions)),
-            0 < old(regions).slot_owners[self.index()].ref_count() <= REF_COUNT_MAX,
-            old(regions).slot_owners[self.index()].ref_count() != REF_COUNT_UNUSED,
-            old(regions).slot_owners[self.index()].usage !is PageTable,
         ensures
-            final(regions).inv(),
             r == self.start_paddr_spec(),
-            final(regions).slot_owners[self.index()].usage
-                == old(regions).slot_owners[self.index()].usage,
-            self.into_raw_post_noninterference(*old(regions), *final(regions)),
-            final(regions).slots == old(regions).slots,
-            *final(regions) == *old(regions),
             raw_permission@.frac() == 1,
-            Self::from_raw_parts_spec(
-                r,
-                final(regions).slots[self.index()],
-                raw_permission@,
-            ).inv(),
-            Self::from_raw_parts_spec(
-                r,
-                final(regions).slots[self.index()],
-                raw_permission@,
-            ).wf_with_region(*final(regions)),
+            raw_permission@.id() == self.tracked_metadata_perm@->0.id(),
+            raw_permission@.resource().storage_perm.is_init(),
+            raw_permission@.resource().storage_perm.id() == self.tracked_slot_perm@.value().storage.id(),
+            raw_permission@.resource().vtable_ptr_perm.is_init(),
+            raw_permission@.resource().vtable_ptr_perm.pptr() == self.tracked_slot_perm@.value().vtable_ptr,
     )]
     pub(in crate::mm) fn into_raw(self) -> Paddr {
         broadcast use group_page_meta;
-
-        proof {
-            regions.lemma_contains_valid_frame_paddr(self.start_paddr_spec());
-        }
 
         let paddr = self.start_paddr();
 

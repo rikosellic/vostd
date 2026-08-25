@@ -608,8 +608,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
 
             proof_decl! {
                 let tracked frame_permission: FracMetadataPerm;
+                let tracked slot_perm = *frame.tracked_slot_perm;
             }
-            let _ = #[verus_spec(with Tracked(regions) => Tracked(frame_permission))]
+            let _ = #[verus_spec(with => Tracked(frame_permission))]
             frame.into_raw();
             segment_range.end = paddr + PAGE_SIZE;
             proof {
@@ -623,7 +624,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 assert(regions.slot_owners[idx].paths_in_pt
                     == regions_pre.slot_owners[idx].paths_in_pt);
                 assert(regions.slot_owners[idx].usage is Frame);
-                let tracked slot_perm = regions.tracked_borrow_slot(paddr);
                 addrs.tracked_push(paddr);
                 slot_perms.tracked_push(slot_perm);
                 permissions.tracked_push(frame_permission);
