@@ -1644,7 +1644,7 @@ unsafe impl PageTableConfig for UserPtConfig {
     }
 
     open spec fn item_permission(item: Self::Item) -> Option<FracMetadataPerm> {
-        item.frame.tracked_perm@
+        item.frame.tracked_metadata_perm@
     }
 
     #[verifier::external_body]
@@ -1677,7 +1677,7 @@ unsafe impl PageTableConfig for UserPtConfig {
                 ),
                 _marker: PhantomData,
                 #[cfg(verus_keep_ghost_body)]
-                tracked_perm: Tracked(permission),
+                tracked_metadata_perm: Tracked(permission),
             },
             prop,
         }
@@ -1798,14 +1798,10 @@ unsafe impl PageTableConfig for UserPtConfig {
         assert(meta_to_index(item.frame.ptr.addr()) == frame_to_index(pa));
         let idx = frame_to_index(pa);
         regions.lemma_contains_valid_frame_paddr(pa);
-        assert(item.frame.index() == idx);
-        assert(regions.slots[idx].pptr() == item.frame.ptr);
-        assert(item.frame.tracked_perm@ == Self::item_permission(item));
-        assert(item.frame.tracked_perm@ is Some);
         assert(Frame::<MetaSlotStorage>::frame_permission_wf(
             regions,
             pa,
-            item.frame.tracked_perm@->0,
+            item.frame.tracked_metadata_perm@->0,
         ));
         assert(item.frame.wf_with_region(regions));
     }

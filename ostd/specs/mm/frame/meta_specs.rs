@@ -211,7 +211,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
             ptr: PPtr::<MetaSlot>(frame_to_meta(paddr), PhantomData),
             _marker: PhantomData,
             #[cfg(verus_keep_ghost_body)]
-            tracked_perm: Tracked(None),
+            tracked_metadata_perm: Tracked(None),
         }
     }
 }

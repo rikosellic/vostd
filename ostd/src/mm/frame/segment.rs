@@ -64,7 +64,7 @@ pub closed spec fn segment_iter_frame<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
         ptr: PPtr(frame_to_meta(paddr), core::marker::PhantomData),
         _marker: core::marker::PhantomData,
         #[cfg(verus_keep_ghost_body)]
-        tracked_perm: Tracked(Some(permission)),
+        tracked_metadata_perm: Tracked(Some(permission)),
     }
 }
 
@@ -1163,12 +1163,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> From<Frame<M>> for Segment<M> {
     #[verifier::external_body]
     fn from(frame: Frame<M>) -> Self {
         let pa = frame.start_paddr();
-        let tracked frame_permission = frame.tracked_perm.get().tracked_unwrap();
+        let tracked frame_permission = frame.tracked_metadata_perm.get().tracked_unwrap();
         let raw_frame = Frame::<M> {
             ptr: frame.ptr,
             _marker: core::marker::PhantomData,
             #[cfg(verus_keep_ghost_body)]
-            tracked_perm: Tracked(None),
+            tracked_metadata_perm: Tracked(None),
         };
         let _ = core::mem::ManuallyDrop::new(raw_frame);
         Self {
@@ -1227,7 +1227,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 ptr: PPtr(frame_to_meta(range.start), core::marker::PhantomData),
                 _marker: core::marker::PhantomData,
                 #[cfg(verus_keep_ghost_body)]
-                tracked_perm: Tracked(Some(frame_permission)),
+                tracked_metadata_perm: Tracked(Some(frame_permission)),
             };
             range.start = range.start + PAGE_SIZE;
             Some(frame)

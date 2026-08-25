@@ -118,14 +118,15 @@ impl<M: ?Sized> Frame<M> {
         &&& s.contains(idx)
         &&& s.slots[idx].pptr() == self.ptr
         &&& 0 < slot_own.ref_count() <= REF_COUNT_MAX
-        &&& self.tracked_perm@ is Some
-        &&& self.tracked_perm@->0.frac() == 1
-        &&& self.tracked_perm@->0.id() == slot_own.metadata_perm.id()
-        &&& self.tracked_perm@->0.resource().storage_perm.id() == s.slots[idx].value().storage.id()
-        &&& self.tracked_perm@->0.resource().storage_perm.is_init()
-        &&& self.tracked_perm@->0.resource().vtable_ptr_perm.pptr()
+        &&& self.tracked_metadata_perm@ is Some
+        &&& self.tracked_metadata_perm@->0.frac() == 1
+        &&& self.tracked_metadata_perm@->0.id() == slot_own.metadata_perm.id()
+        &&& self.tracked_metadata_perm@->0.resource().storage_perm.id()
+            == s.slots[idx].value().storage.id()
+        &&& self.tracked_metadata_perm@->0.resource().storage_perm.is_init()
+        &&& self.tracked_metadata_perm@->0.resource().vtable_ptr_perm.pptr()
             == s.slots[idx].value().vtable_ptr
-        &&& self.tracked_perm@->0.resource().vtable_ptr_perm.is_init()
+        &&& self.tracked_metadata_perm@->0.resource().vtable_ptr_perm.is_init()
     }
 }
 

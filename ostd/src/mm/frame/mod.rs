@@ -122,9 +122,12 @@ fn acquire_fence() {
 pub struct Frame<M: ?Sized> {
     pub ptr: PPtr<MetaSlot>,
     pub _marker: PhantomData<M>,
+    /// The permission to access the `MetaSlot` fields.
+    // #[cfg(verus_keep_ghost_body)]
+    // pub tracked_slot_perm: Tracked<simple_pptr::PointsTo<MetaSlot>>,
     /// One fractional permission for the currently installed metadata.
     #[cfg(verus_keep_ghost_body)]
-    pub tracked_perm: Tracked<Option<FracMetadataPerm>>,
+    pub tracked_metadata_perm: Tracked<Option<FracMetadataPerm>>,
 }
 
 #[verifier::external]
@@ -250,7 +253,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
                     ptr,
                     _marker: PhantomData,
                     #[cfg(verus_keep_ghost_body)]
-                    tracked_perm: Tracked(Some(frame_permission)),
+                    tracked_metadata_perm: Tracked(Some(frame_permission)),
                 },
             )
         }
@@ -339,7 +342,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Frame<M> {
                         ptr,
                         _marker: PhantomData,
                         #[cfg(verus_keep_ghost_body)]
-                        tracked_perm: Tracked(frame_permission),
+                        tracked_metadata_perm: Tracked(frame_permission),
                     },
                 )
             },
@@ -560,12 +563,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         let paddr = self.start_paddr();
 
         let ptr = self.ptr;
-        let tracked frame_permission = self.tracked_perm.get().tracked_unwrap();
+        let tracked frame_permission = self.tracked_metadata_perm.get().tracked_unwrap();
         let raw_frame = Self {
             ptr,
             _marker: PhantomData,
             #[cfg(verus_keep_ghost_body)]
-            tracked_perm: Tracked(None),
+            tracked_metadata_perm: Tracked(None),
         };
         proof_with!(Tracked(()));
         let _ = ManuallyDrop::new(raw_frame);
@@ -623,7 +626,7 @@ impl<M> Frame<M> {
             frame_permission.resource().storage_perm.is_init(),
             frame_permission.resource().vtable_ptr_perm.is_init(),
         ensures
-            r.tracked_perm@ == Some(frame_permission),
+            r.tracked_metadata_perm@ == Some(frame_permission),
             r.start_paddr_spec() == paddr,
             r.inv(),
     )]
@@ -639,7 +642,7 @@ impl<M> Frame<M> {
             ptr,
             _marker: PhantomData,
             #[cfg(verus_keep_ghost_body)]
-            tracked_perm: Tracked(Some(frame_permission)),
+            tracked_metadata_perm: Tracked(Some(frame_permission)),
         }
     }
 }
@@ -673,9 +676,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> RCClone for Frame<M> {
         &&& new_perm.slot_owners[idx].metadata_perm.frac() + 1
             == old_perm.slot_owners[idx].metadata_perm.frac()
         &&& new_perm.slot_owners[idx].metadata_perm@ == old_perm.slot_owners[idx].metadata_perm@
-        &&& res.tracked_perm@ is Some
-        &&& res.tracked_perm@->0.frac() == 1
-        &&& res.tracked_perm@->0.id() == new_perm.slot_owners[idx].metadata_perm.id()
+        &&& res.tracked_metadata_perm@ is Some
+        &&& res.tracked_metadata_perm@->0.frac() == 1
+        &&& res.tracked_metadata_perm@->0.id() == new_perm.slot_owners[idx].metadata_perm.id()
         &&& res.ptr == self.ptr
         &&& new_perm.slot_owners[idx].in_list_perm == old_perm.slot_owners[idx].in_list_perm
         &&& new_perm.slot_owners[idx].paths_in_pt == old_perm.slot_owners[idx].paths_in_pt
@@ -707,7 +710,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> RCClone for Frame<M> {
             ptr: PPtr::<MetaSlot>::from_addr(self.ptr.0),
             _marker: PhantomData,
             #[cfg(verus_keep_ghost_body)]
-            tracked_perm: Tracked(Some(frame_permission)),
+            tracked_metadata_perm: Tracked(Some(frame_permission)),
         }
     }
 }
@@ -719,7 +722,7 @@ impl<M: ?Sized> Drop for Frame<M> {
 
         let tracked mut slot_own = regions.slot_owners.tracked_remove(idx);
         let ghost old_metadata_id = slot_own.metadata_perm.id();
-        let tracked frame_permission = self.tracked_perm.get().tracked_unwrap();
+        let tracked frame_permission = self.tracked_metadata_perm.get().tracked_unwrap();
         proof {
             slot_own.metadata_perm.combine(frame_permission);
             assert(slot_own.metadata_perm.id() == old_metadata_id);

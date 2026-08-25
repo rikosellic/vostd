@@ -56,7 +56,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'_, M> {
             ptr: PPtr::<MetaSlot>::from_addr(frame_to_meta(raw)),
             _marker: PhantomData,
             #[cfg(verus_keep_ghost_body)]
-            tracked_perm: Tracked(None),
+            tracked_metadata_perm: Tracked(None),
         };
 
         proof_with!(Tracked(()));
@@ -173,7 +173,7 @@ unsafe impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + 'static> NonNullPtr for Fr
             ptr: PPtr::<MetaSlot>::from_addr(raw.addr()),
             _marker: PhantomData,
             #[cfg(verus_keep_ghost_body)]
-            tracked_perm: Tracked(None),
+            tracked_metadata_perm: Tracked(None),
         }
     }
 
@@ -185,7 +185,7 @@ unsafe impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + 'static> NonNullPtr for Fr
             ptr: PPtr::<MetaSlot>::from_addr(raw.addr()),
             _marker: PhantomData,
             #[cfg(verus_keep_ghost_body)]
-            tracked_perm: Tracked(None),
+            tracked_metadata_perm: Tracked(None),
         };
         #[verus_spec(with Tracked(()))]
         let dropped = ManuallyDrop::<Frame<M>>::new(frame);

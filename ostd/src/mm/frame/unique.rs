@@ -635,23 +635,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
             ptr,
             _marker: PhantomData,
             #[cfg(verus_keep_ghost_body)]
-            tracked_perm: Tracked(Some(frame_permission)),
+            tracked_metadata_perm: Tracked(Some(frame_permission)),
         };
         proof {
             assert(res.inv());
             assert(regions.inv());
             assert(regions.contains(idx));
-            assert(regions.slots[idx].pptr() == res.ptr);
-            assert(regions.slot_owners[idx].ref_count() == 1);
-            assert(res.tracked_perm@ is Some);
-            assert(res.tracked_perm@->0.frac() == 1);
-            assert(res.tracked_perm@->0.id() == regions.slot_owners[idx].metadata_perm.id());
-            assert(res.tracked_perm@->0.resource().storage_perm.id()
-                == regions.slots[idx].value().storage.id());
-            assert(res.tracked_perm@->0.resource().storage_perm.is_init());
-            assert(res.tracked_perm@->0.resource().vtable_ptr_perm.pptr()
-                == regions.slots[idx].value().vtable_ptr);
-            assert(res.tracked_perm@->0.resource().vtable_ptr_perm.is_init());
             assert(res.wf_with_region(*regions));
         }
         res
@@ -678,7 +667,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         proof {
             broadcast use group_page_meta;
 
-            regions.lemma_contains_valid_frame_paddr(meta_to_frame(frame.ptr.addr()));
+            regions.lemma_contains_valid_frame_paddr(frame.start_paddr_spec());
         }
         let tracked mut slot_own = regions.slot_owners.tracked_borrow_mut(idx);
         let tracked slot_perm = regions.slots.tracked_borrow(idx);

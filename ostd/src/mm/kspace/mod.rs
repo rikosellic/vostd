@@ -228,7 +228,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
 
     open spec fn item_permission(item: Self::Item) -> Option<FracMetadataPerm> {
         match item {
-            MappedItem::Tracked(frame, _) => frame.tracked_perm@,
+            MappedItem::Tracked(frame, _) => frame.tracked_metadata_perm@,
             MappedItem::Untracked(_, _, _) => None,
         }
     }
@@ -271,7 +271,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
                     ptr: vstd::simple_pptr::PPtr(mapping::frame_to_meta(paddr), PhantomData),
                     _marker: PhantomData,
                     #[cfg(verus_keep_ghost_body)]
-                    tracked_perm: Tracked(permission),
+                    tracked_metadata_perm: Tracked(permission),
                 },
                 Self::decode_tracked_prop(prop),
             )
@@ -458,12 +458,12 @@ unsafe impl PageTableConfig for KernelPtConfig {
                 assert(regions.slot_owners[idx].ref_count() > 0);
                 assert(regions.slot_owners[idx].ref_count() <= REF_COUNT_MAX);
                 assert(regions.slot_owners[idx].ref_count() != REF_COUNT_UNUSED);
-                assert(frame.tracked_perm@ == Self::item_permission(item));
-                assert(frame.tracked_perm@ is Some);
+                assert(frame.tracked_metadata_perm@ == Self::item_permission(item));
+                assert(frame.tracked_metadata_perm@ is Some);
                 assert(Frame::<MetaSlotStorage>::frame_permission_wf(
                     regions,
                     pa,
-                    frame.tracked_perm@->0,
+                    frame.tracked_metadata_perm@->0,
                 ));
                 assert(frame.wf_with_region(regions));
             },

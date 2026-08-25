@@ -466,7 +466,7 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                         ptr: PPtr::from_addr(frame_to_meta(paddr)),
                         _marker: PhantomData,
                         #[cfg(verus_keep_ghost_body)]
-                        tracked_perm: Tracked(Some(raw_permission.tracked_unwrap())),
+                        tracked_metadata_perm: Tracked(Some(raw_permission.tracked_unwrap())),
                     };
                     proof {
                         broadcast use crate::specs::mm::frame::mapping::group_page_meta;
