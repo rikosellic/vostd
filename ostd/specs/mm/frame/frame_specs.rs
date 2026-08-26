@@ -1,13 +1,14 @@
 use core::marker::PhantomData;
+use vstd::{cell::CellId};
 
-use vstd::prelude::*;
+use vstd::{prelude::*, simple_pptr};
 use vstd_extra::{cast_ptr::*, drop_tracking::TrackDrop, ownership::*};
 
 use crate::specs::{
     arch::*,
     mm::frame::{
         mapping::{frame_to_index, meta_to_index},
-        meta_owners::{FracMetadataPerm, PageUsage},
+        meta_owners::{FracMetadataPerm, PageUsage, MetadataPerms},
         meta_region_owners::MetaRegionOwners,
     },
 };
@@ -27,14 +28,44 @@ use crate::mm::{
 verus! {
 
 impl<'a, M: ?Sized> Frame<M> {
+    /// Accessor for the fractional metadata permission tracked by this `Frame` handle.
+    #[verifier::inline]
+    pub open spec fn frac_metadata_perm(self) -> FracMetadataPerm {
+        self.tracked_metadata_perm@->0
+    }
+    
+    /// Accessor for the full metadata permission tracked by the fractional permission.
+    #[verifier::inline]
+    pub open spec fn metadata_perm(self) -> MetadataPerms {
+        self.frac_metadata_perm().resource()
+    }
+
+    /// Accessor for the [`MetaSlot`] permission tracked by this `Frame` handle.
+    pub open spec fn slot_perm(self) -> simple_pptr::PointsTo<MetaSlot> {
+        *self.tracked_slot_perm@
+    }
+
+    /// Accessor for the id of the `ref_count` field.
+    #[verifier::inline]
+    pub open spec fn ref_count_id(self) -> int {
+        self.slot_perm().value().ref_count.id()
+    }
+
+    /// Accessor for the id of the `storage` field.
+    #[verifier::inline]
+    pub open spec fn storage_id(self) -> CellId {
+        self.slot_perm().value().storage.id()
+    }
+    
     /// Address-related invariant shared by owning frames and non-owning
     /// `ManuallyDrop<Frame>` values embedded in `FrameRef`.
+    #[verifier::inline]
     pub open spec fn ptr_inv(self) -> bool {
         &&& self.ptr.addr() % META_SLOT_SIZE == 0
         &&& FRAME_METADATA_RANGE.start <= self.ptr.addr() < FRAME_METADATA_RANGE.start
             + MAX_NR_PAGES * META_SLOT_SIZE
-        &&& self.tracked_slot_perm@.pptr() == self.ptr
-        &&& self.tracked_slot_perm@.is_init()
+        &&& self.slot_perm().pptr() == self.ptr
+        &&& self.slot_perm().is_init()
     }
 
     /// Models an owning frame reconstructed from its raw representation.
@@ -64,14 +95,15 @@ impl<'a, M: ?Sized> Frame<M> {
 
 impl<M: ?Sized> Inv for Frame<M> {
     open spec fn inv(self) -> bool {
+        let metadata_perm = self.metadata_perm();
         &&& self.ptr_inv()
         &&& self.tracked_metadata_perm@ is Some
-        &&& self.tracked_metadata_perm@->0.frac() == 1
-        &&& self.tracked_metadata_perm@->0.resource().storage_perm.is_init()
-        &&& self.tracked_metadata_perm@->0.resource().storage_perm.id()
+        &&& self.frac_metadata_perm().frac() == 1
+        &&& metadata_perm.storage_perm.is_init()
+        &&& metadata_perm.storage_perm.id()
             == self.tracked_slot_perm@.value().storage.id()
-        &&& self.tracked_metadata_perm@->0.resource().vtable_ptr_perm.is_init()
-        &&& self.tracked_metadata_perm@->0.resource().vtable_ptr_perm.pptr()
+        &&& metadata_perm.vtable_ptr_perm.is_init()
+        &&& metadata_perm.vtable_ptr_perm.pptr()
             == self.tracked_slot_perm@.value().vtable_ptr
     }
 }
@@ -110,7 +142,7 @@ impl<M: ?Sized> Frame<M> {
         let slot_own = s.slot_owners[idx];
         &&& s.contains(idx)
         &&& self.tracked_slot_perm@ == s.slots[idx]
-        &&& self.tracked_metadata_perm@->0.id() == slot_own.metadata_perm.id()
+        &&& self.frac_metadata_perm().id() == slot_own.metadata_perm.id()
     }
 }
 

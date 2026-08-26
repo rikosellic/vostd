@@ -439,7 +439,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     /// - **Safety Invariant**: Metaslot region invariants hold after the call.
     /// - **Correctness**: The function returns a reference to the frame.
     /// - **Correctness**: The system context is unchanged.
-    // FIXME: the lifetime is suspicious
     #[verus_spec(res =>
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
@@ -529,11 +528,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         ensures
             r == self.start_paddr_spec(),
             raw_permission@.frac() == 1,
-            raw_permission@.id() == self.tracked_metadata_perm@->0.id(),
+            raw_permission@.id() == self.frac_metadata_perm().id(),
             raw_permission@.resource().storage_perm.is_init(),
-            raw_permission@.resource().storage_perm.id() == self.tracked_slot_perm@.value().storage.id(),
+            raw_permission@.resource().storage_perm.id() == self.storage_id(),
             raw_permission@.resource().vtable_ptr_perm.is_init(),
-            raw_permission@.resource().vtable_ptr_perm.pptr() == self.tracked_slot_perm@.value().vtable_ptr,
+            raw_permission@.resource().vtable_ptr_perm.pptr() == self.slot_perm().value().vtable_ptr,
     )]
     pub(in crate::mm) fn into_raw(self) -> Paddr {
         broadcast use group_page_meta;
