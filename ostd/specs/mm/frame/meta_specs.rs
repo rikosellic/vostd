@@ -220,10 +220,6 @@ impl MetaSlot {
         &&& owner.in_list_perm.value() == 0
         &&& owner.paths_in_pt.is_empty()
     }
-
-    pub open spec fn inc_ref_count_spec(&self, pre: MetaSlotModel) -> (MetaSlotModel) {
-        MetaSlotModel { ref_count: (pre.ref_count + 1) as u64, ..pre }
-    }
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
