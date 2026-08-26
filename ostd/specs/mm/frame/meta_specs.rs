@@ -175,7 +175,6 @@ impl MetaSlot {
     }
 
     /// The metadata region transition of claiming a currently shared slot.
-    #[verifier::inline]
     pub open spec fn get_from_in_use_success_region_spec(
         paddr: Paddr,
         pre: MetaRegionOwners,
