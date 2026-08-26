@@ -527,10 +527,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
             r == self.start_paddr_spec(),
             raw_permission@.frac() == 1,
             raw_permission@.id() == self.frac_metadata_perm().id(),
-            raw_permission@.resource().storage_perm.is_init(),
-            raw_permission@.resource().storage_perm.id() == self.storage_id(),
-            raw_permission@.resource().vtable_ptr_perm.is_init(),
-            raw_permission@.resource().vtable_ptr_perm.pptr() == self.slot_perm().value().vtable_ptr,
+            MetaSlot::perms_related(self.slot_perm(),raw_permission@),
     )]
     pub(in crate::mm) fn into_raw(self) -> Paddr {
         broadcast use group_page_meta;
@@ -603,10 +600,7 @@ impl<M> Frame<M> {
             slot_perm.addr() == frame_to_meta(paddr),
             slot_perm.is_init(),
             frame_permission.frac() == 1,
-            frame_permission.resource().storage_perm.is_init(),
-            frame_permission.resource().storage_perm.id() == slot_perm.value().storage.id(),
-            frame_permission.resource().vtable_ptr_perm.is_init(),
-            frame_permission.resource().vtable_ptr_perm.pptr() == slot_perm.value().vtable_ptr,
+            MetaSlot::perms_related(*slot_perm,frame_permission.resource()),
         ensures
             r.tracked_slot_perm@ == slot_perm,
             r.tracked_metadata_perm@ == Some(frame_permission),
@@ -965,10 +959,8 @@ pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) -> (permission: Tr
             regions,
         ).slot_owners[idx].ref_count_perm.id());
 
-        // slot_own.inv() holds: rc in (0, REF_COUNT_MAX), vtable_ptr init, slot_vaddr ok
         assert(slot_own.inv());
 
-        // wf: the slot's cell ids still match the updated owner permissions.
         assert(regions.slots[idx].value().wf(slot_own));
 
         regions.slot_owners.tracked_insert(idx, slot_own);
