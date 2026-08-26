@@ -212,12 +212,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
         ensures
             final(regions).inv(),
             r matches Ok(res) ==> {
-                &&& res.ptr.addr() == frame_to_meta(paddr)
                 &&& Self::from_unused_spec(paddr, *old(regions), *final(regions))
                 &&& res.inv()
+                &&& res.start_paddr_spec() == paddr
                 &&& res.wf_with_region(*final(regions))
             },
-            !valid_frame_paddr(paddr) ==> r is Err,
             r is Err ==> *final(regions) == *old(regions)
     )]
     pub fn from_unused(paddr: Paddr, metadata: M) -> Result<Self, GetFrameError> {
@@ -313,11 +312,10 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Frame<M> {
         ensures
             final(regions).inv(),
             res matches Ok(res) ==> {
-                &&& final(regions).ref_count(frame_to_index(paddr)) ==
-                    old(regions).ref_count(frame_to_index(paddr)) + 1
-                &&& res.ptr == old(regions).slots[frame_to_index(paddr)].pptr()
-                &&& MetaSlot::get_from_in_use_success(paddr, *old(regions), *final(regions))
-                &&& valid_frame_paddr(paddr)
+                &&& MetaSlot::get_from_in_use_success_region_spec(paddr, *old(regions), *final(regions))
+                &&& res.inv()
+                &&& res.start_paddr_spec() == paddr
+                &&& res.wf_with_region(*final(regions))
             },
             res is Err ==> *old(regions) == *final(regions),
     )]

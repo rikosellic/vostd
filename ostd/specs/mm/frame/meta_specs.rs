@@ -38,6 +38,16 @@ verus! {
 global layout MetaSlot is size == 64, align == 8;
 
 impl MetaSlot {
+    /// The relation between the [`MetaSlot`] permission and a metadata permission fraction.
+    #[verifier::inline]
+    pub open spec fn perms_related(slot_perm: vstd::simple_pptr::PointsTo<MetaSlot>, metadata_perm: MetadataPerms) -> bool
+    {
+        &&& metadata_perm.storage_perm.is_init()
+        &&& metadata_perm.vtable_ptr_perm.is_init()
+        &&& slot_perm.value().storage.id() == metadata_perm.storage_perm.id()
+        &&& slot_perm.value().vtable_ptr == metadata_perm.vtable_ptr_perm.pptr()
+    }
+    
     pub proof fn lemma_layout()
         ensures
             core::mem::size_of::<MetaSlot>() == META_SLOT_SIZE,
@@ -114,10 +124,7 @@ impl MetaSlot {
             &&& permissions.0->0.frac() == 1
             &&& permissions.0->0.id() == post.slot_owners[idx].metadata_perm.id()
         }
-        &&& metadata_perms.storage_perm.id() == post.slots[idx].value().storage.id()
-        &&& metadata_perms.storage_perm.is_init()
-        &&& metadata_perms.vtable_ptr_perm.pptr() == post.slots[idx].value().vtable_ptr
-        &&& metadata_perms.vtable_ptr_perm.is_init()
+        &&& Self::perms_related(*post.slots[idx], metadata_perms)
         &&& <M as Repr<MetaSlotStorage>>::wf(metadata_perms.storage_perm.value(), repr_perm)
         &&& M::from_repr_spec(metadata_perms.storage_perm.value(), repr_perm) == metadata
     }
@@ -165,25 +172,43 @@ impl MetaSlot {
         &&& perm.addr() % META_SLOT_SIZE == 0
     }
 
-    pub open spec fn get_from_in_use_success(
+    /// The metadata region transition of claiming a currently shared slot.
+    #[verifier::inline]
+    pub open spec fn get_from_in_use_success_region_spec(
         paddr: Paddr,
         pre: MetaRegionOwners,
         post: MetaRegionOwners,
     ) -> bool {
         let idx = frame_to_index(paddr);
+        let pre_owner = pre.slot_owners[idx];
+        let post_owner = post.slot_owners[idx];
         {
             &&& post.ref_count(idx) == pre.ref_count(idx) + 1
-            &&& post.slot_owners[idx].ref_count_perm.id()
-                == pre.slot_owners[idx].ref_count_perm.id()
-            &&& post.slot_owners[idx].metadata_perm.id() == pre.slot_owners[idx].metadata_perm.id()
-            &&& post.slot_owners[idx].metadata_perm.frac() + 1
-                == pre.slot_owners[idx].metadata_perm.frac()
-            &&& post.slot_owners[idx].metadata_perm@ == pre.slot_owners[idx].metadata_perm@
-            &&& post.slot_owners[idx].in_list_perm == pre.slot_owners[idx].in_list_perm
-            &&& post.slot_owners[idx].slot_vaddr == pre.slot_owners[idx].slot_vaddr
-            &&& post.slot_owners[idx].usage == pre.slot_owners[idx].usage
-            &&& post.slot_owners[idx].paths_in_pt == pre.slot_owners[idx].paths_in_pt
-            &&& post =~= pre.insert_slot_owner(paddr, post.slot_owners[idx])
+            &&& post_owner.ref_count_perm.id() == pre_owner.ref_count_perm.id()
+            &&& post_owner.metadata_perm.id() == pre_owner.metadata_perm.id()
+            &&& post_owner.metadata_perm.frac() + 1
+                == pre_owner.metadata_perm.frac()
+            &&& post_owner.metadata_perm@ == pre_owner.metadata_perm@
+            &&& post_owner.in_list_perm == pre_owner.in_list_perm
+            &&& post_owner.slot_vaddr == pre_owner.slot_vaddr
+            &&& post_owner.usage == pre_owner.usage
+            &&& post_owner.paths_in_pt == pre_owner.paths_in_pt
+            &&& post =~= pre.insert_slot_owner(paddr, post_owner)
+        }
+    }
+
+    pub open spec fn get_from_in_use_success_spec(
+        paddr: Paddr,
+        pre: MetaRegionOwners,
+        post: MetaRegionOwners,
+        metadata_perm: FracMetadataPerm,
+    ) -> bool {
+        let idx = frame_to_index(paddr);
+        {
+            &&& Self::get_from_in_use_success_region_spec(paddr, pre, post)
+            &&& metadata_perm.frac() == 1
+            &&& metadata_perm.id() == post.slot_owners[idx].metadata_perm.id()
+            &&& Self::perms_related(*post.slots[idx], metadata_perm.resource())
         }
     }
 

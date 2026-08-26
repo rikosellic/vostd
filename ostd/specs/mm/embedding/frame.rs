@@ -91,7 +91,7 @@ pub axiom fn frame_from_in_use_embedded(
     ensures
         final(regions).inv(),
         !valid_frame_paddr(paddr) ==> res is None,
-        res is Some ==> MetaSlot::get_from_in_use_success(paddr, *old(regions), *final(regions)),
+        res is Some ==> MetaSlot::get_from_in_use_success_region_spec(paddr, *old(regions), *final(regions)),
         res is None ==> *final(regions) == *old(regions),
         res is Some ==> {
             let so = final(regions).slot_owner(paddr);
@@ -201,10 +201,8 @@ pub(super) proof fn from_in_use_step(
         final(regions).inv(),
         !valid_frame_paddr(paddr) ==> res is None,
         res matches Some(e) ==> e.paddr == paddr,
-        res is Some ==> MetaSlot::get_from_in_use_success(paddr, *old(regions), *final(regions)),
+        res is Some ==> MetaSlot::get_from_in_use_success_region_spec(paddr, *old(regions), *final(regions)),
         res is None ==> *final(regions) == *old(regions),
-        // 2b: surface the acquired slot's liveness — see
-        // [`frame_from_in_use_embedded`].
         res is Some ==> {
             let so = final(regions).slot_owner(paddr);
             &&& so.ref_count() != REF_COUNT_UNUSED

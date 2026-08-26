@@ -61,6 +61,7 @@ impl<'a, M: ?Sized> Frame<M> {
     /// `ManuallyDrop<Frame>` values embedded in `FrameRef`.
     #[verifier::inline]
     pub open spec fn ptr_inv(self) -> bool {
+        &&& valid_frame_paddr(meta_to_frame(self.ptr.addr()))
         &&& self.ptr.addr() % META_SLOT_SIZE == 0
         &&& FRAME_METADATA_RANGE.start <= self.ptr.addr() < FRAME_METADATA_RANGE.start
             + MAX_NR_PAGES * META_SLOT_SIZE
@@ -95,16 +96,10 @@ impl<'a, M: ?Sized> Frame<M> {
 
 impl<M: ?Sized> Inv for Frame<M> {
     open spec fn inv(self) -> bool {
-        let metadata_perm = self.metadata_perm();
         &&& self.ptr_inv()
         &&& self.tracked_metadata_perm@ is Some
         &&& self.frac_metadata_perm().frac() == 1
-        &&& metadata_perm.storage_perm.is_init()
-        &&& metadata_perm.storage_perm.id()
-            == self.tracked_slot_perm@.value().storage.id()
-        &&& metadata_perm.vtable_ptr_perm.is_init()
-        &&& metadata_perm.vtable_ptr_perm.pptr()
-            == self.tracked_slot_perm@.value().vtable_ptr
+        &&& MetaSlot::perms_related(self.slot_perm(), self.metadata_perm())
     }
 }
 
@@ -136,7 +131,7 @@ impl<M: ?Sized> Frame<M> {
 }
 
 impl<M: ?Sized> Frame<M> {
-    /// Relates this `Frame` handle to its metadata in the supplied region.
+    /// Relates this `Frame` handle to its metadata in the metadata region.
     pub open spec fn wf_with_region(self, s: MetaRegionOwners) -> bool {
         let idx = self.index();
         let slot_own = s.slot_owners[idx];

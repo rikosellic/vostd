@@ -525,12 +525,10 @@ impl MetaSlot {
         ensures
             final(regions).inv(),
             res matches Ok(ptr) ==> {
-                &&& Self::get_from_in_use_success(paddr, *old(regions), *final(regions))
+                &&& Self::get_from_in_use_success_spec(paddr, *old(regions), *final(regions), permission@->0)
                 &&& valid_frame_paddr(paddr)
                 &&& permission@ is Some
                 &&& ptr == old(regions).slots[frame_to_index(paddr)].pptr()
-                &&& permission@->0.frac() == 1
-                &&& permission@->0.id() == final(regions).slot_owner(paddr).metadata_perm.id()
             },
             res is Err ==> {
                 &&& *final(regions) == *old(regions)
