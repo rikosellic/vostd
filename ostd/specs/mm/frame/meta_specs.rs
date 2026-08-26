@@ -197,8 +197,6 @@ impl MetaSlot {
     }
 
     pub open spec fn inc_ref_count_spec(&self, pre: MetaSlotModel) -> (MetaSlotModel)
-        recommends
-            pre.status == MetaSlotStatus::SHARED,
     {
         MetaSlotModel { ref_count: (pre.ref_count + 1) as u64, ..pre }
     }
