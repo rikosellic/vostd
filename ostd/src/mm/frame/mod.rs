@@ -30,6 +30,7 @@
 //! as well, leaving the handle only a pointer to the metadata slot. Users
 //! can create custom metadata types by implementing the [`AnyFrameMeta`] trait.
 use vstd::atomic::PermissionU64;
+use vstd::map::assert_maps_equal_internal;
 use vstd::prelude::*;
 use vstd::simple_pptr::{self, PPtr};
 use vstd::{assert_maps_equal, assert_sets_equal};
