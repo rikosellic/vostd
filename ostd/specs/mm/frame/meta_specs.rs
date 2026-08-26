@@ -171,9 +171,8 @@ impl MetaSlot {
         post: MetaRegionOwners,
     ) -> bool {
         let idx = frame_to_index(paddr);
-        let pre_perms = pre.slot_owners[idx].ref_count();
         {
-            &&& post.slot_owners[idx].ref_count() == pre_perms + 1
+            &&& post.ref_count(idx) == pre.ref_count(idx) + 1
             &&& post.slot_owners[idx].ref_count_perm.id()
                 == pre.slot_owners[idx].ref_count_perm.id()
             &&& post.slot_owners[idx].metadata_perm.id() == pre.slot_owners[idx].metadata_perm.id()
