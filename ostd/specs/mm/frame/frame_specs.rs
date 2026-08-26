@@ -1,4 +1,3 @@
-use core::marker::PhantomData;
 use vstd::cell::CellId;
 
 use vstd::{prelude::*, simple_pptr};
@@ -67,22 +66,6 @@ impl<'a, M: ?Sized> Frame<M> {
             + MAX_NR_PAGES * META_SLOT_SIZE
         &&& self.slot_perm().pptr() == self.ptr
         &&& self.slot_perm().is_init()
-    }
-
-    /// Models an owning frame reconstructed from its raw representation.
-    pub open spec fn from_raw_parts_spec(
-        paddr: Paddr,
-        slot_perm: &'static vstd::simple_pptr::PointsTo<MetaSlot>,
-        metadata_perm: FracMetadataPerm,
-    ) -> Self {
-        Self {
-            ptr: vstd::simple_pptr::PPtr(frame_to_meta(paddr), PhantomData),
-            _marker: PhantomData,
-            #[cfg(verus_keep_ghost_body)]
-            tracked_slot_perm: Tracked(slot_perm),
-            #[cfg(verus_keep_ghost_body)]
-            tracked_metadata_perm: Tracked(Some(metadata_perm)),
-        }
     }
 
     // [`Frame::from_raw`] precondition

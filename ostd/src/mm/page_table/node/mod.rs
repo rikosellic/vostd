@@ -60,8 +60,7 @@ use crate::specs::mm::{
     frame::{
         mapping::{frame_to_index, lemma_frame_to_index_injective, meta_to_index},
         meta_owners::{
-            FracMetadataPerm, MetaSlotOwner, MetaSlotStorage, MetadataPerms, typed_meta_value,
-            typed_meta_wf,
+            FracMetadataPerm, MetaSlotOwner, MetadataPerms, typed_meta_value, typed_meta_wf,
         },
         meta_region_owners::MetaRegionOwners,
     },
@@ -576,20 +575,15 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                                 } else {
                                     permission is Some
                                 }
-                                &&& permission is Some ==> Frame::<
-                                    MetaSlotStorage,
-                                >::from_raw_parts_spec(
+                                &&& permission is Some ==> permission->0.frac() == 1
+                                &&& permission is Some ==> permission->0.id()
+                                    == regions.slot_owners[frame_to_index(
                                     future_pte.paddr(),
-                                    regions.slots[frame_to_index(future_pte.paddr())],
-                                    permission->0,
-                                ).inv()
-                                &&& permission is Some ==> Frame::<
-                                    MetaSlotStorage,
-                                >::from_raw_parts_spec(
-                                    future_pte.paddr(),
-                                    regions.slots[frame_to_index(future_pte.paddr())],
-                                    permission->0,
-                                ).wf_with_region(*regions)
+                                )].metadata_perm.id()
+                                &&& permission is Some ==> MetaSlot::perms_related(
+                                    *regions.slots[frame_to_index(future_pte.paddr())],
+                                    permission->0.resource(),
+                                )
                             }
                         }
                     } by {
@@ -622,8 +616,6 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                             } else {
                                 true
                             });
-                            if future_permission is Some {
-                            }
                         }
                     };
                 };
@@ -1307,16 +1299,13 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
                         } else {
                             permission is Some
                         }
-                        &&& permission is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
-                            pte.paddr(),
-                            regions.slots[frame_to_index(pte.paddr())],
-                            permission->0,
-                        ).inv()
-                        &&& permission is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
-                            pte.paddr(),
-                            regions.slots[frame_to_index(pte.paddr())],
-                            permission->0,
-                        ).wf_with_region(regions)
+                        &&& permission is Some ==> permission->0.frac() == 1
+                        &&& permission is Some ==> permission->0.id()
+                            == regions.slot_owners[frame_to_index(pte.paddr())].metadata_perm.id()
+                        &&& permission is Some ==> MetaSlot::perms_related(
+                            *regions.slots[frame_to_index(pte.paddr())],
+                            permission->0.resource(),
+                        )
                     }
                 }
             }

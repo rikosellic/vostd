@@ -19,7 +19,7 @@ use crate::specs::{
 
 use crate::mm::{
     Paddr, Vaddr,
-    frame::{AnyFrameMeta, Frame, Segment},
+    frame::{AnyFrameMeta, Segment, meta::MetaSlot},
     paddr_to_vaddr,
 };
 
@@ -87,13 +87,10 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
             #![trigger frame_to_index((self.range().start + i * PAGE_SIZE) as usize)]
             0 <= i < seg_nframes(self.range()) ==> {
                 let idx = frame_to_index((self.range().start + i * PAGE_SIZE) as usize);
-                let frame = Frame::<M>::from_raw_parts_spec(
-                    (self.range().start + i * PAGE_SIZE) as usize,
-                    self.slot_perms()[i],
-                    self.permissions()[i],
-                );
-                &&& frame.inv()
-                &&& frame.wf_with_region(regions)
+                &&& self.slot_perms()[i] == regions.slots[idx]
+                &&& self.permissions()[i].frac() == 1
+                &&& self.permissions()[i].id() == regions.slot_owners[idx].metadata_perm.id()
+                &&& MetaSlot::perms_related(*self.slot_perms()[i], self.permissions()[i].resource())
                 &&& regions.contains(idx)
                 &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
                 &&& 0 < regions.slot_owners[idx].ref_count()
@@ -118,13 +115,10 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
         ensures
             ({
                 let idx = frame_to_index((self.range().start + i * PAGE_SIZE) as usize);
-                let frame = Frame::<M>::from_raw_parts_spec(
-                    (self.range().start + i * PAGE_SIZE) as usize,
-                    self.slot_perms()[i],
-                    self.permissions()[i],
-                );
-                &&& frame.inv()
-                &&& frame.wf_with_region(regions)
+                &&& self.slot_perms()[i] == regions.slots[idx]
+                &&& self.permissions()[i].frac() == 1
+                &&& self.permissions()[i].id() == regions.slot_owners[idx].metadata_perm.id()
+                &&& MetaSlot::perms_related(*self.slot_perms()[i], self.permissions()[i].resource())
                 &&& regions.contains(idx)
                 &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
                 &&& 0 < regions.slot_owners[idx].ref_count()

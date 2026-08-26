@@ -17,10 +17,7 @@ use crate::specs::{
 
 use crate::mm::{
     PagingConstsTrait, Vaddr,
-    frame::{
-        Frame,
-        meta::{REF_COUNT_MAX, REF_COUNT_UNUSED},
-    },
+    frame::meta::{MetaSlot, REF_COUNT_MAX, REF_COUNT_UNUSED},
     page_table::*,
 };
 
@@ -184,20 +181,13 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         // inv clause vacuous.
         &&& C::tracked(item) ==> regions.slot_owners[idx].ref_count() <= REF_COUNT_MAX
         &&& C::tracked(item) ==> C::item_permission(item) is Some
-        &&& C::tracked(item) ==> Frame::<
-            crate::specs::mm::frame::meta_owners::MetaSlotStorage,
-        >::from_raw_parts_spec(
-            pa,
-            regions.slots[frame_to_index(pa)],
-            C::item_permission(item)->0,
-        ).inv()
-        &&& C::tracked(item) ==> Frame::<
-            crate::specs::mm::frame::meta_owners::MetaSlotStorage,
-        >::from_raw_parts_spec(
-            pa,
-            regions.slots[frame_to_index(pa)],
-            C::item_permission(item)->0,
-        ).wf_with_region(regions)
+        &&& C::tracked(item) ==> C::item_permission(item)->0.frac() == 1
+        &&& C::tracked(item) ==> C::item_permission(item)->0.id()
+            == regions.slot_owners[idx].metadata_perm.id()
+        &&& C::tracked(item) ==> MetaSlot::perms_related(
+            *regions.slots[idx],
+            C::item_permission(item)->0.resource(),
+        )
         &&& !C::tracked(item) ==> C::item_permission(
             item,
         ) is None

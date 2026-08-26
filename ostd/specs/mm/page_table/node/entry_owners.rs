@@ -10,7 +10,7 @@ use crate::specs::{
     mm::{
         frame::{
             mapping::{frame_to_index, index_to_meta, meta_to_index},
-            meta_owners::{FracMetadataPerm, MetaSlotStorage, PageUsage},
+            meta_owners::{FracMetadataPerm, PageUsage},
             meta_region_owners::MetaRegionOwners,
         },
         page_table::{node::entry_view::*, *},
@@ -20,11 +20,8 @@ use crate::specs::{
 use crate::arch::mm::PagingConsts;
 use crate::mm::{
     Paddr, PagingConstsTrait, PagingLevel, Vaddr,
-    frame::{
-        Frame,
-        meta::{
-            MetaSlot, REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED, mapping::meta_to_frame,
-        },
+    frame::meta::{
+        MetaSlot, REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED, mapping::meta_to_frame,
     },
     page_prop::PageProperty,
     page_table::*,
@@ -608,16 +605,13 @@ impl<C: PageTableConfig> EntryOwner<C> {
             }
             &&& regions.slot_owners[idx].paths_in_pt.contains(self.path)
             &&& self.frame_sub_pages_valid(regions)
-            &&& self.frame_permission() is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
-                self.frame().mapped_pa,
-                regions.slots[idx],
-                self.frame_permission()->0,
-            ).inv()
-            &&& self.frame_permission() is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
-                self.frame().mapped_pa,
-                regions.slots[idx],
-                self.frame_permission()->0,
-            ).wf_with_region(regions)
+            &&& self.frame_permission() is Some ==> self.frame_permission()->0.frac() == 1
+            &&& self.frame_permission() is Some ==> self.frame_permission()->0.id()
+                == regions.slot_owners[idx].metadata_perm.id()
+            &&& self.frame_permission() is Some ==> MetaSlot::perms_related(
+                *regions.slots[idx],
+                self.frame_permission()->0.resource(),
+            )
         } else {
             true
         }
@@ -753,7 +747,6 @@ impl<C: PageTableConfig> EntryOwner<C> {
             if self.is_node() {
                 assert(self.node().meta_wf(r1));
                 assert(self.node().metaregion_sound_node(r1));
-            } else if self.is_frame() && self.frame_permission() is Some {
             }
         }
         if self.is_frame() && self.parent_level > 1 {

@@ -477,26 +477,18 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         requires
             self.ptr_inv(),
             Self::from_raw_requires(*old(regions), self.start_paddr_spec()),
-            Self::from_raw_parts_spec(
-                self.start_paddr_spec(),
-                old(regions).slots[self.index()],
-                *frame_permission,
-            ).inv(),
-            Self::from_raw_parts_spec(
-                self.start_paddr_spec(),
-                old(regions).slots[self.index()],
-                *frame_permission,
-            ).wf_with_region(*old(regions)),
+            frame_permission.frac() == 1,
+            frame_permission.id() == old(regions).slot_owners[self.index()].metadata_perm.id(),
+            MetaSlot::perms_related(
+                *old(regions).slots[self.index()],
+                frame_permission.resource(),
+            ),
         ensures
             *final(regions) == *old(regions),
             res.inner@.ptr.addr() == self.ptr.addr(),
             res.inner@.ptr_inv(),
     )]
     pub(in crate::mm) fn borrow_with_permission<'a>(&self) -> FrameRef<'a, M> {
-        proof {
-            crate::specs::mm::frame::mapping::lemma_meta_to_paddr_biinjective(self.ptr.addr());
-            assert(regions.slots[self.index()].addr() == self.ptr.addr());
-        }
         unsafe {
             #[verus_spec(with Tracked(regions))]
             FrameRef::borrow_paddr(self.start_paddr())

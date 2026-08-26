@@ -11,13 +11,13 @@ use crate::specs::arch::*;
 use crate::specs::mm::page_table::{cursor::*, *};
 use crate::specs::task::InAtomicMode;
 
-use crate::mm::frame::Frame;
-use crate::mm::frame::meta::{MetaSlot, REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED};
+use crate::mm::frame::meta::{
+    MetaSlot, REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED, mapping::frame_to_meta,
+};
 use crate::mm::kspace::kvirt_area::disable_preempt;
 use crate::specs::mm::{
     frame::{
-        mapping::frame_to_index,
-        meta_owners::{FracMetadataPerm, MetaSlotStorage},
+        mapping::frame_to_index, meta_owners::FracMetadataPerm,
         meta_region_owners::MetaRegionOwners,
     },
     page_table::{
@@ -280,16 +280,11 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             permission is Some <==> Self::tracked(
                 Self::item_from_raw_spec(paddr, level, prop, None, None),
             ),
-            permission is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
-                paddr,
-                old(regions).slots[frame_to_index(paddr)],
-                permission->0,
-            ).inv(),
-            permission is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
-                paddr,
-                old(regions).slots[frame_to_index(paddr)],
-                permission->0,
-            ).wf_with_region(*old(regions)),
+            permission is Some ==> permission->0.frac() == 1,
+            permission is Some ==> MetaSlot::perms_related(
+                *old(regions).slots[frame_to_index(paddr)],
+                permission->0.resource(),
+            ),
         ensures
             *final(regions) == *old(regions),
             Self::item_well_formed(res),
@@ -388,11 +383,10 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             permission is Some <==> Self::tracked(
                 Self::item_from_raw_spec(pa, level, prop, None, None),
             ),
-            permission is Some ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
-                pa,
-                slot_perm->0,
-                permission->0,
-            ).inv(),
+            permission is Some ==> slot_perm->0.addr() == frame_to_meta(pa),
+            permission is Some ==> slot_perm->0.is_init(),
+            permission is Some ==> permission->0.frac() == 1,
+            permission is Some ==> MetaSlot::perms_related(*slot_perm->0, permission->0.resource()),
         ensures
             Self::item_well_formed(
                 Self::item_from_raw_spec(pa, level, prop, slot_perm, permission),
@@ -530,16 +524,13 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             Self::tracked(item) ==> Self::item_slot_perm(item) == Some(
                 regions.slots[frame_to_index(pa)],
             ),
-            Self::tracked(item) ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
-                pa,
-                regions.slots[frame_to_index(pa)],
-                Self::item_permission(item)->0,
-            ).inv(),
-            Self::tracked(item) ==> Frame::<MetaSlotStorage>::from_raw_parts_spec(
-                pa,
-                regions.slots[frame_to_index(pa)],
-                Self::item_permission(item)->0,
-            ).wf_with_region(regions),
+            Self::tracked(item) ==> Self::item_permission(item)->0.frac() == 1,
+            Self::tracked(item) ==> Self::item_permission(item)->0.id()
+                == regions.slot_owners[frame_to_index(pa)].metadata_perm.id(),
+            Self::tracked(item) ==> MetaSlot::perms_related(
+                *regions.slots[frame_to_index(pa)],
+                Self::item_permission(item)->0.resource(),
+            ),
             !Self::tracked(item) ==> Self::item_permission(item) is None,
             !Self::tracked(item) ==> Self::item_slot_perm(item) is None,
             // Saturation aborts (Arc-style) via `inc_ref_count`'s diverging panic.

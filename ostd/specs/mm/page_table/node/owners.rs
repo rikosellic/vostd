@@ -21,10 +21,7 @@ use crate::specs::{
 use crate::arch::mm::PagingConsts;
 use crate::mm::{
     Paddr, PagingConstsTrait, PagingLevel, Vaddr,
-    frame::{
-        Frame,
-        meta::{META_SLOT_SIZE, MetaSlot, mapping::meta_to_frame},
-    },
+    frame::meta::{META_SLOT_SIZE, MetaSlot, mapping::meta_to_frame},
     kspace::{FRAME_METADATA_RANGE, LINEAR_MAPPING_BASE_VADDR, VMALLOC_BASE_VADDR},
     paddr_to_vaddr,
     page_table::{PageTableGuard, *},
@@ -298,16 +295,7 @@ impl<C: PageTableConfig> NodeOwner<C> {
     pub open spec fn metaregion_sound_node(self, regions: MetaRegionOwners) -> bool {
         let idx = self.slot_index;
         &&& regions.contains(idx)
-        &&& Frame::<PageTablePageMeta<C>>::from_raw_parts_spec(
-            meta_to_frame(self.meta_vaddr()),
-            regions.slots[idx],
-            self.frame_permission,
-        ).inv()
-        &&& Frame::<PageTablePageMeta<C>>::from_raw_parts_spec(
-            meta_to_frame(self.meta_vaddr()),
-            regions.slots[idx],
-            self.frame_permission,
-        ).wf_with_region(regions)
+        &&& self.frame_permission.id() == regions.slot_owners[idx].metadata_perm.id()
         &&& self.meta_wf(regions)
         &&& self.meta_value(regions).wf(self.meta_own)
         &&& self.level == self.meta_value(regions).level
