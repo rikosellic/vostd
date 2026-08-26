@@ -444,16 +444,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     /// - **Correctness**: The system context is unchanged.
     #[verus_spec(res =>
         with
-            Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            Tracked(regions): Tracked<&MetaRegionOwners>,
         requires
             self.inv(),
-            old(regions).inv(),
-            self.wf_with_region(*old(regions)),
-            0 < old(regions).slot_owners[self.index()].ref_count() <= REF_COUNT_MAX,
+            regions.inv(),
+            self.wf_with_region(*regions),
+            0 < regions.ref_count(self.index()) <= REF_COUNT_MAX,
         ensures
-            final(regions).inv(),
             res.inner@.ptr.addr() == self.ptr.addr(),
-            *final(regions) == *old(regions),
     )]
     pub fn borrow<'a>(&self) -> FrameRef<'a, M> {
         proof {

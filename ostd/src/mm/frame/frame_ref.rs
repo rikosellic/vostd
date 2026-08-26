@@ -37,20 +37,16 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'_, M> {
     /// remains tied to the lifetime of that handle.
     #[verus_spec(r =>
         with
-            Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            Tracked(regions): Tracked<&MetaRegionOwners>,
         requires
-            Frame::<M>::from_raw_requires(*old(regions), raw),
+            Frame::<M>::from_raw_requires(*regions, raw),
         ensures
-            final(regions).inv(),
             r.inner@.ptr.addr() == frame_to_meta(raw),
             r.inner@.ptr_inv(),
-            final(regions).slot_owners == old(regions).slot_owners,
-            final(regions).slots == old(regions).slots,
-            *final(regions) == *old(regions),
     )]
     pub(in crate::mm) unsafe fn borrow_paddr(raw: Paddr) -> Self {
         proof {
-            old(regions).lemma_contains_valid_frame_paddr(raw);
+            regions.lemma_contains_valid_frame_paddr(raw);
         }
         let tracked slot_perm = regions.tracked_borrow_slot(raw);
 
