@@ -1017,7 +1017,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
     )]
     #[verifier::spinoff_prover]
     #[verifier::loop_isolation(false)]
-    #[verifier::rlimit(50)]
+    #[verifier::rlimit(200)]
     pub fn slice(&self, range: &Range<usize>) -> Self {
         assert!(range.start % PAGE_SIZE == 0 && range.end % PAGE_SIZE == 0);
         assert!(range.start <= range.end && range.end <= self.size());
