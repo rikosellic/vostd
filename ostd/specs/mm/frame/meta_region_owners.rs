@@ -110,7 +110,6 @@ impl MetaRegionOwners {
         Self { slot_owners: self.slot_owners.insert(index, owner), ..self }
     }
 
-    #[verifier::inline]
     pub open spec fn ref_count(self, i: int) -> (res: u64)
         recommends
             0 <= i < max_meta_slots(),
