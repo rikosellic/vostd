@@ -110,6 +110,7 @@ impl MetaRegionOwners {
         Self { slot_owners: self.slot_owners.insert(index, owner), ..self }
     }
 
+    #[verifier::inline]
     pub open spec fn ref_count(self, i: int) -> (res: u64)
         recommends
             0 <= i < max_meta_slots(),
@@ -177,10 +178,7 @@ impl MetaRegionOwners {
             self.inv(),
         ensures
             *ret == old(self).slot_owner(paddr),
-            *final(self) == (Self {
-                slot_owners: old(self).slot_owners.insert(frame_to_index(paddr), *final(ret)),
-                ..*old(self)
-            }),
+            *final(self) == old(self).insert_slot_owner(paddr, *final(ret)),
     {
         self.lemma_contains_valid_frame_paddr(paddr);
         self.slot_owners.tracked_borrow_mut(frame_to_index(paddr))

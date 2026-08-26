@@ -1142,8 +1142,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 C::item_permission(item),
             ) == item,
             C::item_permission(item) == self.cur_entry_owner().frame_permission(),
-            C::tracked(item) ==> C::item_slot_perm(item)
-                == Some(regions.slots[frame_to_index(pa)]),
+            C::tracked(item) ==> C::item_slot_perm(item) == Some(regions.slots[frame_to_index(pa)]),
             !C::tracked(item) ==> C::item_slot_perm(item) is None,
             valid_frame_paddr(pa),
             C::raw_item_well_formed(pa, level, prop),

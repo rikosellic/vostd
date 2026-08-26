@@ -32,6 +32,7 @@
 use vstd::atomic::PermissionU64;
 use vstd::prelude::*;
 use vstd::simple_pptr::{self, PPtr};
+use vstd::{assert_maps_equal, assert_sets_equal};
 use vstd_extra::cast_ptr::*;
 use vstd_extra::drop_tracking::*;
 use vstd_extra::ownership::*;
@@ -327,6 +328,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Frame<M> {
         MetaSlot::get_from_in_use(paddr);
         match res {
             Ok(ptr) => {
+                proof {
+                    regions.lemma_contains_valid_frame_paddr(paddr);
+                }
                 let tracked slot_perm = regions.tracked_borrow_slot(paddr);
                 Ok(
                     Self {
@@ -527,7 +531,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
             r == self.start_paddr_spec(),
             raw_permission@.frac() == 1,
             raw_permission@.id() == self.frac_metadata_perm().id(),
-            MetaSlot::perms_related(self.slot_perm(),raw_permission@),
+            MetaSlot::perms_related(self.slot_perm(), raw_permission@.resource()),
     )]
     pub(in crate::mm) fn into_raw(self) -> Paddr {
         broadcast use group_page_meta;
@@ -686,6 +690,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> RCClone for Frame<M> {
             #[verus_spec(with Tracked(perm))]
             inc_frame_ref_count(paddr)
         };
+        proof {
+            assert_sets_equal!(perm.slot_owners.dom(), old(perm).slot_owners.dom());
+        }
         let tracked frame_permission = tracked_permission.get();
         let tracked slot_perm = perm.tracked_borrow_slot(paddr);
 
@@ -881,54 +888,10 @@ impl TryFrom<Frame<dyn AnyFrameMeta>> for UFrame {
             >= REF_COUNT_MAX ==> may_panic(),
     ensures
         final(regions).inv(),
-        final(regions).slot_owner(paddr).ref_count() == old(
-            regions,
-        ).slot_owner(paddr).ref_count() + 1,
-        final(regions).slot_owner(paddr).ref_count_perm.id() == old(
-            regions,
-        ).slot_owner(paddr).ref_count_perm.id(),
-        final(regions).slot_owners[
-            frame_to_index(paddr)
-        ].metadata_perm.id() == old(regions).slot_owners[
-            frame_to_index(paddr)
-        ].metadata_perm.id(),
-        final(regions).slot_owners[
-            frame_to_index(paddr)
-        ].metadata_perm.frac() + 1 == old(regions).slot_owners[
-            frame_to_index(paddr)
-        ].metadata_perm.frac(),
-        final(regions).slot_owners[
-            frame_to_index(paddr)
-        ].metadata_perm@ == old(regions).slot_owners[
-            frame_to_index(paddr)
-        ].metadata_perm@,
         permission@.frac() == 1,
-        permission@.id() == final(regions).slot_owners[
-            frame_to_index(paddr)
-        ].metadata_perm.id(),
-        permission@.resource() == old(regions).slot_owners[
-            frame_to_index(paddr)
-        ].metadata_perm@,
-        final(regions).slot_owner(paddr).in_list_perm == old(
-            regions,
-        ).slot_owner(paddr).in_list_perm,
-        final(regions).slot_owner(paddr).paths_in_pt == old(
-            regions,
-        ).slot_owner(paddr).paths_in_pt,
-        final(regions).slot_owner(paddr).slot_vaddr == old(
-            regions,
-        ).slot_owner(paddr).slot_vaddr,
-        final(regions).slot_owner(paddr).usage == old(
-            regions,
-        ).slot_owner(paddr).usage,
-        final(regions).slots == old(regions).slots,
-        forall|i: int|
-            i != frame_to_index(paddr) ==> (#[trigger] final(regions).slot_owners[i] == old(
-                regions,
-            ).slot_owners[i]),
-        final(regions).slot_owners.dom() == old(regions).slot_owners.dom(),
-        // Linear-drop pilot: refcount bump doesn't touch segment or frame
-        // obligation ledgers.
+        permission@.id() == final(regions).slot_owner(paddr).metadata_perm.id(),
+        permission@.resource() == old(regions).slot_owner(paddr).metadata_perm@,
+        MetaSlot::get_from_in_use_success_region_spec(paddr,*old(regions),*final(regions)),
 )]
 pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) -> (permission: Tracked<
     FracMetadataPerm,

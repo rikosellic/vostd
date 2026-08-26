@@ -40,14 +40,16 @@ global layout MetaSlot is size == 64, align == 8;
 impl MetaSlot {
     /// The relation between the [`MetaSlot`] permission and a metadata permission fraction.
     #[verifier::inline]
-    pub open spec fn perms_related(slot_perm: vstd::simple_pptr::PointsTo<MetaSlot>, metadata_perm: MetadataPerms) -> bool
-    {
+    pub open spec fn perms_related(
+        slot_perm: vstd::simple_pptr::PointsTo<MetaSlot>,
+        metadata_perm: MetadataPerms,
+    ) -> bool {
         &&& metadata_perm.storage_perm.is_init()
         &&& metadata_perm.vtable_ptr_perm.is_init()
         &&& slot_perm.value().storage.id() == metadata_perm.storage_perm.id()
         &&& slot_perm.value().vtable_ptr == metadata_perm.vtable_ptr_perm.pptr()
     }
-    
+
     pub proof fn lemma_layout()
         ensures
             core::mem::size_of::<MetaSlot>() == META_SLOT_SIZE,
@@ -186,8 +188,7 @@ impl MetaSlot {
             &&& post.ref_count(idx) == pre.ref_count(idx) + 1
             &&& post_owner.ref_count_perm.id() == pre_owner.ref_count_perm.id()
             &&& post_owner.metadata_perm.id() == pre_owner.metadata_perm.id()
-            &&& post_owner.metadata_perm.frac() + 1
-                == pre_owner.metadata_perm.frac()
+            &&& post_owner.metadata_perm.frac() + 1 == pre_owner.metadata_perm.frac()
             &&& post_owner.metadata_perm@ == pre_owner.metadata_perm@
             &&& post_owner.in_list_perm == pre_owner.in_list_perm
             &&& post_owner.slot_vaddr == pre_owner.slot_vaddr
@@ -221,8 +222,7 @@ impl MetaSlot {
         &&& owner.paths_in_pt.is_empty()
     }
 
-    pub open spec fn inc_ref_count_spec(&self, pre: MetaSlotModel) -> (MetaSlotModel)
-    {
+    pub open spec fn inc_ref_count_spec(&self, pre: MetaSlotModel) -> (MetaSlotModel) {
         MetaSlotModel { ref_count: (pre.ref_count + 1) as u64, ..pre }
     }
 }

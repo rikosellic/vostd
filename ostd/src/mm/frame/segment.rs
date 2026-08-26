@@ -261,9 +261,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                         old_paddr,
                         slot_perms[i],
                         permissions[i],
-                    ).wf_with_region(
-                        *perm,
-                    )
+                    ).wf_with_region(*perm)
                     &&& perm.contains(idx)
                     &&& perm.slot_owners[idx].slot_vaddr == index_to_meta(idx)
                     &&& perm.slot_owners[idx].ref_count() > 0
@@ -1113,9 +1111,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                         old_paddr,
                         slot_perms[j],
                         permissions[j],
-                    ).wf_with_region(
-                        *regions,
-                    )
+                    ).wf_with_region(*regions)
                     &&& regions.contains(idx)
                     &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
                     &&& regions.slot_owners[idx].ref_count() > 0
@@ -1267,9 +1263,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 #[cfg(verus_keep_ghost_body)]
                 tracked_permissions: Tracked(self.tracked_permissions@.subrange(0, idx as int)),
                 #[cfg(verus_keep_ghost_body)]
-                tracked_slot_perms: Tracked(
-                    self.tracked_slot_perms@.subrange(0, idx as int),
-                ),
+                tracked_slot_perms: Tracked(self.tracked_slot_perms@.subrange(0, idx as int)),
             },
             Self {
                 range: at..self.end_paddr(),
@@ -1430,11 +1424,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> IteratorSpecImpl for Seg
 
     #[verifier::prophetic]
     closed spec fn remaining(&self) -> Seq<Self::Item> {
-        segment_iter_remaining::<M>(
-            self.range,
-            self.tracked_slot_perms@,
-            self.tracked_permissions@,
-        )
+        segment_iter_remaining::<M>(self.range, self.tracked_slot_perms@, self.tracked_permissions@)
     }
 
     #[verifier::prophetic]

@@ -1650,9 +1650,9 @@ unsafe impl PageTableConfig for UserPtConfig {
         item.frame.tracked_metadata_perm@
     }
 
-    open spec fn item_slot_perm(
-        item: Self::Item,
-    ) -> Option<&'static vstd::simple_pptr::PointsTo<crate::mm::frame::MetaSlot>> {
+    open spec fn item_slot_perm(item: Self::Item) -> Option<
+        &'static vstd::simple_pptr::PointsTo<crate::mm::frame::MetaSlot>,
+    > {
         Some(item.frame.tracked_slot_perm@)
     }
 

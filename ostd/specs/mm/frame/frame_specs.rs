@@ -1,5 +1,5 @@
 use core::marker::PhantomData;
-use vstd::{cell::CellId};
+use vstd::cell::CellId;
 
 use vstd::{prelude::*, simple_pptr};
 use vstd_extra::{cast_ptr::*, drop_tracking::TrackDrop, ownership::*};
@@ -8,7 +8,7 @@ use crate::specs::{
     arch::*,
     mm::frame::{
         mapping::{frame_to_index, meta_to_index},
-        meta_owners::{FracMetadataPerm, PageUsage, MetadataPerms},
+        meta_owners::{FracMetadataPerm, MetadataPerms, PageUsage},
         meta_region_owners::MetaRegionOwners,
     },
 };
@@ -33,7 +33,7 @@ impl<'a, M: ?Sized> Frame<M> {
     pub open spec fn frac_metadata_perm(self) -> FracMetadataPerm {
         self.tracked_metadata_perm@->0
     }
-    
+
     /// Accessor for the full metadata permission tracked by the fractional permission.
     #[verifier::inline]
     pub open spec fn metadata_perm(self) -> MetadataPerms {
@@ -56,7 +56,7 @@ impl<'a, M: ?Sized> Frame<M> {
     pub open spec fn storage_id(self) -> CellId {
         self.slot_perm().value().storage.id()
     }
-    
+
     /// Address-related invariant shared by owning frames and non-owning
     /// `ManuallyDrop<Frame>` values embedded in `FrameRef`.
     #[verifier::inline]

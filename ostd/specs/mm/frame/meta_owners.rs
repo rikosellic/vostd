@@ -188,24 +188,29 @@ pub tracked struct MetaSlotOwner {
 }
 
 impl MetaSlotOwner {
+    #[verifier::inline]
     pub open spec fn same_permissions(self, other: Self) -> bool {
         &&& self.metadata_perm == other.metadata_perm
         &&& self.ref_count_perm == other.ref_count_perm
         &&& self.in_list_perm == other.in_list_perm
     }
 
+    #[verifier::inline]
     pub open spec fn ref_count(self) -> u64 {
         self.ref_count_perm.value()
     }
 
+    #[verifier::inline]
     pub open spec fn metadata_perms(self) -> MetadataPerms {
         self.metadata_perm.resource()
     }
 
+    #[verifier::inline]
     pub open spec fn storage_perm(self) -> pcell_maybe_uninit::PointsTo<MetaSlotStorage> {
         self.metadata_perms().storage_perm
     }
 
+    #[verifier::inline]
     pub open spec fn vtable_ptr_perm(self) -> vstd::simple_pptr::PointsTo<usize> {
         self.metadata_perms().vtable_ptr_perm
     }

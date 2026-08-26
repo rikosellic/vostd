@@ -233,9 +233,9 @@ unsafe impl PageTableConfig for KernelPtConfig {
         }
     }
 
-    open spec fn item_slot_perm(
-        item: Self::Item,
-    ) -> Option<&'static vstd::simple_pptr::PointsTo<crate::mm::frame::MetaSlot>> {
+    open spec fn item_slot_perm(item: Self::Item) -> Option<
+        &'static vstd::simple_pptr::PointsTo<crate::mm::frame::MetaSlot>,
+    > {
         match item {
             MappedItem::Tracked(frame, _) => Some(frame.tracked_slot_perm@),
             MappedItem::Untracked(_, _, _) => None,
