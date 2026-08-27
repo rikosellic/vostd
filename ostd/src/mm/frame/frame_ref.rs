@@ -9,11 +9,14 @@ use vstd_extra::prelude::*;
 
 use crate::mm::frame::meta::mapping::frame_to_meta;
 
-use crate::specs::{arch::valid_frame_paddr, mm::frame::{
-    mapping::meta_to_index,
-    meta_owners::{FracMetadataPerm, MetaSlotStorage},
-    meta_region_owners::MetaRegionOwners,
-}};
+use crate::specs::{
+    arch::valid_frame_paddr,
+    mm::frame::{
+        mapping::meta_to_index,
+        meta_owners::{FracMetadataPerm, MetaSlotStorage},
+        meta_region_owners::MetaRegionOwners,
+    },
+};
 
 use super::{
     Frame,
