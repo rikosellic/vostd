@@ -43,7 +43,7 @@ pub tracked struct UniqueFrameOwner<M: AnyFrameMeta + ?Sized + Repr<MetaSlotStor
     pub meta_own: M::Owner,
     pub repr_perm: Option<M::ReprPerm>,
     /// The complete permission for the metadata contents.
-    pub metadata_perms: Option<MetadataPerms>,
+    pub metadata_perms: Option<MetadataPerm>,
     pub ghost slot_index: int,
 }
 
@@ -165,7 +165,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
     pub open spec fn from_unused_owner(
         meta_own: M::Owner,
         repr_perm: M::ReprPerm,
-        metadata_perms: MetadataPerms,
+        metadata_perms: MetadataPerm,
         slot_index: int,
     ) -> Self {
         Self {
@@ -179,7 +179,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
     pub proof fn tracked_from_unused_owner(
         tracked meta_own: M::Owner,
         tracked repr_perm: M::ReprPerm,
-        tracked metadata_perms: MetadataPerms,
+        tracked metadata_perms: MetadataPerm,
         slot_index: int,
     ) -> (tracked res: Self)
         returns
@@ -220,7 +220,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
         }
     }
 
-    pub proof fn tracked_borrow_metadata_perms(tracked &self) -> tracked &MetadataPerms
+    pub proof fn tracked_borrow_metadata_perm(tracked &self) -> tracked &MetadataPerm
         requires
             self.metadata_perms is Some,
         returns
@@ -229,8 +229,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
         self.metadata_perms.tracked_borrow()
     }
 
-    pub proof fn tracked_borrow_mut_metadata_perms(tracked &mut self) -> (tracked res:
-        &mut MetadataPerms)
+    pub proof fn tracked_borrow_mut_metadata_perm(tracked &mut self) -> (tracked res:
+        &mut MetadataPerm)
         requires
             old(self).inv(),
         ensures
@@ -251,7 +251,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
     /// Mutably borrows both independently-owned parts needed by
     /// `borrow_meta_mut` in one operation.
     pub proof fn tracked_borrow_mut_meta_parts(tracked &mut self) -> (tracked res: (
-        &mut MetadataPerms,
+        &mut MetadataPerm,
         &mut M::ReprPerm,
     ))
         requires

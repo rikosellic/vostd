@@ -157,7 +157,7 @@ impl Repr<MetaSlotStorage> for MetaSlotStorage {
 }
 
 /// Permissions to access metadata.
-pub tracked struct MetadataPerms {
+pub tracked struct MetadataPerm {
     pub storage_perm: pcell_maybe_uninit::PointsTo<MetaSlotStorage>,
     pub vtable_ptr_perm: vstd::simple_pptr::PointsTo<usize>,
 }
@@ -165,10 +165,10 @@ pub tracked struct MetadataPerms {
 pub const REF_COUNT_MAX_USIZE: usize = REF_COUNT_MAX as usize;
 
 /// Fractional metadata permission.
-pub type FracMetadataPerm = Count<MetadataPerms, REF_COUNT_MAX_USIZE>;
+pub type FracMetadataPerm = Count<MetadataPerm, REF_COUNT_MAX_USIZE>;
 
 /// The undistributed part of a metadata permission.
-pub type FracMetadataPermResource = CountResource<MetadataPerms, REF_COUNT_MAX_USIZE>;
+pub type FracMetadataPermResource = CountResource<MetadataPerm, REF_COUNT_MAX_USIZE>;
 
 /// Permissions that remain under the authority of `MetaRegionOwners`.
 ///
@@ -198,7 +198,7 @@ impl MetaSlotOwner {
         self.ref_count_perm.value()
     }
 
-    pub open spec fn metadata_perm(self) -> MetadataPerms {
+    pub open spec fn metadata_perm(self) -> MetadataPerm {
         self.metadata_perm.resource()
     }
 
@@ -210,7 +210,7 @@ impl MetaSlotOwner {
         self.metadata_perm().vtable_ptr_perm
     }
 
-    pub proof fn tracked_borrow_metadata_perms(tracked &self) -> (tracked res: &MetadataPerms)
+    pub proof fn tracked_borrow_metadata_perm(tracked &self) -> (tracked res: &MetadataPerm)
         requires
             !self.metadata_perm.is_resource_vacant(),
         returns
@@ -223,7 +223,7 @@ impl MetaSlotOwner {
 /// Well-formedness of a concrete metadata representation.
 pub open spec fn typed_meta_wf<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     slot_perm: vstd::simple_pptr::PointsTo<MetaSlot>,
-    metadata_perm: MetadataPerms,
+    metadata_perm: MetadataPerm,
     repr_perm: M::ReprPerm,
 ) -> bool {
     &&& slot_perm.is_init()
@@ -233,7 +233,7 @@ pub open spec fn typed_meta_wf<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
 
 /// The value of a concrete metadata.
 pub open spec fn typed_meta_value<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
-    metadata_perm: MetadataPerms,
+    metadata_perm: MetadataPerm,
     repr_perm: M::ReprPerm,
 ) -> M {
     M::from_repr_spec(metadata_perm.storage_perm.value(), repr_perm)
@@ -242,7 +242,7 @@ pub open spec fn typed_meta_value<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
 pub fn borrow_meta<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     ptr: cast_ptr::ReprPtr<MetaSlotStorage, M>,
     Tracked(slot_perm): Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>,
-    Tracked(metadata_perm): Tracked<&'a MetadataPerms>,
+    Tracked(metadata_perm): Tracked<&'a MetadataPerm>,
     Tracked(repr_perm): Tracked<&'a M::ReprPerm>,
 ) -> (res: &'a M)
     requires
@@ -258,7 +258,7 @@ pub fn borrow_meta<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>>(
 pub fn borrow_meta_mut<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     ptr: cast_ptr::ReprPtr<MetaSlotStorage, M>,
     Tracked(slot_perm): Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>,
-    Tracked(metadata_perms): Tracked<&'a mut MetadataPerms>,
+    Tracked(metadata_perms): Tracked<&'a mut MetadataPerm>,
     Tracked(repr_perm): Tracked<&'a mut M::ReprPerm>,
 ) -> (res: &'a mut M)
     requires
@@ -382,7 +382,7 @@ impl OwnerOf for MetaSlot {
 /// `Repr<MetaSlotStorage>` interpretation.
 pub exec fn write_metadata_into_storage<M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     cell: &pcell_maybe_uninit::PCell<MetaSlotStorage>,
-    Tracked(metadata_perms): Tracked<&mut MetadataPerms>,
+    Tracked(metadata_perms): Tracked<&mut MetadataPerm>,
     Tracked(repr_perm): Tracked<&mut M::ReprPerm>,
     metadata: M,
 )

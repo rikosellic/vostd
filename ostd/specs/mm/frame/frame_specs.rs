@@ -7,7 +7,7 @@ use crate::specs::{
     arch::*,
     mm::frame::{
         mapping::{frame_to_index, meta_to_index},
-        meta_owners::{FracMetadataPerm, MetadataPerms, PageUsage},
+        meta_owners::{FracMetadataPerm, MetadataPerm, PageUsage},
         meta_region_owners::MetaRegionOwners,
     },
 };
@@ -35,7 +35,7 @@ impl<'a, M: ?Sized> Frame<M> {
 
     /// Accessor for the full metadata permission tracked by the fractional permission.
     #[verifier::inline]
-    pub open spec fn metadata_perm(self) -> MetadataPerms {
+    pub open spec fn metadata_perm(self) -> MetadataPerm {
         self.frac_metadata_perm().resource()
     }
 

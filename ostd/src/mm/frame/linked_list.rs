@@ -951,7 +951,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
 
         let tracked mut cur_own = owner.list_own.list.tracked_remove(owner.index);
         let tracked cur_repr_perm = owner.list_own.repr_perms.tracked_remove(owner.index);
-        let tracked cur_metadata_perms = owner.list_own.metadata_perms.tracked_remove(owner.index);
+        let tracked cur_metadata_perm = owner.list_own.metadata_perms.tracked_remove(owner.index);
 
         let (mut frame, Tracked(mut frame_own)) = unsafe {
             // SAFETY: The frame was forgotten when inserted into the linked list.
@@ -959,7 +959,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 Tracked(regions),
                 Tracked(cur_own),
                 Tracked(cur_repr_perm),
-                Tracked(cur_metadata_perms)
+                Tracked(cur_metadata_perm)
             )]
             UniqueFrame::<Link<M>>::from_raw(paddr)
         };
@@ -986,13 +986,13 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             let tracked prev_repr_perm = owner.list_own.repr_perms.tracked_borrow_mut(
                 owner.index - 1,
             );
-            let tracked prev_metadata_perms = owner.list_own.metadata_perms.tracked_borrow_mut(
+            let tracked prev_metadata_perm = owner.list_own.metadata_perms.tracked_borrow_mut(
                 owner.index - 1,
             );
             let prev_meta = borrow_meta_mut(
                 prev,
                 Tracked(prev_points_to),
-                Tracked(prev_metadata_perms),
+                Tracked(prev_metadata_perm),
                 Tracked(prev_repr_perm),
             );
             prev_meta.next = next_ptr;
@@ -1026,13 +1026,13 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             let ghost next_idx = meta_to_index(owner.list_own.list[owner.index].paddr);
             let tracked next_points_to = regions.slots.tracked_borrow(next_idx);
             let tracked next_repr_perm = owner.list_own.repr_perms.tracked_borrow_mut(owner.index);
-            let tracked next_metadata_perms = owner.list_own.metadata_perms.tracked_borrow_mut(
+            let tracked next_metadata_perm = owner.list_own.metadata_perms.tracked_borrow_mut(
                 owner.index,
             );
             let next_meta = borrow_meta_mut(
                 next,
                 Tracked(next_points_to),
-                Tracked(next_metadata_perms),
+                Tracked(next_metadata_perm),
                 Tracked(next_repr_perm),
             );
             next_meta.prev = prev_ptr;
@@ -1285,13 +1285,13 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 }
                 let tracked prev_points_to = regions.slots.tracked_borrow(prev_idx);
                 let tracked prev_repr_perm = owner.list_own.repr_perms.tracked_borrow_mut(nn - 1);
-                let tracked prev_metadata_perms = owner.list_own.metadata_perms.tracked_borrow_mut(
+                let tracked prev_metadata_perm = owner.list_own.metadata_perms.tracked_borrow_mut(
                     nn - 1,
                 );
                 let prev_meta = borrow_meta_mut(
                     prev,
                     Tracked(prev_points_to),
-                    Tracked(prev_metadata_perms),
+                    Tracked(prev_metadata_perm),
                     Tracked(prev_repr_perm),
                 );
                 prev_meta.next = Some(frame_ptr);
@@ -1299,12 +1299,12 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 let ghost current_idx = meta_to_index(owner.list_own.list[nn].paddr);
                 let tracked current_points_to = regions.slots.tracked_borrow(current_idx);
                 let tracked current_repr_perm = owner.list_own.repr_perms.tracked_borrow_mut(nn);
-                let tracked current_metadata_perms =
+                let tracked current_metadata_perm =
                     owner.list_own.metadata_perms.tracked_borrow_mut(nn);
                 let current_meta = borrow_meta_mut(
                     current,
                     Tracked(current_points_to),
-                    Tracked(current_metadata_perms),
+                    Tracked(current_metadata_perm),
                     Tracked(current_repr_perm),
                 );
                 current_meta.prev = Some(frame_ptr);
@@ -1315,12 +1315,12 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 let ghost current_idx = meta_to_index(owner.list_own.list[nn].paddr);
                 let tracked current_points_to = regions.slots.tracked_borrow(current_idx);
                 let tracked current_repr_perm = owner.list_own.repr_perms.tracked_borrow_mut(nn);
-                let tracked current_metadata_perms =
+                let tracked current_metadata_perm =
                     owner.list_own.metadata_perms.tracked_borrow_mut(nn);
                 let current_meta = borrow_meta_mut(
                     current,
                     Tracked(current_points_to),
-                    Tracked(current_metadata_perms),
+                    Tracked(current_metadata_perm),
                     Tracked(current_repr_perm),
                 );
                 current_meta.prev = Some(frame_ptr);
@@ -1337,13 +1337,13 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 }
                 let tracked back_points_to = regions.slots.tracked_borrow(back_idx);
                 let tracked back_repr_perm = owner.list_own.repr_perms.tracked_borrow_mut(nn - 1);
-                let tracked back_metadata_perms = owner.list_own.metadata_perms.tracked_borrow_mut(
+                let tracked back_metadata_perm = owner.list_own.metadata_perms.tracked_borrow_mut(
                     nn - 1,
                 );
                 let back_meta = borrow_meta_mut(
                     back,
                     Tracked(back_points_to),
-                    Tracked(back_metadata_perms),
+                    Tracked(back_metadata_perm),
                     Tracked(back_repr_perm),
                 );
                 back_meta.next = Some(frame_ptr);
@@ -1380,12 +1380,12 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
 
         proof {
             let tracked frame_repr_perm = frame_own.repr_perm.tracked_take();
-            let tracked frame_metadata_perms = frame_own.metadata_perms.tracked_take();
+            let tracked frame_metadata_perm = frame_own.metadata_perms.tracked_take();
             CursorOwner::<M>::tracked_list_insert(
                 owner,
                 &mut frame_own.meta_own,
                 frame_repr_perm,
-                frame_metadata_perms,
+                frame_metadata_perm,
                 list_id,
             );
 

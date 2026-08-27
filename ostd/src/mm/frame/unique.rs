@@ -10,7 +10,7 @@ use vstd_extra::ownership::*;
 use crate::specs::arch::*;
 use crate::specs::mm::frame::{
     mapping::{frame_to_index, group_page_meta, index_to_meta, max_meta_slots, meta_to_index},
-    meta_owners::{MetaSlotStorage, MetadataPerms, borrow_meta, borrow_meta_mut},
+    meta_owners::{MetaSlotStorage, MetadataPerm, borrow_meta, borrow_meta_mut},
     meta_region_owners::MetaRegionOwners,
     unique::UniqueFrameOwner,
 };
@@ -250,7 +250,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         borrow_meta(
             ReprPtr::<MetaSlotStorage, M>::from_pptr(PPtr::from_addr(self.ptr.addr())),
             Tracked(points_to),
-            Tracked(owner.tracked_borrow_metadata_perms()),
+            Tracked(owner.tracked_borrow_metadata_perm()),
             Tracked(owner.tracked_borrow_repr_perm()),
         )
     }
@@ -485,7 +485,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(meta_own): Tracked<M::Owner>,
             Tracked(repr_perm): Tracked<M::ReprPerm>,
-            Tracked(metadata_perms): Tracked<MetadataPerms>,
+            Tracked(metadata_perms): Tracked<MetadataPerm>,
         requires
             valid_frame_paddr(paddr),
             old(regions).inv(),

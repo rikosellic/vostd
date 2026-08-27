@@ -256,16 +256,16 @@ impl<C: PageTableConfig> Inv for NodeOwner<C> {
 }
 
 impl<C: PageTableConfig> NodeOwner<C> {
-    pub proof fn tracked_borrow_frame_metadata_perms(
+    pub proof fn tracked_borrow_frame_metadata_perm(
         tracked permission: &FracMetadataPerm,
-    ) -> (tracked res: &MetadataPerms)
+    ) -> (tracked res: &MetadataPerm)
         ensures
             *res == permission.resource(),
     {
         permission.tracked_borrow()
     }
 
-    pub proof fn tracked_borrow_metadata_perms(tracked &self) -> (tracked res: &MetadataPerms)
+    pub proof fn tracked_borrow_metadata_perm(tracked &self) -> (tracked res: &MetadataPerm)
         ensures
             *res == self.frame_permission.resource(),
     {

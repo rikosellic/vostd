@@ -29,7 +29,7 @@ use crate::mm::{
 };
 
 use super::meta_owners::{
-    FracMetadataPerm, MetaSlotModel, MetaSlotOwner, MetaSlotStatus, MetaSlotStorage, MetadataPerms,
+    FracMetadataPerm, MetaSlotModel, MetaSlotOwner, MetaSlotStatus, MetaSlotStorage, MetadataPerm,
     PageUsage,
 };
 
@@ -42,7 +42,7 @@ impl MetaSlot {
     #[verifier::inline]
     pub open spec fn perms_related(
         slot_perm: vstd::simple_pptr::PointsTo<MetaSlot>,
-        metadata_perm: MetadataPerms,
+        metadata_perm: MetadataPerm,
     ) -> bool {
         &&& metadata_perm.storage_perm.is_init()
         &&& metadata_perm.vtable_ptr_perm.is_init()
@@ -107,7 +107,7 @@ impl MetaSlot {
         pre: MetaRegionOwners,
         post: MetaRegionOwners,
         repr_perm: M::ReprPerm,
-        permissions: (Option<FracMetadataPerm>, Option<MetadataPerms>),
+        permissions: (Option<FracMetadataPerm>, Option<MetadataPerm>),
     ) -> bool {
         let idx = frame_to_index(paddr);
         let metadata_perms = if as_unique {

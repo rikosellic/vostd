@@ -383,7 +383,7 @@ impl MetaSlot {
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(repr_perm): Tracked<&mut M::ReprPerm>,
-            -> permissions: Tracked<(Option<FracMetadataPerm>, Option<MetadataPerms>)>
+            -> permissions: Tracked<(Option<FracMetadataPerm>, Option<MetadataPerm>)>
         requires
             old(regions).inv(),
         ensures
@@ -726,7 +726,7 @@ impl MetaSlot {
     /// The caller must have exclusive access to the metadata slot's storage in order to provide the permission token.
     #[verus_spec(
         with
-            Tracked(metadata_perms): Tracked<&mut MetadataPerms>,
+            Tracked(metadata_perms): Tracked<&mut MetadataPerm>,
             Tracked(repr_perm): Tracked<&mut M::ReprPerm>,
         requires
             self.storage.id() == old(metadata_perms).storage_perm.id(),
@@ -858,7 +858,7 @@ impl MetaSlot {
         with
             Tracked(ref_count_perm): Tracked<&PermissionU64>,
             Tracked(in_list_perm): Tracked<&PermissionU64>,
-            Tracked(metadata_perms): Tracked<&mut MetadataPerms>,
+            Tracked(metadata_perms): Tracked<&mut MetadataPerm>,
         requires
             self.ref_count.id() == ref_count_perm.id(),
             ref_count_perm.value() == 0 || ref_count_perm.value() == REF_COUNT_UNIQUE,

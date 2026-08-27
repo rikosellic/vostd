@@ -60,7 +60,7 @@ use crate::specs::mm::{
     frame::{
         mapping::{frame_to_index, lemma_frame_to_index_injective, meta_to_index},
         meta_owners::{
-            FracMetadataPerm, MetaSlotOwner, MetadataPerms, typed_meta_value, typed_meta_wf,
+            FracMetadataPerm, MetaSlotOwner, MetadataPerm, typed_meta_value, typed_meta_wf,
         },
         meta_region_owners::MetaRegionOwners,
     },
@@ -669,7 +669,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
         let tracked points_to = regions.slots.tracked_borrow(owner.slot_index);
         #[verus_spec(with
             Tracked(points_to),
-            Tracked(owner.tracked_borrow_metadata_perms()),
+            Tracked(owner.tracked_borrow_metadata_perm()),
             Tracked(&())
         )]
         let meta = self.meta();
@@ -933,7 +933,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         let tracked points_to = regions.slots.tracked_borrow(owner.slot_index);
         #[verus_spec(with
             Tracked(points_to),
-            Tracked(owner.tracked_borrow_metadata_perms()),
+            Tracked(owner.tracked_borrow_metadata_perm()),
             Tracked(&())
         )]
         let meta = self.meta();
@@ -945,7 +945,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     #[verus_spec(res =>
         with
             Tracked(points_to): Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>,
-            Tracked(metadata_perms): Tracked<&'a MetadataPerms>,
+            Tracked(metadata_perms): Tracked<&'a MetadataPerm>,
             Tracked(repr_perm): Tracked<&'a ()>,
             Ghost(stray_id): Ghost<vstd::cell::CellId>,
         requires
@@ -1065,7 +1065,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     #[verus_spec(res =>
         with
             Tracked(points_to): Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>,
-            Tracked(metadata_perms): Tracked<&'a MetadataPerms>,
+            Tracked(metadata_perms): Tracked<&'a MetadataPerm>,
             Ghost(nr_children_id): Ghost<vstd::cell::CellId>,
         requires
             old(self).inner.inner@.ptr.addr() == points_to.addr(),

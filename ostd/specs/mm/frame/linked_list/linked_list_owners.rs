@@ -242,7 +242,7 @@ pub tracked struct LinkedListOwner<M: AnyFrameMeta + Repr<MetaSlotSmall>> {
     pub repr_perms: Seq<LinkInnerPerms<M>>,
     /// Exclusive metadata permissions for the unique frames stored in the
     /// list.
-    pub metadata_perms: Seq<MetadataPerms>,
+    pub metadata_perms: Seq<MetadataPerm>,
     pub ghost list_id: u64,
     pub ghost _marker: core::marker::PhantomData<M>,
 }
@@ -970,7 +970,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
             res == *old(owner),
             final(owner).list == Seq::<LinkOwner>::empty(),
             final(owner).repr_perms == Seq::<LinkInnerPerms<M>>::empty(),
-            final(owner).metadata_perms == Seq::<MetadataPerms>::empty(),
+            final(owner).metadata_perms == Seq::<MetadataPerm>::empty(),
             final(owner).inv(),
     {
         let tracked mut tmp = crate::specs::mm::embedding::list_store::tracked_empty_list_owner::<
@@ -988,7 +988,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
         requires
             self.list =~= Seq::<LinkOwner>::empty(),
             self.repr_perms =~= Seq::<LinkInnerPerms<M>>::empty(),
-            self.metadata_perms =~= Seq::<MetadataPerms>::empty(),
+            self.metadata_perms =~= Seq::<MetadataPerm>::empty(),
     {
         unimplemented!()
     }
@@ -1132,7 +1132,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorOwner<M> {
         cursor: Self,
         link: LinkOwner,
         repr_perm: LinkInnerPerms<M>,
-        metadata_perms: MetadataPerms,
+        metadata_perms: MetadataPerm,
         list_id: u64,
     ) -> (Self, LinkOwner) {
         let link = LinkOwner { paddr: link.paddr, in_list: list_id };
@@ -1166,7 +1166,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorOwner<M> {
         tracked cursor: &mut Self,
         tracked link: &mut LinkOwner,
         tracked repr_perm: LinkInnerPerms<M>,
-        tracked metadata_perms: MetadataPerms,
+        tracked metadata_perms: MetadataPerm,
         list_id: u64,
     )
         requires

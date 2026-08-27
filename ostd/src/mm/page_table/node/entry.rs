@@ -388,7 +388,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             let tracked meta_points_to = regions.slots.tracked_borrow(parent_owner.slot_index);
             #[verus_spec(with
                 Tracked(meta_points_to),
-                Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perms(
+                Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
                     &parent_owner.frame_permission,
                 )),
                 Ghost(parent_owner.meta_own.nr_children.id())
@@ -403,7 +403,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             let tracked meta_points_to = regions.slots.tracked_borrow(parent_owner.slot_index);
             #[verus_spec(with
                 Tracked(meta_points_to),
-                Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perms(
+                Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
                     &parent_owner.frame_permission,
                 )),
                 Ghost(parent_owner.meta_own.nr_children.id())
@@ -656,7 +656,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             let tracked meta_points_to = regions.slots.tracked_borrow(parent_owner.slot_index);
             #[verus_spec(with
                 Tracked(meta_points_to),
-                Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perms(
+                Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
                     &parent_owner.frame_permission,
                 )),
                 Ghost(parent_owner.meta_own.nr_children.id())
@@ -1561,7 +1561,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             let tracked meta_points_to = regions.slots.tracked_borrow(parent_owner.slot_index);
             #[verus_spec(with
                 Tracked(meta_points_to),
-                Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perms(
+                Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
                     &parent_owner.frame_permission,
                 )),
                 Ghost(parent_owner.meta_own.nr_children.id())
@@ -1576,7 +1576,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             let tracked meta_points_to = regions.slots.tracked_borrow(parent_owner.slot_index);
             #[verus_spec(with
                 Tracked(meta_points_to),
-                Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perms(
+                Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
                     &parent_owner.frame_permission,
                 )),
                 Ghost(parent_owner.meta_own.nr_children.id())
@@ -1807,7 +1807,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         let tracked meta_points_to = regions.slots.tracked_borrow(parent_owner.slot_index);
         #[verus_spec(with
             Tracked(meta_points_to),
-            Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perms(
+            Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
                 &parent_owner.frame_permission,
             )),
             Ghost(parent_owner.meta_own.nr_children.id())
@@ -1933,7 +1933,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         let tracked meta_points_to = regions.slots.tracked_borrow(parent_owner.slot_index);
         #[verus_spec(with
             Tracked(meta_points_to),
-            Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perms(
+            Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
                 &parent_owner.frame_permission,
             )),
             Ghost(parent_owner.meta_own.nr_children.id())

@@ -52,7 +52,7 @@ use crate::specs::{
             CursorOwner, LinkInnerPerms, LinkOwner, LinkedListOwner, MetaSlotSmall,
         },
         mapping::{frame_to_index, meta_to_index},
-        meta_owners::{MetadataPerms, PageUsage},
+        meta_owners::{MetadataPerm, PageUsage},
         meta_region_owners::MetaRegionOwners,
         unique::UniqueFrameOwner,
     },
@@ -208,12 +208,12 @@ pub proof fn tracked_empty_list_owner<M: AnyFrameMeta + Repr<MetaSlotSmall>>() -
     ensures
         res.list =~= Seq::<LinkOwner>::empty(),
         res.repr_perms =~= Seq::<LinkInnerPerms<M>>::empty(),
-        res.metadata_perms =~= Seq::<MetadataPerms>::empty(),
+        res.metadata_perms =~= Seq::<MetadataPerm>::empty(),
         res.list_id == 0,
 {
     let tracked list = Seq::<LinkOwner>::tracked_empty();
     let tracked repr_perms = Seq::<LinkInnerPerms<M>>::tracked_empty();
-    let tracked metadata_perms = Seq::<MetadataPerms>::tracked_empty();
+    let tracked metadata_perms = Seq::<MetadataPerm>::tracked_empty();
     let tracked res = LinkedListOwner::<M> {
         list,
         repr_perms,
