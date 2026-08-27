@@ -629,8 +629,11 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             };
             self.pte = new_pte;
 
+            let tracked new_node_value = new_node_owner.tracked_borrow_value();
+            let tracked new_node = new_node_value.tracked_borrow_node();
+            let tracked slot_perm = *regions.slots.tracked_borrow(new_node.slot_index);
             let pt_ref = unsafe {
-                #[verus_spec(with Tracked(regions))]
+                #[verus_spec(with Tracked(slot_perm), Tracked(&new_node.frame_permission))]
                 PageTableNodeRef::borrow_paddr(paddr)
             };
 
@@ -880,8 +883,11 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
         }
 
+        let tracked new_owner_value = new_owner.tracked_borrow_value();
+        let tracked new_node = new_owner_value.tracked_borrow_node();
+        let tracked slot_perm = *regions.slots.tracked_borrow(new_node.slot_index);
         let pt_ref = unsafe {
-            #[verus_spec(with Tracked(regions))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(&new_node.frame_permission))]
             PageTableNodeRef::borrow_paddr(paddr)
         };
 
@@ -1772,8 +1778,11 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
 
         }
 
+        let tracked new_node_value = new_node_owner.tracked_borrow_value();
+        let tracked new_node = new_node_value.tracked_borrow_node();
+        let tracked slot_perm = *regions.slots.tracked_borrow(new_node.slot_index);
         let pt_ref = unsafe {
-            #[verus_spec(with Tracked(regions))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(&new_node.frame_permission))]
             PageTableNodeRef::borrow_paddr(paddr)
         };
 

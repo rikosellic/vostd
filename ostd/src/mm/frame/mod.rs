@@ -443,24 +443,17 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     /// - **Correctness**: The function returns a reference to the frame.
     /// - **Correctness**: The system context is unchanged.
     #[verus_spec(res =>
-        with
-            Tracked(regions): Tracked<&MetaRegionOwners>,
         requires
             self.inv(),
-            regions.inv(),
-            self.wf_with_region(*regions),
-            0 < regions.ref_count(self.index()) <= REF_COUNT_MAX,
         ensures
             res.inner@.ptr.addr() == self.ptr.addr(),
     )]
     pub fn borrow<'a>(&self) -> FrameRef<'a, M> {
-        proof {
-            regions.lemma_contains_valid_frame_paddr(self.start_paddr_spec());
-        }
-
         // SAFETY: Both the lifetime and the type matches `self`.
         unsafe {
-            #[verus_spec(with Tracked(regions))]
+            let tracked slot_perm = *self.tracked_slot_perm.borrow();
+            let tracked metadata_perm = self.tracked_metadata_perm.borrow().tracked_borrow();
+            #[verus_spec(with Tracked(slot_perm), Tracked(metadata_perm))]
             FrameRef::borrow_paddr(self.start_paddr())
         }
     }
@@ -471,24 +464,29 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     #[verus_spec(res =>
         with
             Tracked(frame_permission): Tracked<&FracMetadataPerm>,
-            Tracked(regions): Tracked<&mut MetaRegionOwners>,
+            Tracked(regions): Tracked<&MetaRegionOwners>,
         requires
             self.ptr_inv(),
-            Self::from_raw_requires(*old(regions), self.start_paddr_spec()),
+            regions.inv(),
             frame_permission.frac() == 1,
-            frame_permission.id() == old(regions).slot_owners[self.index()].metadata_perm.id(),
+            frame_permission.id() == regions.slot_owners[self.index()].metadata_perm.id(),
             MetaSlot::perms_related(
-                *old(regions).slots[self.index()],
+                *regions.slots[self.index()],
                 frame_permission.resource(),
             ),
         ensures
-            *final(regions) == *old(regions),
             res.inner@.ptr.addr() == self.ptr.addr(),
             res.inner@.ptr_inv(),
     )]
     pub(in crate::mm) fn borrow_with_permission<'a>(&self) -> FrameRef<'a, M> {
         unsafe {
-            #[verus_spec(with Tracked(regions))]
+            proof {
+                broadcast use group_page_meta;
+
+                regions.lemma_contains_valid_frame_paddr(self.start_paddr_spec());
+            }
+            let tracked slot_perm = regions.tracked_borrow_slot(self.start_paddr_spec());
+            #[verus_spec(with Tracked(slot_perm), Tracked(frame_permission))]
             FrameRef::borrow_paddr(self.start_paddr())
         }
     }

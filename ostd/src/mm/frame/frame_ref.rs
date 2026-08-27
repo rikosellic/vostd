@@ -2,16 +2,18 @@
 use core::{marker::PhantomData, ops::Deref, ptr::NonNull};
 
 use vstd::prelude::*;
-use vstd::simple_pptr::PPtr;
+use vstd::simple_pptr::{PPtr, PointsTo};
 use vstd_extra::cast_ptr::Repr;
 use vstd_extra::drop_tracking::{ManuallyDrop, TrackDrop};
 use vstd_extra::prelude::*;
 
 use crate::mm::frame::meta::mapping::frame_to_meta;
 
-use crate::specs::mm::frame::{
-    mapping::meta_to_index, meta_owners::MetaSlotStorage, meta_region_owners::MetaRegionOwners,
-};
+use crate::specs::{arch::valid_frame_paddr, mm::frame::{
+    mapping::meta_to_index,
+    meta_owners::{FracMetadataPerm, MetaSlotStorage},
+    meta_region_owners::MetaRegionOwners,
+}};
 
 use super::{
     Frame,
@@ -37,19 +39,18 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'_, M> {
     /// remains tied to the lifetime of that handle.
     #[verus_spec(r =>
         with
-            Tracked(regions): Tracked<&MetaRegionOwners>,
+            Tracked(slot_perm): Tracked<&'static PointsTo<MetaSlot>>,
+            Tracked(metadata_perm): Tracked<&FracMetadataPerm>
         requires
-            Frame::<M>::from_raw_requires(*regions, raw),
+            valid_frame_paddr(raw),
+            MetaSlot::perms_related(*slot_perm,metadata_perm.resource()),
+            slot_perm.pptr().addr() == frame_to_meta(raw),
+            slot_perm.is_init(),
         ensures
             r.inner@.ptr.addr() == frame_to_meta(raw),
             r.inner@.ptr_inv(),
     )]
     pub(in crate::mm) unsafe fn borrow_paddr(raw: Paddr) -> Self {
-        proof {
-            regions.lemma_contains_valid_frame_paddr(raw);
-        }
-        let tracked slot_perm = regions.tracked_borrow_slot(raw);
-
         let frame = Frame::<M> {
             ptr: PPtr::<MetaSlot>::from_addr(frame_to_meta(raw)),
             _marker: PhantomData,

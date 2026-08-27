@@ -389,7 +389,13 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
         } else {
             // SAFETY: The node must be alive for at least `'rcu` since the
             // address is read from the page table node.
-            let node_ref = unsafe { PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr) };
+            let tracked cont = cursor_own.continuations.tracked_borrow(cursor_own.level - 1);
+            let tracked node_owner = cont.entry_own.tracked_borrow_node();
+            let tracked slot_perm = *regions.slots.tracked_borrow(node_owner.slot_index);
+            let node_ref = unsafe {
+                #[verus_spec(with Tracked(slot_perm), Tracked(&node_owner.frame_permission))]
+                PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr)
+            };
             node_ref.lock(guard)
         };
 
@@ -470,7 +476,13 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
     } else {
         // SAFETY: The node must be alive for at least `'rcu` since the
         // address is read from the page table node.
-        let node_ref = unsafe { PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr) };
+        let tracked cont = cursor_own.continuations.tracked_borrow(cursor_own.level - 1);
+        let tracked node_owner = cont.entry_own.tracked_borrow_node();
+        let tracked slot_perm = *regions.slots.tracked_borrow(node_owner.slot_index);
+        let node_ref = unsafe {
+            #[verus_spec(with Tracked(slot_perm), Tracked(&node_owner.frame_permission))]
+            PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr)
+        };
         node_ref.lock(guard)
     };
 

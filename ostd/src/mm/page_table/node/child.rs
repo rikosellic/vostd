@@ -216,22 +216,14 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
         if !pte.is_last(level) {
             proof {
                 broadcast use group_page_meta;
-
-                regions.lemma_contains_valid_frame_paddr(paddr);
             }
 
+            let tracked node_owner = entry_owner.tracked_borrow_node();
+            let tracked slot_perm = *regions.slots.tracked_borrow(node_owner.slot_index);
             let node = unsafe {
-                #[verus_spec(with Tracked(regions))]
+                #[verus_spec(with Tracked(slot_perm), Tracked(&node_owner.frame_permission))]
                 PageTableNodeRef::borrow_paddr(paddr)
             };
-
-            proof {
-                // `borrow_paddr` preserves the region maps, so every old slot key keeps
-                // the same permission value.
-                assert forall|k: int| old(regions).slots.contains_key(k) implies old(
-                    regions,
-                ).slots[k] == #[trigger] regions.slots[k] by {};
-            }
 
             return ChildRef::PageTable(node);
         }
