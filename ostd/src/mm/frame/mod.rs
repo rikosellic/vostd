@@ -230,15 +230,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
         if let Err(err) = from_unused {
             Err(err)
         } else {
-            let ptr = from_unused.unwrap();
-            let tracked frame_permission = permissions.0.tracked_unwrap();
-            proof {
+            proof_decl! {
+                let tracked slot_perm = regions.tracked_borrow_slot(paddr);
                 let ghost idx = frame_to_index(paddr);
-                assert(frame_to_index(paddr) < max_meta_slots());
                 assert(regions.slot_owners.contains_key(idx));
-                assert(Self::from_unused_spec(paddr, *old(regions), *regions));
             }
-            let tracked slot_perm = regions.tracked_borrow_slot(paddr);
+            let ptr = from_unused.unwrap();
             Ok(
                 Self {
                     ptr,
@@ -246,7 +243,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
                     #[cfg(verus_keep_ghost_body)]
                     tracked_slot_perm: Tracked(slot_perm),
                     #[cfg(verus_keep_ghost_body)]
-                    tracked_metadata_perm: Tracked(Some(frame_permission)),
+                    tracked_metadata_perm: Tracked(permissions.0),
                 },
             )
         }
@@ -449,10 +446,10 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
             res.inner@.ptr.addr() == self.ptr.addr(),
     )]
     pub fn borrow<'a>(&self) -> FrameRef<'a, M> {
+        let tracked slot_perm = *self.tracked_slot_perm.borrow();
+        let tracked metadata_perm = self.tracked_metadata_perm.borrow().tracked_borrow();
         // SAFETY: Both the lifetime and the type matches `self`.
         unsafe {
-            let tracked slot_perm = *self.tracked_slot_perm.borrow();
-            let tracked metadata_perm = self.tracked_metadata_perm.borrow().tracked_borrow();
             #[verus_spec(with Tracked(slot_perm), Tracked(metadata_perm))]
             FrameRef::borrow_paddr(self.start_paddr())
         }
