@@ -680,7 +680,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
     #[verus_spec(res =>
         with Tracked(parent_owner): Tracked<&mut NodeOwner<C>>,
              Tracked(regions): Tracked<&mut MetaRegionOwners>,
-             Tracked(guards): Tracked<&Guards<'rcu>>,
+             Tracked(guards): Tracked<&Guards>,
              Ghost(idx): Ghost<usize>,
                  -> owner: Tracked<OwnerSubtree<C>>,
         requires
@@ -798,8 +798,8 @@ impl<C: PageTableConfig> PageTableNode<C> {
 impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
     pub open spec fn locks_preserved_except<'rcu>(
         addr: usize,
-        guards0: Guards<'rcu>,
-        guards1: Guards<'rcu>,
+        guards0: Guards,
+        guards1: Guards,
     ) -> bool {
         &&& OwnerSubtree::implies(
             CursorOwner::<'rcu, C>::node_unlocked(guards0),
@@ -820,7 +820,7 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
     #[verifier::external_body]
     #[verus_spec(res =>
         with Tracked(owner): Tracked<&NodeOwner<C>>,
-            Tracked(guards): Tracked<&mut Guards<'rcu>>
+            Tracked(guards): Tracked<&mut Guards>
         requires
             self.inner@.invariants(*owner),
             old(guards).unlocked(owner.meta_vaddr()),
@@ -845,7 +845,7 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
     /// unless that guard was already forgotten.
     #[verus_spec(res =>
         with Tracked(owner): Tracked<&NodeOwner<C>>,
-             Tracked(guards): Tracked<&mut Guards<'rcu>>,
+             Tracked(guards): Tracked<&mut Guards>,
         requires
             self.inner@.invariants(*owner),
             old(guards).unlocked(owner.meta_vaddr()),

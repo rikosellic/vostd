@@ -155,7 +155,7 @@ impl<'a> VmSpace<'a> {
     #[verus_spec(r =>
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards<'rcu>>,
+            Tracked(guards): Tracked<&mut Guards>,
         requires
             old(regions).inv(),
     )]
@@ -179,7 +179,7 @@ impl<'a> VmSpace<'a> {
     #[verus_spec(r =>
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards<'rcu>>,
+            Tracked(guards): Tracked<&mut Guards>,
         requires
             old(regions).inv(),
         ensures
@@ -225,7 +225,7 @@ impl<'a> VmSpace<'a> {
             Tracked(owner): Tracked<PageTableOwner<UserPtConfig>>,
             Ghost(root_guard): Ghost<PageTableGuard<'a, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards<'a>>,
+            Tracked(guards): Tracked<&mut Guards>,
                 -> cursor_owner: Tracked<Option<CursorOwner<'a, UserPtConfig>>>,
         requires
             self.pt.relates_owner(owner, *old(regions)),
@@ -286,7 +286,7 @@ impl<'a> VmSpace<'a> {
             Tracked(owner): Tracked<PageTableOwner<UserPtConfig>>,
             Ghost(root_guard): Ghost<PageTableGuard<'a, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards<'a>>
+            Tracked(guards): Tracked<&mut Guards>
                 -> cursor_owner: Tracked<Option<CursorOwner<'a, UserPtConfig>>>,
         requires
             self.pt.relates_owner(owner, *old(regions)),
@@ -491,7 +491,7 @@ impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
         with
             Tracked(owner): Tracked<&mut CursorOwner<'rcu, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards<'rcu>>,
+            Tracked(guards): Tracked<&mut Guards>,
         requires
             old(self).0.invariants(*old(owner), *old(regions), *old(guards)),
             // Out-of-range is a graceful `Err`; the sole panic is cloning
@@ -547,7 +547,7 @@ impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
         with
             Tracked(owner): Tracked<&mut CursorOwner<'rcu, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards<'rcu>>,
+            Tracked(guards): Tracked<&mut Guards>,
         requires
             old(self).0.invariants(*old(owner), *old(regions), *old(guards)),
             old(self).0.find_next_panic_condition(len) ==> may_panic(),
@@ -595,7 +595,7 @@ impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
         with
             Tracked(owner): Tracked<&mut CursorOwner<'rcu, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards<'rcu>>,
+            Tracked(guards): Tracked<&mut Guards>,
         requires
             old(self).0.invariants(*old(owner), *old(regions), *old(guards)),
             // `CursorMut::jump` diverges on a misaligned `va` and may panic
@@ -666,7 +666,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
         with
             Tracked(owner): Tracked<&mut CursorOwner<'a, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards<'a>>,
+            Tracked(guards): Tracked<&mut Guards>,
         requires
             old(self).pt_cursor.0.invariants(*old(owner), *old(regions), *old(guards)),
             // Out-of-range → graceful `Err`; the sole panic is cloning the
@@ -717,7 +717,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
         with
             Tracked(owner): Tracked<&mut CursorOwner<'a, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards<'a>>,
+            Tracked(guards): Tracked<&mut Guards>,
         requires
             old(self).pt_cursor.0.invariants(*old(owner), *old(regions), *old(guards)),
             old(self).pt_cursor.0.find_next_panic_condition(len) ==> may_panic(),
@@ -767,7 +767,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
         with
             Tracked(owner): Tracked<&mut CursorOwner<'a, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards<'a>>
+            Tracked(guards): Tracked<&mut Guards>
         requires
             old(self).pt_cursor.0.invariants(*old(owner), *old(regions), *old(guards)),
             // `CursorMut::jump` diverges on a misaligned `va` and may panic
@@ -835,7 +835,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
             Tracked(cursor_owner): Tracked<&mut CursorOwner<'a, UserPtConfig>>,
             Tracked(entry_owner): Tracked<EntryOwner<UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards<'a>>,
+            Tracked(guards): Tracked<&mut Guards>,
             Tracked(tlb_model): Tracked<&mut TlbModel>,
         requires
             old(tlb_model).inv(),
@@ -925,7 +925,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
         with
             Tracked(cursor_owner): Tracked<&mut CursorOwner<'a, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards<'a>>,
+            Tracked(guards): Tracked<&mut Guards>,
             Tracked(tlb_model): Tracked<&mut TlbModel>,
         requires
             old(self).pt_cursor.0.invariants(*old(cursor_owner), *old(regions), *old(guards)),
@@ -1528,7 +1528,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
         with
             Tracked(owner): Tracked<&mut CursorOwner<'a, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards<'a>>,
+            Tracked(guards): Tracked<&mut Guards>,
         requires
             old(self).pt_cursor.0.invariants(*old(owner), *old(regions), *old(guards)),
             forall |p: PageProperty| op.requires((p,)),

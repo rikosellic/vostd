@@ -40,7 +40,7 @@ pub assume_specification<Idx: Clone>[ Range::<Idx>::clone ](range: &Range<Idx>) 
     with Tracked(pt_own): Tracked<PageTableOwner<C>>,
         Ghost(root_guard): Ghost<PageTableGuard<'rcu, C>>,
         Tracked(regions): Tracked<&mut MetaRegionOwners>,
-        Tracked(guards): Tracked<&mut Guards<'rcu>>
+        Tracked(guards): Tracked<&mut Guards>
     requires
         pt.relates_owner(pt_own, *old(regions)),
         pt_own.0.value().node().relate_guard(root_guard),
@@ -251,7 +251,7 @@ pub fn unlock_range<C: PageTableConfig, A: InAtomicMode>(cursor: &mut Cursor<'_,
 #[verus_spec(r =>
     with Tracked(cursor_own): Tracked<&mut CursorOwner<'rcu, C>>,
         Tracked(regions): Tracked<&mut MetaRegionOwners>,
-        Tracked(guards): Tracked<&mut Guards<'rcu>>
+        Tracked(guards): Tracked<&mut Guards>
     requires
         old(cursor_own).level == NR_LEVELS,
         old(cursor_own).continuations.dom().contains(NR_LEVELS - 1),
@@ -516,7 +516,7 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
 /// The function will forget all the [`PageTableGuard`] objects in the sub-tree.
 #[verus_spec(
     with Tracked(entry_own): Tracked<EntryOwner<C>>,
-        Tracked(guards): Tracked<&mut Guards<'rcu>>,
+        Tracked(guards): Tracked<&mut Guards>,
         Tracked(regions): Tracked<&mut MetaRegionOwners>
     requires
         entry_own.is_node(),
@@ -580,7 +580,7 @@ fn dfs_acquire_lock<'rcu, C: PageTableConfig, A: InAtomicMode>(
 /// and all guards are forgotten.
 #[verus_spec(
     with Tracked(entry_own): Tracked<EntryOwner<C>>,
-        Tracked(guards): Tracked<&mut Guards<'rcu>>
+        Tracked(guards): Tracked<&mut Guards>
 )]
 #[verifier::external_body]
 unsafe fn dfs_release_lock<'rcu, C: PageTableConfig, A: InAtomicMode>(
@@ -635,7 +635,7 @@ unsafe fn dfs_release_lock<'rcu, C: PageTableConfig, A: InAtomicMode>(
 /// top level nodes that the kernel space and user space share.
 #[verus_spec(res =>
     with Tracked(owner): Tracked<&mut CursorOwner<'a, C>>,
-        Tracked(guards): Tracked<&mut Guards<'a>>,
+        Tracked(guards): Tracked<&mut Guards>,
         Ghost(locked_addr): Ghost<usize>,
         Ghost(subtree_mappings_count): Ghost<nat>
     requires

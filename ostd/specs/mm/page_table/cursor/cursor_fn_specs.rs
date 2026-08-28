@@ -36,7 +36,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         self,
         owner: CursorOwner<'rcu, C>,
         regions: MetaRegionOwners,
-        guards: Guards<'rcu>,
+        guards: Guards,
     ) -> bool {
         &&& owner.inv()
         &&& self.inv()

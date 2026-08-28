@@ -1044,7 +1044,7 @@ impl PageTable<KernelPtConfig> {
     #[verus_spec(r =>
         with Tracked(kernel_owner): Tracked<&PageTableOwner<KernelPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards<'rcu>>,
+            Tracked(guards): Tracked<&mut Guards>,
         requires
             kernel_owner.inv(),
             old(regions).inv(),
@@ -1389,7 +1389,7 @@ impl<C: PageTableConfig> PageTable<C> {
     #[verus_spec(r =>
         with Tracked(owner): Tracked<&mut Option<PageTableOwner<C>>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards<'rcu>>,
+            Tracked(guards): Tracked<&mut Guards>,
         requires
             old(regions).inv(),
         ensures
@@ -1521,7 +1521,7 @@ impl<C: PageTableConfig> PageTable<C> {
         with Tracked(owner): Tracked<PageTableOwner<C>>,
             Ghost(root_guard): Ghost<PageTableGuard<'rcu, C>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards<'rcu>>
+            Tracked(guards): Tracked<&mut Guards>
         requires
             self.relates_owner(owner, *old(regions)),
             owner.0.value().node().relate_guard(root_guard),
@@ -1577,7 +1577,7 @@ impl<C: PageTableConfig> PageTable<C> {
         with Tracked(owner): Tracked<PageTableOwner<C>>,
             Ghost(root_guard): Ghost<PageTableGuard<'rcu, C>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards<'rcu>>
+            Tracked(guards): Tracked<&mut Guards>
         requires
             self.relates_owner(owner, *old(regions)),
             owner.0.value().node().relate_guard(root_guard),

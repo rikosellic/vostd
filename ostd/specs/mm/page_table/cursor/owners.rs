@@ -378,7 +378,7 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
         self.idx = (self.idx + 1) as usize;
     }
 
-    pub open spec fn node_locked(self, guards: Guards<'rcu>) -> bool {
+    pub open spec fn node_locked(self, guards: Guards) -> bool {
         guards.lock_held(self.guard.inner.inner@.ptr.addr())
     }
 
@@ -827,7 +827,7 @@ impl<'rcu, C: PageTableConfig> Inv for CursorOwner<'rcu, C> {
 }
 
 impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
-    pub open spec fn node_unlocked(guards: Guards<'rcu>) -> (spec_fn(
+    pub open spec fn node_unlocked(guards: Guards) -> (spec_fn(
         EntryOwner<C>,
         TreePath<NR_ENTRIES>,
     ) -> bool) {
@@ -835,7 +835,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             owner.is_node() ==> guards.unlocked(owner.node().meta_vaddr())
     }
 
-    pub open spec fn node_unlocked_except(guards: Guards<'rcu>, addr: usize) -> (spec_fn(
+    pub open spec fn node_unlocked_except(guards: Guards, addr: usize) -> (spec_fn(
         EntryOwner<C>,
         TreePath<NR_ENTRIES>,
     ) -> bool) {
@@ -863,11 +863,11 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.level - 1 <= i < NR_LEVELS ==> self.continuations[i].map_children(f)
     }
 
-    pub open spec fn children_not_locked(self, guards: Guards<'rcu>) -> bool {
+    pub open spec fn children_not_locked(self, guards: Guards) -> bool {
         self.map_only_children(Self::node_unlocked(guards))
     }
 
-    pub open spec fn only_current_locked(self, guards: Guards<'rcu>) -> bool {
+    pub open spec fn only_current_locked(self, guards: Guards) -> bool {
         self.map_only_children(
             Self::node_unlocked_except(guards, self.cur_entry_owner().node().meta_vaddr()),
         )
@@ -876,8 +876,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     pub proof fn never_drop_restores_children_not_locked(
         self,
         guard: PageTableGuard<'rcu, C>,
-        guards0: Guards<'rcu>,
-        guards1: Guards<'rcu>,
+        guards0: Guards,
+        guards1: Guards,
     )
         requires
             self.inv(),
@@ -903,8 +903,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     pub proof fn never_drop_restores_nodes_locked(
         self,
         guard: PageTableGuard<'rcu, C>,
-        guards0: Guards<'rcu>,
-        guards1: Guards<'rcu>,
+        guards0: Guards,
+        guards1: Guards,
     )
         requires
             self.inv(),
@@ -934,7 +934,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     /// is trusted to hold from the tracked restore operations in the caller.
     // protect_preserves_cursor_inv_metaregion moved to cursor_fn_lemmas.rs.
     // map_children_implies moved to tree_lemmas.rs.
-    pub open spec fn nodes_locked(self, guards: Guards<'rcu>) -> bool {
+    pub open spec fn nodes_locked(self, guards: Guards) -> bool {
         // Only the subtree rooted at `guard_level` and its descendants down to
         // `level` are actually locked (see `locking.rs`). The ghost
         // `continuations` chain extends above `guard_level` to the root, but

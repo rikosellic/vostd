@@ -216,7 +216,7 @@ fn collect_largest_pages(va: Vaddr, pa: Paddr, len: usize) -> alloc::vec::Vec<(P
     with
         Tracked(kernel_owner): Tracked<&mut Option<&PageTableOwner<KernelPtConfig>>>,
         Tracked(regions): Tracked<&MetaRegionOwners>,
-        Tracked(guards): Tracked<&Guards<'rcu>>,
+        Tracked(guards): Tracked<&Guards>,
     requires
         regions.inv(),
         old(kernel_owner)@ is Some ==> old(kernel_owner)@->0.inv(),
@@ -455,7 +455,7 @@ impl KVirtArea {
              Tracked(root_guard): Tracked<PageTableGuard<'a, KernelPtConfig>>,
              Tracked(entry_owners): Tracked<&mut Map<Paddr, EntryOwner<KernelPtConfig>>>,
              Tracked(regions): Tracked<&mut MetaRegionOwners>,
-             Tracked(guards): Tracked<&mut Guards<'a>>,
+             Tracked(guards): Tracked<&mut Guards>,
         requires
             Self::map_frames_bounds_panic_condition(area_size, map_offset, frames.len())
                 ==> may_panic(),
@@ -779,7 +779,7 @@ impl KVirtArea {
         with Tracked(owner): Tracked<KVirtAreaOwner>,
              Tracked(root_guard): Tracked<PageTableGuard<'a, KernelPtConfig>>,
              Tracked(regions): Tracked<&mut MetaRegionOwners>,
-             Tracked(guards): Tracked<&mut Guards<'a>>,
+             Tracked(guards): Tracked<&mut Guards>,
         requires
     // **Precise form** (post Phases A/B/C). Bounds are caller-
     // provable; OOM uses the implication form.

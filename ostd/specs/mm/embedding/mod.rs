@@ -553,7 +553,7 @@ pub tracked struct CursorEntry<'rcu> {
     pub ghost kind: CursorKind,
     pub ghost va: Range<Vaddr>,
     pub owner: CursorOwner<'rcu, UserPtConfig>,
-    pub guards: Guards<'rcu>,
+    pub guards: Guards,
 }
 
 impl<'rcu> CursorEntry<'rcu> {
@@ -5456,7 +5456,7 @@ pub proof fn tracked_cursor_entry_new<'rcu>(
     kind: CursorKind,
     va: Range<Vaddr>,
     tracked owner: CursorOwner<'rcu, UserPtConfig>,
-    tracked guards: Guards<'rcu>,
+    tracked guards: Guards,
 ) -> (tracked res: CursorEntry<'rcu>)
     ensures
         res.vm_space == vm_space,
