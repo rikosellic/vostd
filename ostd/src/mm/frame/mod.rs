@@ -542,7 +542,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
 }
 
 #[verus_verify]
-impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
+impl<M: ?Sized> Frame<M> {
     /// Gets the metadata slot of the frame.
     ///
     /// # Verified Properties
@@ -567,7 +567,10 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         }
         self.ptr.borrow(Tracked(slot_perm))
     }
+}
 
+#[verus_verify]
+impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     /// Restores a forgotten [`Frame`] from a physical address.
     ///
     /// # Safety
@@ -626,7 +629,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> RCClone for Frame<M> {
         &&& ref_count > 0
         &&& ref_count != REF_COUNT_UNUSED
         &&& ref_count >= REF_COUNT_MAX ==> may_panic()
-        &&& valid_frame_paddr(paddr)
     }
 
     open spec fn clone_ensures(
@@ -721,14 +723,12 @@ impl<M: ?Sized> Frame<M> {
         let mut this = self;
         proof_decl!{
             let ghost idx = this.index();
-            let tracked slot_perm = *this.tracked_slot_perm;
             let tracked slot_own = regions.tracked_borrow_mut_slot_owner(self.start_paddr_spec());
             let tracked frame_permission = this.tracked_metadata_perm.tracked_take();
             slot_own.metadata_perm.combine(frame_permission);
         }
 
-        let slot = this.ptr.borrow(Tracked(slot_perm));
-        let last_ref_cnt = slot.ref_count.fetch_sub(Tracked(&mut slot_own.ref_count_perm), 1);
+        let last_ref_cnt = this.slot().ref_count.fetch_sub(Tracked(&mut slot_own.ref_count_perm), 1);
 
         if last_ref_cnt == 1 {
             // A fence is needed here with the same reasons stated in the implementation of
@@ -737,7 +737,7 @@ impl<M: ?Sized> Frame<M> {
             // SAFETY: this is the last reference and is about to be dropped.
             unsafe {
                 #[verus_spec(with Tracked(slot_own))]
-                slot.drop_last_in_place()
+                this.slot().drop_last_in_place()
             };
 
             // TODO: return page to allocator
