@@ -42,7 +42,6 @@ use vstd::simple_pptr::PPtr;
 use vstd::atomic::PAtomicU8;
 use vstd_extra::array_ptr;
 use vstd_extra::cast_ptr::*;
-use vstd_extra::drop_tracking::{Drop as VerifiedDrop, TrackDrop};
 use vstd_extra::ghost_tree::*;
 use vstd_extra::ownership::*;
 
@@ -475,7 +474,7 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
 
                         regions.lemma_contains_valid_frame_paddr(paddr);
                     }
-                    VerifiedDrop::drop(frame, Tracked(regions), Tracked(()));
+                    frame.drop(Tracked(regions));
                     proof {
                         assert(Self::child_perms_embedding(*regions, removed_indices)) by {
                             assert forall|child_paddr: Paddr|

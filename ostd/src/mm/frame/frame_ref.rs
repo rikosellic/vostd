@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
-use core::{marker::PhantomData, ops::Deref, ptr::NonNull};
+use core::{marker::PhantomData, ops::Deref, ptr::NonNull, mem::ManuallyDrop};
 
 use vstd::prelude::*;
 use vstd::simple_pptr::{PPtr, PointsTo};
 use vstd_extra::cast_ptr::Repr;
-use vstd_extra::drop_tracking::{ManuallyDrop, TrackDrop};
 use vstd_extra::prelude::*;
 
 use crate::mm::frame::meta::mapping::frame_to_meta;
@@ -63,7 +62,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'_, M> {
             tracked_metadata_perm: Tracked(None),
         };
 
-        proof_with!(Tracked(()));
         let inner = ManuallyDrop::new(frame);
 
         Self { inner, _marker: PhantomData }
@@ -94,7 +92,7 @@ impl<M: AnyFrameMeta + ?Sized + Repr<MetaSlotStorage>> Deref for FrameRef<'_, M>
 /// raw pointers.
 ///
 /// [`Rcu`]: super::Rcu
-pub unsafe trait NonNullPtr: 'static + Sized + TrackDrop<State = MetaRegionOwners> {
+pub unsafe trait NonNullPtr: 'static + Sized {
     /// The target type that this pointer refers to.
     // TODO: Support `Target: ?Sized`.
     type Target;
@@ -114,8 +112,6 @@ pub unsafe trait NonNullPtr: 'static + Sized + TrackDrop<State = MetaRegionOwner
     /// be zero. In other words, the pointer is guaranteed to be aligned to
     /// `1 << Self::ALIGN_BITS`.
     fn into_raw(self, Tracked(regions): Tracked<&mut MetaRegionOwners>) -> PPtr<Self::Target>
-        requires
-            self.tracked_redeem_requires(*old(regions)),
     ;
 
     /// Converts back from a raw pointer.
@@ -174,7 +170,6 @@ unsafe impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + 'static> NonNullPtr for Fr
 
     fn into_raw(self, Tracked(regions): Tracked<&mut MetaRegionOwners>) -> PPtr<Self::Target> {
         let ptr = self.ptr;
-        #[verus_spec(with Tracked(()))]
         let _ = ManuallyDrop::new(self);
         PPtr::<Self::Target>::from_addr(ptr.addr())
     }
@@ -207,7 +202,6 @@ unsafe impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + 'static> NonNullPtr for Fr
             #[cfg(verus_keep_ghost_body)]
             tracked_metadata_perm: Tracked(None),
         };
-        #[verus_spec(with Tracked(()))]
         let dropped = ManuallyDrop::<Frame<M>>::new(frame);
         Self::Ref { inner: dropped, _marker: PhantomData }
     }

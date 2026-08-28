@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 //! This module specifies the type of the children of a page table node.
 use core::marker::PhantomData;
+use core::mem::ManuallyDrop;
 
 use vstd::prelude::*;
 use vstd::simple_pptr::PPtr;
@@ -17,7 +18,6 @@ use crate::specs::mm::frame::{
 };
 
 use vstd_extra::cast_ptr::*;
-use vstd_extra::drop_tracking::*;
 use vstd_extra::ownership::*;
 
 use crate::specs::*;
@@ -88,7 +88,6 @@ impl<C: PageTableConfig> Child<C> {
 
                 let paddr = node.start_paddr();
 
-                proof_with!(Tracked(()));
                 let _ = ManuallyDrop::new(node);
 
                 proof {

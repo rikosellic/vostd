@@ -35,7 +35,6 @@ use vstd::prelude::*;
 use vstd::simple_pptr::{self, PPtr};
 use vstd::{assert_maps_equal, assert_sets_equal};
 use vstd_extra::cast_ptr::*;
-use vstd_extra::drop_tracking::*;
 use vstd_extra::ownership::*;
 use vstd_extra::panic::may_panic;
 
@@ -53,6 +52,7 @@ pub use frame_ref::FrameRef;
 mod test;
 
 use core::{
+    mem::ManuallyDrop,
     marker::PhantomData,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -534,13 +534,15 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
             #[cfg(verus_keep_ghost_body)]
             tracked_metadata_perm: Tracked(None),
         };
-        proof_with!(Tracked(()));
         let _ = ManuallyDrop::new(raw_frame);
 
         proof_with!(|= Tracked(frame_permission));
         paddr
     }
+}
 
+#[verus_verify]
+impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     /// Gets the metadata slot of the frame.
     ///
     /// # Verified Properties
@@ -565,10 +567,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         }
         self.ptr.borrow(Tracked(slot_perm))
     }
-}
 
-#[verus_verify]
-impl<M> Frame<M> {
     /// Restores a forgotten [`Frame`] from a physical address.
     ///
     /// # Safety
@@ -693,36 +692,51 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> RCClone for Frame<M> {
     }
 }
 
-impl<M: ?Sized> Drop for Frame<M> {
-    fn drop(self, Tracked(regions): Tracked<&mut MetaRegionOwners>, Tracked(_obl): Tracked<()>) {
-        let ghost idx = self.index();
-        let ghost old_regions = *regions;
+/*
+impl<M: AnyFrameMeta + ?Sized> Drop for Frame<M> {
+    fn drop(&mut self) {
+        let last_ref_cnt = self.slot().ref_count.fetch_sub(1, Ordering::Release);
+        debug_assert!(last_ref_cnt != 0 && last_ref_cnt != REF_COUNT_UNUSED);
 
-        let tracked mut slot_own = regions.slot_owners.tracked_remove(idx);
-        let ghost old_metadata_id = slot_own.metadata_perm.id();
-        let tracked frame_permission = self.tracked_metadata_perm.get().tracked_unwrap();
-        proof {
-            slot_own.metadata_perm.combine(frame_permission);
-            assert(slot_own.metadata_perm.id() == old_metadata_id);
+        if last_ref_cnt == 1 {
+            // A fence is needed here with the same reasons stated in the implementation of
+            // `Arc::drop`: <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.drop>.
+            core::sync::atomic::fence(Ordering::Acquire);
+
+            // SAFETY: this is the last reference and is about to be dropped.
+            unsafe { self.slot().drop_last_in_place() };
+
+            allocator::get_global_frame_allocator().dealloc(self.start_paddr(), PAGE_SIZE);
         }
-        // Design B: a shared `Frame` is Arc-like; its `drop` only adjusts
-        // the refcount. The slot permission is *borrowed* from
-        // `regions.slots`, never moved out and back.
-        let tracked perm = regions.slots.tracked_borrow(idx);
-        let slot = self.ptr.borrow(Tracked(perm));
+    }
+}*/
 
-        // Snapshot of the slot's pre-drop state for the strengthened
-        // `drop_ensures` (refcount transition + identity preservation).
-        let ghost so0 = slot_own;
+impl<M: ?Sized> Frame<M> {
+    pub fn drop(self, Tracked(regions): Tracked<&mut MetaRegionOwners>)
+        requires
+            self.drop_requires(*old(regions)),
+        ensures
+            self.drop_ensures(*old(regions),*final(regions)),
+    {
+        let mut this = self;
+        proof_decl!{
+            let ghost idx = this.index();
+            let tracked slot_perm = *this.tracked_slot_perm;
+            let tracked slot_own = regions.tracked_borrow_mut_slot_owner(self.start_paddr_spec());
+            let tracked frame_permission = this.tracked_metadata_perm.tracked_take();
+            slot_own.metadata_perm.combine(frame_permission);
+        }
 
+        let slot = this.ptr.borrow(Tracked(slot_perm));
         let last_ref_cnt = slot.ref_count.fetch_sub(Tracked(&mut slot_own.ref_count_perm), 1);
 
         if last_ref_cnt == 1 {
             // A fence is needed here with the same reasons stated in the implementation of
             // `Arc::drop`: <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.drop>.
             acquire_fence();
+            // SAFETY: this is the last reference and is about to be dropped.
             unsafe {
-                #[verus_spec(with Tracked(&mut slot_own))]
+                #[verus_spec(with Tracked(slot_own))]
                 slot.drop_last_in_place()
             };
 
@@ -730,52 +744,15 @@ impl<M: ?Sized> Drop for Frame<M> {
             // allocator::get_global_frame_allocator().dealloc(paddr, PAGE_SIZE);
         }
         proof {
-            assert(slot_own.metadata_perm.id() == old_metadata_id);
-            regions.slot_owners.tracked_insert(idx, slot_own);
-            assert(regions.slot_owners[idx].metadata_perm.id()
-                == old_regions.slot_owners[idx].metadata_perm.id());
-
-            assert forall|i: int| i != idx implies #[trigger] regions.slot_owners[i]
-                == old_regions.slot_owners[i] by {}
-            assert(regions.slots == old_regions.slots);
-            assert(regions.slot_owners.dom() == old_regions.slot_owners.dom());
-
-            // Re-establish `regions.inv()` for the post-state. The
-            // tracked_insert at `idx` only touches that one entry; for other
-            // indices, the invariant carries over from `old_regions.inv()`.
-            // For `idx`, `slot_own.inv()` and the perm/slot agreement at
-            // `idx` are already asserted above.
-            assert forall|i: int|
-                0 <= i < max_meta_slots() <==> #[trigger] regions.contains(i) by {}
-
-            assert forall|i: int| #[trigger] regions.contains(i) implies i < max_meta_slots() by {
-                if i == idx {
-                    assert(regions.contains(idx));
+            assert_maps_equal!(
+                regions.slot_owners,
+                old(regions).slot_owners.insert(idx, regions.slot_owners[idx]),
+                i => {
+                    if i != idx {
+                        assert(regions.slot_owners[i] == old(regions).slot_owners[i]);
+                    }
                 }
-            }
-
-            assert forall|i: int| #[trigger] regions.contains(i) implies ({
-                &&& regions.contains(i)
-                &&& regions.slot_owners[i].inv()
-                &&& regions.slots[i].is_init()
-                &&& regions.slots[i].addr() == index_to_meta(i)
-                &&& regions.slots[i].value().wf(regions.slot_owners[i])
-                &&& regions.slot_owners[i].slot_vaddr == regions.slots[i].addr()
-            }) by {
-                if i == idx {
-                    assert(regions.slots[i].is_init());
-                    assert(regions.slots[i].addr() == index_to_meta(i));
-                    assert(regions.slots[i].value().wf(regions.slot_owners[i]));
-                    assert(regions.slot_owners[i].slot_vaddr == regions.slots[i].addr());
-                }
-            }
-
-            assert forall|i: int| #[trigger]
-                regions.contains(i) implies regions.slot_owners[i].inv() by {
-                if i == idx {
-                    assert(slot_own.inv());
-                }
-            }
+            );
         }
     }
 }
@@ -845,6 +822,12 @@ impl TryFrom<Frame<dyn AnyFrameMeta>> for UFrame {
 
 /// Increases the reference count of the frame by one.
 ///
+/// # Safety
+///
+/// The caller should ensure the following conditions:
+///  1. The physical address must represent a valid frame;
+///  2. The caller must have already held a reference to the frame.
+///
 /// # Verified Properties
 /// ## Preconditions
 /// - **Safety Invariant**: Metaslot region invariants must hold.
@@ -853,10 +836,6 @@ impl TryFrom<Frame<dyn AnyFrameMeta>> for UFrame {
 /// - **Safety Invariant**: Metaslot region invariants hold after the call.
 /// - **Correctness**: The reference count of the frame is increased by one.
 /// - **Safety**: Frames other than this one are not affected by the call.
-/// ## Safety
-/// We enforce the safety requirements that `paddr` represents a valid frame and the caller has already held a reference to the it.
-/// It is safe to require these as preconditions because the function is internal, so the caller must obey the preconditions.
-// FIXME: why do we need this wrapper function.
 #[verus_spec(permission =>
     with
         Tracked(regions): Tracked<&mut MetaRegionOwners>,
@@ -864,9 +843,6 @@ impl TryFrom<Frame<dyn AnyFrameMeta>> for UFrame {
         old(regions).inv(),
         old(regions).contains(frame_to_index(paddr)),
         valid_frame_paddr(paddr),
-        // The caller holds a reference, so rc > 0, and the slot must be live
-        // (not the UNUSED sentinel). Saturation is caught at runtime by
-        // `inc_ref_count`'s Arc-style abort.
         old(regions).slot_owner(paddr).ref_count() > 0,
         old(regions).slot_owner(paddr).ref_count()
             != REF_COUNT_UNUSED,
@@ -889,9 +865,6 @@ pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) -> (permission: Tr
     let vaddr: Vaddr = frame_to_meta(paddr);
     // SAFETY: `vaddr` points to a valid `MetaSlot` that will never be mutably borrowed, so taking
     // an immutable reference to it is always safe.
-    // `PPtr::from_addr` is exactly this transparent constructor, but its vstd
-    // contract is not marked `no_unwind`. Construct it directly so this
-    // Arc-style refcount increment remains usable from `Iterator::next`.
     let slot = PPtr::<MetaSlot>(vaddr, PhantomData);
 
     unsafe {

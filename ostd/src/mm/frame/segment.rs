@@ -548,7 +548,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                             #[verus_spec(with Tracked(slot_perm), Tracked(frame_permission))]
                             Frame::<M>::from_raw(p)
                         };
-                        frame.drop(Tracked(regions), Tracked(()));
+                        frame.drop(Tracked(regions));
                         proof {
                             assert forall|j: int|
                                 #![trigger addrs[j]]
@@ -1492,7 +1492,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
                 Frame::<M>::from_raw(paddr)
             };
 
-            frame.drop(Tracked(regions), Tracked(()));
+            frame.drop(Tracked(regions));
 
             proof {
                 assert forall|j: int|

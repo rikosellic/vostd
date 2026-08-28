@@ -28,13 +28,12 @@
 mod locking;
 
 use vstd::prelude::*;
-
 use vstd::arithmetic::power2::pow2;
 use vstd::math::abs;
 use vstd::simple_pptr::*;
 
 use vstd_extra::arithmetic::*;
-use vstd_extra::drop_tracking::{DropObligation, ManuallyDrop, TrackDrop};
+use vstd_extra::drop_tracking::TrackDrop;
 use vstd_extra::ghost_tree::*;
 use vstd_extra::ownership::*;
 use vstd_extra::panic::*;
@@ -55,7 +54,7 @@ use crate::specs::mm::frame::meta_owners::{
 use crate::specs::mm::frame::meta_region_owners::MetaRegionOwners;
 use crate::specs::mm::page_table::cursor::page_size_lemmas::*;
 
-use core::{fmt::Debug, marker::PhantomData, ops::Range};
+use core::{fmt::Debug, marker::PhantomData, mem::ManuallyDrop, ops::Range};
 
 use align_ext::AlignExt;
 
@@ -1162,7 +1161,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                             let tracked guard_obl = pt_guard.tracked_redeem(guards);
                         }
                         proof_with!(Tracked(guard_obl));
-                        let _ = ManuallyDrop::new(pt_guard);
+                        let _ = vstd_extra::drop_tracking::ManuallyDrop::new(pt_guard);
 
                         proof {
                             owner.map_children_implies(
@@ -1888,7 +1887,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             let tracked guard_obl = taken.tracked_redeem(guards);
         }
         proof_with!(Tracked(guard_obl));
-        let md = ManuallyDrop::new(taken);
+        let md = vstd_extra::drop_tracking::ManuallyDrop::new(taken);
 
         proof {
             // `ManuallyDrop` is single-field now; the consumed obligation
@@ -4289,7 +4288,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             Child::PageTable(pt) => {
                 // debug_assert_eq!(pt.level(), level - 1);
                 if !C::TOP_LEVEL_CAN_UNMAP() && level as usize == NR_LEVELS {
-                    proof_with!(Tracked(()));
                     let _ = ManuallyDrop::new(pt);
                     vstd_extra::panic::panic_diverge();
                 }

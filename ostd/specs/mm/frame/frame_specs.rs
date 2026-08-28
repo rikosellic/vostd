@@ -111,6 +111,38 @@ impl<M: ?Sized> Frame<M> {
             &&& post =~= pre.insert_slot_owner(paddr, post_owner)
         }
     }
+
+    pub open spec fn drop_requires(self, region: MetaRegionOwners) -> bool {
+        let idx = self.index();
+        let slot_own = region.slot_owners[idx];
+        &&& self.inv()
+        &&& region.inv()
+        &&& self.wf_with_region(region)
+        &&& 0 < slot_own.ref_count() <= REF_COUNT_MAX
+        &&& slot_own.ref_count() == 1 ==> {
+            &&& slot_own.paths_in_pt.is_empty()
+        }
+    }
+
+    pub open spec fn drop_ensures(
+        self,
+        old: MetaRegionOwners,
+        new: MetaRegionOwners,
+    ) -> bool {
+        let paddr = self.start_paddr_spec();
+        let old_owner = old.slot_owner(paddr);
+        let new_owner = new.slot_owner(paddr);
+        &&& new.inv()
+        &&& new =~= old.insert_slot_owner(paddr, new_owner)
+        &&& new_owner.slot_vaddr == old_owner.slot_vaddr
+        &&& new_owner.usage == old_owner.usage
+        &&& new_owner.paths_in_pt == old_owner.paths_in_pt
+        &&& new_owner.metadata_perm.id() == old_owner.metadata_perm.id()
+        &&& old_owner.ref_count() == 1 ==> {
+            new_owner.ref_count() == REF_COUNT_UNUSED 
+        }
+        &&& old_owner.ref_count() > 1 ==> new_owner.ref_count() == (old_owner.ref_count() - 1) as u64
+    }
 }
 
 impl<M: ?Sized> Frame<M> {
@@ -121,67 +153,6 @@ impl<M: ?Sized> Frame<M> {
         &&& s.contains(idx)
         &&& self.tracked_slot_perm@ == s.slots[idx]
         &&& self.frac_metadata_perm().id() == slot_own.metadata_perm.id()
-    }
-}
-
-impl<M: ?Sized> TrackDrop for Frame<M> {
-    type State = MetaRegionOwners;
-
-    type Obligation = ();
-
-    open spec fn tracked_redeem_requires(self, s: Self::State) -> bool {
-        true
-    }
-
-    open spec fn tracked_redeem_ensures(
-        self,
-        s0: Self::State,
-        s1: Self::State,
-        obl: Self::Obligation,
-    ) -> bool {
-        s1 == s0
-    }
-
-    proof fn tracked_redeem(self, tracked s: &mut Self::State) -> (tracked obl: Self::Obligation) {
-        ()
-    }
-
-    // It is unsound to drop a `Frame` while raw paddrs to it remain
-    // outstanding (`raw_count > 0`), since those raw paddrs could be revived
-    // via `from_raw`. Hence the drop is only permitted when `raw_count == 0`.
-    open spec fn drop_requires(self, s: Self::State, obl: Self::Obligation) -> bool {
-        let idx = self.index();
-        let slot_own = s.slot_owners[idx];
-        &&& self.inv()
-        &&& s.inv()
-        &&& self.wf_with_region(s)
-        &&& 0 < slot_own.ref_count() <= REF_COUNT_MAX
-        &&& slot_own.ref_count() == 1 ==> {
-            &&& slot_own.paths_in_pt.is_empty()
-        }
-    }
-
-    open spec fn drop_ensures(
-        self,
-        s0: Self::State,
-        s1: Self::State,
-        obl: Self::Obligation,
-    ) -> bool {
-        let idx = self.index();
-        let so0 = s0.slot_owners[idx];
-        let so1 = s1.slot_owners[idx];
-        &&& s1.inv()
-        &&& forall|i: int|
-            #![trigger s1.slot_owners[i]]
-            i != idx ==> s1.slot_owners[i] == s0.slot_owners[i]
-        &&& s1.slots =~= s0.slots
-        &&& s1.slot_owners.dom() =~= s0.slot_owners.dom()
-        &&& so1.slot_vaddr == so0.slot_vaddr
-        &&& so1.usage == so0.usage
-        &&& so1.paths_in_pt == so0.paths_in_pt
-        &&& so1.metadata_perm.id() == so0.metadata_perm.id()
-        &&& so0.ref_count() == 1 ==> so1.ref_count() == REF_COUNT_UNUSED
-        &&& so0.ref_count() > 1 ==> so1.ref_count() == (so0.ref_count() - 1) as u64
     }
 }
 
