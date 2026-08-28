@@ -26,7 +26,7 @@ use crate::mm::{
 
 verus! {
 
-impl<'a, M: ?Sized> Frame<M> {
+impl<M: ?Sized> Frame<M> {
     /// Accessor for the fractional metadata permission tracked by this `Frame` handle.
     #[verifier::inline]
     pub open spec fn frac_metadata_perm(self) -> FracMetadataPerm {
