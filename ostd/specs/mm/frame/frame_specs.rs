@@ -124,11 +124,7 @@ impl<M: ?Sized> Frame<M> {
         }
     }
 
-    pub open spec fn drop_ensures(
-        self,
-        old: MetaRegionOwners,
-        new: MetaRegionOwners,
-    ) -> bool {
+    pub open spec fn drop_ensures(self, old: MetaRegionOwners, new: MetaRegionOwners) -> bool {
         let paddr = self.start_paddr_spec();
         let old_owner = old.slot_owner(paddr);
         let new_owner = new.slot_owner(paddr);
@@ -138,10 +134,9 @@ impl<M: ?Sized> Frame<M> {
         &&& new_owner.usage == old_owner.usage
         &&& new_owner.paths_in_pt == old_owner.paths_in_pt
         &&& new_owner.metadata_perm.id() == old_owner.metadata_perm.id()
-        &&& old_owner.ref_count() == 1 ==> {
-            new_owner.ref_count() == REF_COUNT_UNUSED 
-        }
-        &&& old_owner.ref_count() > 1 ==> new_owner.ref_count() == (old_owner.ref_count() - 1) as u64
+        &&& old_owner.ref_count() == 1 ==> { new_owner.ref_count() == REF_COUNT_UNUSED }
+        &&& old_owner.ref_count() > 1 ==> new_owner.ref_count() == (old_owner.ref_count()
+            - 1) as u64
     }
 }
 

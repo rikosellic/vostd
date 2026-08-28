@@ -52,8 +52,8 @@ pub use frame_ref::FrameRef;
 mod test;
 
 use core::{
-    mem::ManuallyDrop,
     marker::PhantomData,
+    mem::ManuallyDrop,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -716,7 +716,7 @@ impl<M: ?Sized> Frame<M> {
         requires
             self.drop_requires(*old(regions)),
         ensures
-            self.drop_ensures(*old(regions),*final(regions)),
+            self.drop_ensures(*old(regions), *final(regions)),
     {
         let mut this = self;
         proof_decl!{

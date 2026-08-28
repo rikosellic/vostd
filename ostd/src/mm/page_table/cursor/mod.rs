@@ -27,9 +27,9 @@
 //! acquisition.
 mod locking;
 
-use vstd::prelude::*;
 use vstd::arithmetic::power2::pow2;
 use vstd::math::abs;
+use vstd::prelude::*;
 use vstd::simple_pptr::*;
 
 use vstd_extra::arithmetic::*;

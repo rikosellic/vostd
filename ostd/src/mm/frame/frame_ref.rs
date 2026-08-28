@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-use core::{marker::PhantomData, ops::Deref, ptr::NonNull, mem::ManuallyDrop};
+use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref, ptr::NonNull};
 
 use vstd::prelude::*;
 use vstd::simple_pptr::{PPtr, PointsTo};
@@ -111,8 +111,7 @@ pub unsafe trait NonNullPtr: 'static + Sized {
     /// The lower [`Self::ALIGN_BITS`] of the raw pointer is guaranteed to
     /// be zero. In other words, the pointer is guaranteed to be aligned to
     /// `1 << Self::ALIGN_BITS`.
-    fn into_raw(self, Tracked(regions): Tracked<&mut MetaRegionOwners>) -> PPtr<Self::Target>
-    ;
+    fn into_raw(self, Tracked(regions): Tracked<&mut MetaRegionOwners>) -> PPtr<Self::Target>;
 
     /// Converts back from a raw pointer.
     ///
