@@ -101,7 +101,7 @@ pub unsafe trait NonNullPtr: 'static + Sized {
     type Ref<'a>;
 
     /// The power of two of the pointer alignment.
-    fn ALIGN_BITS() -> u32;
+    const ALIGN_BITS: u32;
 
     /// Converts to a raw pointer.
     ///
@@ -153,9 +153,6 @@ pub unsafe trait NonNullPtr: 'static + Sized {
     fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> PPtr<Self::Target>;
 }
 
-pub assume_specification[ usize::trailing_zeros ](_0: usize) -> u32
-;
-
 // SAFETY: `Frame` is essentially a `*const MetaSlot` that could be used as a non-null
 // `*const` pointer.
 unsafe impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + 'static> NonNullPtr for Frame<M> {
@@ -163,9 +160,8 @@ unsafe impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + 'static> NonNullPtr for Fr
 
     type Ref<'a> = FrameRef<'a, M>;
 
-    fn ALIGN_BITS() -> u32 {
-        core::mem::align_of::<MetaSlot>().trailing_zeros()
-    }
+    #[verifier::external_body]
+    const ALIGN_BITS: u32 = core::mem::align_of::<MetaSlot>().trailing_zeros();
 
     fn into_raw(self, Tracked(regions): Tracked<&mut MetaRegionOwners>) -> PPtr<Self::Target> {
         let ptr = self.ptr;
