@@ -1,6 +1,6 @@
 use vstd::prelude::*;
 
-use vstd_extra::{cast_ptr::*, drop_tracking::*, ownership::*};
+use vstd_extra::{cast_ptr::*, ownership::*};
 
 use crate::specs::{
     arch::{MAX_NR_PAGES, valid_frame_paddr},
@@ -222,47 +222,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
             Some(perm) => perm,
             None => proof_from_false(),
         }
-    }
-}
-
-impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> TrackDrop for UniqueFrame<M> {
-    type State = MetaRegionOwners;
-
-    type Obligation = ();
-
-    open spec fn tracked_redeem_requires(self, s: Self::State) -> bool {
-        true
-    }
-
-    open spec fn tracked_redeem_ensures(
-        self,
-        s0: Self::State,
-        s1: Self::State,
-        obl: Self::Obligation,
-    ) -> bool {
-        s1 == s0
-    }
-
-    proof fn tracked_redeem(self, tracked s: &mut Self::State) -> (tracked obl: Self::Obligation) {
-        ()
-    }
-
-    open spec fn drop_requires(self, s: Self::State, obl: Self::Obligation) -> bool {
-        &&& s.contains(self.index())
-        &&& s.inv()
-    }
-
-    open spec fn drop_ensures(
-        self,
-        s0: Self::State,
-        s1: Self::State,
-        obl: Self::Obligation,
-    ) -> bool {
-        &&& forall|i: int|
-            #![trigger s1.slot_owners[i]]
-            i != self.index() ==> s1.slot_owners[i] == s0.slot_owners[i]
-        &&& s1.slots =~= s0.slots
-        &&& s1.inv()
     }
 }
 
