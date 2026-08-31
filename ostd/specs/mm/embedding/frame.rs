@@ -10,10 +10,8 @@
 //! # Methods modeled
 //!
 //! - `Frame::from_unused`: allocate a fresh handle on a previously-unused slot.
-//! - `Frame::from_in_use`: acquire a new handle on an already-in-use slot
-//!   (refcount++).
-//! - `Frame` drop (via [`crate::mm::frame::Frame`]'s `TrackDrop` impl):
-//!   release one handle (refcount--).
+//! - `Frame::from_in_use`: acquire a new handle on an already-in-use slot.
+//! - `Frame` drop: release one handle (refcount--).
 //!
 //! # Model gaps
 //!

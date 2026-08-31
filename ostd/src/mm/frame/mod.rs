@@ -728,7 +728,10 @@ impl<M: ?Sized> Frame<M> {
             slot_own.metadata_perm.combine(frame_permission);
         }
 
-        let last_ref_cnt = this.slot().ref_count.fetch_sub(Tracked(&mut slot_own.ref_count_perm), 1);
+        let last_ref_cnt = this.slot().ref_count.fetch_sub(
+            Tracked(&mut slot_own.ref_count_perm),
+            1,
+        );
 
         if last_ref_cnt == 1 {
             // A fence is needed here with the same reasons stated in the implementation of

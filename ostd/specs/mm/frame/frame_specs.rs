@@ -1,7 +1,7 @@
 use vstd::cell::CellId;
 
 use vstd::{prelude::*, simple_pptr};
-use vstd_extra::{cast_ptr::*, drop_tracking::TrackDrop, ownership::*};
+use vstd_extra::{cast_ptr::*, ownership::*};
 
 use crate::specs::{
     arch::*,
