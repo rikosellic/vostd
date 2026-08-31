@@ -486,8 +486,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                             assert(index_to_meta(idx_k) == frame_to_meta(p));
                             assert(regions.contains(idx_k));
                         }
-                        let tracked slot_perm = slot_perms.tracked_remove(0);
-                        let tracked frame_permission = permissions.tracked_remove(0);
+                        let tracked slot_perm = slot_perms.tracked_pop_front();
+                        let tracked frame_permission = permissions.tracked_pop_front();
                         let frame = unsafe {
                             #[verus_spec(with Tracked(slot_perm), Tracked(frame_permission))]
                             Frame::<M>::from_raw(p)
@@ -531,10 +531,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 let idx = frame_to_index(paddr);
                 axiom_mmio_usage_iff_mmio_paddr(regions.slot_owners[idx]);
                 axiom_mmio_usage_iff_mmio_paddr(regions_pre.slot_owners[idx]);
-                assert(regions_pre.slot_owners[idx].paths_in_pt.is_empty());
-                assert(regions.slot_owners[idx].paths_in_pt
-                    == regions_pre.slot_owners[idx].paths_in_pt);
-                assert(regions.slot_owners[idx].usage is Frame);
                 addrs.tracked_push(paddr);
                 slot_perms.tracked_push(slot_perm);
                 permissions.tracked_push(frame_permission);
@@ -544,8 +540,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         }
 
         proof {
-            assert(segment_range == range);
-
             assert forall|addr: usize|
                 #![trigger frame_to_index(addr)]
                 range.start <= addr < range.end && addr % PAGE_SIZE == 0 implies {
@@ -580,7 +574,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 != frame_to_index((segment_range.start + j * PAGE_SIZE) as usize) by {
                 let p1 = (segment_range.start + i * PAGE_SIZE) as usize;
                 let p2 = (segment_range.start + j * PAGE_SIZE) as usize;
-                assert(p1 != p2);
                 crate::specs::mm::frame::mapping::lemma_frame_to_index_injective(p1, p2);
             }
         }
@@ -1328,8 +1321,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
                 self.relate_regions_at(*old(regions), k);
             }
 
-            let tracked slot_perm = slot_perms.tracked_remove(0);
-            let tracked frame_permission = permissions.tracked_remove(0);
+            let tracked slot_perm = slot_perms.tracked_pop_front();
+            let tracked frame_permission = permissions.tracked_pop_front();
             let frame = unsafe {
                 #[verus_spec(with Tracked(slot_perm), Tracked(frame_permission))]
                 Frame::<M>::from_raw(paddr)
