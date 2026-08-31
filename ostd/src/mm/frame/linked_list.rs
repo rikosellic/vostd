@@ -974,13 +974,6 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 &&& regions.slot_owners[j].slot_vaddr == regions0.slot_owners[j].slot_vaddr
                 &&& regions.slot_owners[j].paths_in_pt == regions0.slot_owners[j].paths_in_pt
             } by {}
-            assert(frame_own.inv());
-            broadcast use group_page_meta;
-
-            assert(frame.meta_wf(frame_own));
-            assert(frame.meta_value(frame_own).wf(frame_own.meta_own));
-            assert(frame.inv());
-            assert(frame.wf_with_region(frame_own, *regions));
         }
 
         let next_ptr = (#[verus_spec(with Tracked(&frame_own), Tracked(&*regions))]
@@ -1085,17 +1078,14 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
         proof {
             assert(regions.inv());
             assert(regions.slots.dom() == regions0.slots.dom());
-            assert(regions.slot_owners[idx].paths_in_pt == regions0.slot_owners[idx].paths_in_pt);
             assert forall|j: int| #![trigger regions0.slot_owners[j]] j != idx implies {
                 &&& regions.slot_owners[j].usage == regions0.slot_owners[j].usage
                 &&& regions.slot_owners[j].slot_vaddr == regions0.slot_owners[j].slot_vaddr
                 &&& regions.slot_owners[j].paths_in_pt == regions0.slot_owners[j].paths_in_pt
             } by {}
-            assert(frame.wf_with_region(frame_own, *regions));
-            assert(frame.wf_with_region(frame_own, *regions));
         }
 
-        self.list.size = self.list.size - 1;
+        self.list.size -= 1;
 
         proof {
             owner0.remove_owner_spec_implies_model_spec(*owner);
@@ -1378,10 +1368,6 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             };
             assert(frame.wf_with_region(*frame_own, *regions));
         }
-        let ghost inserted_metadata_perm = frame.metadata_perm();
-        let ghost inserted_slot_perm = frame.slot_perm();
-        let ghost inserted_meta_value = frame.meta_value(*frame_own);
-        let ghost inserted_repr_perm = frame_own.repr_perm->0;
 
         #[verus_spec(with
             Tracked(&*frame_own) => Tracked(frame_metadata_perm)
@@ -1399,34 +1385,10 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 frame_metadata_perm,
                 list_id,
             );
-            assert(frame_metadata_perm == inserted_metadata_perm);
-            assert(owner.list_own.metadata_perms[owner0.index] == inserted_metadata_perm);
-            assert(owner.list_own.repr_perms[owner0.index] == inserted_repr_perm);
-            assert(owner.list_own.meta_value_at(*regions, owner0.index) == inserted_meta_value);
-            assert(*regions.slots[frame_own.slot_index] == inserted_slot_perm);
-
             let oldl = owner0.list_own;
             let nn = owner0.index as int;
             let flink = frame_own.meta_own;
             let ins = frame_own.slot_index;
-
-            assert(meta_to_index(owner.list_own.list[nn].paddr) == ins);
-            assert(regions.contains(ins));
-            assert(regions.slots[ins].is_init());
-            assert(regions.slots[ins].addr() == flink.paddr);
-            assert(regions.slot_owners[ins].ref_count() == REF_COUNT_UNIQUE);
-            assert(regions.slot_owners[ins].metadata_perm.is_resource_vacant());
-            assert(owner.list_own.metadata_perms[nn].storage_perm.id()
-                == regions.slots[ins].value().storage.id());
-            assert(owner.list_own.metadata_perms[nn].vtable_ptr_perm.pptr()
-                == regions.slots[ins].value().vtable_ptr);
-            assert(owner.list_own.metadata_perms[nn].vtable_ptr_perm.is_init());
-            assert(regions.slot_owners[ins].usage is Frame);
-            assert(regions.slot_owners[ins].in_list_perm.value() == owner.list_own.list_id);
-            assert(owner.list_own.meta_wf_at(*regions, nn));
-            assert(regions.slots[ins].addr() % META_SLOT_SIZE == 0);
-            assert(FRAME_METADATA_RANGE.start <= regions.slots[ins].addr()
-                < FRAME_METADATA_RANGE.start + MAX_NR_PAGES * META_SLOT_SIZE);
 
             assert(owner.list_own.relate_region(*regions)) by {
                 assert forall|p: int|
