@@ -466,30 +466,30 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
     /// a forgotten frame that was previously casted by [`Self::into_raw`].
     #[verus_spec(res =>
         with
-            Tracked(regions): Tracked<&MetaRegionOwners>,
+            Tracked(slot_perm): Tracked<&'static simple_pptr::PointsTo<MetaSlot>>,
             Tracked(meta_own): Tracked<M::Owner>,
             Tracked(repr_perm): Tracked<M::ReprPerm>,
-            Tracked(metadata_perms): Tracked<MetadataPerm>,
+            Tracked(metadata_perm): Tracked<MetadataPerm>,
             ->
                 owner: Tracked<UniqueFrameOwner<M>>,
         requires
             valid_frame_paddr(paddr),
-            regions.inv(),
-            regions.contains(frame_to_index(paddr)),
-            regions.slot_owner(paddr).ref_count() == REF_COUNT_UNIQUE,
+            slot_perm.addr() == frame_to_meta(paddr),
+            slot_perm.is_init(),
+            MetaSlot::perms_related(*slot_perm, metadata_perm)
         ensures
-            res.ptr.addr() == frame_to_meta(paddr),
+            res.inv(),
+            res.start_paddr_spec() == paddr,
+            res.tracked_slot_perm@ == slot_perm,
             res.wf(owner@),
             owner@.meta_own == meta_own,
             owner@.repr_perm == Some(repr_perm),
-            res.tracked_metadata_perm@ == Some(metadata_perms),
+            res.tracked_metadata_perm@ == Some(metadata_perm),
             owner@.slot_index == frame_to_index(paddr),
-            res.tracked_slot_perm@ == regions.slots[frame_to_index(paddr)],
     )]
     pub(crate) unsafe fn from_raw(paddr: Paddr) -> Self {
         let vaddr = frame_to_meta(paddr);
         let ptr = vstd::simple_pptr::PPtr::<MetaSlot>::from_addr(vaddr);
-        let tracked slot_perm = regions.tracked_borrow_slot(paddr);
 
         let tracked owner = UniqueFrameOwner {
             meta_own,
@@ -504,7 +504,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
             #[cfg(verus_keep_ghost_body)]
             tracked_slot_perm: Tracked(slot_perm),
             #[cfg(verus_keep_ghost_body)]
-            tracked_metadata_perm: Tracked(Some(metadata_perms)),
+            tracked_metadata_perm: Tracked(Some(metadata_perm)),
         }
     }
 

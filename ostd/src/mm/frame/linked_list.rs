@@ -959,7 +959,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
         let mut frame = unsafe {
             // SAFETY: The frame was forgotten when inserted into the linked list.
             #[verus_spec(with
-                Tracked(regions),
+                Tracked(regions.tracked_borrow_slot(paddr)),
                 Tracked(cur_own),
                 Tracked(cur_repr_perm),
                 Tracked(cur_metadata_perm) => Tracked(frame_own)
