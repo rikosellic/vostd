@@ -5,7 +5,6 @@ use vstd::simple_pptr::{PPtr, PointsTo};
 use vstd::std_specs::iter::IteratorSpecImpl;
 use vstd_extra::assert;
 use vstd_extra::cast_ptr::*;
-use vstd_extra::drop_tracking::*;
 use vstd_extra::ownership::*;
 use vstd_extra::panic::may_panic;
 use vstd_extra::prelude::*;
@@ -20,7 +19,7 @@ use crate::specs::mm::frame::{
     segment::*,
 };
 
-use core::{fmt::Debug, /*mem::ManuallyDrop,*/ ops::Range};
+use core::{fmt::Debug, mem::ManuallyDrop, ops::Range};
 
 use super::{
     Frame, Paddr,
@@ -702,34 +701,33 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
     ///
     /// # Verified Properties
     /// ## Preconditions
-    /// - the segment must satisfy its bundled invariant against the metadata region;
+    /// - the segment must satisfy its invariant;
     /// - the offset must be aligned and within bounds;
     ///
     /// ## Postconditions
-    /// - the resulting segments satisfy their bundled invariants;
-    /// - they match [`Self::split_spec`];
-    /// - both halves continue to relate correctly to `regions` (which is unchanged).
+    /// - the resulting segments satisfy their invariants;
+    /// - they match [`Self::split_spec`].
     #[verus_spec(r =>
-        with
-            Tracked(regions): Tracked<&mut MetaRegionOwners>,
         requires
-            self.invariants(*old(regions)),
+            self.inv(),
             offset % PAGE_SIZE != 0 ==> may_panic(),
             !(0 < offset && offset < self.size()) ==> may_panic(),
         ensures
-            final(regions).slots == old(regions).slots,
-            final(regions).slot_owners == old(regions).slot_owners,
             (r.0, r.1) == self.split_spec(offset),
-            r.0.invariants(*final(regions)),
-            r.1.invariants(*final(regions)),
     )]
     #[verifier::spinoff_prover]
     pub fn split(self, offset: usize) -> (Self, Self) {
         assert!(offset % PAGE_SIZE == 0);
         assert!(0 < offset && offset < self.size());
 
-        let ghost old_regions = *regions;
-        let ghost original = self;
+        proof {
+            use_type_invariant(&self);
+            vstd::arithmetic::div_mod::lemma_div_is_ordered(
+                offset as int,
+                (self.range.end - self.range.start) as int,
+                PAGE_SIZE as int,
+            );
+        }
 
         let Self {
             range: old_range,
@@ -751,90 +749,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         );
         let at = old_range.start + offset;
 
-        let ghost old_start = old_range.start;
-        let ghost old_end = old_range.end;
-
-        let ghost seg1 = Segment {
-            range: old_start..at,
-            _marker: core::marker::PhantomData::<M>,
-            #[cfg(verus_keep_ghost_body)]
-            tracked_permissions: Tracked(left_permissions),
-            #[cfg(verus_keep_ghost_body)]
-            tracked_slot_perms: Tracked(left_slot_perms),
-        };
-        let ghost seg2 = Segment {
-            range: at..old_end,
-            _marker: core::marker::PhantomData::<M>,
-            #[cfg(verus_keep_ghost_body)]
-            tracked_permissions: Tracked(right_permissions),
-            #[cfg(verus_keep_ghost_body)]
-            tracked_slot_perms: Tracked(right_slot_perms),
-        };
         proof {
-            assert forall|i: int|
-                #![trigger frame_to_index((seg1.range.start + i * PAGE_SIZE) as usize)]
-                0 <= i < crate::specs::mm::frame::segment::seg_nframes(seg1.range) implies {
-                let idx = frame_to_index((seg1.range.start + i * PAGE_SIZE) as usize);
-                &&& seg1.tracked_slot_perms@[i] == regions.slots[idx]
-                &&& seg1.tracked_permissions@[i].frac() == 1
-                &&& seg1.tracked_permissions@[i].id() == regions.slot_owners[idx].metadata_perm.id()
-                &&& MetaSlot::perms_related(
-                    *seg1.tracked_slot_perms@[i],
-                    seg1.tracked_permissions@[i].resource(),
-                )
-                &&& regions.contains(idx)
-                &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                &&& regions.slot_owners[idx].ref_count() > 0
-                &&& regions.slot_owners[idx].ref_count() <= REF_COUNT_MAX
-                &&& regions.slot_owners[idx].paths_in_pt.is_empty()
-                &&& regions.slot_owners[idx].usage is Frame
-            } by {
-                original.relate_regions_at(old_regions, i);
-            }
-            assert forall|i: int|
-                #![trigger frame_to_index((seg2.range.start + i * PAGE_SIZE) as usize)]
-                0 <= i < crate::specs::mm::frame::segment::seg_nframes(seg2.range) implies {
-                let idx = frame_to_index((seg2.range.start + i * PAGE_SIZE) as usize);
-                &&& seg2.tracked_slot_perms@[i] == regions.slots[idx]
-                &&& seg2.tracked_permissions@[i].frac() == 1
-                &&& seg2.tracked_permissions@[i].id() == regions.slot_owners[idx].metadata_perm.id()
-                &&& MetaSlot::perms_related(
-                    *seg2.tracked_slot_perms@[i],
-                    seg2.tracked_permissions@[i].resource(),
-                )
-                &&& regions.contains(idx)
-                &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                &&& regions.slot_owners[idx].ref_count() > 0
-                &&& regions.slot_owners[idx].ref_count() <= REF_COUNT_MAX
-                &&& regions.slot_owners[idx].paths_in_pt.is_empty()
-                &&& regions.slot_owners[idx].usage is Frame
-            } by {
-                original.relate_regions_at(old_regions, i + (offset / PAGE_SIZE) as int);
-            }
-
-            assert forall|i: int, j: int|
-                #![trigger frame_to_index((seg1.range.start + i * PAGE_SIZE) as usize),
-                    frame_to_index((seg1.range.start + j * PAGE_SIZE) as usize)]
-                0 <= i < j < crate::specs::mm::frame::segment::seg_nframes(
-                    seg1.range,
-                ) implies frame_to_index((seg1.range.start + i * PAGE_SIZE) as usize)
-                != frame_to_index((seg1.range.start + j * PAGE_SIZE) as usize) by {
-                original.relate_regions_distinct(old_regions, i, j);
-            }
-            assert forall|i: int, j: int|
-                #![trigger frame_to_index((seg2.range.start + i * PAGE_SIZE) as usize),
-                    frame_to_index((seg2.range.start + j * PAGE_SIZE) as usize)]
-                0 <= i < j < crate::specs::mm::frame::segment::seg_nframes(
-                    seg2.range,
-                ) implies frame_to_index((seg2.range.start + i * PAGE_SIZE) as usize)
-                != frame_to_index((seg2.range.start + j * PAGE_SIZE) as usize) by {
-                original.relate_regions_distinct(
-                    old_regions,
-                    i + (offset / PAGE_SIZE) as int,
-                    j + (offset / PAGE_SIZE),
-                );
-            }
+            vstd::arithmetic::div_mod::lemma_fundamental_div_mod(offset as int, PAGE_SIZE as int);
+            vstd::arithmetic::div_mod::lemma_fundamental_div_mod(
+                (old_range.end - old_range.start) as int,
+                PAGE_SIZE as int,
+            );
         }
+
         (
             Self {
                 range: old_range.start..at,
