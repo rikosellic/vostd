@@ -22,7 +22,7 @@ use crate::specs::{
 use crate::mm::{
     Paddr,
     frame::{
-        AnyFrameMeta, CursorMut, Link, LinkedList, MetaSlot,
+        AnyFrameMeta, CursorMut, Link, LinkedList, MetaSlot, UniqueFrame,
         meta::{META_SLOT_SIZE, REF_COUNT_UNIQUE},
     },
     kspace::FRAME_METADATA_RANGE,
@@ -1271,6 +1271,19 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> UniqueFrameOwner<Link<M>> {
         &&& self.meta_value(regions).next is None
         &&& self.meta_own.paddr == regions.slots[self.slot_index].addr()
         &&& regions.slot_owners[self.slot_index].in_list_perm.value() == 0
+    }
+}
+
+impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> UniqueFrame<Link<M>> {
+    pub open spec fn frame_link_inv(
+        self,
+        owner: UniqueFrameOwner<Link<M>>,
+        regions: MetaRegionOwners,
+    ) -> bool {
+        &&& self.meta_value(owner).prev is None
+        &&& self.meta_value(owner).next is None
+        &&& owner.meta_own.paddr == regions.slots[owner.slot_index].addr()
+        &&& regions.slot_owners[owner.slot_index].in_list_perm.value() == 0
     }
 }
 

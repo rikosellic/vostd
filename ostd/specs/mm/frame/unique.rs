@@ -3,7 +3,7 @@ use vstd::prelude::*;
 use vstd_extra::{cast_ptr::*, drop_tracking::*, ownership::*};
 
 use crate::specs::{
-    arch::MAX_NR_PAGES,
+    arch::{MAX_NR_PAGES, valid_frame_paddr},
     mm::{
         Paddr,
         frame::{
@@ -16,7 +16,7 @@ use crate::specs::{
 use crate::mm::{
     frame::{
         meta::{
-            REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED,
+            META_SLOT_SIZE, REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED,
             mapping::{frame_to_meta, meta_to_frame},
         },
         *,
@@ -29,12 +29,41 @@ use super::meta_owners::*;
 verus! {
 
 impl<M: AnyFrameMeta + ?Sized + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
-    pub open spec fn paddr(self) -> Paddr {
+    pub open spec fn start_paddr_spec(self) -> Paddr {
         meta_to_frame(self.ptr.addr())
     }
 
     pub open spec fn index(self) -> int {
-        frame_to_index(self.paddr())
+        frame_to_index(self.start_paddr_spec())
+    }
+
+    /// The complete metadata permission carried by this unique handle.
+    #[verifier::inline]
+    pub open spec fn metadata_perm(self) -> MetadataPerm {
+        self.tracked_metadata_perm@->0
+    }
+
+    /// The metadata-slot permission carried by this unique handle.
+    pub open spec fn slot_perm(self) -> vstd::simple_pptr::PointsTo<MetaSlot> {
+        *self.tracked_slot_perm@
+    }
+
+    #[verifier::inline]
+    pub open spec fn ptr_inv(self) -> bool {
+        &&& valid_frame_paddr(self.start_paddr_spec())
+        &&& self.ptr.addr() % META_SLOT_SIZE == 0
+        &&& FRAME_METADATA_RANGE.start <= self.ptr.addr() < FRAME_METADATA_RANGE.start
+            + MAX_NR_PAGES * META_SLOT_SIZE
+        &&& self.slot_perm().pptr() == self.ptr
+        &&& self.slot_perm().is_init()
+    }
+}
+
+impl<M: AnyFrameMeta + ?Sized + Repr<MetaSlotStorage> + OwnerOf> Inv for UniqueFrame<M> {
+    open spec fn inv(self) -> bool {
+        &&& self.ptr_inv()
+        &&& self.tracked_metadata_perm@ is Some
+        &&& MetaSlot::perms_related(self.slot_perm(), self.metadata_perm())
     }
 }
 
@@ -42,8 +71,6 @@ impl<M: AnyFrameMeta + ?Sized + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> 
 pub tracked struct UniqueFrameOwner<M: AnyFrameMeta + ?Sized + Repr<MetaSlotStorage> + OwnerOf> {
     pub meta_own: M::Owner,
     pub repr_perm: Option<M::ReprPerm>,
-    /// The complete permission for the metadata contents.
-    pub metadata_perms: Option<MetadataPerm>,
     pub ghost slot_index: int,
 }
 
@@ -56,7 +83,6 @@ impl<M: AnyFrameMeta + ?Sized + Repr<MetaSlotStorage> + OwnerOf> Inv for UniqueF
         &&& 0 <= self.slot_index < MAX_NR_PAGES
         &&& self.slot_index < max_meta_slots()
         &&& self.repr_perm is Some
-        &&& self.metadata_perms is Some
     }
 }
 
@@ -88,30 +114,32 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> OwnerOf for UniqueFrame<
 }
 
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
+    pub open spec fn meta_wf(self, owner: UniqueFrameOwner<M>) -> bool {
+        typed_meta_wf::<M>(self.slot_perm(), self.metadata_perm(), owner.repr_perm->0)
+    }
+
+    pub open spec fn meta_value(self, owner: UniqueFrameOwner<M>) -> M {
+        typed_meta_value::<M>(self.metadata_perm(), owner.repr_perm->0)
+    }
+
     /// Cross-object validity of a live UNIQUE handle against the region map —
     /// the [`UniqueFrame`] analog of [`Frame::wf_with_region`] (which covers
-    /// the SHARED state). Bundles the structural `wf` / `owner.inv` /
-    /// `regions.inv` facts with the UNIQUE-state slot facts so a consumer (e.g.
-    /// [`UniqueFrame::drop`]) can state a single invariant instead of re-listing
-    /// each conjunct.
-    ///
-    /// The slot's `slot_owners.contains_key(idx)`, `slot_vaddr == index_to_meta(idx)`,
-    /// `storage.is_init()`, and `vtable_ptr.is_init()` are **derived**, not
-    /// required: `regions.inv()` (with `owner.inv()`'s `idx < max_meta_slots`)
-    /// delivers the first two and `slot_owners[idx].inv()`; the latter's UNIQUE
-    /// branch (under `rc == REF_COUNT_UNIQUE`) gives the storage/vtable init.
-    /// The genuinely-extra conjuncts are the UNIQUE state itself plus
-    /// `in_list == 0` and `paths_in_pt.is_empty()` (a sole owner is neither on
-    /// the free list nor mapped into any page table).
-    pub open spec fn wf_with_region(self, owner: UniqueFrameOwner<M>, s: MetaRegionOwners) -> bool {
+    /// the SHARED state).
+    pub open spec fn wf_with_region(
+        self,
+        owner: UniqueFrameOwner<M>,
+        s: MetaRegionOwners,
+    ) -> bool {
         let idx = owner.slot_index;
         let so = s.slot_owners[idx];
         &&& self.wf(owner)
-        &&& owner.inv()
-        &&& s.inv()
-        &&& owner.global_inv(s)
+        &&& s.contains(idx)
+        &&& self.tracked_slot_perm@ == s.slots[idx]
+        &&& self.meta_wf(owner)
+        &&& self.meta_value(owner).wf(owner.meta_own)
+        &&& so.metadata_perm.is_resource_vacant()
         &&& so.ref_count() == REF_COUNT_UNIQUE
-        &&& so.in_list_perm.value() == 0
+        &&& so.usage is Frame
         &&& so.paths_in_pt.is_empty()
     }
 }
@@ -120,18 +148,16 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
     pub open spec fn meta_wf(self, regions: MetaRegionOwners) -> bool {
         typed_meta_wf::<M>(
             *regions.slots[self.slot_index],
-            self.metadata_perms->0,
+            regions.slot_owners[self.slot_index].metadata_perm.resource(),
             self.repr_perm->0,
         )
     }
 
     pub open spec fn meta_value(self, regions: MetaRegionOwners) -> M {
-        typed_meta_value::<M>(self.metadata_perms->0, self.repr_perm->0)
-    }
-
-    pub open spec fn perm_inv(self, perm: vstd::simple_pptr::PointsTo<MetaSlot>) -> bool {
-        &&& perm.is_init()
-        &&& perm.addr() == index_to_meta(self.slot_index)
+        typed_meta_value::<M>(
+            regions.slot_owners[self.slot_index].metadata_perm.resource(),
+            self.repr_perm->0,
+        )
     }
 
     /// Borrow-model global invariant: the frame's permission is parked in
@@ -147,50 +173,34 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
         &&& regions.slots[self.slot_index].addr() == index_to_meta(self.slot_index)
         &&& self.meta_value(regions).wf(self.meta_own)
         &&& regions.slot_owners[self.slot_index].metadata_perm.is_resource_vacant()
-        &&& self.metadata_perms->0.storage_perm.id()
+        &&& regions.slot_owners[self.slot_index].metadata_perm.resource().storage_perm.id()
             == regions.slots[self.slot_index].value().storage.id()
-        &&& self.metadata_perms->0.vtable_ptr_perm.pptr()
+        &&& regions.slot_owners[self.slot_index].metadata_perm.resource().vtable_ptr_perm.pptr()
             == regions.slots[self.slot_index].value().vtable_ptr
-        &&& self.metadata_perms->0.vtable_ptr_perm.is_init()
+        &&& regions.slot_owners[self.slot_index].metadata_perm.resource().vtable_ptr_perm.is_init()
         &&& regions.slot_owners[self.slot_index].slot_vaddr == index_to_meta(self.slot_index)
         &&& regions.slot_owners[self.slot_index].ref_count()
             == REF_COUNT_UNIQUE
-        // Data-frame node-repark discriminator (our change): a unique frame's
-        // slot is tracked with `Frame` usage, distinguishing it from page-table
-        // node slots (`PageTable`) and letting linked-list/list-store consumers
-        // derive `usage == Frame` (e.g. for the empty-`paths_in_pt` argument).
         &&& regions.slot_owners[self.slot_index].usage is Frame
     }
 
     pub open spec fn from_unused_owner(
         meta_own: M::Owner,
         repr_perm: M::ReprPerm,
-        metadata_perms: MetadataPerm,
         slot_index: int,
     ) -> Self {
-        Self {
-            meta_own,
-            repr_perm: Some(repr_perm),
-            metadata_perms: Some(metadata_perms),
-            slot_index,
-        }
+        Self { meta_own, repr_perm: Some(repr_perm), slot_index }
     }
 
     pub proof fn tracked_from_unused_owner(
         tracked meta_own: M::Owner,
         tracked repr_perm: M::ReprPerm,
-        tracked metadata_perms: MetadataPerm,
         slot_index: int,
     ) -> (tracked res: Self)
         returns
-            Self::from_unused_owner(meta_own, repr_perm, metadata_perms, slot_index),
+            Self::from_unused_owner(meta_own, repr_perm, slot_index),
     {
-        Self {
-            meta_own,
-            repr_perm: Some(repr_perm),
-            metadata_perms: Some(metadata_perms),
-            slot_index,
-        }
+        Self { meta_own, repr_perm: Some(repr_perm), slot_index }
     }
 
     pub proof fn tracked_borrow_repr_perm(tracked &self) -> (tracked res: &M::ReprPerm)
@@ -211,65 +221,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
             final(self).slot_index == old(self).slot_index,
             final(self).repr_perm is Some,
             final(self).repr_perm->0 == *final(res),
-            final(self).metadata_perms == old(self).metadata_perms,
             final(self).inv(),
     {
         match &mut self.repr_perm {
             Some(perm) => perm,
             None => proof_from_false(),
-        }
-    }
-
-    pub proof fn tracked_borrow_metadata_perm(tracked &self) -> tracked &MetadataPerm
-        requires
-            self.metadata_perms is Some,
-        returns
-            self.metadata_perms->0,
-    {
-        self.metadata_perms.tracked_borrow()
-    }
-
-    pub proof fn tracked_borrow_mut_metadata_perm(tracked &mut self) -> (tracked res:
-        &mut MetadataPerm)
-        requires
-            old(self).inv(),
-        ensures
-            *res == old(self).metadata_perms->0,
-            final(self).meta_own == old(self).meta_own,
-            final(self).repr_perm == old(self).repr_perm,
-            final(self).slot_index == old(self).slot_index,
-            final(self).metadata_perms is Some,
-            final(self).metadata_perms->0 == *final(res),
-            final(self).inv(),
-    {
-        match &mut self.metadata_perms {
-            Some(perms) => perms,
-            None => proof_from_false(),
-        }
-    }
-
-    /// Mutably borrows both independently-owned parts needed by
-    /// `borrow_meta_mut` in one operation.
-    pub proof fn tracked_borrow_mut_meta_parts(tracked &mut self) -> (tracked res: (
-        &mut MetadataPerm,
-        &mut M::ReprPerm,
-    ))
-        requires
-            old(self).inv(),
-        ensures
-            *res.0 == old(self).metadata_perms->0,
-            *res.1 == old(self).repr_perm->0,
-            final(self).meta_own == old(self).meta_own,
-            final(self).slot_index == old(self).slot_index,
-            final(self).metadata_perms is Some,
-            final(self).repr_perm is Some,
-            final(self).metadata_perms->0 == *final(res.0),
-            final(self).repr_perm->0 == *final(res.1),
-            final(self).inv(),
-    {
-        match (&mut self.metadata_perms, &mut self.repr_perm) {
-            (Some(metadata), Some(repr)) => (metadata, repr),
-            _ => proof_from_false(),
         }
     }
 }
