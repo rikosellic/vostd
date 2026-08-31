@@ -287,6 +287,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         ensures
             *res == old(self).meta_value(*old(owner)),
             *final(res) == final(self).meta_value(*final(owner)),
+            final(self).inv(),
             final(self).ptr == old(self).ptr,
             final(self).tracked_slot_perm@ == old(self).tracked_slot_perm@,
             final(owner).meta_own == old(owner).meta_own,
@@ -600,9 +601,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
             broadcast use group_page_meta;
 
             regions.lemma_contains_valid_frame_paddr(meta_to_frame(unique.ptr.addr()));
-            assert(idx == owner.slot_index);
-            assert(regions.slots[idx].addr() == unique.ptr.addr());
-            assert(regions.slots[idx].pptr() == unique.ptr);
         }
         let tracked slot_own = regions.slot_owners.tracked_borrow_mut(idx);
         let slot = unique.slot();
@@ -623,12 +621,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
             #[cfg(verus_keep_ghost_body)]
             tracked_metadata_perm: Tracked(Some(frame_permission)),
         };
-        proof {
-            assert(res.inv());
-            assert(regions.inv());
-            assert(regions.contains(idx));
-            assert(res.wf_with_region(*regions));
-        }
         res
     }
 }
@@ -658,13 +650,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         }
         let tracked mut slot_own = regions.slot_owners.tracked_borrow_mut(idx);
         let tracked inner_perms = &mut slot_own;
-
-        proof {
-            assert(frame.tracked_slot_perm@ == regions.slots[idx]);
-            assert(frame.tracked_slot_perm@.value().wf(**inner_perms));
-        }
-        let slot = frame.slot();
-        let res = slot.ref_count.compare_exchange(
+        let res = frame.slot().ref_count.compare_exchange(
             Tracked(&mut inner_perms.ref_count_perm),
             1,
             REF_COUNT_UNIQUE,

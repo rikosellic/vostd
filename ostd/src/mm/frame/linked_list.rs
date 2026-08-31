@@ -255,6 +255,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedList<M> {
         requires
             old(self).wf_region(*old(owner), *old(regions)),
             old(owner).relate_region(*old(regions)),
+            frame.inv(),
             old(frame_own).inv(),
             frame.wf_with_region(*old(frame_own), *old(regions)),
             frame.frame_link_inv(*old(frame_own), *old(regions)),
@@ -343,6 +344,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedList<M> {
         requires
             old(self).wf_region(*old(owner), *old(regions)),
             old(owner).relate_region(*old(regions)),
+            frame.inv(),
             old(frame_own).inv(),
             frame.wf_with_region(*old(frame_own), *old(regions)),
             frame.frame_link_inv(*old(frame_own), *old(regions)),
@@ -921,6 +923,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 },
             res.is_none() ==> *final(regions) == *old(regions),
             // Properties of the returned frame needed for UniqueFrame::drop
+            res.is_some() ==> (res->0).0.inv(),
             res.is_some() ==> (res->0).0.wf((res->0).1@),
             res.is_some() ==> (res->0).1@.inv(),
             res.is_some() ==> (res->0).0.wf_with_region((res->0).1@, *final(regions)),
@@ -950,13 +953,16 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
         let tracked cur_repr_perm = owner.list_own.repr_perms.tracked_remove(owner.index);
         let tracked cur_metadata_perm = owner.list_own.metadata_perms.tracked_remove(owner.index);
 
-        let (mut frame, Tracked(mut frame_own)) = unsafe {
+        proof_decl! {
+            let tracked mut frame_own: UniqueFrameOwner<Link<M>>;
+        }
+        let mut frame = unsafe {
             // SAFETY: The frame was forgotten when inserted into the linked list.
             #[verus_spec(with
                 Tracked(regions),
                 Tracked(cur_own),
                 Tracked(cur_repr_perm),
-                Tracked(cur_metadata_perm)
+                Tracked(cur_metadata_perm) => Tracked(frame_own)
             )]
             UniqueFrame::<Link<M>>::from_raw(paddr)
         };
@@ -1176,6 +1182,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             old(self).wf_region(*old(owner), *old(regions)),
             old(owner).wf_with_region(*old(regions)),
             old(regions).inv(),
+            frame.inv(),
             old(frame_own).inv(),
             frame.wf_with_region(*old(frame_own), *old(regions)),
             frame.frame_link_inv(*old(frame_own), *old(regions)),
