@@ -657,9 +657,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
     )]
     #[verifier::spinoff_prover]
     pub fn split(self, offset: usize) -> (Self, Self) {
+        assert!(offset % PAGE_SIZE == 0);
         assert!(0 < offset && offset < self.size());
-
-        proof {}
 
         let Self {
             range: old_range,
@@ -815,7 +814,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 paddr <= end,
                 0 <= i <= addr_len,
                 paddr < end <==> i < addr_len,
-                first_perm_idx + i <= last_perm_idx,
                 forall|j: int|
                     #![trigger frame_to_index((self.range.start + j * PAGE_SIZE) as usize)]
                     first_perm_idx + i <= j < last_perm_idx ==> (*regions).slot_owner(
@@ -837,8 +835,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 assert(paddr == (self.range.start + perm_idx * PAGE_SIZE) as usize);
             }
 
-            let ghost regions_pre = *regions;
-            let ghost permissions_len = permissions.len();
             let tracked_permission = unsafe {
                 #[verus_spec(with Tracked(regions))]
                 crate::mm::frame::inc_frame_ref_count(paddr)
