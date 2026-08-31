@@ -43,11 +43,9 @@ verus! {
 ///
 /// All the metadata of the frames are homogeneous, i.e., they are of the same
 /// type.
-// FIXME: field visibility
 #[repr(transparent)]
 #[allow(repr_transparent_non_zst_fields)]
 pub struct Segment<M: AnyFrameMeta + ?Sized> {
-    /// The physical address range of the segment.
     range: Range<Paddr>,
     _marker: core::marker::PhantomData<M>,
     /// One metadata fraction for each frame in `range`, in address order.

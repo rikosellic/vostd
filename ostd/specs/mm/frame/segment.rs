@@ -4,7 +4,7 @@ use core::ops::Range;
 
 use vstd::prelude::*;
 
-use vstd_extra::{drop_tracking::TrackDrop, ownership::*};
+use vstd_extra::ownership::*;
 
 use crate::specs::{
     arch::PAGE_SIZE,
@@ -25,44 +25,6 @@ use crate::mm::{
 
 verus! {
 
-impl<M: AnyFrameMeta + ?Sized> TrackDrop for Segment<M> {
-    /// The segment carries its frame fractions directly; `ManuallyDrop`
-    /// therefore only needs a unit token after those fractions move out.
-    type State = MetaRegionOwners;
-
-    type Obligation = ();
-
-    open spec fn tracked_redeem_requires(self, s: Self::State) -> bool {
-        true
-    }
-
-    open spec fn tracked_redeem_ensures(
-        self,
-        s0: Self::State,
-        s1: Self::State,
-        obl: Self::Obligation,
-    ) -> bool {
-        s0 == s1
-    }
-
-    proof fn tracked_redeem(self, tracked s: &mut Self::State) -> (tracked obl: Self::Obligation) {
-        ()
-    }
-
-    open spec fn drop_requires(self, s: Self::State, obl: Self::Obligation) -> bool {
-        s.inv()
-    }
-
-    open spec fn drop_ensures(
-        self,
-        s0: Self::State,
-        s1: Self::State,
-        obl: Self::Obligation,
-    ) -> bool {
-        true
-    }
-}
-
 /// Number of frames in a page-aligned physical range.
 #[verifier::inline]
 pub open spec fn seg_nframes(range: Range<Paddr>) -> int {
@@ -72,14 +34,6 @@ pub open spec fn seg_nframes(range: Range<Paddr>) -> int {
 impl<M: AnyFrameMeta + ?Sized> Segment<M> {
     /// The cross-object relation between a [`Segment`] and the global
     /// [`MetaRegionOwners`].
-    ///
-    /// For every frame `i` in the segment, this asserts:
-    /// - the slot owner and canonical slot permission are present in `regions`,
-    /// - the slot's `slot_vaddr` is consistent with its index,
-    /// - the slot has a live, non-`UNUSED` reference count,
-    /// - the segment carries the matching metadata fraction,
-    /// - the slot is a data-frame slot with no page-table paths,
-    /// - distinct frames in the segment map to distinct slot indices.
     pub open spec fn relate_regions(&self, regions: MetaRegionOwners) -> bool {
         &&& self.permissions().len() == seg_nframes(self.range())
         &&& self.slot_perms().len() == seg_nframes(self.range())
