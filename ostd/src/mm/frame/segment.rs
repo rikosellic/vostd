@@ -950,30 +950,9 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 let tracked slot_perm = regions.tracked_borrow_slot(paddr);
                 slot_perms.tracked_push(slot_perm);
                 permissions.tracked_push(frame_permission);
-                assert forall|j: int|
-                    #![trigger permissions[j]]
-                    0 <= j < permissions.len() implies {
-                    let idx = frame_to_index((start + j * PAGE_SIZE) as usize);
-                    &&& slot_perms[j] == regions.slots[idx]
-                    &&& permissions[j].frac() == 1
-                    &&& permissions[j].id() == regions.slot_owners[idx].metadata_perm.id()
-                    &&& MetaSlot::perms_related(*slot_perms[j], permissions[j].resource())
-                    &&& regions.contains(idx)
-                    &&& regions.slot_owners[idx].slot_vaddr == index_to_meta(idx)
-                    &&& regions.slot_owners[idx].ref_count() > 0
-                    &&& regions.slot_owners[idx].ref_count() <= REF_COUNT_MAX
-                    &&& regions.slot_owners[idx].paths_in_pt.is_empty()
-                    &&& regions.slot_owners[idx].usage is Frame
-                } by {
-                    if j < permissions_len {
-                    } else {
-                        assert(j == permissions_len);
-                        assert((start + j * PAGE_SIZE) as usize == paddr);
-                    }
-                }
             }
 
-            paddr = paddr + PAGE_SIZE;
+            paddr += PAGE_SIZE;
 
             proof {
                 i = i + 1;
