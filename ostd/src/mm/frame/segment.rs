@@ -1171,8 +1171,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
     #[verifier::rlimit(200)]
     fn next_inner(range: &mut Range<Paddr>) -> Option<Frame<M>> {
         if range.start < range.end {
-            let tracked slot_perm = slot_perms.tracked_remove(0);
-            let tracked frame_permission = permissions.tracked_remove(0);
+            let tracked slot_perm = slot_perms.tracked_pop_front();
+            let tracked frame_permission = permissions.tracked_pop_front();
             let frame = Frame::<M> {
                 ptr: PPtr(frame_to_meta(range.start), core::marker::PhantomData),
                 _marker: core::marker::PhantomData,
@@ -1181,7 +1181,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 #[cfg(verus_keep_ghost_body)]
                 tracked_metadata_perm: Tracked(Some(frame_permission)),
             };
-            range.start = range.start + PAGE_SIZE;
+            range.start += PAGE_SIZE;
             Some(frame)
         } else {
             None
