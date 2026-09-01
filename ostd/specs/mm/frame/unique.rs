@@ -1,6 +1,6 @@
 use vstd::prelude::*;
 
-use vstd_extra::{cast_ptr::*, ownership::*};
+use vstd_extra::{cast_ptr::*, ownership::*, prelude::*};
 
 use crate::specs::{
     arch::{MAX_NR_PAGES, valid_frame_paddr},
