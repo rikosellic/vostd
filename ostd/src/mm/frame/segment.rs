@@ -660,31 +660,24 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
         assert!(offset % PAGE_SIZE == 0);
         assert!(0 < offset && offset < self.size());
 
-        let Self {
-            range: old_range,
-            _marker: _,
-            #[cfg(verus_keep_ghost_body)]
-            tracked_permissions,
-            #[cfg(verus_keep_ghost_body)]
-            tracked_slot_perms,
-        } = self;
-        let tracked mut left_permissions = tracked_permissions.get().tracked_unwrap();
+        let mut this = self;
+
+        let tracked mut left_permissions = this.tracked_permissions.tracked_take();
         let tracked right_permissions = seq_tracked_split_at(
             &mut left_permissions,
             (offset / PAGE_SIZE) as int,
         );
-        let tracked mut left_slot_perms = tracked_slot_perms.get().tracked_unwrap();
+        let tracked mut left_slot_perms = this.tracked_slot_perms.tracked_take();
         let tracked right_slot_perms = seq_tracked_split_at(
             &mut left_slot_perms,
             (offset / PAGE_SIZE) as int,
         );
-        let at = old_range.start + offset;
-
-        proof {}
+        let old = ManuallyDrop::new(this);
+        let at = old.range.start + offset;
 
         (
             Self {
-                range: old_range.start..at,
+                range: old.range.start..at,
                 _marker: core::marker::PhantomData,
                 #[cfg(verus_keep_ghost_body)]
                 tracked_permissions: Tracked(Some(left_permissions)),
@@ -692,7 +685,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                 tracked_slot_perms: Tracked(Some(left_slot_perms)),
             },
             Self {
-                range: at..old_range.end,
+                range: at..old.range.end,
                 _marker: core::marker::PhantomData,
                 #[cfg(verus_keep_ghost_body)]
                 tracked_permissions: Tracked(Some(right_permissions)),
