@@ -218,10 +218,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrameOwner<M> {
             final(self).repr_perm->0 == *final(res),
             final(self).inv(),
     {
-        match &mut self.repr_perm {
-            Some(perm) => perm,
-            None => proof_from_false(),
-        }
+        self.repr_perm.tracked_borrow_mut()
     }
 }
 
