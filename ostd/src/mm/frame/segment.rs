@@ -213,7 +213,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
                     },
                 forall|i: int|
                     #![trigger frame_to_index((self.range.start + i * PAGE_SIZE) as usize)]
-                    permissions.len() <= i < crate::specs::mm::frame::segment::seg_nframes(
+                    permissions.len() <= i < seg_nframes(
                         self.range,
                     ) ==> perm.slot_owner((self.range.start + i * PAGE_SIZE) as usize) == old(
                         perm,
@@ -502,7 +502,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
             }
             assert forall|i: int|
                 #![trigger frame_to_index((segment_range.start + i * PAGE_SIZE) as usize)]
-                0 <= i < crate::specs::mm::frame::segment::seg_nframes(segment_range) implies {
+                0 <= i < seg_nframes(segment_range) implies {
                 let idx = frame_to_index((segment_range.start + i * PAGE_SIZE) as usize);
                 &&& slot_perms[i] == regions.slots[idx]
                 &&& permissions[i].frac() == 1
@@ -1046,7 +1046,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
             self.invariants(*old(regions)),
             forall|i: int|
                 #![trigger frame_to_index((self.start_paddr() + i * PAGE_SIZE) as usize)]
-                0 <= i < crate::specs::mm::frame::segment::seg_nframes(self.range()) ==> {
+                0 <= i < seg_nframes(self.range()) ==> {
                     let idx = frame_to_index((self.start_paddr() + i * PAGE_SIZE) as usize);
                     &&& old(regions).slot_owners[idx].storage_perm().is_init()
                     &&& old(regions).slot_owners[idx].ref_count() == 1 ==> {
@@ -1057,7 +1057,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Segment<M> {
             final(regions).inv(),
     )]
     pub fn drop(self) {
-        let ghost n = crate::specs::mm::frame::segment::seg_nframes(self.range);
+        let ghost n = seg_nframes(self.range);
         let mut paddr = self.range.start;
         let tracked mut slot_perms = self.tracked_slot_perms.get().tracked_unwrap();
         let tracked mut permissions = self.tracked_permissions.get().tracked_unwrap();
