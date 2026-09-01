@@ -859,44 +859,35 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
     }
 
     /// Forgets the [`Segment`] and gets a raw range of physical addresses.
-    ///
-    /// The caller is responsible for restoring the segment with [`Self::from_raw`]
-    /// or otherwise preserving the corresponding metadata obligations.
-    ///
     /// # Verified Properties
     /// ## Preconditions
-    /// - the segment must satisfy the bundled invariant with `regions`.
+    /// - the segment must satisfy its invariant.
     ///
     /// ## Postconditions
-    /// - the returned physical address range matches the segment's range;
-    /// - the meta region is unchanged.
+    /// - the returned physical address range matches the segment's range.
     #[verus_spec(r =>
         with
-            Tracked(regions): Tracked<&mut MetaRegionOwners>,
             -> raw_perms: Tracked<(
                 Seq<&'static PointsTo<MetaSlot>>,
                 Seq<FracMetadataPerm>,
             )>,
         requires
-            self.invariants(*old(regions)),
+            self.inv(),
         ensures
             r == self.range(),
-            final(regions).inv(),
-            *final(regions) == *old(regions),
             raw_perms@.0 == self.slot_perms(),
             raw_perms@.1 == self.permissions(),
     )]
     pub(crate) fn into_raw(self) -> Range<Paddr> {
-        let Self {
-            range,
-            _marker: _,
-            #[cfg(verus_keep_ghost_body)]
-            tracked_permissions,
-            #[cfg(verus_keep_ghost_body)]
-            tracked_slot_perms,
-        } = self;
-        let tracked permissions = tracked_permissions.get().tracked_unwrap();
-        let tracked slot_perms = tracked_slot_perms.get().tracked_unwrap();
+        let mut this = self;
+        let range = this.range.clone();
+
+        proof_decl!{
+            let tracked permissions = this.tracked_permissions.tracked_take();
+            let tracked slot_perms = this.tracked_slot_perms.tracked_take();
+        }
+
+        let _ = ManuallyDrop::new(this);
 
         proof_with!(|= Tracked((slot_perms, permissions)));
         range
