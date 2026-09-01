@@ -3,6 +3,7 @@
 use vstd::prelude::*;
 use vstd::simple_pptr::{self, PPtr};
 
+use vstd_extra::auxiliary::OptionExtraFns;
 use vstd_extra::cast_ptr::*;
 use vstd_extra::ownership::*;
 
@@ -318,10 +319,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
     )]
     pub fn meta_mut<'a>(&'a mut self) -> &'a mut M {
         let tracked points_to = *self.tracked_slot_perm.borrow();
-        let tracked metadata_perms = match self.tracked_metadata_perm.borrow_mut() {
-            Some(perms) => perms,
-            None => proof_from_false(),
-        };
+        let tracked metadata_perms = self.tracked_metadata_perm.borrow_mut().tracked_borrow_mut();
         let tracked repr_perm = owner.tracked_borrow_mut_repr_perm();
         borrow_meta_mut(
             ReprPtr::<MetaSlotStorage, M>::from_pptr(PPtr::from_addr(self.ptr.addr())),
