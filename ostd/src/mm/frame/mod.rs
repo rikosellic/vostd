@@ -523,22 +523,12 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     pub(in crate::mm) fn into_raw(self) -> Paddr {
         broadcast use group_page_meta;
 
-        let paddr = self.start_paddr();
+        let mut this = self;
+        let tracked frame_permission = this.tracked_metadata_perm.tracked_take();
 
-        let ptr = self.ptr;
-        let tracked frame_permission = self.tracked_metadata_perm.get().tracked_unwrap();
-        let raw_frame = Self {
-            ptr,
-            _marker: PhantomData,
-            #[cfg(verus_keep_ghost_body)]
-            tracked_slot_perm: self.tracked_slot_perm,
-            #[cfg(verus_keep_ghost_body)]
-            tracked_metadata_perm: Tracked(None),
-        };
-        let _ = ManuallyDrop::new(raw_frame);
-
+        let this = ManuallyDrop::new(this);
         proof_with!(|= Tracked(frame_permission));
-        paddr
+        this.start_paddr()
     }
 }
 
