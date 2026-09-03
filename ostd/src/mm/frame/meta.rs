@@ -465,13 +465,13 @@ impl MetaSlot {
             return #[verus_spec(with |= Tracked(None))]
             Err(err);
         }
-        let tracked mut metadata_perms = slot_own.metadata_perm.take_resource();
+        let tracked mut metadata_perm = slot_own.metadata_perm.take_resource();
 
         // SAFETY: The slot now has a reference count of `0`, other threads will
         // not access the metadata slot so it is safe to have a mutable reference.
         unsafe {
             #[verus_spec(with
-                Tracked(&mut metadata_perms),
+                Tracked(&mut metadata_perm),
                 Tracked(repr_perm)
             )]
             slot.write_meta(metadata)
@@ -480,7 +480,7 @@ impl MetaSlot {
         proof {
             slot_own.usage = PageUsage::Frame;
             axiom_mmio_usage_iff_mmio_paddr(*slot_own);
-            slot_own.metadata_perm.put_resource(metadata_perms);
+            slot_own.metadata_perm.put_resource(metadata_perm);
         }
 
         if as_unique_ptr {
@@ -727,23 +727,23 @@ impl MetaSlot {
     /// The caller must have exclusive access to the metadata slot's storage in order to provide the permission token.
     #[verus_spec(
         with
-            Tracked(metadata_perms): Tracked<&mut MetadataPerm>,
+            Tracked(metadata_perm): Tracked<&mut MetadataPerm>,
             Tracked(repr_perm): Tracked<&mut M::ReprPerm>,
         requires
-            self.storage.id() == old(metadata_perms).storage_perm.id(),
-            self.vtable_ptr == old(metadata_perms).vtable_ptr_perm.pptr(),
-            old(metadata_perms).vtable_ptr_perm.is_uninit(),
+            self.storage.id() == old(metadata_perm).storage_perm.id(),
+            self.vtable_ptr == old(metadata_perm).vtable_ptr_perm.pptr(),
+            old(metadata_perm).vtable_ptr_perm.is_uninit(),
         ensures
-            final(metadata_perms).storage_perm.id() == old(metadata_perms).storage_perm.id(),
-            final(metadata_perms).storage_perm.is_init(),
-            final(metadata_perms).vtable_ptr_perm.pptr() == old(metadata_perms).vtable_ptr_perm.pptr(),
-            final(metadata_perms).vtable_ptr_perm.is_init(),
+            final(metadata_perm).storage_perm.id() == old(metadata_perm).storage_perm.id(),
+            final(metadata_perm).storage_perm.is_init(),
+            final(metadata_perm).vtable_ptr_perm.pptr() == old(metadata_perm).vtable_ptr_perm.pptr(),
+            final(metadata_perm).vtable_ptr_perm.is_init(),
             <M as Repr<MetaSlotStorage>>::wf(
-                final(metadata_perms).storage_perm.value(),
+                final(metadata_perm).storage_perm.value(),
                 *final(repr_perm),
             ),
             M::from_repr_spec(
-                final(metadata_perms).storage_perm.value(),
+                final(metadata_perm).storage_perm.value(),
                 *final(repr_perm),
             ) == metadata,
     )]
@@ -754,7 +754,7 @@ impl MetaSlot {
         // SAFETY: Caller ensures that the access to the fields are exclusive.
         //        let vtable_ptr = unsafe { &mut *self.vtable_ptr.get() };
         //        vtable_ptr.write(core::ptr::metadata(&metadata as &dyn AnyFrameMeta));
-        self.vtable_ptr.put(Tracked(&mut metadata_perms.vtable_ptr_perm), 0);
+        self.vtable_ptr.put(Tracked(&mut metadata_perm.vtable_ptr_perm), 0);
 
         // SAFETY:
         // 1. `ptr` points to the metadata storage.
@@ -764,7 +764,7 @@ impl MetaSlot {
         // unsafe { ptr.cast::<M>().write(metadata) };
         write_metadata_into_storage(
             &self.storage,
-            Tracked(metadata_perms),
+            Tracked(metadata_perm),
             Tracked(repr_perm),
             metadata,
         );
@@ -818,18 +818,18 @@ impl MetaSlot {
     pub(super) unsafe fn drop_last_in_place(&self) {
         // This should be guaranteed as a safety requirement.
         //        debug_assert_eq!(self.ref_count.load(Ordering::Relaxed), 0);
-        let tracked mut metadata_perms = owner.metadata_perm.take_resource();
+        let tracked mut metadata_perm = owner.metadata_perm.take_resource();
         // SAFETY: The caller ensures safety.
         unsafe {
             #[verus_spec(with
                 Tracked(&owner.ref_count_perm),
                 Tracked(&owner.in_list_perm),
-                Tracked(&mut metadata_perms)
+                Tracked(&mut metadata_perm)
             )]
             self.drop_meta_in_place()
         };
         proof {
-            owner.metadata_perm.put_resource(metadata_perms);
+            owner.metadata_perm.put_resource(metadata_perm);
         }
 
         // `Release` pairs with the `Acquire` in `Frame::from_unused` and ensures
@@ -859,22 +859,22 @@ impl MetaSlot {
         with
             Tracked(ref_count_perm): Tracked<&PermissionU64>,
             Tracked(in_list_perm): Tracked<&PermissionU64>,
-            Tracked(metadata_perms): Tracked<&mut MetadataPerm>,
+            Tracked(metadata_perm): Tracked<&mut MetadataPerm>,
         requires
             self.ref_count.id() == ref_count_perm.id(),
             ref_count_perm.value() == 0 || ref_count_perm.value() == REF_COUNT_UNIQUE,
             self.in_list.id() == in_list_perm.id(),
             in_list_perm.value() == 0,
-            old(metadata_perms).storage_perm.is_init(),
-            old(metadata_perms).storage_perm.id() == self.storage.id(),
-            old(metadata_perms).vtable_ptr_perm.is_init(),
-            old(metadata_perms).vtable_ptr_perm.pptr() == self.vtable_ptr,
+            old(metadata_perm).storage_perm.is_init(),
+            old(metadata_perm).storage_perm.id() == self.storage.id(),
+            old(metadata_perm).vtable_ptr_perm.is_init(),
+            old(metadata_perm).vtable_ptr_perm.pptr() == self.vtable_ptr,
         ensures
-            final(metadata_perms).storage_perm.is_uninit(),
-            final(metadata_perms).storage_perm.id() == old(metadata_perms).storage_perm.id(),
-            final(metadata_perms).vtable_ptr_perm.is_uninit(),
-            final(metadata_perms).vtable_ptr_perm.pptr()
-                == old(metadata_perms).vtable_ptr_perm.pptr(),
+            final(metadata_perm).storage_perm.is_uninit(),
+            final(metadata_perm).storage_perm.id() == old(metadata_perm).storage_perm.id(),
+            final(metadata_perm).vtable_ptr_perm.is_uninit(),
+            final(metadata_perm).vtable_ptr_perm.pptr()
+                == old(metadata_perm).vtable_ptr_perm.pptr(),
     )]
     #[verifier::external_body]
     pub(super) unsafe fn drop_meta_in_place(&self) {
