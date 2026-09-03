@@ -106,19 +106,19 @@ impl MetaSlot {
         pre: MetaRegionOwners,
         post: MetaRegionOwners,
         repr_perm: M::ReprPerm,
-        permissions: Sum<FracMetadataPerm, MetadataPerm>,
+        permission: Sum<FracMetadataPerm, MetadataPerm>,
     ) -> bool {
         let idx = frame_to_index(paddr);
-        let metadata_perms = match permissions {
+        let metadata_perms = match permission {
             Sum::Left(permission) => permission.resource(),
             Sum::Right(permission) => permission,
         };
         &&& Self::get_from_unused_region_spec(paddr, as_unique, pre, post)
-        &&& as_unique ==> permissions is Right
+        &&& as_unique ==> permission is Right
         &&& !as_unique ==> {
-            &&& permissions is Left
-            &&& permissions->Left_0.frac() == 1
-            &&& permissions->Left_0.id() == post.slot_owners[idx].metadata_perm.id()
+            &&& permission is Left
+            &&& permission->Left_0.frac() == 1
+            &&& permission->Left_0.id() == post.slot_owners[idx].metadata_perm.id()
         }
         &&& Self::perms_related(*post.slots[idx], metadata_perms)
         &&& <M as Repr<MetaSlotStorage>>::wf(metadata_perms.storage_perm.value(), repr_perm)
