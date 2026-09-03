@@ -114,9 +114,7 @@ impl MetaSlot {
             Sum::Right(permission) => permission,
         };
         &&& Self::get_from_unused_region_spec(paddr, as_unique, pre, post)
-        &&& as_unique ==> {
-            &&& permissions is Right
-        }
+        &&& as_unique ==> permissions is Right
         &&& !as_unique ==> {
             &&& permissions is Left
             &&& permissions->Left_0.frac() == 1
