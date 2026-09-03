@@ -108,7 +108,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
             Err(err)
         } else {
             proof_decl! {
-                let tracked metadata_perms = permissions.1.tracked_unwrap();
+                let tracked metadata_perms = permissions.tracked_unwrap().tracked_take_right();
                 let tracked slot_perm = regions.tracked_borrow_slot(paddr);
                 let tracked owner = UniqueFrameOwner::<M>::tracked_from_unused_owner(
                     meta_own_in,

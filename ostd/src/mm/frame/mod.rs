@@ -234,6 +234,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
                 let tracked slot_perm = regions.tracked_borrow_slot(paddr);
                 let ghost idx = frame_to_index(paddr);
                 assert(regions.slot_owners.contains_key(idx));
+                let tracked metadata_perm = permissions.tracked_unwrap().tracked_take_left();
             }
             let ptr = from_unused.unwrap();
             Ok(
@@ -243,7 +244,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
                     #[cfg(verus_keep_ghost_body)]
                     tracked_slot_perm: Tracked(slot_perm),
                     #[cfg(verus_keep_ghost_body)]
-                    tracked_metadata_perm: Tracked(permissions.0),
+                    tracked_metadata_perm: Tracked(Some(metadata_perm)),
                 },
             )
         }

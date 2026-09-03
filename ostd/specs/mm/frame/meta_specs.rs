@@ -6,7 +6,7 @@ use vstd::{
     atomic::*,
     simple_pptr::{self, PPtr},
 };
-use vstd_extra::{cast_ptr::*, ownership::*};
+use vstd_extra::{cast_ptr::*, ownership::*, sum::Sum};
 
 use crate::specs::{
     arch::*,
@@ -106,24 +106,21 @@ impl MetaSlot {
         pre: MetaRegionOwners,
         post: MetaRegionOwners,
         repr_perm: M::ReprPerm,
-        permissions: (Option<FracMetadataPerm>, Option<MetadataPerm>),
+        permissions: Sum<FracMetadataPerm, MetadataPerm>,
     ) -> bool {
         let idx = frame_to_index(paddr);
-        let metadata_perms = if as_unique {
-            permissions.1->0
-        } else {
-            permissions.0->0.resource()
+        let metadata_perms = match permissions {
+            Sum::Left(permission) => permission.resource(),
+            Sum::Right(permission) => permission,
         };
         &&& Self::get_from_unused_region_spec(paddr, as_unique, pre, post)
         &&& as_unique ==> {
-            &&& permissions.0 is None
-            &&& permissions.1 is Some
+            &&& permissions is Right
         }
         &&& !as_unique ==> {
-            &&& permissions.0 is Some
-            &&& permissions.1 is None
-            &&& permissions.0->0.frac() == 1
-            &&& permissions.0->0.id() == post.slot_owners[idx].metadata_perm.id()
+            &&& permissions is Left
+            &&& permissions->Left_0.frac() == 1
+            &&& permissions->Left_0.id() == post.slot_owners[idx].metadata_perm.id()
         }
         &&& Self::perms_related(*post.slots[idx], metadata_perms)
         &&& <M as Repr<MetaSlotStorage>>::wf(metadata_perms.storage_perm.value(), repr_perm)

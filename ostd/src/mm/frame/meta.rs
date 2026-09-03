@@ -84,6 +84,7 @@ use vstd_extra::cast_ptr::{Repr, ReprPtr};
 use vstd_extra::ownership::*;
 use vstd_extra::panic::{may_panic, panic_diverge};
 use vstd_extra::prelude::*;
+use vstd_extra::sum::Sum;
 
 use core::{
     alloc::Layout,
@@ -383,19 +384,19 @@ impl MetaSlot {
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(repr_perm): Tracked<&mut M::ReprPerm>,
-            -> permissions: Tracked<(Option<FracMetadataPerm>, Option<MetadataPerm>)>
+            -> permissions: Tracked<Option<Sum<FracMetadataPerm, MetadataPerm>>>
         requires
             old(regions).inv(),
         ensures
             res is Err ==> {
                 &&& *final(regions) == *old(regions)
-                &&& permissions@.0 is None
-                &&& permissions@.1 is None
+                &&& permissions@ is None
             },
             res matches Ok(res) ==> {
                 &&& valid_frame_paddr(paddr)
                 &&& res.addr() == frame_to_meta(paddr)
                 &&& final(regions).inv()
+                &&& permissions@ is Some
                 &&& Self::get_from_unused_spec(
                     paddr,
                     metadata,
@@ -403,7 +404,7 @@ impl MetaSlot {
                     *old(regions),
                     *final(regions),
                     *final(repr_perm),
-                    permissions@,
+                    permissions@->0,
                 )
             },
     )]
@@ -428,7 +429,7 @@ impl MetaSlot {
         get_slot(paddr) {
             Ok(slot) => slot,
             Err(err) => {
-                return #[verus_spec(with |= Tracked((None, None)))]
+                return #[verus_spec(with |= Tracked(None))]
                 Err(err);
             },
         };
@@ -461,7 +462,7 @@ impl MetaSlot {
                 );
             }
 
-            return #[verus_spec(with |= Tracked((None, None)))]
+            return #[verus_spec(with |= Tracked(None))]
             Err(err);
         }
         let tracked mut metadata_perms = slot_own.metadata_perm.take_resource();
@@ -492,9 +493,9 @@ impl MetaSlot {
             slot.ref_count.store(Tracked(&mut slot_own.ref_count_perm), 1);
         }
         let tracked perm = if as_unique_ptr {
-            (None, Some(slot_own.metadata_perm.take_resource()))
+            Some(Sum::Right(slot_own.metadata_perm.take_resource()))
         } else {
-            (Some(slot_own.metadata_perm.split_one()), None)
+            Some(Sum::Left(slot_own.metadata_perm.split_one()))
         };
         // Ok(slot as *const MetaSlot)
         proof_with!(|= Tracked(perm));
