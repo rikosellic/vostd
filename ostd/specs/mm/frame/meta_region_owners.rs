@@ -23,10 +23,7 @@ use crate::mm::{
     kspace::FRAME_METADATA_RANGE,
 };
 
-use super::{
-    meta_owners::{MetaSlotModel, MetaSlotOwner},
-    *,
-};
+use super::{meta_owners::MetaSlotOwner, *};
 
 verus! {
 
@@ -39,10 +36,6 @@ verus! {
 pub tracked struct MetaRegionOwners {
     pub slots: Map<int, &'static simple_pptr::PointsTo<MetaSlot>>,
     pub slot_owners: Map<int, MetaSlotOwner>,
-}
-
-pub ghost struct MetaRegionModel {
-    pub slots: Map<int, MetaSlotModel>,
 }
 
 impl Inv for MetaRegionOwners {
@@ -68,33 +61,6 @@ impl Inv for MetaRegionOwners {
                     &&& self.slot_owners[i].slot_vaddr == self.slots[i].addr()
                 }
         }
-    }
-}
-
-impl MetaRegionModel {
-    pub open spec fn contains(self, index: int) -> bool {
-        self.slots.contains_key(index)
-    }
-}
-
-impl Inv for MetaRegionModel {
-    open spec fn inv(self) -> bool {
-        &&& forall|i: int| 0 <= i < max_meta_slots() <==> #[trigger] self.slots.contains_key(i)
-        &&& forall|i: int| #[trigger] self.slots.contains_key(i) ==> self.slots[i].inv()
-    }
-}
-
-impl View for MetaRegionOwners {
-    type V = MetaRegionModel;
-
-    open spec fn view(&self) -> <Self as View>::V {
-        let slots = self.slot_owners.map_values(|s: MetaSlotOwner| s@);
-        MetaRegionModel { slots }
-    }
-}
-
-impl InvView for MetaRegionOwners {
-    proof fn view_preserves_inv(self) {
     }
 }
 

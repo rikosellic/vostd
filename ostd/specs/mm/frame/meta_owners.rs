@@ -1,7 +1,3 @@
-//! The model of a metadata slot. It includes:
-//! - The model of the metadata slot: `MetaSlotModel`.
-//! - The invariants for both MetaSlot and MetaSlotModel.
-//! - The primitives for MetaSlot.
 use vstd::prelude::*;
 
 use vstd::{atomic::*, cell::pcell_maybe_uninit, simple_pptr::*};
@@ -210,7 +206,7 @@ impl MetaSlotOwner {
         self.metadata_perm().vtable_ptr_perm
     }
 
-    pub proof fn tracked_borrow_metadata_perm(tracked &self) -> (tracked res: &MetadataPerm)
+    pub proof fn tracked_borrow_metadata_perm(tracked &self) -> tracked &MetadataPerm
         requires
             !self.metadata_perm.is_resource_vacant(),
         returns
@@ -244,7 +240,7 @@ pub fn borrow_meta<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>>(
     Tracked(slot_perm): Tracked<&'a vstd::simple_pptr::PointsTo<MetaSlot>>,
     Tracked(metadata_perm): Tracked<&'a MetadataPerm>,
     Tracked(repr_perm): Tracked<&'a M::ReprPerm>,
-) -> (res: &'a M)
+) -> &'a M
     requires
         ptr.addr() == slot_perm.addr(),
         typed_meta_wf::<M>(*slot_perm, *metadata_perm, *repr_perm),
@@ -303,65 +299,6 @@ impl Inv for MetaSlotOwner {
         }
         &&& FRAME_METADATA_RANGE.start <= self.slot_vaddr < FRAME_METADATA_RANGE.end
         &&& self.slot_vaddr % META_SLOT_SIZE == 0
-    }
-}
-
-pub ghost struct MetaSlotModel {
-    pub status: MetaSlotStatus,
-    pub storage: MemContents<MetaSlotStorage>,
-    pub ref_count: u64,
-    pub vtable_ptr: MemContents<usize>,
-    pub in_list: u64,
-    pub slot_vaddr: Vaddr,
-    pub usage: PageUsage,
-}
-
-impl Inv for MetaSlotModel {
-    open spec fn inv(self) -> bool {
-        match self.ref_count {
-            REF_COUNT_UNUSED => {
-                &&& self.vtable_ptr.is_uninit()
-                &&& self.in_list == 0
-            },
-            REF_COUNT_UNIQUE => { true },
-            0 => { &&& self.in_list == 0 },
-            _ if self.ref_count <= REF_COUNT_MAX => { true },
-            _ => { false },
-        }
-    }
-}
-
-impl View for MetaSlotOwner {
-    type V = MetaSlotModel;
-
-    open spec fn view(&self) -> Self::V {
-        let storage = if self.metadata_perm.not_empty() {
-            self.storage_perm().mem_contents()
-        } else {
-            arbitrary()
-        };
-        let ref_count = self.ref_count();
-        let vtable_ptr = if self.metadata_perm.not_empty() {
-            self.vtable_ptr_perm().mem_contents()
-        } else {
-            arbitrary()
-        };
-        let in_list = self.in_list_perm.value();
-        let slot_vaddr = self.slot_vaddr;
-        let usage = self.usage;
-        let status = match ref_count {
-            REF_COUNT_UNUSED => MetaSlotStatus::UNUSED,
-            REF_COUNT_UNIQUE => MetaSlotStatus::UNIQUE,
-            0 => MetaSlotStatus::UNDER_CONSTRUCTION,
-            _ if ref_count <= REF_COUNT_MAX => MetaSlotStatus::SHARED,
-            _ => MetaSlotStatus::OVERFLOW,
-        };
-        MetaSlotModel { status, storage, ref_count, vtable_ptr, in_list, slot_vaddr, usage }
-    }
-}
-
-impl InvView for MetaSlotOwner {
-    proof fn view_preserves_inv(self) {
     }
 }
 

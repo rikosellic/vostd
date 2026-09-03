@@ -74,34 +74,11 @@ pub tracked struct UniqueFrameOwner<M: AnyFrameMeta + ?Sized + Repr<MetaSlotStor
     pub ghost slot_index: int,
 }
 
-pub ghost struct UniqueFrameModel<M: AnyFrameMeta + ?Sized + Repr<MetaSlotStorage> + OwnerOf> {
-    pub meta: <M::Owner as View>::V,
-}
-
 impl<M: AnyFrameMeta + ?Sized + Repr<MetaSlotStorage> + OwnerOf> Inv for UniqueFrameOwner<M> {
     open spec fn inv(self) -> bool {
         &&& 0 <= self.slot_index < MAX_NR_PAGES
         &&& self.slot_index < max_meta_slots()
         &&& self.repr_perm is Some
-    }
-}
-
-impl<M: AnyFrameMeta + Sized + Repr<MetaSlotStorage> + OwnerOf> Inv for UniqueFrameModel<M> {
-    open spec fn inv(self) -> bool {
-        true
-    }
-}
-
-impl<M: AnyFrameMeta + ?Sized + Repr<MetaSlotStorage> + OwnerOf> View for UniqueFrameOwner<M> {
-    type V = UniqueFrameModel<M>;
-
-    open spec fn view(&self) -> Self::V {
-        UniqueFrameModel { meta: self.meta_own@ }
-    }
-}
-
-impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> InvView for UniqueFrameOwner<M> {
-    proof fn view_preserves_inv(self) {
     }
 }
 

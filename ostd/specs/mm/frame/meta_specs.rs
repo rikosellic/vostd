@@ -29,8 +29,7 @@ use crate::mm::{
 };
 
 use super::meta_owners::{
-    FracMetadataPerm, MetaSlotModel, MetaSlotOwner, MetaSlotStatus, MetaSlotStorage, MetadataPerm,
-    PageUsage,
+    FracMetadataPerm, MetaSlotOwner, MetaSlotStatus, MetaSlotStorage, MetadataPerm, PageUsage,
 };
 
 verus! {

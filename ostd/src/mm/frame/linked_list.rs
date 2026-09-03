@@ -305,7 +305,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedList<M> {
             owner.relate_region(*old(regions)),
         ensures
             owner.list.len() == 0 ==> r.is_none(),
-            r.is_some() ==> (r->0).1@@.meta == owner.list[0]@,
+            r.is_some() ==> (r->0).1@.meta_own@ == owner.list[0]@,
             r.is_some() ==> (r->0).0.frame_link_inv((r->0).1@, *final(regions)),
     )]
     pub fn pop_front(&mut self) -> Option<
@@ -400,7 +400,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedList<M> {
             owner.relate_region(*old(regions)),
         ensures
             owner.list.len() == 0 ==> r.is_none(),
-            r.is_some() ==> (r->0).1@@.meta == owner.list[owner.list.len() - 1]@,
+            r.is_some() ==> (r->0).1@.meta_own@ == owner.list[owner.list.len() - 1]@,
             r.is_some() ==> (r->0).0.frame_link_inv((r->0).1@, *final(regions)),
     )]
     pub fn pop_back(&mut self) -> Option<
@@ -883,7 +883,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
         ensures
             old(owner).length() == 0 ==> res.is_none(),
             old(self).current.is_some() ==> res.is_some(),
-            res.is_some() ==> (res->0).1@@.meta == old(owner).list_own.list[old(owner).index]@,
+            res.is_some() ==> (res->0).1@.meta_own@ == old(owner).list_own.list[old(owner).index]@,
             res.is_some() ==> final(owner)@ == old(owner)@.remove(),
             res.is_some() ==> (res->0).0.frame_link_inv((res->0).1@, *final(regions)),
             // Invariant preservation
