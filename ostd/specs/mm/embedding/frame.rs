@@ -89,7 +89,7 @@ pub axiom fn frame_from_in_use_embedded(
     ensures
         final(regions).inv(),
         !valid_frame_paddr(paddr) ==> res is None,
-        res is Some ==> MetaSlot::get_from_in_use_success_region_spec(
+        res is Some ==> MetaSlot::inc_frame_reference_region_spec(
             paddr,
             *old(regions),
             *final(regions),
@@ -203,7 +203,7 @@ pub(super) proof fn from_in_use_step(
         final(regions).inv(),
         !valid_frame_paddr(paddr) ==> res is None,
         res matches Some(e) ==> e.paddr == paddr,
-        res is Some ==> MetaSlot::get_from_in_use_success_region_spec(
+        res is Some ==> MetaSlot::inc_frame_reference_region_spec(
             paddr,
             *old(regions),
             *final(regions),

@@ -310,7 +310,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> Frame<M> {
         ensures
             final(regions).inv(),
             res matches Ok(res) ==> {
-                &&& MetaSlot::get_from_in_use_success_region_spec(paddr, *old(regions), *final(regions))
+                &&& MetaSlot::inc_frame_reference_region_spec(paddr, *old(regions), *final(regions))
                 &&& res.inv()
                 &&& res.start_paddr_spec() == paddr
                 &&& res.wf_with_region(*final(regions))
@@ -629,6 +629,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> RCClone for Frame<M> {
         let idx = self.index();
         &&& new_perm.inv()
         // ref_count incremented
+        &&& MetaSlot::inc_frame_reference_region_spec(paddr, pre, post)
         &&& new_perm.slot_owners[idx].ref_count() == old_perm.slot_owners[idx].ref_count() + 1
         &&& new_perm.slot_owners[idx].ref_count_perm.id()
             == old_perm.slot_owners[idx].ref_count_perm.id()
@@ -845,7 +846,7 @@ impl TryFrom<Frame<dyn AnyFrameMeta>> for UFrame {
         permission@.frac() == 1,
         permission@.id() == final(regions).slot_owner(paddr).metadata_perm.id(),
         permission@.resource() == old(regions).slot_owner(paddr).metadata_perm@,
-        MetaSlot::get_from_in_use_success_region_spec(paddr,*old(regions),*final(regions)),
+        MetaSlot::inc_frame_reference_region_spec(paddr,*old(regions),*final(regions)),
 )]
 pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) -> (permission: Tracked<
     FracMetadataPerm,

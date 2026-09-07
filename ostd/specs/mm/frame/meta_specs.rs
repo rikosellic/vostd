@@ -169,7 +169,7 @@ impl MetaSlot {
     }
 
     /// The metadata region transition of claiming a currently shared slot.
-    pub open spec fn get_from_in_use_success_region_spec(
+    pub open spec fn inc_frame_reference_region_spec(
         paddr: Paddr,
         pre: MetaRegionOwners,
         post: MetaRegionOwners,
@@ -199,7 +199,7 @@ impl MetaSlot {
     ) -> bool {
         let idx = frame_to_index(paddr);
         {
-            &&& Self::get_from_in_use_success_region_spec(paddr, pre, post)
+            &&& Self::inc_frame_reference_region_spec(paddr, pre, post)
             &&& metadata_perm.frac() == 1
             &&& metadata_perm.id() == post.slot_owners[idx].metadata_perm.id()
             &&& Self::perms_related(*post.slots[idx], metadata_perm.resource())
