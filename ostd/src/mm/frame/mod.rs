@@ -622,37 +622,18 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> RCClone for Frame<M> {
 
     open spec fn clone_ensures(
         self,
-        old_perm: MetaRegionOwners,
-        new_perm: MetaRegionOwners,
+        pre: MetaRegionOwners,
+        post: MetaRegionOwners,
         res: Self,
     ) -> bool {
         let idx = self.index();
-        &&& new_perm.inv()
-        // ref_count incremented
-        &&& MetaSlot::inc_frame_reference_region_spec(paddr, pre, post)
-        &&& new_perm.slot_owners[idx].ref_count() == old_perm.slot_owners[idx].ref_count() + 1
-        &&& new_perm.slot_owners[idx].ref_count_perm.id()
-            == old_perm.slot_owners[idx].ref_count_perm.id()
-        &&& new_perm.slot_owners[idx].metadata_perm.id()
-            == old_perm.slot_owners[idx].metadata_perm.id()
-        &&& new_perm.slot_owners[idx].metadata_perm.frac() + 1
-            == old_perm.slot_owners[idx].metadata_perm.frac()
-        &&& new_perm.slot_owners[idx].metadata_perm@ == old_perm.slot_owners[idx].metadata_perm@
+        &&& MetaSlot::inc_frame_reference_region_spec(self.start_paddr_spec(), pre, post)
+        &&& post.inv()
         &&& res.tracked_metadata_perm@ is Some
         &&& res.tracked_metadata_perm@->0.frac() == 1
-        &&& res.tracked_metadata_perm@->0.id() == new_perm.slot_owners[idx].metadata_perm.id()
-        &&& res.tracked_slot_perm@ == new_perm.slots[idx]
+        &&& res.tracked_metadata_perm@->0.id() == post.slot_owners[idx].metadata_perm.id()
+        &&& res.tracked_slot_perm@ == post.slots[idx]
         &&& res.ptr == self.ptr
-        &&& new_perm.slot_owners[idx].in_list_perm == old_perm.slot_owners[idx].in_list_perm
-        &&& new_perm.slot_owners[idx].paths_in_pt == old_perm.slot_owners[idx].paths_in_pt
-        &&& new_perm.slot_owners[idx].slot_vaddr == old_perm.slot_owners[idx].slot_vaddr
-        &&& new_perm.slot_owners[idx].usage
-            == old_perm.slot_owners[idx].usage
-        // Other slot_owners unchanged
-        &&& new_perm.slots == old_perm.slots
-        &&& forall|i: int|
-            i != idx ==> (#[trigger] new_perm.slot_owners[i] == old_perm.slot_owners[i])
-        &&& new_perm.slot_owners.dom() == old_perm.slot_owners.dom()
     }
 
     fn clone(&self, Tracked(perm): Tracked<&mut MetaRegionOwners>) -> Self {
