@@ -878,14 +878,7 @@ impl MetaSlot {
     )]
     #[verifier::external_body]
     pub(super) unsafe fn drop_meta_in_place(&self) {
-        // Smoke test for the dyn-dispatch shape — body kept `external_body`
-        // because (a) the args bundle isn't threaded through the call chain
-        // yet (Tracked::assume_new forges it here), (b) `VmReader`,
-        // `vtable_ptr.assume_init_read`, and `core::ptr::drop_in_place` have
-        // no Verus specs. Activates only the type-check; runtime behavior is
-        // axiomatic per the verus_spec ensures above.
-        let paddr = unimplemented!();
-        let _: Paddr = paddr;
+        let paddr = self.frame_paddr();
 
         // SAFETY: We have exclusive access to the frame metadata.
         let vtable_ptr: *const core::ptr::DynMetadata<dyn AnyFrameMeta> = unimplemented!();
