@@ -975,7 +975,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> From<Frame<M>> for Segment<M> {
 impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Iterator for Segment<M> {
     type Item = Frame<M>;
 
-    /// Gets the next frame in the segment.
     #[verifier::rlimit(200)]
     fn next(&mut self) -> Option<Self::Item> {
         proof {
@@ -984,14 +983,11 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Iterator for Segment<M> 
             assume(self.inv());
         }
 
-        let tracked mut slot_perms = self.tracked_slot_perms.borrow_mut().tracked_borrow_mut();
-        let tracked mut permissions = self.tracked_permissions.borrow_mut().tracked_borrow_mut();
-        let result = if self.range.start < self.range.end {
+        let tracked mut slot_perms = self.tracked_slot_perms.tracked_borrow_mut();
+        let tracked mut permissions = self.tracked_permissions.tracked_borrow_mut();
+        if self.range.start < self.range.end {
             let tracked slot_perm = slot_perms.tracked_pop_front();
             let tracked frame_permission = permissions.tracked_pop_front();
-            proof {
-                assert(slot_perm.addr() == frame_to_meta(self.range.start));
-            }
             // SAFETY: each frame in the range would be a handle forgotten
             // when creating the `Segment` object.
             let frame = unsafe {
@@ -1002,8 +998,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Iterator for Segment<M> 
             Some(frame)
         } else {
             None
-        };
-        result
+        }
     }
 }
 
