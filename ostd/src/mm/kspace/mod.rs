@@ -243,7 +243,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
     }
 
     #[verifier::external_body]
-    fn item_into_raw(item: Self::Item, Tracked(regions): Tracked<&mut MetaRegionOwners>) -> (res: (
+    fn item_into_raw(item: Self::Item) -> (res: (
         (Paddr, PagingLevel, PageProperty),
         Tracked<Option<FracMetadataPerm>>,
     )) {
@@ -255,7 +255,6 @@ unsafe impl PageTableConfig for KernelPtConfig {
                 debug_assert!(!prop.flags.contains(PageFlags::AVAIL1()));
                 prop.flags = prop.flags | PageFlags::AVAIL1();
                 let level = frame.map_level();
-                proof_with!(Tracked(regions));
                 let paddr = frame.into_raw();
                 proof_with!(=> Tracked(frame_permission));
                 ((paddr, level, prop), Tracked(Some(frame_permission)))

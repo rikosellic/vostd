@@ -688,10 +688,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     #[verus_spec(with Tracked(regions), Ghost(pa))]
                     let cloned = Self::clone_item(&item);
 
-                    let (_raw, Tracked(restored_permission)) = C::item_into_raw(
-                        item,
-                        Tracked(regions),
-                    );
+                    let (_raw, Tracked(restored_permission)) = C::item_into_raw(item);
                     proof {
                         assert(restored_permission == raw_permission);
                         {
@@ -3127,7 +3124,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         let ghost owner0 = *owner;
 
         assert!(self.0.va < self.0.barrier_va.end);
-        let ((pa, level, prop), Tracked(raw_permission)) = C::item_into_raw(item, Tracked(regions));
+        let ((pa, level, prop), Tracked(raw_permission)) = C::item_into_raw(item);
         proof {
             C::lemma_item_from_raw_roundtrip(
                 item,

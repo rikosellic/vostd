@@ -1657,7 +1657,7 @@ unsafe impl PageTableConfig for UserPtConfig {
     }
 
     #[verifier::external_body]
-    fn item_into_raw(item: Self::Item, Tracked(regions): Tracked<&mut MetaRegionOwners>) -> (res: (
+    fn item_into_raw(item: Self::Item) -> (res: (
         (Paddr, PagingLevel, PageProperty),
         Tracked<Option<FracMetadataPerm>>,
     )) {
@@ -1666,7 +1666,6 @@ unsafe impl PageTableConfig for UserPtConfig {
         }
         let MappedItem { frame, prop } = item;
         let level = frame.map_level();
-        proof_with!(Tracked(regions));
         let paddr = frame.into_raw();
         proof_with!(=> Tracked(frame_permission));
         ((paddr, level, prop), Tracked(Some(frame_permission)))

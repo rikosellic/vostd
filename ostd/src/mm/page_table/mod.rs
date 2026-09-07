@@ -214,14 +214,13 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     ///
     /// The ownership of the item will be consumed, i.e., the item will be
     /// forgotten after this function is called.
-    fn item_into_raw(item: Self::Item, Tracked(regions): Tracked<&mut MetaRegionOwners>) -> (res: (
+    fn item_into_raw(item: Self::Item) -> (res: (
         (Paddr, PagingLevel, PageProperty),
         Tracked<Option<FracMetadataPerm>>,
     ))
         requires
             Self::item_well_formed(item),
         ensures
-            *final(regions) == *old(regions),
             res.0 == Self::item_into_raw_spec(item),
             res.1@ == Self::item_permission(item),
             res.1@ is Some <==> Self::tracked(item),
