@@ -133,6 +133,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> UniqueFrame<M> {
         }
     }
 
+    // FIXME: This seems to be unsound and has to be corrected until we have better modeling of trait object.
     pub open spec fn transmute_spec<M1: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf>(
         self,
         transmuted: UniqueFrame<M1>,
@@ -419,8 +420,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
 
         proof_decl! {
             let tracked mut owner = owner;
-            let ghost idx = owner.slot_index;
-            let tracked slot_own = regions.slot_owners.tracked_borrow_mut(idx);
+            let tracked slot_own = regions.tracked_borrow_mut_slot_owner(self.start_paddr_spec());
             let tracked metadata_perms = this.tracked_metadata_perm.tracked_take();
             slot_own.metadata_perm.put_resource(metadata_perms);
         }
