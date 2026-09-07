@@ -42,8 +42,7 @@ verus! {
 ///
 /// All the metadata of the frames are homogeneous, i.e., they are of the same
 /// type.
-#[repr(transparent)]
-#[allow(repr_transparent_non_zst_fields)]
+// #[repr(transparent)]
 pub struct Segment<M: AnyFrameMeta + ?Sized> {
     range: Range<Paddr>,
     _marker: core::marker::PhantomData<M>,

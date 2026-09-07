@@ -118,9 +118,7 @@ fn acquire_fence() {
 /// Frames are associated with metadata. The type of the metadata `M` is
 /// determines the kind of the frame. If `M` implements [`AnyUFrameMeta`], the
 /// frame is a untyped frame. Otherwise, it is a typed frame.
-/// # Verification Design
-#[allow(repr_transparent_non_zst_fields)]
-#[repr(transparent)]
+// #[repr(transparent)]
 pub struct Frame<M: ?Sized> {
     pub ptr: PPtr<MetaSlot>,
     pub _marker: PhantomData<M>,
