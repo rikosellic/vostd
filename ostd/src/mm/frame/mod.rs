@@ -832,9 +832,8 @@ impl TryFrom<Frame<dyn AnyFrameMeta>> for UFrame {
 pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) -> (permission: Tracked<
     FracMetadataPerm,
 >) {
-    let tracked mut slot_own = regions.slot_owners.tracked_remove(frame_to_index(paddr));
-    let tracked perm = regions.slots.tracked_borrow(frame_to_index(paddr));
-    let tracked inner_perms = &mut slot_own;
+    let tracked perm = regions.tracked_borrow_slot(paddr);
+    let tracked slot_own = regions.tracked_borrow_mut_slot_owner(paddr);
 
     let vaddr: Vaddr = frame_to_meta(paddr);
     // SAFETY: `vaddr` points to a valid `MetaSlot` that will never be mutably borrowed, so taking
@@ -842,25 +841,11 @@ pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) -> (permission: Tr
     let slot = PPtr::<MetaSlot>(vaddr, PhantomData);
 
     unsafe {
-        #[verus_spec(with Tracked(&mut inner_perms.ref_count_perm))]
+        #[verus_spec(with Tracked(&mut slot_own.ref_count_perm))]
         slot.borrow(Tracked(perm)).inc_ref_count()
     };
-    let tracked frame_permission = inner_perms.metadata_perm.split_one();
+    let tracked frame_permission = slot_own.metadata_perm.split_one();
 
-    proof {
-        let idx = frame_to_index(paddr);
-
-        // inc_ref_count preserves permission id
-        assert(inner_perms.ref_count_perm.id() == old(
-            regions,
-        ).slot_owners[idx].ref_count_perm.id());
-
-        assert(slot_own.inv());
-
-        assert(regions.slots[idx].value().wf(slot_own));
-
-        regions.slot_owners.tracked_insert(idx, slot_own);
-    }
     Tracked(frame_permission)
 }
 
