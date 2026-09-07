@@ -552,9 +552,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
     )]
     pub(crate) fn drop(&mut self) {
         let tracked mut owner = owner;
-        let ghost idx = owner.slot_index;
-
-        let tracked slot_own = regions.slot_owners.tracked_borrow_mut(idx);
+        let tracked slot_own = regions.tracked_borrow_mut_slot_owner(self.start_paddr_spec());
         let tracked metadata_perms = self.tracked_metadata_perm.tracked_take();
         proof {
             slot_own.metadata_perm.put_resource(metadata_perms);
@@ -564,7 +562,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf + ?Sized> UniqueFrame<M> 
         self.slot().ref_count.store(Tracked(&mut slot_own.ref_count_perm), 0);
 
         unsafe {
-            #[verus_spec(with Tracked(&mut slot_own))]
+            #[verus_spec(with Tracked(slot_own))]
             self.slot().drop_last_in_place()
         };
 

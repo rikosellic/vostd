@@ -220,8 +220,6 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> RCClone for Segment<M> {
             if paddr >= self.range.end {
                 break;
             }
-            let ghost permissions_len: int = permissions.len() as int;
-            proof {}
             let tracked_permission = unsafe {
                 #[verus_spec(with Tracked(perm))]
                 crate::mm::frame::inc_frame_ref_count(paddr)
@@ -457,8 +455,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Segment<M> {
                             Frame::<M>::from_raw(p)
                         };
                         frame.drop(Tracked(regions));
-                        proof {}
-                        p = p + PAGE_SIZE;
+                        p += PAGE_SIZE;
                         proof {
                             k = k + 1;
                         }
