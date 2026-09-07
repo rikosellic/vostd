@@ -95,23 +95,6 @@ impl<M: ?Sized> Frame<M> {
         meta_to_frame(self.ptr.addr())
     }
 
-    pub open spec fn from_unused_spec(
-        paddr: Paddr,
-        pre: MetaRegionOwners,
-        post: MetaRegionOwners,
-    ) -> bool {
-        let pre_owner = pre.slot_owner(paddr);
-        let post_owner = post.slot_owner(paddr);
-        {
-            &&& pre_owner.ref_count() == REF_COUNT_UNUSED
-            &&& MetaSlot::get_from_unused_owner_spec(false, post_owner)
-            &&& post_owner.usage is Frame
-            &&& post_owner.slot_vaddr == pre_owner.slot_vaddr
-            &&& post_owner.paths_in_pt == pre_owner.paths_in_pt
-            &&& post =~= pre.insert_slot_owner(paddr, post_owner)
-        }
-    }
-
     pub open spec fn drop_requires(self, region: MetaRegionOwners) -> bool {
         let idx = self.index();
         let slot_own = region.slot_owners[idx];

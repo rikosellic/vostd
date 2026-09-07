@@ -212,7 +212,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + OwnerOf> Frame<M> {
         ensures
             final(regions).inv(),
             r matches Ok(res) ==> {
-                &&& Self::from_unused_spec(paddr, *old(regions), *final(regions))
+                &&& MetaSlot::get_from_unused_region_spec(paddr, false, *old(regions), *final(regions))
                 &&& res.inv()
                 &&& res.start_paddr_spec() == paddr
                 &&& res.wf_with_region(*final(regions))
