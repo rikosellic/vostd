@@ -6,6 +6,7 @@ use vstd_extra::assert;
 use vstd_extra::panic::may_panic;
 use vstd_extra::prelude::*;
 
+use crate::mm::frame::MetaSlot;
 use crate::specs::arch::*;
 use crate::specs::mm::page_table::{cursor::*, *};
 use crate::specs::task::InAtomicMode;
@@ -227,7 +228,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             res.0 + page_size(res.1) <= MAX_PADDR,
             Self::E::new_page_req(res.0, res.1, res.2),
         returns
-            Self::item_into_raw_spec(item),
+            Self::item_into_raw(item),
     ;
 
     spec fn item_from_raw_spec(
@@ -391,7 +392,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             valid_frame_paddr(pa),
             Self::raw_item_well_formed((pa, level, prop, perm)),
         ensures
-            Self::item_into_raw_spec(Self::item_from_raw(pa, level, prop, perm)) == (
+            Self::item_into_raw(Self::item_from_raw(pa, level, prop, perm)) == (
                 pa,
                 level,
                 prop,
@@ -410,7 +411,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         requires
             valid_frame_paddr(pa),
             Self::item_well_formed(item),
-            Self::item_into_raw_spec(item) == (pa, level, prop, perm),
+            Self::item_into_raw(item) == (pa, level, prop, perm),
         ensures
             Self::item_from_raw(pa, level, prop, perm) == item,
     ;
@@ -426,49 +427,19 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     )
         requires
             item.clone_ensures(old_regions, new_regions, res),
-            Self::item_into_raw_spec(item).0 == pa,
+            Self::item_into_raw(item).0 == pa,
             new_regions.inv(),
             new_regions.slots =~= old_regions.slots,
             new_regions.slot_owners.dom() =~= old_regions.slot_owners.dom(),
         ensures
-            Self::item_into_raw_spec(res).0 == Self::item_into_raw_spec(item).0,
-            Self::item_into_raw_spec(res).1 == Self::item_into_raw_spec(item).1,
-            Self::item_into_raw_spec(res).2 == Self::item_into_raw_spec(item).2,
-            (Self::item_into_raw_spec(res).3@ is Some) == (Self::item_into_raw_spec(
-                item,
-            ).3@ is Some),
-            // Other slots always unchanged.
-            forall|i: int|
-                i != frame_to_index(pa) ==> (#[trigger] new_regions.slot_owners[i]
-                    == old_regions.slot_owners[i]),
-            // The frame's slot: bumped if the item is ref-counted, otherwise unchanged.
-            Self::item_into_raw_spec(item).3@ is Some ==> {
-                &&& new_regions.slot_owner(pa).ref_count() == old_regions.slot_owner(pa).ref_count()
-                    + 1
-                &&& new_regions.slot_owner(pa).ref_count_perm.id() == old_regions.slot_owner(
-                    pa,
-                ).ref_count_perm.id()
-                &&& new_regions.slot_owner(pa).metadata_perm.id() == old_regions.slot_owner(
-                    pa,
-                ).metadata_perm.id()
-                &&& new_regions.slot_owner(pa).metadata_perm.frac() + 1 == old_regions.slot_owner(
-                    pa,
-                ).metadata_perm.frac()
-                &&& new_regions.slot_owner(pa).storage_perm() == old_regions.slot_owner(
-                    pa,
-                ).storage_perm()
-                &&& new_regions.slot_owner(pa).vtable_ptr_perm() == old_regions.slot_owner(
-                    pa,
-                ).vtable_ptr_perm()
-                &&& new_regions.slot_owner(pa).in_list_perm == old_regions.slot_owner(
-                    pa,
-                ).in_list_perm
-                &&& new_regions.slot_owner(pa).paths_in_pt == old_regions.slot_owner(pa).paths_in_pt
-                &&& new_regions.slot_owner(pa).slot_vaddr == old_regions.slot_owner(pa).slot_vaddr
-                &&& new_regions.slot_owner(pa).usage == old_regions.slot_owner(pa).usage
+            Self::item_into_raw(res).0 == Self::item_into_raw(item).0,
+            Self::item_into_raw(res).1 == Self::item_into_raw(item).1,
+            Self::item_into_raw(res).2 == Self::item_into_raw(item).2,
+            (Self::item_into_raw(res).3@ is Some) == (Self::item_into_raw(item).3@ is Some),
+            Self::item_into_raw(item).3@ is Some ==> {
+                MetaSlot::inc_frame_reference_region_spec(pa, old_regions, new_regions)
             },
-            Self::item_into_raw_spec(item).3@ is None ==> new_regions.slot_owner(pa)
-                == old_regions.slot_owner(pa),
+            Self::item_into_raw(item).3@ is None ==> new_regions == old_regions,
     ;
 
     proof fn lemma_clone_requires_concrete(
@@ -480,19 +451,19 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     )
         requires
             regions.inv(),
-            Self::item_from_raw(pa, level, prop, Self::item_into_raw_spec(item).3) == item,
-            Self::raw_item_well_formed((pa, level, prop, Self::item_into_raw_spec(item).3)),
-            Self::perm_well_formed_with_region(pa, Self::item_into_raw_spec(item).3, regions),
+            Self::item_from_raw(pa, level, prop, Self::item_into_raw(item).3) == item,
+            Self::raw_item_well_formed((pa, level, prop, Self::item_into_raw(item).3)),
+            Self::perm_well_formed_with_region(pa, Self::item_into_raw(item).3, regions),
             valid_frame_paddr(pa),
             regions.contains(frame_to_index(pa)),
-            Self::item_into_raw_spec(item).3@ is Some ==> regions.slot_owner(pa).ref_count() > 0,
-            Self::item_into_raw_spec(item).3@ is Some ==> regions.slot_owner(pa).ref_count()
+            Self::item_into_raw(item).3@ is Some ==> regions.slot_owner(pa).ref_count() > 0,
+            Self::item_into_raw(item).3@ is Some ==> regions.slot_owner(pa).ref_count()
                 <= REF_COUNT_MAX,
             // `rc != UNUSED` is needed only for tracked frames (untracked clone is a no-op).
-            Self::item_into_raw_spec(item).3@ is Some ==> regions.slot_owner(pa).ref_count()
+            Self::item_into_raw(item).3@ is Some ==> regions.slot_owner(pa).ref_count()
                 != REF_COUNT_UNUSED,
             // Saturation aborts (Arc-style) via `inc_ref_count`'s diverging panic.
-            Self::item_into_raw_spec(item).3@ is Some ==> (regions.slot_owner(pa).ref_count()
+            Self::item_into_raw(item).3@ is Some ==> (regions.slot_owner(pa).ref_count()
                 < REF_COUNT_MAX || may_panic()),
         ensures
             item.clone_requires(regions),
