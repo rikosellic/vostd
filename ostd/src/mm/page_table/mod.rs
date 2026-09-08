@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 use vstd::arithmetic::power2::*;
 use vstd::prelude::*;
-use vstd::simple_pptr;
 use vstd::std_specs::clone::*;
 use vstd_extra::assert;
 use vstd_extra::panic::may_panic;
@@ -12,14 +11,11 @@ use crate::specs::mm::page_table::{cursor::*, *};
 use crate::specs::task::InAtomicMode;
 
 use crate::mm::frame::meta::{
-    MetaSlot, REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED, mapping::frame_to_meta,
+    REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED, mapping::frame_to_meta,
 };
 use crate::mm::kspace::kvirt_area::disable_preempt;
 use crate::specs::mm::{
-    frame::{
-        mapping::frame_to_index, meta_owners::FracMetadataPerm,
-        meta_region_owners::MetaRegionOwners,
-    },
+    frame::{mapping::frame_to_index, meta_region_owners::MetaRegionOwners},
     page_table::{
         is_valid_range_spec, nr_pte_index_bits_spec, pte_index_bit_offset_spec,
         top_level_index_width_spec, vaddr_range_spec,
@@ -198,48 +194,47 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     /// [`item_into_raw`]: PageTableConfig::item_into_raw
     type Item: RCClone;
 
-    spec fn item_into_raw_spec(item: Self::Item) -> (Paddr, PagingLevel, PageProperty);
+    /// Verification-only type of the permission carried by a tracked item.
+    /// An untracked item carries `None` in its raw representation.
+    type Perm;
 
-    /// The metadata fraction transferred together with an item's raw
-    /// representation. Untracked mappings carry no fraction.
-    spec fn item_permission(item: Self::Item) -> Option<FracMetadataPerm>;
-
-    /// The metadata-slot permission carried by a tracked item.
-    spec fn item_slot_perm(item: Self::Item) -> Option<
-        &'static vstd::simple_pptr::PointsTo<MetaSlot>,
-    >;
+    spec fn item_into_raw_spec(item: Self::Item) -> (
+        Paddr,
+        PagingLevel,
+        PageProperty,
+        Tracked<Option<Self::Perm>>,
+    );
 
     /// Consumes the item and returns the physical address, the paging level,
     /// and the page property.
     ///
     /// The ownership of the item will be consumed, i.e., the item will be
     /// forgotten after this function is called.
+    #[verifier::when_used_as_spec(item_into_raw_spec)]
     fn item_into_raw(item: Self::Item) -> (res: (
-        (Paddr, PagingLevel, PageProperty),
-        Tracked<Option<FracMetadataPerm>>,
+        Paddr,
+        PagingLevel,
+        PageProperty,
+        Tracked<Option<Self::Perm>>,
     ))
         requires
             Self::item_well_formed(item),
         ensures
-            res.0 == Self::item_into_raw_spec(item),
-            res.1@ == Self::item_permission(item),
-            res.1@ is Some <==> Self::tracked(item),
-            Self::tracked(Self::item_from_raw_spec(res.0.0, res.0.1, res.0.2, None, None))
-                == Self::tracked(item),
-            1 <= res.0.1 <= NR_LEVELS,
-            valid_frame_paddr(res.0.0),
-            res.0.0 % page_size(res.0.1) == 0,
-            res.0.0 + page_size(res.0.1) <= MAX_PADDR,
-            Self::raw_item_well_formed(res.0.0, res.0.1, res.0.2),
-            Self::E::new_page_req(res.0.0, res.0.1, res.0.2),
+            Self::raw_item_well_formed(res),
+            1 <= res.1 <= NR_LEVELS,
+            valid_frame_paddr(res.0),
+            res.0 % page_size(res.1) == 0,
+            res.0 + page_size(res.1) <= MAX_PADDR,
+            Self::E::new_page_req(res.0, res.1, res.2),
+        returns
+            Self::item_into_raw_spec(item),
     ;
 
     spec fn item_from_raw_spec(
         paddr: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        slot_perm: Option<&'static vstd::simple_pptr::PointsTo<MetaSlot>>,
-        permission: Option<FracMetadataPerm>,
+        perm: Tracked<Option<Self::Perm>>,
     ) -> Self::Item;
 
     /// Restores the item from the physical address and the paging level.
@@ -266,57 +261,57 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     /// A concrete trait implementation may require the caller to ensure that
     ///  - the [`super::PageFlags::AVAIL1`] flag is the same as that returned
     ///    from [`PageTableConfig::item_into_raw`].
+    #[verifier::when_used_as_spec(item_from_raw_spec)]
     unsafe fn item_from_raw(
         paddr: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        Tracked(regions): Tracked<&mut MetaRegionOwners>,
-        Tracked(permission): Tracked<Option<FracMetadataPerm>>,
+        perm: Tracked<Option<Self::Perm>>,
     ) -> (res: Self::Item)
         requires
-            valid_frame_paddr(paddr),
-            Self::raw_item_well_formed(paddr, level, prop),
-            permission is Some <==> Self::tracked(
-                Self::item_from_raw_spec(paddr, level, prop, None, None),
-            ),
-            permission is Some ==> permission->0.frac() == 1,
-            permission is Some ==> MetaSlot::perms_related(
-                *old(regions).slots[frame_to_index(paddr)],
-                permission->0.resource(),
-            ),
+            Self::raw_item_well_formed((paddr, level, prop, perm)),
         ensures
-            *final(regions) == *old(regions),
             Self::item_well_formed(res),
-            Self::tracked(res) == Self::tracked(
-                Self::item_from_raw_spec(paddr, level, prop, None, None),
-            ),
         returns
-            Self::item_from_raw_spec(
-                paddr,
-                level,
-                prop,
-                if permission is Some {
-                    Some(old(regions).slots[frame_to_index(paddr)])
-                } else {
-                    None
-                },
-                permission,
-            ),
+            Self::item_from_raw_spec(paddr, level, prop, perm),
     ;
 
-    /// Whether cloning this item bumps a slot's refcount. For ref-counted items
-    /// (e.g. `MappedItem::Tracked`), `true`; for items where clone is a no-op
-    /// (e.g. `MappedItem::Untracked` for kernel MMIO frames), `false`.
-    spec fn tracked(item: Self::Item) -> bool;
-
-    /// Per-config predicate that captures the structural well-formedness an item
-    /// reconstructed via [`PageTableConfig::item_from_raw`] must satisfy. This may include both
-    /// ownership invariants and restrictions on raw-only property bits.
+    /// Predicate that captures the well-formedness of the item.
     spec fn item_well_formed(item: Self::Item) -> bool;
 
-    /// Per-config predicate that captures the well-formedness of raw properties
-    /// produced via [`PageTableConfig::item_into_raw`] must satisfy.
-    spec fn raw_item_well_formed(pa: Paddr, level: PagingLevel, prop: PageProperty) -> bool;
+    /// Predicate that captures the well-formedness of raw items.
+    spec fn raw_item_well_formed(
+        item: (Paddr, PagingLevel, PageProperty, Tracked<Option<Self::Perm>>),
+    ) -> bool;
+
+    /// Relates an item's optional permission to the global metadata region.
+    spec fn perm_well_formed_with_region(
+        pa: Paddr,
+        perm: Tracked<Option<Self::Perm>>,
+        regions: MetaRegionOwners,
+    ) -> bool;
+
+    /// An absent permission is the canonical untracked case and has no
+    /// metadata-region ownership obligation.
+    proof fn lemma_none_perm_well_formed(pa: Paddr, regions: MetaRegionOwners)
+        ensures
+            Self::perm_well_formed_with_region(pa, Tracked(None), regions),
+    ;
+
+    proof fn lemma_perm_well_formed_with_region_preserved(
+        pa: Paddr,
+        perm: Tracked<Option<Self::Perm>>,
+        old_regions: MetaRegionOwners,
+        new_regions: MetaRegionOwners,
+    )
+        requires
+            Self::perm_well_formed_with_region(pa, perm, old_regions),
+            old_regions.slots[frame_to_index(pa)] == new_regions.slots[frame_to_index(pa)],
+            old_regions.slot_owners[frame_to_index(pa)].metadata_perm.id()
+                == new_regions.slot_owners[frame_to_index(pa)].metadata_perm.id(),
+        ensures
+            Self::perm_well_formed_with_region(pa, perm, new_regions),
+    ;
 
     /// Changing properties without changing trackedness preserves a canonical raw item.
     proof fn lemma_raw_item_well_formed_preserved(
@@ -324,14 +319,16 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         level: PagingLevel,
         old_prop: PageProperty,
         new_prop: PageProperty,
+        perm: Tracked<Option<Self::Perm>>,
     )
         requires
             valid_frame_paddr(pa),
-            Self::raw_item_well_formed(pa, level, old_prop),
-            Self::tracked(Self::item_from_raw_spec(pa, level, new_prop, None, None))
-                == Self::tracked(Self::item_from_raw_spec(pa, level, old_prop, None, None)),
+            Self::raw_item_well_formed((pa, level, old_prop, perm)),
+            (Self::item_into_raw_spec(
+                Self::item_from_raw_spec(pa, level, new_prop, perm),
+            ).3@ is Some) == (perm@ is Some),
         ensures
-            Self::raw_item_well_formed(pa, level, new_prop),
+            Self::raw_item_well_formed((pa, level, new_prop, perm)),
     ;
 
     /// Splitting a canonical huge-page raw item yields canonical child raw items.
@@ -341,30 +338,33 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         prop: PageProperty,
         child_pa: Paddr,
         child_idx: usize,
+        perm: Tracked<Option<Self::Perm>>,
     )
         requires
             valid_frame_paddr(pa),
-            Self::raw_item_well_formed(pa, level, prop),
+            Self::raw_item_well_formed((pa, level, prop, perm)),
             Self::E::new_page_req(pa, level, prop),
             level > 1,
             child_idx < NR_ENTRIES,
             child_pa == pa + child_idx * page_size((level - 1) as PagingLevel),
         ensures
-            Self::raw_item_well_formed(child_pa, (level - 1) as PagingLevel, prop),
+            Self::raw_item_well_formed((child_pa, (level - 1) as PagingLevel, prop, perm)),
             Self::E::new_page_req(child_pa, (level - 1) as PagingLevel, prop),
-            Self::tracked(
-                Self::item_from_raw_spec(child_pa, (level - 1) as PagingLevel, prop, None, None),
-            ) == Self::tracked(Self::item_from_raw_spec(pa, level, prop, None, None)),
     ;
 
     /// Huge mappings are untracked. Both current configurations encode
     /// tracked mappings only at the base-page level.
-    proof fn lemma_huge_raw_item_untracked(pa: Paddr, level: PagingLevel, prop: PageProperty)
+    proof fn lemma_huge_raw_item_untracked(
+        pa: Paddr,
+        level: PagingLevel,
+        prop: PageProperty,
+        perm: Tracked<Option<Self::Perm>>,
+    )
         requires
-            Self::raw_item_well_formed(pa, level, prop),
+            Self::raw_item_well_formed((pa, level, prop, perm)),
             level > 1,
         ensures
-            !Self::tracked(Self::item_from_raw_spec(pa, level, prop, None, None)),
+            perm@ is None,
     ;
 
     /// The item produced by [`PageTableConfig::item_from_raw`] is well-formed.
@@ -372,24 +372,13 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         pa: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        slot_perm: Option<&'static vstd::simple_pptr::PointsTo<MetaSlot>>,
-        permission: Option<FracMetadataPerm>,
+        perm: Tracked<Option<Self::Perm>>,
     )
         requires
             valid_frame_paddr(pa),
-            Self::raw_item_well_formed(pa, level, prop),
-            slot_perm is Some <==> permission is Some,
-            permission is Some <==> Self::tracked(
-                Self::item_from_raw_spec(pa, level, prop, None, None),
-            ),
-            permission is Some ==> slot_perm->0.addr() == frame_to_meta(pa),
-            permission is Some ==> slot_perm->0.is_init(),
-            permission is Some ==> permission->0.frac() == 1,
-            permission is Some ==> MetaSlot::perms_related(*slot_perm->0, permission->0.resource()),
+            Self::raw_item_well_formed((pa, level, prop, perm)),
         ensures
-            Self::item_well_formed(
-                Self::item_from_raw_spec(pa, level, prop, slot_perm, permission),
-            ),
+            Self::item_well_formed(Self::item_from_raw_spec(pa, level, prop, perm)),
     ;
 
     /// Re-encoding a canonical raw item preserves the complete raw representation.
@@ -397,24 +386,18 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         pa: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        slot_perm: Option<&'static vstd::simple_pptr::PointsTo<MetaSlot>>,
-        permission: Option<FracMetadataPerm>,
+        perm: Tracked<Option<Self::Perm>>,
     )
         requires
             valid_frame_paddr(pa),
-            Self::raw_item_well_formed(pa, level, prop),
-            slot_perm is Some <==> permission is Some,
-            permission is Some <==> Self::tracked(
-                Self::item_from_raw_spec(pa, level, prop, None, None),
-            ),
+            Self::raw_item_well_formed((pa, level, prop, perm)),
         ensures
-            Self::item_into_raw_spec(
-                Self::item_from_raw_spec(pa, level, prop, slot_perm, permission),
-            ) == (pa, level, prop),
-            Self::item_slot_perm(Self::item_from_raw_spec(pa, level, prop, slot_perm, permission))
-                == slot_perm,
-            Self::item_permission(Self::item_from_raw_spec(pa, level, prop, slot_perm, permission))
-                == permission,
+            Self::item_into_raw_spec(Self::item_from_raw_spec(pa, level, prop, perm)) == (
+                pa,
+                level,
+                prop,
+                perm,
+            ),
     ;
 
     /// Decoding the raw representation produced from a well-formed item restores that item.
@@ -423,17 +406,14 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         pa: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        slot_perm: Option<&'static vstd::simple_pptr::PointsTo<MetaSlot>>,
-        permission: Option<FracMetadataPerm>,
+        perm: Tracked<Option<Self::Perm>>,
     )
         requires
             valid_frame_paddr(pa),
             Self::item_well_formed(item),
-            Self::item_into_raw_spec(item) == (pa, level, prop),
-            slot_perm == Self::item_slot_perm(item),
-            permission == Self::item_permission(item),
+            Self::item_into_raw_spec(item) == (pa, level, prop, perm),
         ensures
-            Self::item_from_raw_spec(pa, level, prop, slot_perm, permission) == item,
+            Self::item_from_raw_spec(pa, level, prop, perm) == item,
     ;
 
     /// Proves that `clone_ensures` for `Self::Item` implies concrete per-field
@@ -456,14 +436,18 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             new_regions.slots =~= old_regions.slots,
             new_regions.slot_owners.dom() =~= old_regions.slot_owners.dom(),
         ensures
-            Self::item_into_raw_spec(res) == Self::item_into_raw_spec(item),
-            Self::tracked(res) == Self::tracked(item),
+            Self::item_into_raw_spec(res).0 == Self::item_into_raw_spec(item).0,
+            Self::item_into_raw_spec(res).1 == Self::item_into_raw_spec(item).1,
+            Self::item_into_raw_spec(res).2 == Self::item_into_raw_spec(item).2,
+            (Self::item_into_raw_spec(res).3@ is Some) == (Self::item_into_raw_spec(
+                item,
+            ).3@ is Some),
             // Other slots always unchanged.
             forall|i: int|
                 i != frame_to_index(pa) ==> (#[trigger] new_regions.slot_owners[i]
                     == old_regions.slot_owners[i]),
             // The frame's slot: bumped if the item is ref-counted, otherwise unchanged.
-            Self::tracked(item) ==> {
+            Self::item_into_raw_spec(item).3@ is Some ==> {
                 &&& new_regions.slot_owner(pa).ref_count() == old_regions.slot_owner(pa).ref_count()
                     + 1
                 &&& new_regions.slot_owner(pa).ref_count_perm.id() == old_regions.slot_owner(
@@ -488,7 +472,8 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
                 &&& new_regions.slot_owner(pa).slot_vaddr == old_regions.slot_owner(pa).slot_vaddr
                 &&& new_regions.slot_owner(pa).usage == old_regions.slot_owner(pa).usage
             },
-            !Self::tracked(item) ==> new_regions.slot_owner(pa) == old_regions.slot_owner(pa),
+            Self::item_into_raw_spec(item).3@ is None ==> new_regions.slot_owner(pa)
+                == old_regions.slot_owner(pa),
     ;
 
     /// Proves `item.clone_requires(regions)` from the concrete frame-slot facts
@@ -505,36 +490,20 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     )
         requires
             regions.inv(),
-            Self::item_from_raw_spec(
-                pa,
-                level,
-                prop,
-                Self::item_slot_perm(item),
-                Self::item_permission(item),
-            ) == item,
-            Self::raw_item_well_formed(pa, level, prop),
+            Self::item_from_raw_spec(pa, level, prop, Self::item_into_raw_spec(item).3) == item,
+            Self::raw_item_well_formed((pa, level, prop, Self::item_into_raw_spec(item).3)),
+            Self::perm_well_formed_with_region(pa, Self::item_into_raw_spec(item).3, regions),
             valid_frame_paddr(pa),
             regions.contains(frame_to_index(pa)),
-            Self::tracked(item) ==> regions.slot_owner(pa).ref_count() > 0,
-            Self::tracked(item) ==> regions.slot_owner(pa).ref_count() <= REF_COUNT_MAX,
+            Self::item_into_raw_spec(item).3@ is Some ==> regions.slot_owner(pa).ref_count() > 0,
+            Self::item_into_raw_spec(item).3@ is Some ==> regions.slot_owner(pa).ref_count()
+                <= REF_COUNT_MAX,
             // `rc != UNUSED` is needed only for tracked frames (untracked clone is a no-op).
-            Self::tracked(item) ==> regions.slot_owner(pa).ref_count() != REF_COUNT_UNUSED,
-            Self::tracked(item) ==> Self::item_permission(item) is Some,
-            Self::tracked(item) ==> Self::item_slot_perm(item) == Some(
-                regions.slots[frame_to_index(pa)],
-            ),
-            Self::tracked(item) ==> Self::item_permission(item)->0.frac() == 1,
-            Self::tracked(item) ==> Self::item_permission(item)->0.id()
-                == regions.slot_owners[frame_to_index(pa)].metadata_perm.id(),
-            Self::tracked(item) ==> MetaSlot::perms_related(
-                *regions.slots[frame_to_index(pa)],
-                Self::item_permission(item)->0.resource(),
-            ),
-            !Self::tracked(item) ==> Self::item_permission(item) is None,
-            !Self::tracked(item) ==> Self::item_slot_perm(item) is None,
+            Self::item_into_raw_spec(item).3@ is Some ==> regions.slot_owner(pa).ref_count()
+                != REF_COUNT_UNUSED,
             // Saturation aborts (Arc-style) via `inc_ref_count`'s diverging panic.
-            Self::tracked(item) ==> (regions.slot_owner(pa).ref_count() < REF_COUNT_MAX
-                || may_panic()),
+            Self::item_into_raw_spec(item).3@ is Some ==> (regions.slot_owner(pa).ref_count()
+                < REF_COUNT_MAX || may_panic()),
         ensures
             item.clone_requires(regions),
     ;

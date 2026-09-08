@@ -218,8 +218,11 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             item.clone_requires(*old(regions)),
             C::item_into_raw_spec(*item).0 == pa,
         ensures
-            C::item_into_raw_spec(res) == C::item_into_raw_spec(*item),
-            C::tracked(res) == C::tracked(*item),
+            C::item_into_raw_spec(res).0 == C::item_into_raw_spec(*item).0,
+            C::item_into_raw_spec(res).1 == C::item_into_raw_spec(*item).1,
+            C::item_into_raw_spec(res).2 == C::item_into_raw_spec(*item).2,
+            (C::item_into_raw_spec(res).3@ is Some)
+                == (C::item_into_raw_spec(*item).3@ is Some),
             item.clone_ensures(*old(regions), *final(regions), res),
             final(regions).inv(),
             final(regions).slots == old(regions).slots,
@@ -229,7 +232,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     regions,
                 ).slot_owners[i]),
             // The frame's slot: bumped if the item is ref-counted, otherwise unchanged.
-            C::tracked(*item) ==> {
+            C::item_into_raw_spec(*item).3@ is Some ==> {
                 &&& final(regions).slot_owner(pa).ref_count_perm.id()
                     == old(regions).slot_owner(pa).ref_count_perm.id()
                 &&& final(regions).slot_owner(pa).metadata_perm.id()
@@ -252,7 +255,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     == old(regions).slot_owner(pa).ref_count()
                     + 1
             },
-            !C::tracked(*item) ==> final(regions).slot_owner(pa) == old(
+            C::item_into_raw_spec(*item).3@ is None ==> final(regions).slot_owner(pa) == old(
                 regions,
             ).slot_owner(pa),
             // Linear-drop pilot: `clone_item` doesn't mint or redeem segment
@@ -623,30 +626,17 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     // For page table configs that require the `AVAIL1` flag to be kept
                     // (currently, only kernel page tables), the callers of the unsafe
                     // `protect_next` method uphold this invariant.
-                    let item = unsafe {
-                        C::item_from_raw(pa, level, prop, Tracked(regions), Tracked(raw_permission))
+                    let item = unsafe { C::item_from_raw(pa, level, prop, Tracked(raw_permission))
                     };
 
                     proof {
-                        let raw_slot_perm = if raw_permission is Some {
-                            Some(regions.slots[frame_to_index(pa)])
-                        } else {
-                            None
-                        };
                         C::lemma_item_from_raw_well_formed(
                             pa,
                             level,
                             prop,
-                            raw_slot_perm,
-                            raw_permission,
+                            Tracked(raw_permission),
                         );
-                        C::lemma_item_into_raw_roundtrip(
-                            pa,
-                            level,
-                            prop,
-                            raw_slot_perm,
-                            raw_permission,
-                        );
+                        C::lemma_item_into_raw_roundtrip(pa, level, prop, Tracked(raw_permission));
                     }
 
                     let ghost old_regions = *regions;
@@ -656,8 +646,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                         old(regions).lemma_contains_valid_frame_paddr(pa);
                         assert(regions.slot_owners.contains_key(idx));
                         assert(owner_before_permission_take.cur_entry_owner().inv_base());
-                        if C::tracked(item) && regions.slot_owners[idx].ref_count()
-                            >= REF_COUNT_MAX {
+                        if C::item_into_raw_spec(item).3@ is Some
+                            && regions.slot_owners[idx].ref_count() >= REF_COUNT_MAX {
                             EntryOwner::<C>::axiom_frame_is_tracked_iff_not_mmio(
                                 owner_before_permission_take.cur_entry_owner(),
                             );
@@ -665,14 +655,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                             assert(old(self).query_panic_condition(*old(owner), *old(regions)));
                             assert(may_panic());
                         }
-                        assert(C::raw_item_well_formed(pa, level, prop));
-                        assert(C::item_permission(item) == raw_permission);
-                        let raw_slot_perm = if raw_permission is Some {
-                            Some(regions.slots[frame_to_index(pa)])
-                        } else {
-                            None
-                        };
-                        assert(C::item_slot_perm(item) == raw_slot_perm);
+                        assert(C::raw_item_well_formed((pa, level, prop, Tracked(raw_permission))));
+                        assert(C::item_into_raw_spec(item).3@ == raw_permission);
                         assert(raw_permission == entry_before_permission_take.frame_permission());
                         assert(owner_before_permission_take.cur_entry_owner()
                             == entry_before_permission_take);
@@ -688,7 +672,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     #[verus_spec(with Tracked(regions), Ghost(pa))]
                     let cloned = Self::clone_item(&item);
 
-                    let (_raw, Tracked(restored_permission)) = C::item_into_raw(item);
+                    let (_pa, _level, _prop, Tracked(restored_permission)) = C::item_into_raw(item);
                     proof {
                         assert(restored_permission == raw_permission);
                         {
@@ -715,7 +699,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                         assert(owner.path_metaregion_sound(old_regions));
                         assert(owner.cur_entry_owner().metaregion_sound(old_regions));
                         assert(old_regions.slot_owners.contains_key(idx));
-                        if C::tracked(item) {
+                        if C::item_into_raw_spec(item).3@ is Some {
                             EntryOwner::<C>::axiom_frame_is_tracked_iff_not_mmio(
                                 owner.cur_entry_owner(),
                             );
@@ -732,7 +716,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                         assert(owner_before_permission_take@ == old(owner)@);
                         assert(owner@ == old(owner)@);
                         assert(owner@.query_mapping().pa_range.start == pa);
-                        if C::tracked(item) {
+                        if C::item_into_raw_spec(item).3@ is Some {
                             assert(old_regions.slot_owners[idx].ref_count() == old(
                                 regions,
                             ).slot_owners[idx].ref_count());
@@ -764,11 +748,25 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     if e.is_node() || e.is_frame() {
                         regions.lemma_contains_valid_frame_paddr(e.meta_slot_paddr().unwrap());
                     }
+                    if e.is_frame() {
+                        let paddr = e.frame().mapped_pa;
+                        let idx = frame_to_index(paddr);
+                        assert(old(regions).slots[idx] == regions.slots[idx]);
+                        assert(old(regions).slot_owners[idx].metadata_perm.id()
+                            == regions.slot_owners[idx].metadata_perm.id());
+                        C::lemma_perm_well_formed_with_region_preserved(
+                            paddr,
+                            Tracked(e.frame_permission()),
+                            *old(regions),
+                            *regions,
+                        );
+                    }
                     if e.is_frame() && e.parent_level > 1 {
                         C::lemma_huge_raw_item_untracked(
                             e.frame().mapped_pa,
                             e.parent_level,
                             e.frame().prop,
+                            Tracked(e.frame_permission()),
                         );
                         assert(!e.frame_is_tracked());
                         assert(e.frame_sub_pages_valid(*regions));
@@ -2145,10 +2143,12 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             !old(owner).popped_too_high,
             old(owner).cur_entry_owner().is_frame(),
             forall |p: PageProperty| op.requires((p,)),
-            forall |pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty| #![auto]
-                op.ensures((p_in,), p_out) ==>
-                    C::tracked(C::item_from_raw_spec(pa, level, p_out, None, None))
-                    == C::tracked(C::item_from_raw_spec(pa, level, p_in, None, None)),
+            forall |pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty,
+                perm: Tracked<Option<C::Perm>>| #![auto]
+                op.ensures((p_in,), p_out) ==> (
+                    C::item_into_raw_spec(C::item_from_raw_spec(pa, level, p_out, perm)).3@
+                        is Some
+                ) == (perm@ is Some),
             forall |pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty| #![auto]
                 op.ensures((p_in,), p_out) && C::E::new_page_req(pa, level, p_in) ==>
                     C::E::new_page_req(pa, level, p_out),
@@ -2542,7 +2542,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         }
     }
 
-    #[verifier::rlimit(200)]
+    #[verifier::rlimit(300)]
     #[verus_spec(
         with Tracked(owner): Tracked<&mut CursorOwner<'rcu, C>>,
              Tracked(regions): Tracked<&mut MetaRegionOwners>,
@@ -2701,6 +2701,31 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                         owner_pre_pt.split_while_huge_node_noop();
                         assert(child_entry_val == owner1.cur_entry_owner());
                         assert(level_pre_pt <= owner0.level);
+
+                        assert forall|idx: int|
+                            regions0.contains(idx) implies #[trigger] regions.contains(idx) by {
+                            assert(regions0.slots.contains_key(idx));
+                            assert(regions.slots.contains_key(idx));
+                            assert(regions0.slot_owners.contains_key(idx));
+                            assert(0 <= idx < max_meta_slots());
+                            assert(regions.slot_owners.contains_key(idx));
+                        };
+                        assert forall|idx: int|
+                            regions0.slot_owners[idx].ref_count()
+                                != REF_COUNT_UNUSED implies #[trigger] regions.slot_owners[idx]
+                            == regions0.slot_owners[idx] by {};
+                        assert forall|idx: int|
+                            regions0.contains(idx) && regions0.slot_owners[idx].ref_count()
+                                != REF_COUNT_UNUSED implies #[trigger] regions.slots[idx]
+                            == regions0.slots[idx] by {};
+                        Self::all_item_slots_preserved(regions0, *regions);
+                        assert forall|item: C::Item|
+                            Self::item_slot_in_regions(
+                                item,
+                                *old(regions),
+                            ) implies #[trigger] Self::item_slot_in_regions(item, *regions) by {
+                            assert(Self::item_slot_in_regions(item, regions0));
+                        };
                     }
 
                     continue;
@@ -2920,16 +2945,32 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                         assert(owner@ == owner0@.split_while_huge(page_size(self.0.level)));
                     }
 
-                    assert forall|item: C::Item|
-                        Self::item_slot_in_regions(
-                            item,
-                            *old(regions),
-                        ) implies #[trigger] Self::item_slot_in_regions(item, *regions) by {
-                        assert(Self::item_slot_in_regions(item, regions0));
-                        let idx = frame_to_index(C::item_into_raw_spec(item).0);
-                        assert(regions_after_ref.contains(idx));
-                        assert(Self::item_slot_in_regions(item, regions_after_ref));
-                    };
+                    proof {
+                        assert forall|idx: int|
+                            regions0.contains(idx) implies #[trigger] regions.contains(idx) by {
+                            assert(regions0.slots.contains_key(idx));
+                            assert(regions.slots.contains_key(idx));
+                            assert(regions0.slot_owners.contains_key(idx));
+                            assert(0 <= idx < max_meta_slots());
+                            assert(regions.slot_owners.contains_key(idx));
+                        };
+                        assert forall|idx: int|
+                            regions0.slot_owners[idx].ref_count()
+                                != REF_COUNT_UNUSED implies #[trigger] regions.slot_owners[idx]
+                            == regions0.slot_owners[idx] by {};
+                        assert forall|idx: int|
+                            regions0.contains(idx) && regions0.slot_owners[idx].ref_count()
+                                != REF_COUNT_UNUSED implies #[trigger] regions.slots[idx]
+                            == regions0.slots[idx] by {};
+                        Self::all_item_slots_preserved(regions0, *regions);
+                        assert forall|item: C::Item|
+                            Self::item_slot_in_regions(
+                                item,
+                                *old(regions),
+                            ) implies #[trigger] Self::item_slot_in_regions(item, *regions) by {
+                            assert(Self::item_slot_in_regions(item, regions0));
+                        };
+                    }
 
                     continue;
                 },
@@ -2985,16 +3026,32 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                         assert(owner@ == owner0@.split_while_huge(page_size(self.0.level)));
                     }
 
-                    assert forall|item: C::Item|
-                        Self::item_slot_in_regions(
-                            item,
-                            *old(regions),
-                        ) implies #[trigger] Self::item_slot_in_regions(item, *regions) by {
-                        assert(Self::item_slot_in_regions(item, regions0));
-                        let idx = frame_to_index(C::item_into_raw_spec(item).0);
-                        assert(regions_after_ref.contains(idx));
-                        assert(Self::item_slot_in_regions(item, regions_after_ref));
-                    };
+                    proof {
+                        assert forall|idx: int|
+                            regions0.contains(idx) implies #[trigger] regions.contains(idx) by {
+                            assert(regions0.slots.contains_key(idx));
+                            assert(regions.slots.contains_key(idx));
+                            assert(regions0.slot_owners.contains_key(idx));
+                            assert(0 <= idx < max_meta_slots());
+                            assert(regions.slot_owners.contains_key(idx));
+                        };
+                        assert forall|idx: int|
+                            regions0.slot_owners[idx].ref_count()
+                                != REF_COUNT_UNUSED implies #[trigger] regions.slot_owners[idx]
+                            == regions0.slot_owners[idx] by {};
+                        assert forall|idx: int|
+                            regions0.contains(idx) && regions0.slot_owners[idx].ref_count()
+                                != REF_COUNT_UNUSED implies #[trigger] regions.slots[idx]
+                            == regions0.slots[idx] by {};
+                        Self::all_item_slots_preserved(regions0, *regions);
+                        assert forall|item: C::Item|
+                            Self::item_slot_in_regions(
+                                item,
+                                *old(regions),
+                            ) implies #[trigger] Self::item_slot_in_regions(item, *regions) by {
+                            assert(Self::item_slot_in_regions(item, regions0));
+                        };
+                    }
                     assert forall|idx: int|
                         old(regions).slot_owners[idx].ref_count() != REF_COUNT_UNUSED implies (
                     #[trigger] regions.slot_owners[idx]) == old(regions).slot_owners[idx] by {
@@ -3095,14 +3152,14 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 old(regions).slot_owners[idx].ref_count() != REF_COUNT_UNUSED ==>
                 final(regions).slot_owners[idx].ref_count()
                     == old(regions).slot_owners[idx].ref_count(),
-            (C::tracked(item)
+            (C::item_into_raw_spec(item).3@ is Some
                 && old(regions).contains(frame_to_index(C::item_into_raw_spec(item).0))
                 && old(regions).slot_owners[
                     frame_to_index(C::item_into_raw_spec(item).0)].ref_count() > 0)
                 ==>
                 final(regions).slot_owners[
                     frame_to_index(C::item_into_raw_spec(item).0)].ref_count() > 0,
-            (C::tracked(item)
+            (C::item_into_raw_spec(item).3@ is Some
                 && old(regions).slot_owners[
                     frame_to_index(C::item_into_raw_spec(item).0)].ref_count()
                     <= REF_COUNT_MAX)
@@ -3116,7 +3173,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             final(self).0.barrier_va == old(self).0.barrier_va,
     )]
     #[verifier::spinoff_prover]
-    #[verifier::rlimit(200)]
+    #[verifier::rlimit(300)]
     pub unsafe fn map(&mut self, item: C::Item) -> (res: Result<(), PageTableFrag<C>>) {
         hide(MetaSlotOwner::storage_perm);
         hide(MetaSlotOwner::vtable_ptr_perm);
@@ -3124,16 +3181,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         let ghost owner0 = *owner;
 
         assert!(self.0.va < self.0.barrier_va.end);
-        let ((pa, level, prop), Tracked(raw_permission)) = C::item_into_raw(item);
+        let (pa, level, prop, Tracked(raw_permission)) = C::item_into_raw(item);
         proof {
-            C::lemma_item_from_raw_roundtrip(
-                item,
-                pa,
-                level,
-                prop,
-                C::item_slot_perm(item),
-                raw_permission,
-            );
+            C::lemma_item_from_raw_roundtrip(item, pa, level, prop, Tracked(raw_permission));
         }
         assert!(level <= C::HIGHEST_TRANSLATION_LEVEL());
         assert!(level < self.0.guard_level);
@@ -3173,7 +3223,11 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         let ghost owner1 = *owner;
         let ghost regions_before_new_child = *regions;
 
-        let ghost is_tracked = C::tracked(item);
+        proof {
+            Self::item_slot_in_regions_facts(item, regions_before_new_child);
+        }
+
+        let ghost is_tracked = raw_permission is Some;
         let tracked new_owner = owner.continuations.tracked_borrow(owner.level - 1).new_child(
             pa,
             prop,
@@ -3224,6 +3278,13 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 new_frame_path,
             );
 
+            C::lemma_perm_well_formed_with_region_preserved(
+                pa,
+                Tracked(raw_permission),
+                regions_before_new_child,
+                *regions,
+            );
+
             assert(new_owner.value().metaregion_sound(*regions)) by {
                 reveal(MetaSlotOwner::storage_perm);
                 reveal(MetaSlotOwner::vtable_ptr_perm);
@@ -3237,7 +3298,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 //   axiom_mmio_usage_iff_mmio_paddr (usage == MMIO <=> is_mmio_paddr)
                 EntryOwner::<C>::axiom_frame_is_tracked_iff_not_mmio(new_owner.value());
                 if level > 1 {
-                    C::lemma_huge_raw_item_untracked(pa, level, prop);
+                    C::lemma_huge_raw_item_untracked(pa, level, prop, Tracked(raw_permission));
                     assert(!new_owner.value().frame_is_tracked());
                 }
                 assert(new_owner.value().frame_sub_pages_valid(*regions));
@@ -3342,12 +3403,12 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 == old(regions).slot_owners[idx].paths_in_pt by {
                 assert(regions_after_new_child.slot_owners == regions_before_new_child.slot_owners);
             };
-            assert(C::tracked(item) && old(regions).contains(pa_idx2) && old(
+            assert(C::item_into_raw_spec(item).3@ is Some && old(regions).contains(pa_idx2) && old(
                 regions,
             ).slot_owners[pa_idx2].ref_count() > 0 ==> {
                 &&& regions.slot_owners[pa_idx2].ref_count() > 0
             }) by {
-                if C::tracked(item) && old(regions).contains(pa_idx2) && old(
+                if C::item_into_raw_spec(item).3@ is Some && old(regions).contains(pa_idx2) && old(
                     regions,
                 ).slot_owners[pa_idx2].ref_count() > 0 {
                     assert(regions_before_new_child.slot_owners[pa_idx2].ref_count() > 0);
@@ -3778,10 +3839,12 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         requires
             old(self).0.invariants(*old(owner), *old(regions), *old(guards)),
             forall |p: PageProperty| op.requires((p,)),
-            forall |pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty| #![auto]
-                op.ensures((p_in,), p_out) ==>
-                    C::tracked(C::item_from_raw_spec(pa, level, p_out, None, None))
-                    == C::tracked(C::item_from_raw_spec(pa, level, p_in, None, None)),
+            forall |pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty,
+                perm: Tracked<Option<C::Perm>>| #![auto]
+                op.ensures((p_in,), p_out) ==> (
+                    C::item_into_raw_spec(C::item_from_raw_spec(pa, level, p_out, perm)).3@
+                        is Some
+                ) == (perm@ is Some),
             forall |pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty| #![auto]
                 op.ensures((p_in,), p_out) && C::E::new_page_req(pa, level, p_in) ==>
                     C::E::new_page_req(pa, level, p_out),
@@ -3887,7 +3950,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             res is Some && res->0 is Mapped ==> old(owner).cur_entry_owner().is_frame(),
             res is Some && res->0 is Mapped ==> res->0->Mapped_va == old(self).0.va,
             res is Some && res->0 is Mapped ==> {
-                let (pa, lvl, prop) = C::item_into_raw_spec(res->0->Mapped_item);
+                let (pa, lvl, prop, _perm) = C::item_into_raw_spec(res->0->Mapped_item);
                 &&& lvl == old(self).0.level
                 &&& pa == old(owner).cur_entry_owner().frame().mapped_pa
                 &&& prop == old(owner).cur_entry_owner().frame().prop
@@ -4256,29 +4319,10 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 // For page table configs that require the `AVAIL1` flag to be kept
                 // (currently, only kernel page tables), the callers of the unsafe
                 // `protect_next` method uphold this invariant.
-                let item = unsafe {
-                    C::item_from_raw(pa, level, prop, Tracked(regions), Tracked(raw_permission))
-                };
+                let item = unsafe { C::item_from_raw(pa, level, prop, Tracked(raw_permission)) };
                 proof {
-                    let raw_slot_perm = if raw_permission is Some {
-                        Some(regions.slots[frame_to_index(pa)])
-                    } else {
-                        None
-                    };
-                    C::lemma_item_from_raw_well_formed(
-                        pa,
-                        level,
-                        prop,
-                        raw_slot_perm,
-                        raw_permission,
-                    );
-                    C::lemma_item_into_raw_roundtrip(
-                        pa,
-                        level,
-                        prop,
-                        raw_slot_perm,
-                        raw_permission,
-                    );
+                    C::lemma_item_from_raw_well_formed(pa, level, prop, Tracked(raw_permission));
+                    C::lemma_item_into_raw_roundtrip(pa, level, prop, Tracked(raw_permission));
                 }
                 Some(PageTableFrag::Mapped { va, item })
             },

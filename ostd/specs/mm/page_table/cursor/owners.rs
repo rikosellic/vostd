@@ -17,7 +17,7 @@ use crate::specs::{
     mm::{
         frame::{
             mapping::{frame_to_index, index_to_meta},
-            meta_owners::{FracMetadataPerm, MetaSlotStorage},
+            meta_owners::MetaSlotStorage,
             meta_region_owners::MetaRegionOwners,
         },
         page_table::{
@@ -584,7 +584,7 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
         tracked &self,
         paddr: Paddr,
         prop: PageProperty,
-        tracked permission: Option<FracMetadataPerm>,
+        tracked permission: Option<C::Perm>,
         tracked regions: &mut MetaRegionOwners,
     ) -> (tracked res: OwnerSubtree<C>)
         requires
@@ -594,11 +594,8 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
             valid_frame_paddr(paddr),
             paddr % page_size(self.level()) == 0,
             paddr + page_size(self.level()) <= MAX_PADDR,
-            C::raw_item_well_formed(paddr, self.level(), prop),
+            C::raw_item_well_formed((paddr, self.level(), prop, Tracked(permission))),
             C::E::new_page_req(paddr, self.level(), prop),
-            permission is Some <==> C::tracked(
-                C::item_from_raw_spec(paddr, self.level(), prop, None, None),
-            ),
             self.path().push_tail(self.idx as int).inv(),
         ensures
             final(regions).slot_owners == old(regions).slot_owners,
@@ -1134,23 +1131,15 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.metaregion_sound(regions),
             self.cur_entry_owner().is_frame(),
             pa == self.cur_entry_owner().frame().mapped_pa,
-            C::item_from_raw_spec(
-                pa,
-                level,
-                prop,
-                C::item_slot_perm(item),
-                C::item_permission(item),
-            ) == item,
-            C::item_permission(item) == self.cur_entry_owner().frame_permission(),
-            C::tracked(item) ==> C::item_slot_perm(item) == Some(regions.slots[frame_to_index(pa)]),
-            !C::tracked(item) ==> C::item_slot_perm(item) is None,
+            C::item_from_raw_spec(pa, level, prop, C::item_into_raw_spec(item).3) == item,
+            C::item_into_raw_spec(item).3@ == self.cur_entry_owner().frame_permission(),
             valid_frame_paddr(pa),
-            C::raw_item_well_formed(pa, level, prop),
+            C::raw_item_well_formed((pa, level, prop, C::item_into_raw_spec(item).3)),
             // The recorded entry trackedness matches the item being cloned.
-            C::tracked(item) == self.cur_entry_owner().frame_is_tracked(),
+            (C::item_into_raw_spec(item).3@ is Some) == self.cur_entry_owner().frame_is_tracked(),
             // Saturation aborts (Arc-style) via `inc_ref_count`'s diverging panic.
-            C::tracked(item) ==> (regions.slot_owner(pa).ref_count() < REF_COUNT_MAX
-                || may_panic()),
+            C::item_into_raw_spec(item).3@ is Some ==> (regions.slot_owner(pa).ref_count()
+                < REF_COUNT_MAX || may_panic()),
         ensures
             item.clone_requires(regions),
     {
@@ -2147,6 +2136,12 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     {
         let f = PageTableOwner::<C>::metaregion_sound_pred(regions0);
         let g = PageTableOwner::<C>::metaregion_sound_pred(regions1);
+        assert(OwnerSubtree::implies(f, g)) by {
+            assert forall|entry: EntryOwner<C>, path: TreePath<NR_ENTRIES>|
+                entry.inv() && f(entry, path) implies #[trigger] g(entry, path) by {
+                entry.metaregion_sound_slot_owners_only(regions0, regions1);
+            };
+        };
         self.metaregion_preserved(self, regions0, regions1);
     }
 
@@ -2186,6 +2181,32 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     {
         let f = PageTableOwner::<C>::metaregion_sound_pred(regions0);
         let g = PageTableOwner::<C>::metaregion_sound_pred(regions1);
+        assert(OwnerSubtree::implies(f, g)) by {
+            assert forall|entry: EntryOwner<C>, path: TreePath<NR_ENTRIES>|
+                entry.inv() && f(entry, path) implies #[trigger] g(entry, path) by {
+                if entry.is_frame() {
+                    let pa = entry.frame().mapped_pa;
+                    let entry_idx = frame_to_index(pa);
+                    assert(regions0.slots[entry_idx] == regions1.slots[entry_idx]);
+                    assert(regions0.slot_owners[entry_idx].metadata_perm.id()
+                        == regions1.slot_owners[entry_idx].metadata_perm.id());
+                    C::lemma_perm_well_formed_with_region_preserved(
+                        pa,
+                        Tracked(entry.frame_permission()),
+                        regions0,
+                        regions1,
+                    );
+                    if entry.parent_level > 1 {
+                        C::lemma_huge_raw_item_untracked(
+                            pa,
+                            entry.parent_level,
+                            entry.frame().prop,
+                            Tracked(entry.frame_permission()),
+                        );
+                    }
+                }
+            };
+        };
         self.metaregion_preserved(self, regions0, regions1);
     }
 
@@ -2230,6 +2251,31 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let f = PageTableOwner::<C>::metaregion_sound_pred(regions0);
         let g = PageTableOwner::<C>::metaregion_sound_pred(regions1);
         let nsp = PageTableOwner::<C>::not_in_scope_pred();
+
+        assert(OwnerSubtree::implies(
+            |entry: EntryOwner<C>, path: TreePath<NR_ENTRIES>| f(entry, path) && nsp(entry, path),
+            g,
+        )) by {
+            assert forall|entry: EntryOwner<C>, path: TreePath<NR_ENTRIES>|
+                entry.inv() && f(entry, path) && nsp(entry, path) implies #[trigger] g(
+                entry,
+                path,
+            ) by {
+                if entry.is_frame() {
+                    let pa = entry.frame().mapped_pa;
+                    let idx = frame_to_index(pa);
+                    assert(regions0.slots[idx] == regions1.slots[idx]);
+                    assert(regions0.slot_owners[idx].metadata_perm.id()
+                        == regions1.slot_owners[idx].metadata_perm.id());
+                    C::lemma_perm_well_formed_with_region_preserved(
+                        pa,
+                        Tracked(entry.frame_permission()),
+                        regions0,
+                        regions1,
+                    );
+                }
+            };
+        };
 
         assert forall|i: int|
             #![trigger self.continuations[i]]

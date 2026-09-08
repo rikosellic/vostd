@@ -215,37 +215,54 @@ unsafe impl PageTableConfig for KernelPtConfig {
 
     type Item = MappedItem;
 
-    open spec fn item_into_raw_spec(item: Self::Item) -> (Paddr, PagingLevel, PageProperty) {
+    type Perm = (&'static vstd::simple_pptr::PointsTo<MetaSlot>, FracMetadataPerm);
+
+    open spec fn perm_well_formed_with_region(
+        pa: Paddr,
+        perm: Tracked<Option<Self::Perm>>,
+        regions: MetaRegionOwners,
+    ) -> bool {
+        perm@ is Some ==> {
+            let idx = crate::specs::mm::frame::mapping::frame_to_index(pa);
+            let frame_perm = perm@->0;
+            &&& frame_perm.0 == regions.slots[idx]
+            &&& frame_perm.1.frac() == 1
+            &&& frame_perm.1.id() == regions.slot_owners[idx].metadata_perm.id()
+            &&& MetaSlot::perms_related(*frame_perm.0, frame_perm.1.resource())
+        }
+    }
+
+    proof fn lemma_none_perm_well_formed(pa: Paddr, regions: MetaRegionOwners) {
+    }
+
+    open spec fn item_into_raw_spec(item: Self::Item) -> (
+        Paddr,
+        PagingLevel,
+        PageProperty,
+        Tracked<Option<Self::Perm>>,
+    ) {
         match item {
             MappedItem::Tracked(frame, prop) => (
                 crate::mm::frame::meta::mapping::meta_to_frame(frame.ptr.addr()),
                 1,
                 Self::encode_tracked_prop(prop),
+                Tracked(Some((frame.tracked_slot_perm@, frame.tracked_metadata_perm@->0))),
             ),
-            MappedItem::Untracked(pa, level, prop) => (pa, level, Self::decode_tracked_prop(prop)),
-        }
-    }
-
-    open spec fn item_permission(item: Self::Item) -> Option<FracMetadataPerm> {
-        match item {
-            MappedItem::Tracked(frame, _) => frame.tracked_metadata_perm@,
-            MappedItem::Untracked(_, _, _) => None,
-        }
-    }
-
-    open spec fn item_slot_perm(item: Self::Item) -> Option<
-        &'static vstd::simple_pptr::PointsTo<crate::mm::frame::MetaSlot>,
-    > {
-        match item {
-            MappedItem::Tracked(frame, _) => Some(frame.tracked_slot_perm@),
-            MappedItem::Untracked(_, _, _) => None,
+            MappedItem::Untracked(pa, level, prop) => (
+                pa,
+                level,
+                Self::decode_tracked_prop(prop),
+                Tracked(None),
+            ),
         }
     }
 
     #[verifier::external_body]
     fn item_into_raw(item: Self::Item) -> (res: (
-        (Paddr, PagingLevel, PageProperty),
-        Tracked<Option<FracMetadataPerm>>,
+        Paddr,
+        PagingLevel,
+        PageProperty,
+        Tracked<Option<Self::Perm>>,
     )) {
         match item {
             MappedItem::Tracked(frame, mut prop) => {
@@ -254,15 +271,18 @@ unsafe impl PageTableConfig for KernelPtConfig {
                 }
                 debug_assert!(!prop.flags.contains(PageFlags::AVAIL1()));
                 prop.flags = prop.flags | PageFlags::AVAIL1();
+                proof_decl! {
+                    let tracked slot_perm = *frame.tracked_slot_perm;
+                }
                 let level = frame.map_level();
                 let paddr = frame.into_raw();
                 proof_with!(=> Tracked(frame_permission));
-                ((paddr, level, prop), Tracked(Some(frame_permission)))
+                (paddr, level, prop, Tracked(Some((slot_perm, frame_permission))))
             },
             MappedItem::Untracked(pa, level, mut prop) => {
                 debug_assert!(!prop.flags.contains(PageFlags::AVAIL1()));
                 prop.flags = prop.flags - PageFlags::AVAIL1();
-                ((pa, level, prop), Tracked(None))
+                (pa, level, prop, Tracked(None))
             },
         }
     }
@@ -271,8 +291,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
         paddr: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        slot_perm: Option<&'static vstd::simple_pptr::PointsTo<crate::mm::frame::MetaSlot>>,
-        permission: Option<FracMetadataPerm>,
+        perm: Tracked<Option<Self::Perm>>,
     ) -> Self::Item {
         if prop.flags.contains(PageFlags::AVAIL1()) {
             MappedItem::Tracked(
@@ -280,9 +299,9 @@ unsafe impl PageTableConfig for KernelPtConfig {
                     ptr: vstd::simple_pptr::PPtr(mapping::frame_to_meta(paddr), PhantomData),
                     _marker: PhantomData,
                     #[cfg(verus_keep_ghost_body)]
-                    tracked_slot_perm: Tracked(slot_perm->0),
+                    tracked_slot_perm: Tracked((perm@->0).0),
                     #[cfg(verus_keep_ghost_body)]
-                    tracked_metadata_perm: Tracked(permission),
+                    tracked_metadata_perm: Tracked(Some((perm@->0).1)),
                 },
                 Self::decode_tracked_prop(prop),
             )
@@ -296,8 +315,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
         paddr: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        Tracked(regions): Tracked<&mut MetaRegionOwners>,
-        Tracked(permission): Tracked<Option<FracMetadataPerm>>,
+        Tracked(perm): Tracked<Option<Self::Perm>>,
     ) -> Self::Item {
         if prop.flags.contains(PageFlags::AVAIL1()) {
             debug_assert_eq!(level, 1);
@@ -305,8 +323,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
             let mut item_prop = prop;
             item_prop.flags = item_prop.flags - PageFlags::AVAIL1();
             // SAFETY: The caller ensures safety.
-            let tracked slot_perm = regions.tracked_borrow_slot(paddr);
-            let tracked frame_permission = permission.tracked_unwrap();
+            let tracked (slot_perm, frame_permission) = perm.tracked_unwrap();
             proof_with!(Tracked(slot_perm), Tracked(frame_permission));
             let frame = unsafe { Frame::<MetaSlotStorage>::from_raw(paddr) };
             MappedItem::Tracked(frame, item_prop)
@@ -319,23 +336,18 @@ unsafe impl PageTableConfig for KernelPtConfig {
         pa: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        slot_perm: Option<&'static vstd::simple_pptr::PointsTo<crate::mm::frame::MetaSlot>>,
-        permission: Option<FracMetadataPerm>,
+        perm: Tracked<Option<Self::Perm>>,
     ) {
         broadcast use group_page_meta;
 
-        assert(Self::raw_item_well_formed(pa, level, prop));
+        assert(Self::raw_item_well_formed((pa, level, prop, perm)));
         prop.lemma_avail1_tag_encoding();
-        assert(Self::tracked(Self::item_from_raw_spec(pa, level, prop, slot_perm, permission))
-            == prop.flags.contains(PageFlags::AVAIL1()));
         if prop.flags.contains(PageFlags::AVAIL1()) {
-            assert(Self::item_from_raw_spec(pa, level, prop, slot_perm, permission) is Tracked);
-            assert(slot_perm is Some);
-            assert(permission is Some);
+            assert(Self::item_from_raw_spec(pa, level, prop, perm) is Tracked);
+            assert(perm@ is Some);
         } else {
-            assert(Self::item_from_raw_spec(pa, level, prop, slot_perm, permission) is Untracked);
-            assert(slot_perm is None);
-            assert(permission is None);
+            assert(Self::item_from_raw_spec(pa, level, prop, perm) is Untracked);
+            assert(perm@ is None);
         }
     }
 
@@ -344,12 +356,9 @@ unsafe impl PageTableConfig for KernelPtConfig {
         paddr: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        slot_perm: Option<&'static vstd::simple_pptr::PointsTo<crate::mm::frame::MetaSlot>>,
-        permission: Option<FracMetadataPerm>,
+        perm: Tracked<Option<Self::Perm>>,
     ) {
         broadcast use group_page_meta;
-
-        assert(Self::item_slot_perm(item) is Some <==> Self::item_permission(item) is Some);
 
         match item {
             MappedItem::Tracked(frame, prop_actual) => {
@@ -363,12 +372,6 @@ unsafe impl PageTableConfig for KernelPtConfig {
         }
     }
 
-    open spec fn tracked(item: Self::Item) -> bool {
-        // Tracked items hold a reference; clone bumps rc. Untracked items
-        // (MMIO frames) are not ref-counted; clone is a no-op.
-        item is Tracked
-    }
-
     open spec fn item_well_formed(item: Self::Item) -> bool {
         match item {
             MappedItem::Tracked(frame, prop) => {
@@ -379,8 +382,35 @@ unsafe impl PageTableConfig for KernelPtConfig {
         }
     }
 
-    open spec fn raw_item_well_formed(_pa: Paddr, level: PagingLevel, prop: PageProperty) -> bool {
-        prop.flags.contains(PageFlags::AVAIL1()) ==> level == 1
+    open spec fn raw_item_well_formed(
+        item: (Paddr, PagingLevel, PageProperty, Tracked<Option<Self::Perm>>),
+    ) -> bool {
+        let (pa, level, prop, perm) = item;
+        &&& (prop.flags.contains(PageFlags::AVAIL1()) <==> perm@ is Some)
+        &&& prop.flags.contains(PageFlags::AVAIL1()) ==> {
+            &&& level == 1
+            &&& (perm@->0).0.addr() == mapping::frame_to_meta(pa)
+            &&& (perm@->0).0.is_init()
+            &&& (perm@->0).1.frac() == 1
+            &&& MetaSlot::perms_related(*(perm@->0).0, (perm@->0).1.resource())
+        }
+    }
+
+    proof fn lemma_perm_well_formed_with_region_preserved(
+        pa: Paddr,
+        perm: Tracked<Option<Self::Perm>>,
+        old_regions: MetaRegionOwners,
+        new_regions: MetaRegionOwners,
+    ) {
+        if perm@ is Some {
+            let idx = crate::specs::mm::frame::mapping::frame_to_index(pa);
+            let frame_perm = perm@->0;
+            assert(frame_perm == perm@->0);
+            assert(frame_perm.0 == old_regions.slots[idx]);
+            assert(frame_perm.0 == new_regions.slots[idx]);
+            assert(frame_perm.1.id() == old_regions.slot_owners[idx].metadata_perm.id());
+            assert(frame_perm.1.id() == new_regions.slot_owners[idx].metadata_perm.id());
+        }
     }
 
     proof fn lemma_raw_item_well_formed_preserved(
@@ -388,6 +418,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
         level: PagingLevel,
         old_prop: PageProperty,
         new_prop: PageProperty,
+        perm: Tracked<Option<Self::Perm>>,
     ) {
     }
 
@@ -397,6 +428,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
         prop: PageProperty,
         child_pa: Paddr,
         child_idx: usize,
+        perm: Tracked<Option<Self::Perm>>,
     ) {
         assert(<PageTableEntry as crate::mm::page_table::PageTableEntryTrait>::new_page_req(
             pa,
@@ -410,24 +442,28 @@ unsafe impl PageTableConfig for KernelPtConfig {
         ));
     }
 
-    proof fn lemma_huge_raw_item_untracked(pa: Paddr, level: PagingLevel, prop: PageProperty) {
+    proof fn lemma_huge_raw_item_untracked(
+        pa: Paddr,
+        level: PagingLevel,
+        prop: PageProperty,
+        perm: Tracked<Option<Self::Perm>>,
+    ) {
     }
 
     proof fn lemma_item_from_raw_well_formed(
         pa: Paddr,
         level: PagingLevel,
         prop: PageProperty,
-        slot_perm: Option<&'static vstd::simple_pptr::PointsTo<crate::mm::frame::MetaSlot>>,
-        permission: Option<FracMetadataPerm>,
+        perm: Tracked<Option<Self::Perm>>,
     ) {
         broadcast use group_page_meta;
 
         prop.lemma_avail1_tag_encoding();
         if prop.flags.contains(PageFlags::AVAIL1()) {
-            let item = Self::item_from_raw_spec(pa, level, prop, slot_perm, permission);
+            let item = Self::item_from_raw_spec(pa, level, prop, perm);
             assert(Self::item_well_formed(item));
         } else {
-            let item = Self::item_from_raw_spec(pa, level, prop, slot_perm, permission);
+            let item = Self::item_from_raw_spec(pa, level, prop, perm);
             assert(Self::item_well_formed(item));
         }
     }
@@ -463,27 +499,22 @@ unsafe impl PageTableConfig for KernelPtConfig {
         use crate::specs::mm::frame::mapping::frame_to_index;
         broadcast use group_page_meta;
 
-        assert(Self::item_slot_perm(item) is Some <==> Self::item_permission(item) is Some) by {
-            match item {
-                MappedItem::Tracked(frame, _) => {
-                    assert(frame.inv());
-                },
-                MappedItem::Untracked(_, _, _) => {},
-            }
-        }
-
-        Self::lemma_item_from_raw_well_formed(
-            pa,
-            level,
-            prop,
-            Self::item_slot_perm(item),
-            Self::item_permission(item),
-        );
+        let perm = Self::item_into_raw_spec(item).3;
+        Self::lemma_item_from_raw_well_formed(pa, level, prop, perm);
         match item {
             MappedItem::Tracked(frame, _) => {
                 crate::specs::mm::frame::mapping::lemma_paddr_to_meta_biinjective(pa);
                 regions.lemma_contains_valid_frame_paddr(pa);
+                assert(Self::perm_well_formed_with_region(pa, perm, regions));
+                assert(perm@ is Some);
+                assert((perm@->0).0 == regions.slots[frame_to_index(pa)]);
                 assert(frame.tracked_slot_perm@ == regions.slots[frame_to_index(pa)]);
+                assert((perm@->0).1.id() == regions.slot_owners[frame_to_index(
+                    pa,
+                )].metadata_perm.id());
+                assert(frame.tracked_metadata_perm@->0.id() == regions.slot_owners[frame_to_index(
+                    pa,
+                )].metadata_perm.id());
             },
             MappedItem::Untracked(_, _, _) => {},
         }

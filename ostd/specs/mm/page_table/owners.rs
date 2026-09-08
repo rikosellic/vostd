@@ -1499,6 +1499,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             subtree.subtree_satisfies(path, Self::metaregion_sound_pred(r1)),
         decreases INC_LEVELS - subtree.level(),
     {
+        subtree.value().metaregion_sound_slot_owners_only(r0, r1);
         // Recursively for each Some child.
         if subtree.level() < INC_LEVELS - 1 {
             assert forall|i: int|
@@ -1620,6 +1621,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             subtree.subtree_satisfies(path, Self::metaregion_sound_pred(r1)),
         decreases INC_LEVELS - subtree.level(),
     {
+        subtree.value().metaregion_sound_one_slot_changed(r0, r1, changed_idx);
         if subtree.level() < INC_LEVELS - 1 {
             assert forall|i: int|
                 #![trigger subtree.has_child(i)]

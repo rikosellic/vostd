@@ -95,7 +95,7 @@ pub open spec fn frame_entry_wf<T: AnyFrameMeta + Repr<MetaSlotStorage>>(
         tracked_metadata_perm: frame.tracked_metadata_perm,
     };
     let item = MappedItem::Tracked(frame_mss, prop);
-    let (pa, level, prop_from_item) = KernelPtConfig::item_into_raw_spec(item);
+    let (pa, level, prop_from_item, _perm) = KernelPtConfig::item_into_raw_spec(item);
     Child::Frame(pa, level, prop_from_item).wf(entry_owner)
 }
 
@@ -621,7 +621,7 @@ impl KVirtArea {
             proof {
                 cursor_owner.view_preserves_inv();  // old_cursor_model.inv()
                 cursor_owner.va.reflect_prop(cursor.0.va);
-                let (pa, level, prop_from_item) = KernelPtConfig::item_into_raw_spec(item);
+                let (pa, level, prop_from_item, _perm) = KernelPtConfig::item_into_raw_spec(item);
                 lemma_va_align_page_size_level_1(cursor.0.va);
                 cursor_owner.locked_range_page_aligned();
                 let ghost diff: int = cursor.0.barrier_va.end - cursor.0.va;
@@ -666,7 +666,7 @@ impl KVirtArea {
             proof {
                 let cur_idx = frame_to_index(cur_mapped_pa);
 
-                let (pa, level, prop_) = KernelPtConfig::item_into_raw_spec(item);
+                let (pa, level, prop_, _perm) = KernelPtConfig::item_into_raw_spec(item);
 
                 let split_self = old_cursor_model.split_while_huge(PAGE_SIZE);
 

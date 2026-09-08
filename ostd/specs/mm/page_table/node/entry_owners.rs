@@ -10,7 +10,7 @@ use crate::specs::{
     mm::{
         frame::{
             mapping::{frame_to_index, index_to_meta, meta_to_index},
-            meta_owners::{FracMetadataPerm, PageUsage},
+            meta_owners::PageUsage,
             meta_region_owners::MetaRegionOwners,
         },
         page_table::{node::entry_view::*, *},
@@ -34,15 +34,15 @@ verus! {
 /// supports huge pages, so it is not necessarily at level 1.
 /// - `mapped_pa` is the physical address of the mapped frame.
 /// - `prop` is a bitfield tracking the properties of the page ([`PageProperty`])
-pub tracked struct FrameEntryOwner {
+pub tracked struct FrameEntryOwner<C: PageTableConfig> {
     pub ghost mapped_pa: usize,
     pub ghost prop: PageProperty,
-    pub permission: Option<FracMetadataPerm>,
+    pub permission: Option<C::Perm>,
 }
 
 pub tracked enum EntryOwnerKind<C: PageTableConfig> {
     Node(NodeOwner<C>),
-    Frame(FrameEntryOwner),
+    Frame(FrameEntryOwner<C>),
     /// Translation-only / borrowed-sub-tree variant.
     ///
     /// Present when the slot's PTE references a sub-tree owned by *another*
@@ -87,11 +87,11 @@ impl<C: PageTableConfig> EntryOwner<C> {
         self.kind->Node_0
     }
 
-    pub open spec fn frame(self) -> FrameEntryOwner {
+    pub open spec fn frame(self) -> FrameEntryOwner<C> {
         self.kind->Frame_0
     }
 
-    pub open spec fn frame_permission(self) -> Option<FracMetadataPerm>
+    pub open spec fn frame_permission(self) -> Option<C::Perm>
         recommends
             self.is_frame(),
     {
@@ -102,15 +102,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
         recommends
             self.is_frame(),
     {
-        C::tracked(
-            C::item_from_raw_spec(
-                self.frame().mapped_pa,
-                self.parent_level,
-                self.frame().prop,
-                None,
-                None,
-            ),
-        )
+        self.frame_permission() is Some
     }
 
     pub open spec fn borrowed(self) -> Set<Mapping> {
@@ -126,7 +118,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
         path: TreePath<NR_ENTRIES>,
         parent_level: PagingLevel,
         prop: PageProperty,
-        permission: Option<FracMetadataPerm>,
+        permission: Option<C::Perm>,
     ) -> Self {
         EntryOwner {
             kind: EntryOwnerKind::Frame(FrameEntryOwner { mapped_pa: paddr, prop, permission }),
@@ -242,9 +234,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
         }
     }
 
-    pub proof fn tracked_take_frame_permission(tracked &mut self) -> (tracked res: Option<
-        FracMetadataPerm,
-    >)
+    pub proof fn tracked_take_frame_permission(tracked &mut self) -> (tracked res: Option<C::Perm>)
         requires
             old(self).is_frame(),
         ensures
@@ -274,7 +264,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
 
     pub proof fn tracked_put_frame_permission(
         tracked &mut self,
-        tracked permission: Option<FracMetadataPerm>,
+        tracked permission: Option<C::Perm>,
     )
         requires
             old(self).is_frame(),
@@ -302,7 +292,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
         path: TreePath<NR_ENTRIES>,
         parent_level: PagingLevel,
         prop: PageProperty,
-        tracked permission: Option<FracMetadataPerm>,
+        tracked permission: Option<C::Perm>,
     ) -> tracked Self
         returns
             Self::new_frame(paddr, path, parent_level, prop, permission),
@@ -360,9 +350,8 @@ impl<C: PageTableConfig> EntryOwner<C> {
             1 <= parent_level < NR_LEVELS,
             paddr % page_size(parent_level) == 0,
             paddr + page_size(parent_level) <= MAX_PADDR,
-            C::raw_item_well_formed(paddr, parent_level, prop),
+            C::raw_item_well_formed((paddr, parent_level, prop, Tracked(None))),
             C::E::new_page_req(paddr, parent_level, prop),
-            !C::tracked(C::item_from_raw_spec(paddr, parent_level, prop, None, None)),
         ensures
             res.is_frame(),
             res.frame().mapped_pa == paddr,
@@ -506,7 +495,12 @@ impl<C: PageTableConfig> EntryOwner<C> {
             let pa = self.frame().mapped_pa;
             let nr_pages = page_size(self.parent_level) / PAGE_SIZE;
             let self_idx = frame_to_index(self.meta_slot_paddr().unwrap());
-            C::lemma_huge_raw_item_untracked(pa, self.parent_level, self.frame().prop);
+            C::lemma_huge_raw_item_untracked(
+                pa,
+                self.parent_level,
+                self.frame().prop,
+                Tracked(self.frame_permission()),
+            );
             assert(!self.frame_is_tracked());
             assert forall|j: usize|
                 #![trigger frame_to_index((pa + j * PAGE_SIZE) as usize)]
@@ -605,12 +599,10 @@ impl<C: PageTableConfig> EntryOwner<C> {
             }
             &&& regions.slot_owners[idx].paths_in_pt.contains(self.path)
             &&& self.frame_sub_pages_valid(regions)
-            &&& self.frame_permission() is Some ==> self.frame_permission()->0.frac() == 1
-            &&& self.frame_permission() is Some ==> self.frame_permission()->0.id()
-                == regions.slot_owners[idx].metadata_perm.id()
-            &&& self.frame_permission() is Some ==> MetaSlot::perms_related(
-                *regions.slots[idx],
-                self.frame_permission()->0.resource(),
+            &&& C::perm_well_formed_with_region(
+                self.frame().mapped_pa,
+                Tracked(self.frame_permission()),
+                regions,
             )
         } else {
             true
@@ -668,11 +660,25 @@ impl<C: PageTableConfig> EntryOwner<C> {
         ensures
             self.metaregion_sound(r1),
     {
+        if self.is_frame() {
+            let pa = self.frame().mapped_pa;
+            let idx = frame_to_index(pa);
+            assert(r0.slots[idx] == r1.slots[idx]);
+            assert(r0.slot_owners[idx].metadata_perm.id()
+                == r1.slot_owners[idx].metadata_perm.id());
+            C::lemma_perm_well_formed_with_region_preserved(
+                pa,
+                Tracked(self.frame_permission()),
+                r0,
+                r1,
+            );
+        }
         if self.is_frame() && self.parent_level > 1 {
             C::lemma_huge_raw_item_untracked(
                 self.frame().mapped_pa,
                 self.parent_level,
                 self.frame().prop,
+                Tracked(self.frame_permission()),
             );
             assert(!self.frame_is_tracked());
         }
@@ -744,6 +750,16 @@ impl<C: PageTableConfig> EntryOwner<C> {
             assert(r0.slots.contains_key(idx));
             assert(r1.slots.contains_key(idx));
             assert(r0.slots[idx] == r1.slots[idx]);
+            if self.is_frame() {
+                assert(r0.slot_owners[idx].metadata_perm.id()
+                    == r1.slot_owners[idx].metadata_perm.id());
+                C::lemma_perm_well_formed_with_region_preserved(
+                    self.frame().mapped_pa,
+                    Tracked(self.frame_permission()),
+                    r0,
+                    r1,
+                );
+            }
             if self.is_node() {
                 assert(self.node().meta_wf(r1));
                 assert(self.node().metaregion_sound_node(r1));
@@ -754,6 +770,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
                 self.frame().mapped_pa,
                 self.parent_level,
                 self.frame().prop,
+                Tracked(self.frame_permission()),
             );
             assert(!self.frame_is_tracked());
         }
@@ -810,13 +827,27 @@ impl<C: PageTableConfig> EntryOwner<C> {
             // Bridge `rc > 0` from r0 to r1: at `eidx == changed_idx` the
             // permissions are preserved; elsewhere the entire slot owner is identical.
             if self.is_frame() {
+                assert(r0.slots[eidx] == r1.slots[eidx]);
+                assert(r0.slot_owners[eidx].metadata_perm.id()
+                    == r1.slot_owners[eidx].metadata_perm.id());
+                C::lemma_perm_well_formed_with_region_preserved(
+                    self.frame().mapped_pa,
+                    Tracked(self.frame_permission()),
+                    r0,
+                    r1,
+                );
                 // Sub-page validity for huge frames: slot existence (unconditional)
                 // plus `rc` bookkeeping when tracked.
                 if self.parent_level > 1 {
                     let pa = self.frame().mapped_pa;
                     let nr_pages = page_size(self.parent_level) / PAGE_SIZE;
                     let self_idx = frame_to_index(self.meta_slot_paddr().unwrap());
-                    C::lemma_huge_raw_item_untracked(pa, self.parent_level, self.frame().prop);
+                    C::lemma_huge_raw_item_untracked(
+                        pa,
+                        self.parent_level,
+                        self.frame().prop,
+                        Tracked(self.frame_permission()),
+                    );
                     assert(!self.frame_is_tracked());
                     assert forall|j: usize|
                         #![trigger frame_to_index((pa + j * PAGE_SIZE) as usize)]
@@ -890,11 +921,28 @@ impl<C: PageTableConfig> EntryOwner<C> {
         ensures
             self.metaregion_sound(r1),
     {
+        if self.is_frame() {
+            let idx = frame_to_index(self.frame().mapped_pa);
+            assert(r0.slots[idx] == r1.slots[idx]);
+            assert(r0.slot_owners[idx].metadata_perm.id()
+                == r1.slot_owners[idx].metadata_perm.id());
+            C::lemma_perm_well_formed_with_region_preserved(
+                self.frame().mapped_pa,
+                Tracked(self.frame_permission()),
+                r0,
+                r1,
+            );
+        }
         if self.is_frame() && self.parent_level > 1 {
             let pa = self.frame().mapped_pa;
             let nr_pages = page_size(self.parent_level) / PAGE_SIZE;
             let self_idx = frame_to_index(self.meta_slot_paddr().unwrap());
-            C::lemma_huge_raw_item_untracked(pa, self.parent_level, self.frame().prop);
+            C::lemma_huge_raw_item_untracked(
+                pa,
+                self.parent_level,
+                self.frame().prop,
+                Tracked(self.frame_permission()),
+            );
             assert(!self.frame_is_tracked());
             assert forall|j: usize|
                 #![trigger frame_to_index((pa + j * PAGE_SIZE) as usize)]
@@ -995,12 +1043,14 @@ impl<C: PageTableConfig> EntryOwner<C> {
             &&& self.frame().mapped_pa % page_size(self.parent_level) == 0
             &&& self.frame().mapped_pa + page_size(self.parent_level) <= MAX_PADDR
             &&& C::raw_item_well_formed(
-                self.frame().mapped_pa,
-                self.parent_level,
-                self.frame().prop,
+                (
+                    self.frame().mapped_pa,
+                    self.parent_level,
+                    self.frame().prop,
+                    Tracked(self.frame_permission()),
+                ),
             )
             &&& C::E::new_page_req(self.frame().mapped_pa, self.parent_level, self.frame().prop)
-            &&& (self.frame_permission() is Some <==> self.frame_is_tracked())
         }
         &&& self.is_borrowed() ==> { true }
         &&& self.path.inv()

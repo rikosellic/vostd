@@ -208,11 +208,13 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             // For `KernelPtConfig`, `C::tracked(item)` reads `prop.flags.AVAIL1`, so this
             // precondition reduces to "op preserves AVAIL1". For `UserPtConfig`,
             // `C::tracked` is constant `true`, so this is trivial.
-            forall|pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty|
+            forall|pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty,
+                perm: Tracked<Option<C::Perm>>|
                 #![auto]
-                op.ensures((p_in,), p_out) ==> C::tracked(
-                    C::item_from_raw_spec(pa, level, p_out, None, None),
-                ) == C::tracked(C::item_from_raw_spec(pa, level, p_in, None, None)),
+                op.ensures((p_in,), p_out) ==> (
+                    C::item_into_raw_spec(C::item_from_raw_spec(pa, level, p_out, perm)).3@
+                        is Some
+                ) == (perm@ is Some),
             forall|pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty|
                 #![auto]
                 op.ensures((p_in,), p_out) && C::E::new_page_req(pa, level, p_in)
@@ -358,6 +360,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         // invariant) at the end: snapshot the parent's PTE array and counter
         // before the PTE write + counter inc/dec.
         let ghost cp0 = parent_owner.children_perm.value();
+        let ghost initial_regions = *regions;
+        let ghost initial_owner = *owner;
+        let ghost initial_new_owner = *new_owner;
 
         #[cfg(feature = "allow_panic")]
         {
@@ -450,6 +455,61 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 let paddr = new_owner.meta_slot_paddr().unwrap();
                 regions.lemma_contains_valid_frame_paddr(paddr);
             }
+            if owner.is_frame() {
+                let paddr = owner.frame().mapped_pa;
+                let slot = frame_to_index(paddr);
+                assert(initial_regions.slots[slot] == regions.slots[slot]);
+                assert(initial_regions.slot_owners[slot].metadata_perm.id()
+                    == regions.slot_owners[slot].metadata_perm.id());
+                C::lemma_perm_well_formed_with_region_preserved(
+                    paddr,
+                    Tracked(owner.frame_permission()),
+                    initial_regions,
+                    *regions,
+                );
+            }
+            if new_owner.is_frame() {
+                let paddr = new_owner.frame().mapped_pa;
+                let slot = frame_to_index(paddr);
+                assert(initial_regions.slots[slot] == regions.slots[slot]);
+                assert(initial_regions.slot_owners[slot].metadata_perm.id()
+                    == regions.slot_owners[slot].metadata_perm.id());
+                C::lemma_perm_well_formed_with_region_preserved(
+                    paddr,
+                    Tracked(new_owner.frame_permission()),
+                    initial_regions,
+                    *regions,
+                );
+            }
+            assert(Self::metaregion_sound_neq_preserved(
+                initial_owner,
+                *new_owner,
+                initial_regions,
+                *regions,
+            )) by {
+                let f = |entry: EntryOwner<C>, path: TreePath<NR_ENTRIES>|
+                    entry.meta_slot_paddr_neq(initial_owner) && entry.meta_slot_paddr_neq(
+                        *new_owner,
+                    ) && entry.metaregion_sound(initial_regions);
+                let g = |entry: EntryOwner<C>, path: TreePath<NR_ENTRIES>|
+                    entry.metaregion_sound(*regions);
+                assert forall|entry: EntryOwner<C>, path: TreePath<NR_ENTRIES>|
+                    entry.inv() && f(entry, path) implies #[trigger] g(entry, path) by {
+                    if entry.is_frame() {
+                        let paddr = entry.frame().mapped_pa;
+                        let slot = frame_to_index(paddr);
+                        assert(initial_regions.slots[slot] == regions.slots[slot]);
+                        assert(initial_regions.slot_owners[slot].metadata_perm.id()
+                            == regions.slot_owners[slot].metadata_perm.id());
+                        C::lemma_perm_well_formed_with_region_preserved(
+                            paddr,
+                            Tracked(entry.frame_permission()),
+                            initial_regions,
+                            *regions,
+                        );
+                    }
+                };
+            };
             crate::specs::mm::page_table::node::owners::lemma_count_present_upto_update(
                 cp0,
                 NR_ENTRIES as int,
@@ -852,7 +912,12 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
         proof {
             EntryOwner::last_pte_implies_frame_match(owner.value(), self.pte, level);
-            C::lemma_huge_raw_item_untracked(pa, level, prop);
+            C::lemma_huge_raw_item_untracked(
+                pa,
+                level,
+                prop,
+                Tracked(owner.value().frame_permission()),
+            );
             assert(!owner.value().frame_is_tracked());
             assert(owner.value().frame_permission() is None);
         }
@@ -1172,7 +1237,15 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                     pa, level, i);
 
                 }
-                C::lemma_raw_item_well_formed_split(pa, level, prop, small_pa, i);
+                C::lemma_raw_item_well_formed_split(
+                    pa,
+                    level,
+                    prop,
+                    small_pa,
+                    i,
+                    Tracked(owner.value().frame_permission()),
+                );
+                C::lemma_none_perm_well_formed(small_pa, *regions);
             }
 
             // Snapshot the node's own-slot facts while the loop invariant still
@@ -1338,11 +1411,13 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             op.requires((old(owner).frame().prop,)),
             regions.inv(),
             regions.slots.contains_key(old(parent_owner).slot_index),
-            forall|pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty|
+            forall|pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty,
+                perm: Tracked<Option<C::Perm>>|
                 #![auto]
-                op.ensures((p_in,), p_out) ==> C::tracked(
-                    C::item_from_raw_spec(pa, level, p_out, None, None),
-                ) == C::tracked(C::item_from_raw_spec(pa, level, p_in, None, None)),
+                op.ensures((p_in,), p_out) ==> (
+                    C::item_into_raw_spec(C::item_from_raw_spec(pa, level, p_out, perm)).3@
+                        is Some
+                ) == (perm@ is Some),
             forall|pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty|
                 #![auto]
                 op.ensures((p_in,), p_out) && C::E::new_page_req(pa, level, p_in)
@@ -1402,6 +1477,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
                 owner.parent_level,
                 prop,
                 new_prop,
+                Tracked(owner.frame_permission()),
             );
         }
 
@@ -1527,6 +1603,9 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     )]
     #[verifier::spinoff_prover]
     pub(in crate::mm) fn replace_child(&mut self, idx: usize, new_child: Child<C>) -> Child<C> {
+        let ghost initial_regions = *regions;
+        let ghost initial_owner = *owner;
+        let ghost initial_new_owner = *new_owner;
         #[cfg(feature = "allow_panic")]
         {
             let guard_level = self.level();
@@ -1619,6 +1698,61 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
                 let paddr = new_owner.meta_slot_paddr().unwrap();
                 regions.lemma_contains_valid_frame_paddr(paddr);
             }
+            if owner.is_frame() {
+                let paddr = owner.frame().mapped_pa;
+                let slot = frame_to_index(paddr);
+                assert(initial_regions.slots[slot] == regions.slots[slot]);
+                assert(initial_regions.slot_owners[slot].metadata_perm.id()
+                    == regions.slot_owners[slot].metadata_perm.id());
+                C::lemma_perm_well_formed_with_region_preserved(
+                    paddr,
+                    Tracked(owner.frame_permission()),
+                    initial_regions,
+                    *regions,
+                );
+            }
+            if new_owner.is_frame() {
+                let paddr = new_owner.frame().mapped_pa;
+                let slot = frame_to_index(paddr);
+                assert(initial_regions.slots[slot] == regions.slots[slot]);
+                assert(initial_regions.slot_owners[slot].metadata_perm.id()
+                    == regions.slot_owners[slot].metadata_perm.id());
+                C::lemma_perm_well_formed_with_region_preserved(
+                    paddr,
+                    Tracked(new_owner.frame_permission()),
+                    initial_regions,
+                    *regions,
+                );
+            }
+            assert(Entry::<C>::metaregion_sound_neq_preserved(
+                initial_owner,
+                *new_owner,
+                initial_regions,
+                *regions,
+            )) by {
+                let f = |entry: EntryOwner<C>, path: TreePath<NR_ENTRIES>|
+                    entry.meta_slot_paddr_neq(initial_owner) && entry.meta_slot_paddr_neq(
+                        *new_owner,
+                    ) && entry.metaregion_sound(initial_regions);
+                let g = |entry: EntryOwner<C>, path: TreePath<NR_ENTRIES>|
+                    entry.metaregion_sound(*regions);
+                assert forall|entry: EntryOwner<C>, path: TreePath<NR_ENTRIES>|
+                    entry.inv() && f(entry, path) implies #[trigger] g(entry, path) by {
+                    if entry.is_frame() {
+                        let paddr = entry.frame().mapped_pa;
+                        let slot = frame_to_index(paddr);
+                        assert(initial_regions.slots[slot] == regions.slots[slot]);
+                        assert(initial_regions.slot_owners[slot].metadata_perm.id()
+                            == regions.slot_owners[slot].metadata_perm.id());
+                        C::lemma_perm_well_formed_with_region_preserved(
+                            paddr,
+                            Tracked(entry.frame_permission()),
+                            initial_regions,
+                            *regions,
+                        );
+                    }
+                };
+            };
         }
 
         old_child
