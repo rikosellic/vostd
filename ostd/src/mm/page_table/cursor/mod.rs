@@ -630,12 +630,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     };
 
                     proof {
-                        C::lemma_item_from_raw_well_formed(
-                            pa,
-                            level,
-                            prop,
-                            Tracked(raw_permission),
-                        );
                         C::lemma_item_into_raw_roundtrip(pa, level, prop, Tracked(raw_permission));
                     }
 
@@ -4321,7 +4315,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 // `protect_next` method uphold this invariant.
                 let item = unsafe { C::item_from_raw(pa, level, prop, Tracked(raw_permission)) };
                 proof {
-                    C::lemma_item_from_raw_well_formed(pa, level, prop, Tracked(raw_permission));
                     C::lemma_item_into_raw_roundtrip(pa, level, prop, Tracked(raw_permission));
                 }
                 Some(PageTableFrag::Mapped { va, item })

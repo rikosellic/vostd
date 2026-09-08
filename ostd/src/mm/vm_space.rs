@@ -1852,18 +1852,7 @@ unsafe impl PageTableConfig for UserPtConfig {
 
         let perm = Self::item_into_raw(item).3;
         Self::lemma_item_from_raw_well_formed(pa, level, prop, perm);
-        assert(meta_to_frame(item.frame.ptr.addr()) == pa);
-        assert(meta_to_index(item.frame.ptr.addr()) == frame_to_index(pa));
-        let idx = frame_to_index(pa);
         regions.lemma_contains_valid_frame_paddr(pa);
-        assert(Self::perm_well_formed_with_region(pa, perm, regions));
-        assert(perm@ is Some);
-        assert((perm@->0).0 == regions.slots[idx]);
-        assert(item.frame.tracked_slot_perm@ == regions.slots[idx]);
-        assert((perm@->0).1.id() == regions.slot_owners[idx].metadata_perm.id());
-        assert(item.frame.tracked_metadata_perm@->0.id()
-            == regions.slot_owners[idx].metadata_perm.id());
-        assert(item.frame.wf_with_region(regions));
     }
 
     proof fn lemma_page_table_config_constant_requirements() {

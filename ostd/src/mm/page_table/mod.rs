@@ -324,8 +324,8 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         requires
             valid_frame_paddr(pa),
             Self::raw_item_well_formed((pa, level, old_prop, perm)),
-            (Self::item_into_raw_spec(Self::item_from_raw(pa, level, new_prop, perm)).3@ is Some)
-                == (perm@ is Some),
+            (Self::item_into_raw(Self::item_from_raw(pa, level, new_prop, perm)).3@ is Some) == (
+            perm@ is Some),
         ensures
             Self::raw_item_well_formed((pa, level, new_prop, perm)),
     ;
