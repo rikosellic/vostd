@@ -420,7 +420,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             }
             nr_children.write(Tracked(&mut parent_owner.meta_own.nr_children), _tmp - 1);
         }
-        #[verus_spec(with Tracked(new_owner), Tracked(regions))]
+        #[verus_spec(with Tracked(new_owner))]
         let new_pte = new_child.into_pte();
 
         // SAFETY:
@@ -684,7 +684,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
             let new_pte = {
                 let tracked new_node_value = new_node_owner.tracked_borrow_mut_value();
-                #[verus_spec(with Tracked(new_node_value), Tracked(regions))]
+                #[verus_spec(with Tracked(new_node_value))]
                 Child::PageTable(new_page).into_pte()
             };
             self.pte = new_pte;
@@ -1323,7 +1323,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
         self.pte = {
             let tracked new_owner_value = new_owner.tracked_borrow_mut_value();
-            #[verus_spec(with Tracked(new_owner_value), Tracked(regions))]
+            #[verus_spec(with Tracked(new_owner_value))]
             Child::PageTable(new_page).into_pte()
         };
 
@@ -1667,7 +1667,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             }
             nr_children.write(Tracked(&mut parent_owner.meta_own.nr_children), _tmp - 1);
         }
-        #[verus_spec(with Tracked(new_owner), Tracked(regions))]
+        #[verus_spec(with Tracked(new_owner))]
         let new_pte = new_child.into_pte();
 
         unsafe {
@@ -1903,7 +1903,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
 
         let new_pte = {
             let tracked new_node_value = new_node_owner.tracked_borrow_mut_value();
-            #[verus_spec(with Tracked(new_node_value), Tracked(regions))]
+            #[verus_spec(with Tracked(new_node_value))]
             Child::PageTable(new_page).into_pte()
         };
 
@@ -2079,7 +2079,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         }
         nr_children.write(Tracked(&mut parent_owner.meta_own.nr_children), old_nr_children + 1);
 
-        #[verus_spec(with Tracked(new_owner), Tracked(regions))]
+        #[verus_spec(with Tracked(new_owner))]
         let new_pte = Child::<C>::Frame(paddr, level, prop).into_pte();
 
         unsafe {

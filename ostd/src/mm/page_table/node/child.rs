@@ -66,12 +66,13 @@ impl<C: PageTableConfig> Child<C> {
     /// so that we can guarantee the safety condition on `from_pte`.
     #[verus_spec(res =>
         with Tracked(owner): Tracked<&mut EntryOwner<C>>,
-             Tracked(regions): Tracked<&mut MetaRegionOwners>,
         requires
-            self.invariants(*old(owner), *old(regions)),
+            old(owner).inv_base(),
+            self.wf(*old(owner)),
+            self matches Child::Frame(paddr, level, prop) ==> C::E::new_page_req(paddr, level, prop),
         ensures
-            final(owner).pte_invariants(res, *final(regions)),
-            *final(regions) == old(owner).into_pte_regions_spec(*old(regions)),
+            final(owner).inv(),
+            final(owner).match_pte(res, final(owner).parent_level),
             *final(owner) == old(owner).into_pte_owner_spec(),
             old(owner).is_node() ==> res == C::E::new_pt_spec(
                 meta_to_frame(old(owner).node().meta_vaddr()),
@@ -84,18 +85,8 @@ impl<C: PageTableConfig> Child<C> {
 
         match self {
             Child::PageTable(node) => {
-                let ghost node_owner = owner.node();
-
                 let paddr = node.start_paddr();
-
                 let _ = ManuallyDrop::new(node);
-
-                proof {
-                    // `MD::new` removed one entry at `node_index`, matching
-                    // `into_pte_regions_spec`'s `.remove(index)`.
-                    let spec_regions = owner.into_pte_regions_spec(*old(regions));
-                }
-
                 C::E::new_pt(paddr)
             },
             Child::Frame(paddr, level, prop) => { C::E::new_page(paddr, level, prop) },
