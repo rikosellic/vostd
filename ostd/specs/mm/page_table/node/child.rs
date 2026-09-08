@@ -131,10 +131,6 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
 }
 
 impl<C: PageTableConfig> EntryOwner<C> {
-    pub open spec fn from_pte_regions_spec(self, regions: MetaRegionOwners) -> MetaRegionOwners {
-        regions
-    }
-
     pub open spec fn into_pte_owner_spec(self) -> EntryOwner<C> {
         self
     }

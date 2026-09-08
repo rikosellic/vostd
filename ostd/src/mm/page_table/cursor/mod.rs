@@ -162,7 +162,7 @@ fn path_slot_as_mut<'a, 'rcu, C: PageTableConfig>(
 /// ## Fix path
 /// The proper fix is:
 ///   1. Add `ensures old(owner).is_node() ==> regions.contains(...)` to
-///      `Entry::replace` (derivable from `Child::from_pte`'s `from_pte_regions_spec`).
+///      `Entry::replace`.
 ///   2. Replace this call with `pt.into_raw()` + `PageTableNodeRef::borrow_paddr()`.
 /// A fragment of a page table that can be taken out of the page table.
 pub enum PageTableFrag<C: PageTableConfig> {

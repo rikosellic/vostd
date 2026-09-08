@@ -109,16 +109,15 @@ impl<C: PageTableConfig> Child<C> {
     /// The `PTE` safety invariants require that the `PTE` was previously obtained using [`Self::into_pte`]
     /// (or another function that calls `ManuallyDrop::new`, which is sufficient for safety).
     #[verus_spec(res =>
-        with Tracked(regions): Tracked<&mut MetaRegionOwners>,
+        with Tracked(regions): Tracked<& MetaRegionOwners>,
              Tracked(entry_own): Tracked<&mut EntryOwner<C>>,
         requires
-            old(entry_own).pte_invariants(pte, *old(regions)),
+            old(entry_own).pte_invariants(pte, *regions),
             level == old(entry_own).parent_level,
         ensures
-            res.invariants(*final(entry_own), *final(regions)),
-            res == Child::<C>::from_pte_spec(pte, level, *final(regions)),
+            res.invariants(*final(entry_own), *regions),
+            res == Child::<C>::from_pte_spec(pte, level, *regions),
             *final(entry_own) == old(entry_own).from_pte_owner_spec(),
-            *final(regions) == final(entry_own).from_pte_regions_spec(*old(regions)),
     )]
     pub unsafe fn from_pte(pte: C::E, level: PagingLevel) -> Self {
         if !pte.is_present() {
