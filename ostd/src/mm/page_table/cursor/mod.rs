@@ -227,43 +227,10 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             final(regions).inv(),
             final(regions).slots == old(regions).slots,
             final(regions).slot_owners.dom() == old(regions).slot_owners.dom(),
-            forall|i: int|
-                i != frame_to_index(pa) ==> (#[trigger] final(regions).slot_owners[i] == old(
-                    regions,
-                ).slot_owners[i]),
-            // The frame's slot: bumped if the item is ref-counted, otherwise unchanged.
             C::item_into_raw(*item).3@ is Some ==> {
-                &&& final(regions).slot_owner(pa).ref_count_perm.id()
-                    == old(regions).slot_owner(pa).ref_count_perm.id()
-                &&& final(regions).slot_owner(pa).metadata_perm.id()
-                    == old(regions).slot_owner(pa).metadata_perm.id()
-                &&& final(regions).slot_owner(pa).metadata_perm.frac() + 1
-                    == old(regions).slot_owner(pa).metadata_perm.frac()
-                &&& final(regions).slot_owner(pa).in_list_perm == old(
-                    regions,
-                ).slot_owner(pa).in_list_perm
-                &&& final(regions).slot_owner(pa).paths_in_pt == old(
-                    regions,
-                ).slot_owner(pa).paths_in_pt
-                &&& final(regions).slot_owner(pa).slot_vaddr == old(
-                    regions,
-                ).slot_owner(pa).slot_vaddr
-                &&& final(regions).slot_owner(pa).usage == old(
-                    regions,
-                ).slot_owner(pa).usage
-                &&& final(regions).slot_owner(pa).ref_count()
-                    == old(regions).slot_owner(pa).ref_count()
-                    + 1
+                MetaSlot::inc_frame_reference_region_spec(pa, *old(regions), *final(regions))
             },
-            C::item_into_raw(*item).3@ is None ==> final(regions).slot_owner(pa) == old(
-                regions,
-            ).slot_owner(pa),
-            // Linear-drop pilot: `clone_item` doesn't mint or redeem segment
-            // obligations. Canonically a *tracked* clone MINTS one per-frame
-            // entry (`Frame::clone` via `MappedItem::clone`), so the helper
-            // *untracked* clone (kernel MMIO) is a true no-op, so the ledger
-            // is preserved — `Cursor::query`'s untracked branch relies on
-            // `*regions == old_regions`.
+            C::item_into_raw(*item).3@ is None ==> *final(regions) == *old(regions),
     )]
     pub fn clone_item(item: &C::Item) -> C::Item {
         let res = item.clone(Tracked(regions));
@@ -649,11 +616,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                             assert(old(self).query_panic_condition(*old(owner), *old(regions)));
                             assert(may_panic());
                         }
-                        assert(C::raw_item_well_formed((pa, level, prop, Tracked(raw_permission))));
-                        assert(C::item_into_raw(item).3@ == raw_permission);
-                        assert(raw_permission == entry_before_permission_take.frame_permission());
-                        assert(owner_before_permission_take.cur_entry_owner()
-                            == entry_before_permission_take);
                         owner_before_permission_take.cur_frame_clone_requires(
                             item,
                             pa,
@@ -668,22 +630,11 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
                     let (_pa, _level, _prop, Tracked(restored_permission)) = C::item_into_raw(item);
                     proof {
-                        assert(restored_permission == raw_permission);
-                        {
-                            let tracked child_value = child_owner.tracked_borrow_mut_value();
-                            child_value.tracked_put_frame_permission(restored_permission);
-                            assert(*child_value == entry_before_permission_take);
-                        }
-                        assert(child_owner.value() == child_before_permission_take.value());
-                        assert(child_owner.level() == child_before_permission_take.level());
-                        assert(child_owner.children() == child_before_permission_take.children());
-                        assert(child_owner == child_before_permission_take);
+                        let tracked child_value = child_owner.tracked_borrow_mut_value();
+                        child_value.tracked_put_frame_permission(restored_permission);
                         continuation.tracked_put_child(child_owner);
                         continuation_before_permission_take.take_put_child();
-                        assert(continuation == continuation_before_permission_take);
                         owner.continuations.tracked_insert(owner.level - 1, continuation);
-                        assert(owner.continuations == owner_before_permission_take.continuations);
-                        assert(*owner == owner_before_permission_take);
                     }
 
                     proof {
@@ -700,21 +651,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                             assert(regions.slot_owners[idx].inv());
                             owner.clone_item_preserves_invariants(old_regions, *regions, idx);
                         } else {
-                            assert(regions.slots == old_regions.slots);
-                            assert(regions.slot_owners == old_regions.slot_owners);
-                            assert(*regions == old_regions);
                         }
-                        assert(regions.inv());
-                        assert(owner.metaregion_sound(*regions));
-                        assert(regions.slot_owners.dom() == old_regions.slot_owners.dom());
-                        assert(owner_before_permission_take@ == old(owner)@);
-                        assert(owner@ == old(owner)@);
-                        assert(owner@.query_mapping().pa_range.start == pa);
                         if C::item_into_raw(item).3@ is Some {
-                            assert(old_regions.slot_owners[idx].ref_count() == old(
-                                regions,
-                            ).slot_owners[idx].ref_count());
-                            assert(old(regions).slot_owners[idx].ref_count() < REF_COUNT_MAX);
                         } else {
                             EntryOwner::<C>::axiom_frame_is_tracked_iff_not_mmio(
                                 owner.cur_entry_owner(),

@@ -458,9 +458,6 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             if owner.is_frame() {
                 let paddr = owner.frame().mapped_pa;
                 let slot = frame_to_index(paddr);
-                assert(initial_regions.slots[slot] == regions.slots[slot]);
-                assert(initial_regions.slot_owners[slot].metadata_perm.id()
-                    == regions.slot_owners[slot].metadata_perm.id());
                 C::lemma_perm_well_formed_with_region_preserved(
                     paddr,
                     Tracked(owner.frame_permission()),
@@ -497,10 +494,6 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                     entry.inv() && f(entry, path) implies #[trigger] g(entry, path) by {
                     if entry.is_frame() {
                         let paddr = entry.frame().mapped_pa;
-                        let slot = frame_to_index(paddr);
-                        assert(initial_regions.slots[slot] == regions.slots[slot]);
-                        assert(initial_regions.slot_owners[slot].metadata_perm.id()
-                            == regions.slot_owners[slot].metadata_perm.id());
                         C::lemma_perm_well_formed_with_region_preserved(
                             paddr,
                             Tracked(entry.frame_permission()),
@@ -918,8 +911,6 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 prop,
                 Tracked(owner.value().frame_permission()),
             );
-            assert(!owner.value().frame_is_tracked());
-            assert(owner.value().frame_permission() is None);
         }
 
         proof_decl!{
