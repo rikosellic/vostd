@@ -402,15 +402,6 @@ unsafe impl PageTableConfig for KernelPtConfig {
         old_regions: MetaRegionOwners,
         new_regions: MetaRegionOwners,
     ) {
-        if perm@ is Some {
-            let idx = crate::specs::mm::frame::mapping::frame_to_index(pa);
-            let frame_perm = perm@->0;
-            assert(frame_perm == perm@->0);
-            assert(frame_perm.0 == old_regions.slots[idx]);
-            assert(frame_perm.0 == new_regions.slots[idx]);
-            assert(frame_perm.1.id() == old_regions.slot_owners[idx].metadata_perm.id());
-            assert(frame_perm.1.id() == new_regions.slot_owners[idx].metadata_perm.id());
-        }
     }
 
     proof fn lemma_raw_item_well_formed_preserved(
@@ -505,16 +496,6 @@ unsafe impl PageTableConfig for KernelPtConfig {
             MappedItem::Tracked(frame, _) => {
                 crate::specs::mm::frame::mapping::lemma_paddr_to_meta_biinjective(pa);
                 regions.lemma_contains_valid_frame_paddr(pa);
-                assert(Self::perm_well_formed_with_region(pa, perm, regions));
-                assert(perm@ is Some);
-                assert((perm@->0).0 == regions.slots[frame_to_index(pa)]);
-                assert(frame.tracked_slot_perm@ == regions.slots[frame_to_index(pa)]);
-                assert((perm@->0).1.id() == regions.slot_owners[frame_to_index(
-                    pa,
-                )].metadata_perm.id());
-                assert(frame.tracked_metadata_perm@->0.id() == regions.slot_owners[frame_to_index(
-                    pa,
-                )].metadata_perm.id());
             },
             MappedItem::Untracked(_, _, _) => {},
         }

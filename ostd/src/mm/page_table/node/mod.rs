@@ -176,7 +176,7 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
 
         let mut i = range.start;
         while i < range.end {
-             // Non-atomic read is OK because we have mutable access.
+            // Non-atomic read is OK because we have mutable access.
             let pte = reader.read_once::<C::E>().unwrap();
             if pte.is_present() {
                 let paddr = pte.paddr();
