@@ -2631,25 +2631,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                             page_size(self.0.level),
                         );
                         owner_pre_pt.split_while_huge_node_noop();
-                        assert(child_entry_val == owner1.cur_entry_owner());
-                        assert(level_pre_pt <= owner0.level);
-
-                        assert forall|idx: int|
-                            regions0.contains(idx) implies #[trigger] regions.contains(idx) by {
-                            assert(regions0.slots.contains_key(idx));
-                            assert(regions.slots.contains_key(idx));
-                            assert(regions0.slot_owners.contains_key(idx));
-                            assert(0 <= idx < max_meta_slots());
-                            assert(regions.slot_owners.contains_key(idx));
-                        };
-                        assert forall|idx: int|
-                            regions0.slot_owners[idx].ref_count()
-                                != REF_COUNT_UNUSED implies #[trigger] regions.slot_owners[idx]
-                            == regions0.slot_owners[idx] by {};
-                        assert forall|idx: int|
-                            regions0.contains(idx) && regions0.slot_owners[idx].ref_count()
-                                != REF_COUNT_UNUSED implies #[trigger] regions.slots[idx]
-                            == regions0.slots[idx] by {};
                         Self::all_item_slots_preserved(regions0, *regions);
                         assert forall|item: C::Item|
                             Self::item_slot_in_regions(
@@ -2680,16 +2661,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                     let tracked mut child_owner = continuation.tracked_take_child();
                     let ghost old_child_value = child_owner.value();
                     let tracked mut parent_owner = continuation.entry_own.tracked_take_node();
-
-                    proof {
-                        assert(owner_pre_none == owner1);
-                        assert(cont_pre_alloc == owner1.continuations[cur_level - 1]);
-                        assert(entry_idx == AbstractVaddr::from_vaddr(self.0.va).index[cur_level
-                            - 1]);
-                        assert(entry_idx == cont_pre_alloc.idx);
-                        assert(cur_path_guard == cont_pre_alloc.guard);
-                        assert(parent_owner.relate_guard(cur_path_guard));
-                    }
 
                     let child_guard = {
                         let node = path_slot_as_mut(&mut self.0.path, self.0.level as usize - 1);
