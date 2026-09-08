@@ -416,11 +416,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     ;
 
     /// Proves that `clone_ensures` for `Self::Item` implies concrete per-field
-    /// properties on `MetaRegionOwners`. Each `PageTableConfig` implementor proves
-    /// this by unfolding its `MappedItem::clone_ensures` → `Frame::clone_ensures`.
-    /// Proves that after `clone`, the slot at `frame_to_index(pa)` has the expected
-    /// per-field properties. Implementors unfold their `MappedItem::clone_ensures` to
-    /// `Frame::clone_ensures` and connect `pa` to the frame's internal pointer address.
+    /// properties on `MetaRegionOwners`.
     proof fn lemma_clone_ensures_concrete(
         item: Self::Item,
         pa: Paddr,
@@ -475,11 +471,6 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
                 == old_regions.slot_owner(pa),
     ;
 
-    /// Proves `item.clone_requires(regions)` from the concrete frame-slot facts
-    /// delivered by `metaregion_sound` plus the non-saturation bound propagated
-    /// from `Cursor::query`. Implementors unfold their `MappedItem::clone_requires`
-    /// to `Frame::clone_requires` and connect `pa` to the frame's internal pointer
-    /// address.
     proof fn lemma_clone_requires_concrete(
         item: Self::Item,
         pa: Paddr,

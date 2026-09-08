@@ -469,16 +469,6 @@ impl AbstractVaddr {
         } else {
             let tmp = self.align_down(level - 1);
             self.align_down_shape(level - 1);
-            let new = self.align_down(level);
-
-            assert forall|i: int| #![trigger new.index.contains_key(i)] 0 <= i < NR_LEVELS implies {
-                &&& new.index.contains_key(i)
-                &&& 0 <= new.index[i]
-                &&& new.index[i] < NR_ENTRIES
-            } by {
-                if i != level - 2 {
-                }
-            }
         }
     }
 
