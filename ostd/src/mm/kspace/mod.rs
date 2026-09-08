@@ -343,10 +343,10 @@ unsafe impl PageTableConfig for KernelPtConfig {
         assert(Self::raw_item_well_formed((pa, level, prop, perm)));
         prop.lemma_avail1_tag_encoding();
         if prop.flags.contains(PageFlags::AVAIL1()) {
-            assert(Self::item_from_raw_spec(pa, level, prop, perm) is Tracked);
+            assert(Self::item_from_raw(pa, level, prop, perm) is Tracked);
             assert(perm@ is Some);
         } else {
-            assert(Self::item_from_raw_spec(pa, level, prop, perm) is Untracked);
+            assert(Self::item_from_raw(pa, level, prop, perm) is Untracked);
             assert(perm@ is None);
         }
     }
@@ -451,10 +451,10 @@ unsafe impl PageTableConfig for KernelPtConfig {
 
         prop.lemma_avail1_tag_encoding();
         if prop.flags.contains(PageFlags::AVAIL1()) {
-            let item = Self::item_from_raw_spec(pa, level, prop, perm);
+            let item = Self::item_from_raw(pa, level, prop, perm);
             assert(Self::item_well_formed(item));
         } else {
-            let item = Self::item_from_raw_spec(pa, level, prop, perm);
+            let item = Self::item_from_raw(pa, level, prop, perm);
             assert(Self::item_well_formed(item));
         }
     }
@@ -490,7 +490,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
         use crate::specs::mm::frame::mapping::frame_to_index;
         broadcast use group_page_meta;
 
-        let perm = Self::item_into_raw_spec(item).3;
+        let perm = Self::item_into_raw(item).3;
         Self::lemma_item_from_raw_well_formed(pa, level, prop, perm);
         match item {
             MappedItem::Tracked(frame, _) => {

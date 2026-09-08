@@ -1107,14 +1107,14 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     /// `clone_requires`.
     ///
     /// Safety: When `metaregion_sound` holds for a frame entry, the item reconstructed via
-    /// `item_from_raw_spec(pa, ...)` is the original frame item.  The frame's slot permission
+    /// `item_from_raw(pa, ...)` is the original frame item.  The frame's slot permission
     /// (owned by the cursor) has the correct address, is initialised, and its ref count is in the
     /// valid clonable range (> 0, < REF_COUNT_MAX), so `clone_requires` is satisfied.
     ///
     /// This is a *trait-level* axiom: `C::Item::clone_requires` is fully generic in the
     /// `PageTableConfig` trait, so the postcondition cannot be discharged without knowing
     /// the concrete item type.  It holds for every `PageTableConfig` used in `ostd` because
-    /// `item_from_raw_spec` always returns a freshly-constructed `Frame<M>` handle whose
+    /// `item_from_raw` always returns a freshly-constructed `Frame<M>` handle whose
     /// `Frame::<M>::clone_requires` unfolds to slot-address equality, initialisation, and a
     /// bounded ref-count — all delivered by `metaregion_sound` for frame entries.
     pub proof fn cur_frame_clone_requires(
@@ -1131,14 +1131,14 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.metaregion_sound(regions),
             self.cur_entry_owner().is_frame(),
             pa == self.cur_entry_owner().frame().mapped_pa,
-            C::item_from_raw_spec(pa, level, prop, C::item_into_raw_spec(item).3) == item,
-            C::item_into_raw_spec(item).3@ == self.cur_entry_owner().frame_permission(),
+            C::item_from_raw(pa, level, prop, C::item_into_raw(item).3) == item,
+            C::item_into_raw(item).3@ == self.cur_entry_owner().frame_permission(),
             valid_frame_paddr(pa),
-            C::raw_item_well_formed((pa, level, prop, C::item_into_raw_spec(item).3)),
+            C::raw_item_well_formed((pa, level, prop, C::item_into_raw(item).3)),
             // The recorded entry trackedness matches the item being cloned.
-            (C::item_into_raw_spec(item).3@ is Some) == self.cur_entry_owner().frame_is_tracked(),
+            (C::item_into_raw(item).3@ is Some) == self.cur_entry_owner().frame_is_tracked(),
             // Saturation aborts (Arc-style) via `inc_ref_count`'s diverging panic.
-            C::item_into_raw_spec(item).3@ is Some ==> (regions.slot_owner(pa).ref_count()
+            C::item_into_raw(item).3@ is Some ==> (regions.slot_owner(pa).ref_count()
                 < REF_COUNT_MAX || may_panic()),
         ensures
             item.clone_requires(regions),

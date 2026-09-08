@@ -216,13 +216,13 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             Ghost(pa): Ghost<Paddr>,
         requires
             item.clone_requires(*old(regions)),
-            C::item_into_raw_spec(*item).0 == pa,
+            C::item_into_raw(*item).0 == pa,
         ensures
-            C::item_into_raw_spec(res).0 == C::item_into_raw_spec(*item).0,
-            C::item_into_raw_spec(res).1 == C::item_into_raw_spec(*item).1,
-            C::item_into_raw_spec(res).2 == C::item_into_raw_spec(*item).2,
-            (C::item_into_raw_spec(res).3@ is Some)
-                == (C::item_into_raw_spec(*item).3@ is Some),
+            C::item_into_raw(res).0 == C::item_into_raw(*item).0,
+            C::item_into_raw(res).1 == C::item_into_raw(*item).1,
+            C::item_into_raw(res).2 == C::item_into_raw(*item).2,
+            (C::item_into_raw(res).3@ is Some)
+                == (C::item_into_raw(*item).3@ is Some),
             item.clone_ensures(*old(regions), *final(regions), res),
             final(regions).inv(),
             final(regions).slots == old(regions).slots,
@@ -232,7 +232,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     regions,
                 ).slot_owners[i]),
             // The frame's slot: bumped if the item is ref-counted, otherwise unchanged.
-            C::item_into_raw_spec(*item).3@ is Some ==> {
+            C::item_into_raw(*item).3@ is Some ==> {
                 &&& final(regions).slot_owner(pa).ref_count_perm.id()
                     == old(regions).slot_owner(pa).ref_count_perm.id()
                 &&& final(regions).slot_owner(pa).metadata_perm.id()
@@ -255,7 +255,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     == old(regions).slot_owner(pa).ref_count()
                     + 1
             },
-            C::item_into_raw_spec(*item).3@ is None ==> final(regions).slot_owner(pa) == old(
+            C::item_into_raw(*item).3@ is None ==> final(regions).slot_owner(pa) == old(
                 regions,
             ).slot_owner(pa),
             // Linear-drop pilot: `clone_item` doesn't mint or redeem segment
@@ -646,8 +646,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                         old(regions).lemma_contains_valid_frame_paddr(pa);
                         assert(regions.slot_owners.contains_key(idx));
                         assert(owner_before_permission_take.cur_entry_owner().inv_base());
-                        if C::item_into_raw_spec(item).3@ is Some
-                            && regions.slot_owners[idx].ref_count() >= REF_COUNT_MAX {
+                        if C::item_into_raw(item).3@ is Some && regions.slot_owners[idx].ref_count()
+                            >= REF_COUNT_MAX {
                             EntryOwner::<C>::axiom_frame_is_tracked_iff_not_mmio(
                                 owner_before_permission_take.cur_entry_owner(),
                             );
@@ -656,7 +656,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                             assert(may_panic());
                         }
                         assert(C::raw_item_well_formed((pa, level, prop, Tracked(raw_permission))));
-                        assert(C::item_into_raw_spec(item).3@ == raw_permission);
+                        assert(C::item_into_raw(item).3@ == raw_permission);
                         assert(raw_permission == entry_before_permission_take.frame_permission());
                         assert(owner_before_permission_take.cur_entry_owner()
                             == entry_before_permission_take);
@@ -699,7 +699,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                         assert(owner.path_metaregion_sound(old_regions));
                         assert(owner.cur_entry_owner().metaregion_sound(old_regions));
                         assert(old_regions.slot_owners.contains_key(idx));
-                        if C::item_into_raw_spec(item).3@ is Some {
+                        if C::item_into_raw(item).3@ is Some {
                             EntryOwner::<C>::axiom_frame_is_tracked_iff_not_mmio(
                                 owner.cur_entry_owner(),
                             );
@@ -716,7 +716,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                         assert(owner_before_permission_take@ == old(owner)@);
                         assert(owner@ == old(owner)@);
                         assert(owner@.query_mapping().pa_range.start == pa);
-                        if C::item_into_raw_spec(item).3@ is Some {
+                        if C::item_into_raw(item).3@ is Some {
                             assert(old_regions.slot_owners[idx].ref_count() == old(
                                 regions,
                             ).slot_owners[idx].ref_count());
@@ -2146,7 +2146,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             forall |pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty,
                 perm: Tracked<Option<C::Perm>>| #![auto]
                 op.ensures((p_in,), p_out) ==> (
-                    C::item_into_raw_spec(C::item_from_raw_spec(pa, level, p_out, perm)).3@
+                    C::item_into_raw(C::item_from_raw(pa, level, p_out, perm)).3@
                         is Some
                 ) == (perm@ is Some),
             forall |pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty| #![auto]
@@ -3134,12 +3134,12 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 old(owner)@,
                 final(owner)@,
             ),
-            (C::item_into_raw_spec(item).1 <= old(self).0.level
+            (C::item_into_raw(item).1 <= old(self).0.level
                 && old(owner).cur_entry_owner().is_absent()) ==> res.is_ok(),
-            res is Err && res.unwrap_err() is StrayPageTable ==> C::item_into_raw_spec(item).1 > 1,
+            res is Err && res.unwrap_err() is StrayPageTable ==> C::item_into_raw(item).1 > 1,
             forall|idx: int| #![trigger final(regions).slot_owners[idx].paths_in_pt]
                 old(regions).contains(idx) &&
-                idx != frame_to_index(C::item_into_raw_spec(item).0) &&
+                idx != frame_to_index(C::item_into_raw(item).0) &&
                 old(regions).slot_owners[idx].ref_count() != REF_COUNT_UNUSED ==>
                 final(regions).slot_owners[idx].paths_in_pt == old(regions).slot_owners[idx].paths_in_pt,
             forall|idx: int| #![trigger final(regions).slot_owners[idx].ref_count()]
@@ -3148,24 +3148,24 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 final(regions).slot_owners[idx].ref_count() != REF_COUNT_UNUSED,
             forall|idx: int| #![trigger final(regions).slot_owners[idx].ref_count()]
                 old(regions).contains(idx) &&
-                idx != frame_to_index(C::item_into_raw_spec(item).0) &&
+                idx != frame_to_index(C::item_into_raw(item).0) &&
                 old(regions).slot_owners[idx].ref_count() != REF_COUNT_UNUSED ==>
                 final(regions).slot_owners[idx].ref_count()
                     == old(regions).slot_owners[idx].ref_count(),
-            (C::item_into_raw_spec(item).3@ is Some
-                && old(regions).contains(frame_to_index(C::item_into_raw_spec(item).0))
+            (C::item_into_raw(item).3@ is Some
+                && old(regions).contains(frame_to_index(C::item_into_raw(item).0))
                 && old(regions).slot_owners[
-                    frame_to_index(C::item_into_raw_spec(item).0)].ref_count() > 0)
+                    frame_to_index(C::item_into_raw(item).0)].ref_count() > 0)
                 ==>
                 final(regions).slot_owners[
-                    frame_to_index(C::item_into_raw_spec(item).0)].ref_count() > 0,
-            (C::item_into_raw_spec(item).3@ is Some
+                    frame_to_index(C::item_into_raw(item).0)].ref_count() > 0,
+            (C::item_into_raw(item).3@ is Some
                 && old(regions).slot_owners[
-                    frame_to_index(C::item_into_raw_spec(item).0)].ref_count()
+                    frame_to_index(C::item_into_raw(item).0)].ref_count()
                     <= REF_COUNT_MAX)
                 ==>
                 final(regions).slot_owners[
-                    frame_to_index(C::item_into_raw_spec(item).0)].ref_count()
+                    frame_to_index(C::item_into_raw(item).0)].ref_count()
                     <= REF_COUNT_MAX,
             forall|idx: int| #![trigger final(regions).contains(idx)]
                 old(regions).contains(idx) ==> final(regions).contains(idx),
@@ -3394,7 +3394,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                     owner2.move_forward_increases_va();
                 }
             };
-            let ghost pa_idx2 = frame_to_index(C::item_into_raw_spec(item).0);
+            let ghost pa_idx2 = frame_to_index(C::item_into_raw(item).0);
             assert forall|idx: int|
                 old(regions).contains(idx) && idx != pa_idx2 && old(
                     regions,
@@ -3403,12 +3403,12 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 == old(regions).slot_owners[idx].paths_in_pt by {
                 assert(regions_after_new_child.slot_owners == regions_before_new_child.slot_owners);
             };
-            assert(C::item_into_raw_spec(item).3@ is Some && old(regions).contains(pa_idx2) && old(
+            assert(C::item_into_raw(item).3@ is Some && old(regions).contains(pa_idx2) && old(
                 regions,
             ).slot_owners[pa_idx2].ref_count() > 0 ==> {
                 &&& regions.slot_owners[pa_idx2].ref_count() > 0
             }) by {
-                if C::item_into_raw_spec(item).3@ is Some && old(regions).contains(pa_idx2) && old(
+                if C::item_into_raw(item).3@ is Some && old(regions).contains(pa_idx2) && old(
                     regions,
                 ).slot_owners[pa_idx2].ref_count() > 0 {
                     assert(regions_before_new_child.slot_owners[pa_idx2].ref_count() > 0);
@@ -3842,7 +3842,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             forall |pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty,
                 perm: Tracked<Option<C::Perm>>| #![auto]
                 op.ensures((p_in,), p_out) ==> (
-                    C::item_into_raw_spec(C::item_from_raw_spec(pa, level, p_out, perm)).3@
+                    C::item_into_raw(C::item_from_raw(pa, level, p_out, perm)).3@
                         is Some
                 ) == (perm@ is Some),
             forall |pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty| #![auto]
@@ -3950,7 +3950,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             res is Some && res->0 is Mapped ==> old(owner).cur_entry_owner().is_frame(),
             res is Some && res->0 is Mapped ==> res->0->Mapped_va == old(self).0.va,
             res is Some && res->0 is Mapped ==> {
-                let (pa, lvl, prop, _perm) = C::item_into_raw_spec(res->0->Mapped_item);
+                let (pa, lvl, prop, _perm) = C::item_into_raw(res->0->Mapped_item);
                 &&& lvl == old(self).0.level
                 &&& pa == old(owner).cur_entry_owner().frame().mapped_pa
                 &&& prop == old(owner).cur_entry_owner().frame().prop

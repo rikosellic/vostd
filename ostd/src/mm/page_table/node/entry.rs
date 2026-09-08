@@ -203,7 +203,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             regions.inv(),
             regions.slots.contains_key(old(parent_owner).slot_index),
             old(parent_owner).metaregion_sound_node(*regions),
-            // `op` must preserve the trackedness of `item_from_raw_spec(pa, level, _)`
+            // `op` must preserve the trackedness of `item_from_raw(pa, level, _)`
             // across the prop change so frame-accounting guarantees remain unchanged.
             // For `KernelPtConfig`, `C::tracked(item)` reads `prop.flags.AVAIL1`, so this
             // precondition reduces to "op preserves AVAIL1". For `UserPtConfig`,
@@ -212,7 +212,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 perm: Tracked<Option<C::Perm>>|
                 #![auto]
                 op.ensures((p_in,), p_out) ==> (
-                    C::item_into_raw_spec(C::item_from_raw_spec(pa, level, p_out, perm)).3@
+                    C::item_into_raw(C::item_from_raw(pa, level, p_out, perm)).3@
                         is Some
                 ) == (perm@ is Some),
             forall|pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty|
@@ -1415,7 +1415,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
                 perm: Tracked<Option<C::Perm>>|
                 #![auto]
                 op.ensures((p_in,), p_out) ==> (
-                    C::item_into_raw_spec(C::item_from_raw_spec(pa, level, p_out, perm)).3@
+                    C::item_into_raw(C::item_from_raw(pa, level, p_out, perm)).3@
                         is Some
                 ) == (perm@ is Some),
             forall|pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty|

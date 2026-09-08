@@ -95,7 +95,7 @@ pub open spec fn frame_entry_wf<T: AnyFrameMeta + Repr<MetaSlotStorage>>(
         tracked_metadata_perm: frame.tracked_metadata_perm,
     };
     let item = MappedItem::Tracked(frame_mss, prop);
-    let (pa, level, prop_from_item, _perm) = KernelPtConfig::item_into_raw_spec(item);
+    let (pa, level, prop_from_item, _perm) = KernelPtConfig::item_into_raw(item);
     Child::Frame(pa, level, prop_from_item).wf(entry_owner)
 }
 
@@ -541,7 +541,7 @@ impl KVirtArea {
                 A,
             >::item_slot_in_regions(MappedItem::Tracked(#[trigger] frames[i], prop), *regions) by {
                 let item_i = MappedItem::Tracked(frames[i], prop);
-                let pa_i = KernelPtConfig::item_into_raw_spec(item_i).0;
+                let pa_i = KernelPtConfig::item_into_raw(item_i).0;
                 let idx_i = frame_to_index(pa_i);
                 assert(regions.contains(idx_i));
             };
@@ -598,7 +598,7 @@ impl KVirtArea {
                 frame.ptr.addr(),
             );
 
-            let ghost cur_pa_from_wf: usize = KernelPtConfig::item_into_raw_spec(
+            let ghost cur_pa_from_wf: usize = KernelPtConfig::item_into_raw(
                 MappedItem::Tracked(frame_as_dynframe(it.seq().index(it.index() as int)), prop),
             ).0;
             let ghost pre_remove_owners: Map<Paddr, EntryOwner<KernelPtConfig>> = *entry_owners;
@@ -621,7 +621,7 @@ impl KVirtArea {
             proof {
                 cursor_owner.view_preserves_inv();  // old_cursor_model.inv()
                 cursor_owner.va.reflect_prop(cursor.0.va);
-                let (pa, level, prop_from_item, _perm) = KernelPtConfig::item_into_raw_spec(item);
+                let (pa, level, prop_from_item, _perm) = KernelPtConfig::item_into_raw(item);
                 lemma_va_align_page_size_level_1(cursor.0.va);
                 cursor_owner.locked_range_page_aligned();
                 let ghost diff: int = cursor.0.barrier_va.end - cursor.0.va;
@@ -647,7 +647,7 @@ impl KVirtArea {
             // index ref_count > 0 is preserved (covers duplicates). slots
             // keys are monotonic across map.
             proof {
-                let cur_pa = KernelPtConfig::item_into_raw_spec(item).0;
+                let cur_pa = KernelPtConfig::item_into_raw(item).0;
                 let cur_pa_idx = frame_to_index(cur_pa);
                 assert forall|i: int| (it.index() + 1) <= i < it.seq().len() implies CursorMut::<
                     'a,
@@ -658,7 +658,7 @@ impl KVirtArea {
                     *regions,
                 ) by {
                     let item_i = MappedItem::Tracked(it.seq()[i], prop);
-                    let pa_i = KernelPtConfig::item_into_raw_spec(item_i).0;
+                    let pa_i = KernelPtConfig::item_into_raw(item_i).0;
                     let idx_i = frame_to_index(pa_i);
                 };
             }
@@ -666,7 +666,7 @@ impl KVirtArea {
             proof {
                 let cur_idx = frame_to_index(cur_mapped_pa);
 
-                let (pa, level, prop_, _perm) = KernelPtConfig::item_into_raw_spec(item);
+                let (pa, level, prop_, _perm) = KernelPtConfig::item_into_raw(item);
 
                 let split_self = old_cursor_model.split_while_huge(PAGE_SIZE);
 
@@ -960,7 +960,7 @@ impl KVirtArea {
                 }
 
                 proof {
-                    let level_raw = KernelPtConfig::item_into_raw_spec(item).1;
+                    let level_raw = KernelPtConfig::item_into_raw(item).1;
 
                     crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_ge_page_size(
                     level_raw);

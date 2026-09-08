@@ -879,7 +879,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
             },
             PageTableFrag::StrayPageTable { .. } => {
                 assert(false) by {
-                    assert(UserPtConfig::item_into_raw_spec(item).1 == 1);
+                    assert(UserPtConfig::item_into_raw(item).1 == 1);
                 };
                 #[cfg(feature = "allow_panic")]
                 vpanic!("`UFrame` is base page sized but re-mapping out a child PT");
@@ -1537,7 +1537,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
             forall |pa: Paddr, level: PagingLevel, p_in: PageProperty, p_out: PageProperty,
                 perm: Tracked<Option<<UserPtConfig as PageTableConfig>::Perm>>| #![auto]
                 op.ensures((p_in,), p_out) ==> (
-                    UserPtConfig::item_into_raw_spec(UserPtConfig::item_from_raw_spec(
+                    UserPtConfig::item_into_raw(UserPtConfig::item_from_raw(
                         pa, level, p_out, perm,
                     )).3@ is Some
                 ) == (perm@ is Some),
@@ -1735,7 +1735,7 @@ unsafe impl PageTableConfig for UserPtConfig {
         broadcast use crate::specs::mm::frame::mapping::group_page_meta;
 
         assert(perm@ is Some);
-        let item = Self::item_from_raw_spec(pa, level, prop, perm);
+        let item = Self::item_from_raw(pa, level, prop, perm);
         assert(Self::raw_item_well_formed((pa, level, prop, perm)));
         assert(item.frame.ptr.addr() == crate::mm::frame::meta::mapping::frame_to_meta(pa));
         crate::specs::mm::frame::mapping::lemma_paddr_to_meta_biinjective(pa);
@@ -1822,7 +1822,7 @@ unsafe impl PageTableConfig for UserPtConfig {
     ) {
         broadcast use crate::specs::mm::frame::mapping::group_page_meta;
 
-        let item = Self::item_from_raw_spec(pa, level, prop, perm);
+        let item = Self::item_from_raw(pa, level, prop, perm);
         crate::specs::mm::frame::mapping::lemma_meta_to_paddr_biinjective(item.frame.ptr.addr());
     }
 
@@ -1850,7 +1850,7 @@ unsafe impl PageTableConfig for UserPtConfig {
         use crate::specs::mm::frame::mapping::{frame_to_index, meta_to_index};
         broadcast use crate::specs::mm::frame::mapping::group_page_meta;
 
-        let perm = Self::item_into_raw_spec(item).3;
+        let perm = Self::item_into_raw(item).3;
         Self::lemma_item_from_raw_well_formed(pa, level, prop, perm);
         assert(meta_to_frame(item.frame.ptr.addr()) == pa);
         assert(meta_to_index(item.frame.ptr.addr()) == frame_to_index(pa));

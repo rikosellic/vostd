@@ -27,7 +27,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
 /// and provide a simple interface for reasoning about its behavior.
 impl<C: PageTableConfig> CursorView<C> {
     pub open spec fn item_into_mapping(va: Vaddr, item: C::Item) -> Mapping {
-        let (paddr, level, prop, _perm) = C::item_into_raw_spec(item);
+        let (paddr, level, prop, _perm) = C::item_into_raw(item);
         let size = page_size(level);
         Mapping {
             va_range: va as int..va + size,

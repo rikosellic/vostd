@@ -273,7 +273,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         ensures
             Self::item_well_formed(res),
         returns
-            Self::item_from_raw_spec(paddr, level, prop, perm),
+            Self::item_from_raw(paddr, level, prop, perm),
     ;
 
     /// Predicate that captures the well-formedness of the item.
@@ -324,9 +324,8 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         requires
             valid_frame_paddr(pa),
             Self::raw_item_well_formed((pa, level, old_prop, perm)),
-            (Self::item_into_raw_spec(
-                Self::item_from_raw_spec(pa, level, new_prop, perm),
-            ).3@ is Some) == (perm@ is Some),
+            (Self::item_into_raw_spec(Self::item_from_raw(pa, level, new_prop, perm)).3@ is Some)
+                == (perm@ is Some),
         ensures
             Self::raw_item_well_formed((pa, level, new_prop, perm)),
     ;
@@ -378,7 +377,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             valid_frame_paddr(pa),
             Self::raw_item_well_formed((pa, level, prop, perm)),
         ensures
-            Self::item_well_formed(Self::item_from_raw_spec(pa, level, prop, perm)),
+            Self::item_well_formed(Self::item_from_raw(pa, level, prop, perm)),
     ;
 
     /// Re-encoding a canonical raw item preserves the complete raw representation.
@@ -392,7 +391,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             valid_frame_paddr(pa),
             Self::raw_item_well_formed((pa, level, prop, perm)),
         ensures
-            Self::item_into_raw_spec(Self::item_from_raw_spec(pa, level, prop, perm)) == (
+            Self::item_into_raw_spec(Self::item_from_raw(pa, level, prop, perm)) == (
                 pa,
                 level,
                 prop,
@@ -413,7 +412,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
             Self::item_well_formed(item),
             Self::item_into_raw_spec(item) == (pa, level, prop, perm),
         ensures
-            Self::item_from_raw_spec(pa, level, prop, perm) == item,
+            Self::item_from_raw(pa, level, prop, perm) == item,
     ;
 
     /// Proves that `clone_ensures` for `Self::Item` implies concrete per-field
@@ -490,7 +489,7 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     )
         requires
             regions.inv(),
-            Self::item_from_raw_spec(pa, level, prop, Self::item_into_raw_spec(item).3) == item,
+            Self::item_from_raw(pa, level, prop, Self::item_into_raw_spec(item).3) == item,
             Self::raw_item_well_formed((pa, level, prop, Self::item_into_raw_spec(item).3)),
             Self::perm_well_formed_with_region(pa, Self::item_into_raw_spec(item).3, regions),
             valid_frame_paddr(pa),

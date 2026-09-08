@@ -143,23 +143,23 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     // routing that `path[level-1] is None` fact into `pop_level`'s panic precondition.
     pub open spec fn map_panic_conditions(self, item: C::Item) -> bool {
         ||| self.0.va >= self.0.barrier_va.end
-        ||| C::item_into_raw_spec(item).1 > C::HIGHEST_TRANSLATION_LEVEL()
-        ||| C::item_into_raw_spec(item).1 >= self.0.guard_level
-        ||| (!C::TOP_LEVEL_CAN_UNMAP_spec() && C::item_into_raw_spec(item).1 >= NR_LEVELS)
-        ||| self.0.va % page_size(C::item_into_raw_spec(item).1) != 0
-        ||| self.0.va + page_size(C::item_into_raw_spec(item).1) > self.0.barrier_va.end
+        ||| C::item_into_raw(item).1 > C::HIGHEST_TRANSLATION_LEVEL()
+        ||| C::item_into_raw(item).1 >= self.0.guard_level
+        ||| (!C::TOP_LEVEL_CAN_UNMAP_spec() && C::item_into_raw(item).1 >= NR_LEVELS)
+        ||| self.0.va % page_size(C::item_into_raw(item).1) != 0
+        ||| self.0.va + page_size(C::item_into_raw(item).1) > self.0.barrier_va.end
     }
 
     // TODO: ideally this should be an `OwnerOf` impl for `C::Item`
     pub open spec fn item_wf(self, item: C::Item, entry_owner: EntryOwner<C>) -> bool {
-        let (paddr, level, prop, _perm) = C::item_into_raw_spec(item);
+        let (paddr, level, prop, _perm) = C::item_into_raw(item);
         &&& C::item_well_formed(item)
         &&& entry_owner.inv()
         &&& (entry_owner.is_absent() || Child::Frame(paddr, level, prop).wf(entry_owner))
     }
 
     pub open spec fn item_not_mapped(item: C::Item, regions: MetaRegionOwners) -> bool {
-        let (pa, level, prop, perm) = C::item_into_raw_spec(item);
+        let (pa, level, prop, perm) = C::item_into_raw(item);
         let size = page_size(level);
         let range = pa..(pa + size) as usize;
         regions.paddr_range_not_mapped(range)
@@ -169,7 +169,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         item: C::Item,
         regions: MetaRegionOwners,
     ) -> bool {
-        let (pa, level, prop, perm) = C::item_into_raw_spec(item);
+        let (pa, level, prop, perm) = C::item_into_raw(item);
         let idx = frame_to_index(pa);
         &&& regions.contains(idx)
         &&& regions.slot_owners[idx].usage !is PageTable
@@ -203,7 +203,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     }
 
     pub closed spec fn item_slot_in_regions(item: C::Item, regions: MetaRegionOwners) -> bool {
-        let (pa, _level, _prop, perm) = C::item_into_raw_spec(item);
+        let (pa, _level, _prop, perm) = C::item_into_raw(item);
         &&& Self::item_slot_in_regions_except_perm(item, regions)
         &&& C::perm_well_formed_with_region(pa, perm, regions)
     }
@@ -214,8 +214,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         ensures
             Self::item_slot_in_regions_except_perm(item, regions),
             C::perm_well_formed_with_region(
-                C::item_into_raw_spec(item).0,
-                C::item_into_raw_spec(item).3,
+                C::item_into_raw(item).0,
+                C::item_into_raw(item).3,
                 regions,
             ),
     {
@@ -229,18 +229,18 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         requires
             Self::item_slot_in_regions(item, regions0),
             Self::item_slot_in_regions_except_perm(item, regions1),
-            regions0.slots[frame_to_index(C::item_into_raw_spec(item).0)]
-                == regions1.slots[frame_to_index(C::item_into_raw_spec(item).0)],
-            regions0.slot_owners[frame_to_index(C::item_into_raw_spec(item).0)].metadata_perm.id()
+            regions0.slots[frame_to_index(C::item_into_raw(item).0)]
+                == regions1.slots[frame_to_index(C::item_into_raw(item).0)],
+            regions0.slot_owners[frame_to_index(C::item_into_raw(item).0)].metadata_perm.id()
                 == regions1.slot_owners[frame_to_index(
-                C::item_into_raw_spec(item).0,
+                C::item_into_raw(item).0,
             )].metadata_perm.id(),
         ensures
             Self::item_slot_in_regions(item, regions1),
     {
         C::lemma_perm_well_formed_with_region_preserved(
-            C::item_into_raw_spec(item).0,
-            C::item_into_raw_spec(item).3,
+            C::item_into_raw(item).0,
+            C::item_into_raw(item).3,
             regions0,
             regions1,
         );
@@ -268,7 +268,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 item,
                 regions0,
             ) implies #[trigger] Self::item_slot_in_regions(item, regions1) by {
-            let (pa, level, _prop, perm) = C::item_into_raw_spec(item);
+            let (pa, level, _prop, perm) = C::item_into_raw(item);
             let idx = frame_to_index(pa);
             assert(regions0.slot_owners[idx].ref_count() != REF_COUNT_UNUSED);
             assert(Self::item_slot_in_regions_except_perm(item, regions1)) by {
@@ -296,7 +296,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         old_view: CursorView<C>,
         new_view: CursorView<C>,
     ) -> bool {
-        let (pa, level, prop, _perm) = C::item_into_raw_spec(item);
+        let (pa, level, prop, _perm) = C::item_into_raw(item);
         new_view == old_view.map_spec(pa, page_size(level), prop)
     }
 }
