@@ -339,6 +339,46 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
         &&& self.list.len() > 0 ==> self.list_id != 0
     }
 
+    /// Exposes only the non-quantified shape facts of `relate_region`.
+    pub proof fn relate_region_shape(self, regions: MetaRegionOwners)
+        requires
+            self.relate_region(regions),
+        ensures
+            self.repr_perms.len() == self.list.len(),
+            self.metadata_perms.len() == self.list.len(),
+            self.list.len() > 0 ==> self.list_id != 0,
+    {
+        reveal(LinkedListOwner::relate_region);
+    }
+
+    /// Extracts the region relation at one list position without leaving the
+    /// list-wide quantifiers visible in the caller.
+    pub proof fn relate_region_at_index(self, regions: MetaRegionOwners, i: int)
+        requires
+            self.relate_region(regions),
+            0 <= i < self.list.len(),
+        ensures
+            self.relate_region_at(regions, i),
+    {
+        reveal(LinkedListOwner::relate_region);
+        let _ = self.list[i];
+    }
+
+    /// Extracts injectivity for one pair of list positions.
+    pub proof fn relate_region_indices_distinct(self, regions: MetaRegionOwners, i: int, j: int)
+        requires
+            self.relate_region(regions),
+            0 <= i < self.list.len(),
+            0 <= j < self.list.len(),
+            i != j,
+        ensures
+            meta_to_index(self.list[i].paddr) != meta_to_index(self.list[j].paddr),
+    {
+        reveal(LinkedListOwner::relate_region);
+        let _ = meta_to_index(self.list[i].paddr);
+        let _ = meta_to_index(self.list[j].paddr);
+    }
+
     /// Pigeonhole bound: the list is no longer than the number of meta slots.
     /// Each link occupies a region slot (`relate_region_at` ⟹
     /// `slots.contains_key(meta_to_index(self.list[i].paddr))`, and `regions.inv()` ⟹

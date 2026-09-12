@@ -930,17 +930,24 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             res.is_some() ==> (res->0).1@.slot_index == meta_to_index(old(self).current->0.addr()),
             res.is_some() ==> (res->0).0.ptr.addr() == old(self).current->0.addr(),
     {
+        // Keep quantified list relations local to this removal proof.
+        hide(LinkedListOwner::relate_region);
+        hide(<MetaRegionOwners as Inv>::inv);
         let ghost owner0 = *owner;
         let ghost regions0 = *regions;
 
         let current = self.current?;
 
         proof {
+            owner.list_own.relate_region_shape(*regions);
+            owner.list_own.relate_region_at_index(*regions, owner.index);
             owner.list_own.relate_region_at_facts(*regions, owner.index);
             if owner.index > 0 {
+                owner.list_own.relate_region_at_index(*regions, owner.index - 1);
                 owner.list_own.relate_region_at_facts(*regions, owner.index - 1);
             }
             if owner.index < owner.list_own.list.len() - 1 {
+                owner.list_own.relate_region_at_index(*regions, owner.index + 1);
                 owner.list_own.relate_region_at_facts(*regions, owner.index + 1);
             }
         }
@@ -948,6 +955,10 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
         let meta_ptr = current.addr();
         let paddr = meta_to_frame(meta_ptr);
         let ghost idx = frame_to_index(paddr);
+
+        proof {
+            lemma_meta_region_inv_at(regions0, idx);
+        }
 
         let tracked mut cur_own = owner.list_own.list.tracked_remove(owner.index);
         let tracked cur_repr_perm = owner.list_own.repr_perms.tracked_remove(owner.index);
@@ -969,11 +980,6 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
 
         proof {
             assert(regions.slots.dom() == regions0.slots.dom());
-            assert forall|j: int| #![trigger regions0.slot_owners[j]] j != idx implies {
-                &&& regions.slot_owners[j].usage == regions0.slot_owners[j].usage
-                &&& regions.slot_owners[j].slot_vaddr == regions0.slot_owners[j].slot_vaddr
-                &&& regions.slot_owners[j].paths_in_pt == regions0.slot_owners[j].paths_in_pt
-            } by {}
         }
 
         let next_ptr = (#[verus_spec(with Tracked(&frame_own))]
@@ -983,6 +989,9 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
 
         if let Some(prev) = prev_ptr {
             let ghost prev_idx = meta_to_index(owner.list_own.list[owner.index - 1].paddr);
+            proof {
+                lemma_meta_region_inv_at(*regions, prev_idx);
+            }
             let tracked prev_points_to = regions.slots.tracked_borrow(prev_idx);
             let tracked prev_repr_perm = owner.list_own.repr_perms.tracked_borrow_mut(
                 owner.index - 1,
@@ -998,33 +1007,15 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             );
             prev_meta.next = next_ptr;
 
-            proof {
-                assert(regions.inv());
-                assert(regions.slots.dom() == regions0.slots.dom());
-                assert forall|j: int| #![trigger regions0.slot_owners[j]] j != idx implies {
-                    &&& regions.slot_owners[j].usage == regions0.slot_owners[j].usage
-                    &&& regions.slot_owners[j].slot_vaddr == regions0.slot_owners[j].slot_vaddr
-                    &&& regions.slot_owners[j].paths_in_pt == regions0.slot_owners[j].paths_in_pt
-                } by {
-                    if j == meta_to_index(prev.addr()) {
-                    }
-                }
-            }
-
         } else {
             self.list.front = next_ptr;
-            proof {
-                assert(regions.slots.dom() == regions0.slots.dom());
-                assert forall|j: int| #![trigger regions0.slot_owners[j]] j != idx implies {
-                    &&& regions.slot_owners[j].usage == regions0.slot_owners[j].usage
-                    &&& regions.slot_owners[j].slot_vaddr == regions0.slot_owners[j].slot_vaddr
-                    &&& regions.slot_owners[j].paths_in_pt == regions0.slot_owners[j].paths_in_pt
-                } by {}
-            }
         }
 
         if let Some(next) = next_ptr {
             let ghost next_idx = meta_to_index(owner.list_own.list[owner.index].paddr);
+            proof {
+                lemma_meta_region_inv_at(*regions, next_idx);
+            }
             let tracked next_points_to = regions.slots.tracked_borrow(next_idx);
             let tracked next_repr_perm = owner.list_own.repr_perms.tracked_borrow_mut(owner.index);
             let tracked next_metadata_perm = owner.list_own.metadata_perms.tracked_borrow_mut(
@@ -1038,32 +1029,11 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             );
             next_meta.prev = prev_ptr;
 
-            proof {
-                assert(regions.inv());
-                assert(regions.slots.dom() == regions0.slots.dom());
-                assert forall|j: int| #![trigger regions0.slot_owners[j]] j != idx implies {
-                    &&& regions.slot_owners[j].usage == regions0.slot_owners[j].usage
-                    &&& regions.slot_owners[j].slot_vaddr == regions0.slot_owners[j].slot_vaddr
-                    &&& regions.slot_owners[j].paths_in_pt == regions0.slot_owners[j].paths_in_pt
-                } by {
-                    if j == meta_to_index(next.addr()) {
-                    }
-                }
-            }
-
             self.current = Some(next);
         } else {
             self.list.back = prev_ptr;
 
             self.current = None;
-            proof {
-                assert(regions.slots.dom() == regions0.slots.dom());
-                assert forall|j: int| #![trigger regions0.slot_owners[j]] j != idx implies {
-                    &&& regions.slot_owners[j].usage == regions0.slot_owners[j].usage
-                    &&& regions.slot_owners[j].slot_vaddr == regions0.slot_owners[j].slot_vaddr
-                    &&& regions.slot_owners[j].paths_in_pt == regions0.slot_owners[j].paths_in_pt
-                } by {}
-            }
         }
 
         (#[verus_spec(with Tracked(&mut frame_own))]
@@ -1076,7 +1046,9 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
         let slot = frame.slot();
         slot.in_list.store(Tracked(&mut fip.in_list_perm), 0);
         proof {
-            assert(regions.inv());
+            assert(regions.inv()) by {
+                reveal(<MetaRegionOwners as Inv>::inv);
+            };
             assert(regions.slots.dom() == regions0.slots.dom());
             assert forall|j: int| #![trigger regions0.slot_owners[j]] j != idx implies {
                 &&& regions.slot_owners[j].usage == regions0.slot_owners[j].usage
@@ -1129,6 +1101,9 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                     p - 1
                 };
                 let fp = owner.list_own.meta_value_at(*regions, np);
+                oldl.relate_region_at_index(regions0, p);
+                oldl.relate_region_at_index(regions0, nn);
+                oldl.relate_region_indices_distinct(regions0, p, nn);
                 oldl.relate_region_at_facts(regions0, p);
                 oldl.relate_region_at_facts(regions0, nn);
                 assert(regions.contains(i));

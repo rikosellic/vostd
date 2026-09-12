@@ -139,6 +139,19 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
         assert(cont.put_child(child).children == self.children);
     }
 
+    pub proof fn take_child_preserves_inv(self)
+        requires
+            self.inv(),
+            self.idx < self.children.len(),
+            self.children[self.idx as int] is Some,
+        ensures
+            self.take_child().1.inv(),
+    {
+        reveal(CursorContinuation::inv_children);
+        reveal(CursorContinuation::inv_children_rel);
+        reveal(CursorContinuation::pt_inv_children);
+    }
+
     pub open spec fn make_cont(self, idx: usize, guard: PageTableGuard<'rcu, C>) -> (Self, Self) {
         let child = Self {
             entry_own: self.children[self.idx as int]->0.value(),
@@ -245,6 +258,48 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
             #![trigger(self.children[i])]
             0 <= i < self.children.len() ==> self.children[i] is Some
                 ==> self.children[i]->0.subtree_satisfies(self.path().push_tail(i), f)
+    }
+
+    pub proof fn map_children_unroll(
+        self,
+        f: spec_fn(EntryOwner<C>, TreePath<NR_ENTRIES>) -> bool,
+        i: int,
+    )
+        requires
+            self.map_children(f),
+            0 <= i < self.children.len(),
+            self.children[i] is Some,
+        ensures
+            self.children[i]->0.subtree_satisfies(self.path().push_tail(i), f),
+    {
+        reveal(CursorContinuation::map_children);
+    }
+
+    pub proof fn map_children_intro(self, f: spec_fn(EntryOwner<C>, TreePath<NR_ENTRIES>) -> bool)
+        requires
+            forall|i: int|
+                #![trigger self.children[i]]
+                0 <= i < self.children.len() && self.children[i] is Some
+                    ==> self.children[i]->0.subtree_satisfies(self.path().push_tail(i), f),
+        ensures
+            self.map_children(f),
+    {
+        reveal(CursorContinuation::map_children);
+    }
+
+    pub proof fn map_children_congr(
+        self,
+        other: Self,
+        f: spec_fn(EntryOwner<C>, TreePath<NR_ENTRIES>) -> bool,
+    )
+        requires
+            self.children == other.children,
+            self.path() == other.path(),
+            other.map_children(f),
+        ensures
+            self.map_children(f),
+    {
+        reveal(CursorContinuation::map_children);
     }
 
     // map_children_lift, map_children_lift_skip_idx, as_subtree_restore
@@ -862,6 +917,30 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
 
     pub open spec fn children_not_locked(self, guards: Guards) -> bool {
         self.map_only_children(Self::node_unlocked(guards))
+    }
+
+    pub proof fn children_not_locked_unroll(self, guards: Guards)
+        requires
+            self.children_not_locked(guards),
+        ensures
+            forall|i: int|
+                #![trigger self.continuations[i]]
+                self.level - 1 <= i < NR_LEVELS ==> self.continuations[i].map_children(
+                    Self::node_unlocked(guards),
+                ),
+    {
+    }
+
+    pub proof fn children_not_locked_intro(self, guards: Guards)
+        requires
+            forall|i: int|
+                #![trigger self.continuations[i]]
+                self.level - 1 <= i < NR_LEVELS ==> self.continuations[i].map_children(
+                    Self::node_unlocked(guards),
+                ),
+        ensures
+            self.children_not_locked(guards),
+    {
     }
 
     pub open spec fn only_current_locked(self, guards: Guards) -> bool {
@@ -2326,6 +2405,17 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     {
         // Follows directly from path_metaregion_sound,
         // which is part of metaregion_sound.
+    }
+
+    pub proof fn cont_entry_metaregion_at(self, regions: MetaRegionOwners, i: int)
+        requires
+            self.inv(),
+            self.metaregion_sound(regions),
+            self.level - 1 <= i < NR_LEVELS,
+        ensures
+            self.continuations[i].entry_own.metaregion_sound(regions),
+    {
+        reveal(CursorOwner::path_metaregion_sound);
     }
 
     pub open spec fn new(
