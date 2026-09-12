@@ -52,7 +52,10 @@ use crate::specs::{
             meta_region_owners::MetaRegionOwners,
         },
         io::VmIoOwner,
-        page_table::{cursor::owners::CursorOwner, node::Guards},
+        page_table::{
+            cursor::owners::{CursorContinuation, CursorOwner},
+            node::Guards,
+        },
         tlb::TlbModel,
     },
 };
@@ -2826,6 +2829,9 @@ proof fn lemma_step_segment_next<'rcu>(tracked s: &mut VmStore<'rcu>, sid: Segme
     ensures
         final(s).inv(),
 {
+    // Keep the cursor clauses of structural_inv explicit in this store-wide proof.
+    reveal(CursorContinuation::map_children);
+    reveal(CursorOwner::path_metaregion_sound);
     reveal(VmStore::structural_inv);
     reveal(VmStore::accounting_inv);
     let ghost old_regions = s.regions;

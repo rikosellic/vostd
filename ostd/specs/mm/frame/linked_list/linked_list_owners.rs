@@ -325,6 +325,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
     /// and distinct list positions map to distinct region slot indices (so a
     /// frame appears at most once — required by the borrow model, where link
     /// edits mutate `regions.slots[meta_to_index(self.list[i].paddr)]` and must not alias).
+    #[verifier::opaque]
     pub open spec fn relate_region(self, regions: MetaRegionOwners) -> bool {
         &&& self.repr_perms.len() == self.list.len()
         &&& self.metadata_perms.len() == self.list.len()
@@ -392,6 +393,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
         ensures
             self.list.len() <= max_meta_slots(),
     {
+        reveal(LinkedListOwner::relate_region);
         let idxs = Seq::new(self.list.len(), |i: int| meta_to_index(self.list[i].paddr));
 
         idxs.unique_seq_to_set();
@@ -539,6 +541,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
         ensures
             self.relate_region(regions2),
     {
+        reveal(LinkedListOwner::relate_region);
         let llen = self.list.len() as int;
         assert forall|k: int|
             #![trigger self.relate_region_at(regions2, k)]
@@ -615,6 +618,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
         ensures
             new.relate_region(fr),
     {
+        reveal(LinkedListOwner::relate_region);
         let nlen = new.list.len() as int;
 
         assert forall|k: int| #![trigger meta_to_index(new.list[k].paddr)] 0 <= k < nlen implies {
@@ -841,6 +845,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedListOwner<M> {
         ensures
             new.relate_region(fr),
     {
+        reveal(LinkedListOwner::relate_region);
         let nlen = new.list.len() as int;
         let ins = meta_to_index(new.list[n].paddr);
 

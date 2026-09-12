@@ -175,11 +175,13 @@ proof fn lemma_insert_before_slot_distinct<M: AnyFrameMeta + Repr<MetaSlotSmall>
                 owner0.list[p].paddr,
             ),
 {
+    owner0.relate_region_shape(regions0);
     assert forall|p: int|
         #![trigger regions0.slot_owners[meta_to_index(owner0.list[p].paddr)]]
         0 <= p < owner0.list.len() as int implies frame_idx != meta_to_index(
         owner0.list[p].paddr,
     ) by {
+        owner0.relate_region_at_index(regions0, p);
         owner0.relate_region_at_facts(regions0, p);
         if frame_idx == meta_to_index(owner0.list[p].paddr) {
             assert(regions0.slot_owners[meta_to_index(owner0.list[p].paddr)].in_list_perm.value()
@@ -317,6 +319,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedList<M> {
 
         proof {
             if owner.list.len() > 0 {
+                owner.relate_region_at_index(*regions, 0);
                 owner.relate_region_at_facts(*regions, 0);
             }
         }
@@ -412,6 +415,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> LinkedList<M> {
 
         proof {
             if owner.list.len() > 0 {
+                owner.relate_region_at_index(*regions, owner.list.len() - 1);
                 owner.relate_region_at_facts(*regions, owner.list.len() - 1);
             }
         }
@@ -676,10 +680,13 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             final(self).wf_region(owner.move_next_owner_spec(), *regions),
     {
         proof {
+            owner.list_own.relate_region_shape(*regions);
             if self.current is Some {
+                owner.list_own.relate_region_at_index(*regions, owner.index);
                 owner.list_own.relate_region_at_facts(*regions, owner.index);
             }
             if owner.index < owner.length() - 1 {
+                owner.list_own.relate_region_at_index(*regions, owner.index + 1);
                 owner.list_own.relate_region_at_facts(*regions, owner.index + 1);
             }
         }
@@ -735,10 +742,13 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             final(self).wf_region(owner.move_prev_owner_spec(), *regions),
     {
         proof {
+            owner.list_own.relate_region_shape(*regions);
             if self.current is Some {
+                owner.list_own.relate_region_at_index(*regions, owner.index);
                 owner.list_own.relate_region_at_facts(*regions, owner.index);
             }
             if 0 < owner.index {
+                owner.list_own.relate_region_at_index(*regions, owner.index - 1);
                 owner.list_own.relate_region_at_facts(*regions, owner.index - 1);
             }
         }
@@ -776,9 +786,11 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                     assert(owner.move_prev_owner_spec()@.fore == owner@.move_prev_spec().fore);
                     assert(owner.move_prev_owner_spec()@.rear == owner@.move_prev_spec().rear);
                     if owner@.rear.len() > 0 {
+                        owner.list_own.relate_region_at_index(*regions, owner.index);
                         owner.list_own.relate_region_at_facts(*regions, owner.index);
                     }
                 } else {
+                    owner.list_own.relate_region_at_index(*regions, owner.index);
                     owner.list_own.relate_region_at_facts(*regions, owner.index);
                     assert(owner.move_prev_owner_spec()@.rear == owner@.move_prev_spec().rear);
                     assert(owner@.rear == owner@.list_model.list);
@@ -826,6 +838,8 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
         match self.current {
             Some(current) => {
                 proof {
+                    owner.list_own.relate_region_shape(*regions);
+                    owner.list_own.relate_region_at_index(*regions, owner.index);
                     owner.list_own.relate_region_at_facts(*regions, owner.index);
                 }
                 let ghost idx = meta_to_index(current.addr());
@@ -931,7 +945,8 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             res.is_some() ==> (res->0).0.ptr.addr() == old(self).current->0.addr(),
     {
         // Keep quantified list relations local to this removal proof.
-        hide(LinkedListOwner::relate_region);
+        hide(MetaSlotOwner::storage_perm);
+        hide(MetaSlotOwner::vtable_ptr_perm);
         hide(<MetaRegionOwners as Inv>::inv);
         let ghost owner0 = *owner;
         let ghost regions0 = *regions;
@@ -1047,6 +1062,8 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
         slot.in_list.store(Tracked(&mut fip.in_list_perm), 0);
         proof {
             assert(regions.inv()) by {
+                reveal(MetaSlotOwner::storage_perm);
+                reveal(MetaSlotOwner::vtable_ptr_perm);
                 reveal(<MetaRegionOwners as Inv>::inv);
             };
             assert(regions.slots.dom() == regions0.slots.dom());
@@ -1170,7 +1187,6 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
             final(frame_own).meta_own.in_list == final(owner).list_own.list_id,
             final(owner)@ == old(owner)@.insert(final(frame_own).meta_own@),
     {
-        hide(LinkedListOwner::relate_region);
         hide(<MetaRegionOwners as Inv>::inv);
         let ghost owner0 = *owner;
         let ghost regions0 = *regions;
@@ -1536,6 +1552,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> Drop for LinkedList<M> {
 
         proof {
             if n > 0 {
+                cursor_own.list_own.relate_region_at_index(*regions, 0);
+                cursor_own.list_own.relate_region_at_index(*regions, n - 1);
                 cursor_own.list_own.relate_region_at_facts(*regions, 0);
                 cursor_own.list_own.relate_region_at_facts(*regions, n - 1);
             }
@@ -1628,6 +1646,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotSmall>> Drop for LinkedList<M> {
                         let ghost _trig_ik = original_list[i + k + 1];
                         assert(cursor_own.list_own.list[i] == original_list[i + k + 1]);
 
+                        cursor_own.list_own.relate_region_at_index(regions_pre_drop, i);
                         cursor_own.list_own.relate_region_at_facts(regions_pre_drop, i);
                     };
                     cursor_own.list_own.relate_region_preserved_external_change(

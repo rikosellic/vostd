@@ -90,6 +90,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             other.inv(),
             other.metaregion_sound(regions),
     {
+        reveal(CursorOwner::path_metaregion_sound);
         other.map_branch_none_inv_holds(self);
 
         let f = PageTableOwner::<C>::metaregion_sound_pred(regions);
@@ -99,6 +100,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         assert forall|i: int|
             #![trigger other.continuations[i]]
             other.level - 1 <= i < NR_LEVELS implies other.continuations[i].map_children(f) by {
+            reveal(CursorContinuation::map_children);
             if i > L - 1 {
                 assert(other.continuations[i] == self.continuations[i]);
                 assert(self.continuations[i].map_children(f));
