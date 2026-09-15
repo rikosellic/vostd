@@ -223,9 +223,9 @@ impl<V, F: Predicate<V>> OnceImpl<V, F> {
 /// A `Once` that combines some data with a permission to access it.
 ///
 /// This type alias automatically lifts the target value `V` into
-/// a wrapper [`AtomicDataWithOwner<V, Own>`] where `Own` is the
-/// permission type so that we can reason about non-trivial runtime
+/// a wrapper [`AtomicDataWithOwner<V, I>`] where `I` relates the value to
+/// its tracked resource so that we can reason about non-trivial runtime
 /// properties in verification.
-pub type Once<V, Own, F> = OnceImpl<AtomicDataWithOwner<V, Own>, F>;
+pub type Once<V, I, F> = OnceImpl<AtomicDataWithOwner<V, I>, F>;
 
 } // verus!

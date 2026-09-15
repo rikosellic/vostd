@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 use core::marker::PhantomData;
 
-use vstd::{predicate::Predicate, prelude::*};
+use vstd::prelude::*;
 
-use vstd_extra::ownership::{Inv, OwnerOf};
+use vstd_extra::{ownership::{Inv, OwnerOf}, resource_invariant::ResourceInvariant};
 
 use crate::{
     error::Error,
@@ -62,9 +62,11 @@ pub tracked struct DmaCoherentInnerOwner<M: AnyUFrameMeta + ?Sized> {
     pub _marker: PhantomData<M>,
 }
 
+pub ghost struct DmaCoherentInnerInvariant;
+
 pub type DmaCoherentInnerAtomic<M> = AtomicDataWithOwner<
     DmaCoherentInner<M>,
-    DmaCoherentInnerOwner<M>,
+    DmaCoherentInnerInvariant,
 >;
 
 impl<M: AnyUFrameMeta + ?Sized> Inv for DmaCoherent<M> {
@@ -83,6 +85,23 @@ impl<M: AnyUFrameMeta + ?Sized> Inv for DmaCoherentInner<M> {
 impl<M: AnyUFrameMeta + ?Sized> Inv for DmaCoherentInnerOwner<M> {
     open spec fn inv(self) -> bool {
         true
+    }
+}
+
+impl<M: AnyUFrameMeta + ?Sized> ResourceInvariant<DmaCoherentInner<M>>
+    for DmaCoherentInnerInvariant
+{
+    type Constant = ();
+
+    type Resource = DmaCoherentInnerOwner<M>;
+
+    open spec fn inv(
+        _constant: (),
+        value: DmaCoherentInner<M>,
+        resource: DmaCoherentInnerOwner<M>,
+    ) -> bool {
+        &&& resource.inv()
+        &&& value.inv()
     }
 }
 
@@ -165,6 +184,7 @@ impl<M: AnyUFrameMeta + ?Sized + OwnerOf> DmaCoherent<M> {
             AtomicDataWithOwner::new(
                 DmaCoherentInner { segment, start_daddr, is_cache_coherent },
                 Tracked(inner_owner),
+                Ghost(DmaCoherentInnerInvariant),
             ),
         );
 
@@ -447,14 +467,6 @@ impl<M: AnyUFrameMeta + ?Sized + OwnerOf> DmaCoherent<M> {
             end: writer.end,
             phantom: PhantomData,
         }
-    }
-}
-
-impl<M: AnyUFrameMeta + ?Sized> Predicate<DmaCoherentInner<M>> for DmaCoherentInnerOwner<M> {
-    #[verifier::inline]
-    open spec fn predicate(&self, v: DmaCoherentInner<M>) -> bool {
-        &&& self.inv()
-        &&& v.inv()
     }
 }
 

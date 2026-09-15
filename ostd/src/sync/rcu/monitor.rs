@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
-use vstd::{
-    atomic_ghost::AtomicBool, atomic_with_ghost, predicate::Predicate as DataPredicate, prelude::*,
-};
-use vstd_extra::ownership::Inv;
+use vstd::{atomic_ghost::AtomicBool, atomic_with_ghost, prelude::*};
+use vstd_extra::{ownership::Inv, resource_invariant::ResourceInvariant};
 
 use crate::{
     specs::mm::cpu::{AtomicCpuSet, CpuSet},
@@ -27,6 +25,8 @@ pub(super) struct State {
 /// Owner of this [`RcuMonitor`].
 pub(super) tracked struct RcuMonitorOwner {}
 
+pub(super) ghost struct RcuMonitorInvariant;
+
 struct_with_invariants! {
 /// A RCU monitor ensures the completion of _grace periods_ by keeping track
 /// of each CPU's passing _quiescent states_.
@@ -43,8 +43,12 @@ closed spec fn wf(self) -> bool {
 }
 }
 
-impl DataPredicate<RcuMonitor> for RcuMonitorOwner {
-    closed spec fn predicate(&self, v: RcuMonitor) -> bool {
+impl ResourceInvariant<RcuMonitor> for RcuMonitorInvariant {
+    type Constant = ();
+
+    type Resource = RcuMonitorOwner;
+
+    closed spec fn inv(_constant: (), _value: RcuMonitor, _resource: RcuMonitorOwner) -> bool {
         true
     }
 }
@@ -58,9 +62,9 @@ impl RcuMonitor {
 
 pub(super) struct RcuMonitorPred;
 
-impl OncePredicate<AtomicDataWithOwner<RcuMonitor, RcuMonitorOwner>> for RcuMonitorPred {
-    closed spec fn inv(self, v: AtomicDataWithOwner<RcuMonitor, RcuMonitorOwner>) -> bool {
-        &&& v.permission@.predicate(v.data)
+impl OncePredicate<AtomicDataWithOwner<RcuMonitor, RcuMonitorInvariant>> for RcuMonitorPred {
+    closed spec fn inv(self, v: AtomicDataWithOwner<RcuMonitor, RcuMonitorInvariant>) -> bool {
+        &&& v.inv()
         &&& v.data.inv()
     }
 }
@@ -109,12 +113,12 @@ impl RcuMonitor {
             r.data.inv(),
             RcuMonitorPred.inv(r),
     )]
-    pub(super) fn new_data() -> AtomicDataWithOwner<RcuMonitor, RcuMonitorOwner> {
+    pub(super) fn new_data() -> AtomicDataWithOwner<RcuMonitor, RcuMonitorInvariant> {
         let data = Self::new();
         proof {
             use_type_invariant(&data);
         }
-        AtomicDataWithOwner { data, permission: Tracked(RcuMonitorOwner {  }) }
+        AtomicDataWithOwner { data, permission: Tracked(RcuMonitorOwner {}) }
     }
 
     fn is_monitoring(&self) -> bool {

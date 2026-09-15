@@ -6,7 +6,8 @@ mod dma_stream;
 mod test;
 
 use alloc::collections::BTreeSet;
-use vstd::{predicate::Predicate as DataPredicate, prelude::*};
+use vstd::prelude::*;
+use vstd_extra::resource_invariant::ResourceInvariant;
 
 use crate::sync::{
     AtomicDataWithOwner, Once, PreemptDisabled, SpinLock, SpinLockGuard, TrivialPred,
@@ -18,16 +19,26 @@ verus! {
 
 pub tracked struct DmaMappingSetOwner {}
 
-impl DataPredicate<SpinLock<BTreeSet<Paddr>, PreemptDisabled>> for DmaMappingSetOwner {
-    open spec fn predicate(&self, v: SpinLock<BTreeSet<Paddr>, PreemptDisabled>) -> bool {
-        v.wf()
+pub ghost struct DmaMappingSetInvariant;
+
+impl ResourceInvariant<SpinLock<BTreeSet<Paddr>, PreemptDisabled>> for DmaMappingSetInvariant {
+    type Constant = ();
+
+    type Resource = DmaMappingSetOwner;
+
+    open spec fn inv(
+        _constant: (),
+        v: SpinLock<BTreeSet<Paddr>, PreemptDisabled>,
+        _resource: DmaMappingSetOwner,
+    ) -> bool {
+        v.type_inv()
     }
 }
 
 /// Set of all physical addresses with dma mapping.
 exec static DMA_MAPPING_SET: Once<
     SpinLock<BTreeSet<Paddr>, PreemptDisabled>,
-    DmaMappingSetOwner,
+    DmaMappingSetInvariant,
     TrivialPred,
 >
     ensures
@@ -44,7 +55,12 @@ pub fn init() {
         use_type_invariant(&lock);
     }
 
-    let data = AtomicDataWithOwner::new(lock, Tracked(DmaMappingSetOwner {  }));
+    let tracked owner = DmaMappingSetOwner {};
+    let data = AtomicDataWithOwner::new(
+        lock,
+        Tracked(owner),
+        Ghost(DmaMappingSetInvariant),
+    );
 
     DMA_MAPPING_SET.init(data);
 }
