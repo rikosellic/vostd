@@ -1,9 +1,8 @@
-use core::marker::PhantomData;
-
-use vstd::cell::CellId;
-
-use vstd::prelude::*;
-use vstd::simple_pptr::{self, PPtr, PointsTo};
+use vstd::{
+    cell::CellId,
+    prelude::*,
+    simple_pptr::{self, PPtr, PointsTo},
+};
 use vstd_extra::{cast_ptr::*, ownership::*};
 
 use crate::specs::{
@@ -26,6 +25,7 @@ use crate::mm::{
     },
     kspace::FRAME_METADATA_RANGE,
 };
+use core::marker::PhantomData;
 
 verus! {
 

@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 //! Spec/proof companion for [`crate::mm::frame::segment`].
-use core::ops::Range;
-
 use vstd::prelude::*;
-
 use vstd_extra::ownership::*;
 
 use crate::specs::{
@@ -22,6 +19,7 @@ use crate::mm::{
     frame::{AnyFrameMeta, Segment, meta::MetaSlot},
     paddr_to_vaddr,
 };
+use core::ops::Range;
 
 verus! {
 

@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
-use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref, ptr::NonNull};
-
-use vstd::prelude::*;
-use vstd::simple_pptr::{PPtr, PointsTo};
-use vstd_extra::cast_ptr::Repr;
-use vstd_extra::prelude::*;
-
-use crate::mm::frame::meta::mapping::frame_to_meta;
+use vstd::{
+    prelude::*,
+    simple_pptr::{PPtr, PointsTo},
+};
+use vstd_extra::{cast_ptr::Repr, prelude::*};
 
 use crate::specs::{
     arch::valid_frame_paddr,
@@ -22,6 +19,8 @@ use super::{
     meta::{AnyFrameMeta, MetaSlot},
 };
 use crate::mm::Paddr;
+use crate::mm::frame::meta::mapping::frame_to_meta;
+use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref, ptr::NonNull};
 
 verus! {
 
