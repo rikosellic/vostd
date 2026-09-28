@@ -137,13 +137,15 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
     /// Gets a reference to the child.
     #[verus_spec(res =>
-        with Tracked(owner): Tracked<&'rcu EntryOwner<C>>,
+        with Tracked(owner): Tracked<&EntryOwner<C>>,
              Tracked(parent_owner): Tracked<&NodeOwner<C>>,
              Tracked(regions): Tracked<&mut MetaRegionOwners>,
+             Tracked(metadata_permission): Tracked<&'rcu FracMetadataPerm>,
         requires
             self.invariants(*owner, *old(regions)),
             self.node_matching(*owner, *parent_owner, *self.node),
             parent_owner.metaregion_sound_node(*old(regions)),
+            owner.is_node() ==> *metadata_permission == owner.node().frame_permission,
         ensures
             res.invariants(*owner, *final(regions)),
             final(regions).slot_owners == old(regions).slot_owners,
@@ -164,7 +166,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         //  - The PTE outlives the reference (since we have `&self`).
         //  - The level matches the current node.
         let res = unsafe {
-            #[verus_spec(with Tracked(regions), Tracked(owner))]
+            #[verus_spec(with Tracked(regions), Tracked(owner), Tracked(metadata_permission))]
             ChildRef::from_pte(&self.pte, level)
         };
 

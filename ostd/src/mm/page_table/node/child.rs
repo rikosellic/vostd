@@ -7,6 +7,7 @@ use crate::specs::{
     arch::*,
     mm::frame::{
         mapping::{group_page_meta, meta_to_index},
+        meta_owners::FracMetadataPerm,
         meta_region_owners::MetaRegionOwners,
     },
     *,
@@ -174,10 +175,12 @@ impl<'a, C: PageTableConfig> ChildRef<'a, C> {
     /// - The soundness of using the resulting `ChildRef` as a reference follows from `FrameRef` safety.
     #[verus_spec(res =>
         with Tracked(regions): Tracked<&mut MetaRegionOwners>,
-             Tracked(entry_owner): Tracked<&'a EntryOwner<C>>,
+             Tracked(entry_owner): Tracked<&EntryOwner<C>>,
+             Tracked(metadata_permission): Tracked<&'a FracMetadataPerm>,
         requires
             entry_owner.pte_invariants(*pte, *old(regions)),
             level == entry_owner.parent_level,
+            entry_owner.is_node() ==> *metadata_permission == entry_owner.node().frame_permission,
         ensures
             res.invariants(*entry_owner, *final(regions)),
             final(regions).slot_owners == old(regions).slot_owners,
@@ -201,10 +204,10 @@ impl<'a, C: PageTableConfig> ChildRef<'a, C> {
 
             }
 
-            let tracked node_owner = entry_owner.tracked_borrow_node();
-            let tracked slot_perm = *regions.slots.tracked_borrow(node_owner.slot_index);
+            let ghost slot_index = entry_owner.node().slot_index;
+            let tracked slot_perm = *regions.slots.tracked_borrow(slot_index);
             let node = unsafe {
-                #[verus_spec(with Tracked(slot_perm), Tracked(&node_owner.frame_permission))]
+                #[verus_spec(with Tracked(slot_perm), Tracked(metadata_permission))]
                 PageTableNodeRef::borrow_paddr(paddr)
             };
 
