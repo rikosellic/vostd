@@ -388,6 +388,17 @@ pub tracked struct FlatRawNodeLease<'a, C: PageTableConfig> {
     pub permission: &'a FracMetadataPerm,
 }
 
+/// Cursor-local ownership of raw nodes.
+///
+/// A node moves from `remainder` to `leases` at most once.  Moving the lease
+/// value itself is harmless: both references still point into the stable flat
+/// maps, so a `FrameRef<'a, _>` can keep borrowing its metadata permission
+/// while the cursor mutates other, disjoint node records.
+pub tracked struct FlatCursorResources<'a, C: PageTableConfig> {
+    pub remainder: FlatOwnerPartition<'a, C>,
+    pub leases: Map<Paddr, FlatRawNodeLease<'a, C>>,
+}
+
 impl<'a, C: PageTableConfig> FlatOwnerPartition<'a, C> {
     pub open spec fn contains_raw_node(self, paddr: Paddr) -> bool {
         self.nodes.contains_key(paddr) && self.permissions.contains_key(paddr)
@@ -441,6 +452,172 @@ impl<'a, C: PageTableConfig> FlatOwnerPartition<'a, C> {
     {
         self.nodes.tracked_insert(paddr, record);
         self.permissions.tracked_insert(paddr, permission);
+    }
+
+    /// Inserts a freshly converted raw node and immediately splits it out as
+    /// a stable lease.  Allocation paths need this combined operation: the
+    /// returned `PageTableNodeRef` borrows the permission for `'a`, while the
+    /// remainder must stay available for later cursor descents/allocations.
+    pub proof fn tracked_insert_and_lease_raw_node(
+        tracked self,
+        paddr: Paddr,
+        tracked record: FlatNodeRecord<C>,
+        tracked permission: FracMetadataPerm,
+    ) -> (tracked (lease, remainder): (
+        FlatRawNodeLease<'a, C>,
+        FlatOwnerPartition<'a, C>,
+    ))
+        requires
+            !self.nodes.contains_key(paddr),
+            !self.permissions.contains_key(paddr),
+            record.paddr() == paddr,
+            permission.frac() == 1,
+        ensures
+            lease.paddr == paddr,
+            *lease.record == record,
+            *lease.permission == permission,
+            *remainder.nodes == *old(self.nodes),
+            *remainder.permissions == *old(self.permissions),
+    {
+        self.nodes.tracked_insert(paddr, record);
+        self.permissions.tracked_insert(paddr, permission);
+        self.tracked_lease_raw_node(paddr)
+    }
+}
+
+impl<'a, C: PageTableConfig> FlatRawNodeLease<'a, C> {
+    pub open spec fn node(self) -> FlatNodeOwner<C> {
+        self.record.node
+    }
+
+    pub open spec fn entry(self, idx: int) -> FlatEntryOwner<C>
+        recommends
+            0 <= idx < self.record.entries.len(),
+    {
+        self.record.entries[idx]
+    }
+
+    pub proof fn tracked_borrow_entry(tracked &self, idx: int) -> (tracked entry:
+        &FlatEntryOwner<C>)
+        requires
+            0 <= idx < self.record.entries.len(),
+        ensures
+            *entry == self.entry(idx),
+    {
+        self.record.tracked_borrow_entry(idx)
+    }
+
+    pub proof fn tracked_borrow_entry_mut(tracked &mut self, idx: int) -> (tracked entry:
+        &mut FlatEntryOwner<C>)
+        requires
+            0 <= idx < old(self).record.entries.len(),
+        ensures
+            *entry == old(self).entry(idx),
+            final(self).paddr == old(self).paddr,
+            *final(self).permission == *old(self).permission,
+            *final(self).record == old(self).record.set_entry(idx, *final(entry)),
+    {
+        self.record.tracked_borrow_entry_mut(idx)
+    }
+}
+
+impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
+    pub open spec fn contains_leased(self, paddr: Paddr) -> bool {
+        self.leases.contains_key(paddr)
+    }
+
+    pub open spec fn contains_unleased(self, paddr: Paddr) -> bool {
+        self.remainder.contains_raw_node(paddr)
+    }
+
+    pub proof fn tracked_new(
+        tracked remainder: FlatOwnerPartition<'a, C>,
+    ) -> (tracked result: Self)
+        ensures
+            result.leases =~= Map::empty(),
+            *result.remainder.nodes == *old(remainder.nodes),
+            *result.remainder.permissions == *old(remainder.permissions),
+    {
+        Self { remainder, leases: Map::tracked_empty() }
+    }
+
+    /// Leases a node on first visit.  Already leased nodes are looked up by
+    /// paddr through `tracked_borrow_permission`/`tracked_borrow_record_mut`;
+    /// they are never removed and reinserted while cursor guards are alive.
+    pub proof fn tracked_lease_node(tracked self, paddr: Paddr) -> (tracked result: Self)
+        requires
+            self.contains_unleased(paddr),
+            !self.contains_leased(paddr),
+        ensures
+            result.contains_leased(paddr),
+            result.leases.dom() == self.leases.dom().insert(paddr),
+            *result.remainder.nodes == old(self.remainder.nodes).remove_keys(set![paddr]),
+            *result.remainder.permissions == old(self.remainder.permissions).remove_keys(
+                set![paddr],
+            ),
+    {
+        let tracked Self { remainder, mut leases } = self;
+        let tracked (lease, remainder) = remainder.tracked_lease_raw_node(paddr);
+        leases.tracked_insert(paddr, lease);
+        Self { remainder, leases }
+    }
+
+    /// Parks a newly allocated node's metadata permission in the flat store
+    /// and retains a lease for the guard returned by the allocation path.
+    pub proof fn tracked_insert_and_lease_node(
+        tracked self,
+        paddr: Paddr,
+        tracked record: FlatNodeRecord<C>,
+        tracked permission: FracMetadataPerm,
+    ) -> (tracked result: Self)
+        requires
+            !self.contains_leased(paddr),
+            !self.contains_unleased(paddr),
+            record.paddr() == paddr,
+            permission.frac() == 1,
+        ensures
+            result.contains_leased(paddr),
+            result.leases.dom() == self.leases.dom().insert(paddr),
+            *result.remainder.nodes == *old(self.remainder.nodes),
+            *result.remainder.permissions == *old(self.remainder.permissions),
+    {
+        let tracked Self { remainder, mut leases } = self;
+        let tracked (lease, remainder) = remainder.tracked_insert_and_lease_raw_node(
+            paddr,
+            record,
+            permission,
+        );
+        leases.tracked_insert(paddr, lease);
+        Self { remainder, leases }
+    }
+
+    pub proof fn tracked_borrow_permission(
+        tracked &self,
+        paddr: Paddr,
+    ) -> (tracked permission: &'a FracMetadataPerm)
+        requires
+            self.contains_leased(paddr),
+        ensures
+            *permission == *self.leases[paddr].permission,
+    {
+        let tracked lease = self.leases.tracked_borrow(paddr);
+        lease.permission
+    }
+
+    pub proof fn tracked_borrow_record_mut<'b>(
+        tracked &'b mut self,
+        paddr: Paddr,
+    ) -> (tracked record: &'b mut FlatNodeRecord<C>)
+        requires
+            old(self).contains_leased(paddr),
+        ensures
+            *record == *old(self).leases[paddr].record,
+            final(self).leases.dom() == old(self).leases.dom(),
+            *final(self).remainder.nodes == *old(self).remainder.nodes,
+            *final(self).remainder.permissions == *old(self).remainder.permissions,
+    {
+        let tracked lease = self.leases.tracked_borrow_mut(paddr);
+        &mut *lease.record
     }
 }
 
