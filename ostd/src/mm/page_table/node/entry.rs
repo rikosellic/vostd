@@ -137,7 +137,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
     /// Gets a reference to the child.
     #[verus_spec(res =>
-        with Tracked(owner): Tracked<&EntryOwner<C>>,
+        with Tracked(owner): Tracked<&'rcu EntryOwner<C>>,
              Tracked(parent_owner): Tracked<&NodeOwner<C>>,
              Tracked(regions): Tracked<&mut MetaRegionOwners>,
         requires

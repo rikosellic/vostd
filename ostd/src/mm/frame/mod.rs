@@ -454,7 +454,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         ensures
             res.inner@.ptr.addr() == self.ptr.addr(),
     )]
-    pub fn borrow<'a>(&self) -> FrameRef<'a, M> {
+    pub fn borrow<'a>(&'a self) -> FrameRef<'a, M> {
         let tracked slot_perm = *self.tracked_slot_perm.borrow();
         let tracked metadata_perm = self.tracked_metadata_perm.borrow().tracked_borrow();
         // SAFETY: Both the lifetime and the type matches `self`.
@@ -469,7 +469,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     /// PTEs.
     #[verus_spec(res =>
         with
-            Tracked(frame_permission): Tracked<&FracMetadataPerm>,
+            Tracked(frame_permission): Tracked<&'a FracMetadataPerm>,
             Tracked(regions): Tracked<&MetaRegionOwners>,
         requires
             self.ptr_inv(),
