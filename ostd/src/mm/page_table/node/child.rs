@@ -158,7 +158,7 @@ pub enum ChildRef<'a, C: PageTableConfig> {
 }
 
 #[verus_verify]
-impl<C: PageTableConfig> ChildRef<'_, C> {
+impl<'a, C: PageTableConfig> ChildRef<'a, C> {
     /// Converts a PTE to a reference to a child.
     ///
     /// # Verified Properties
@@ -174,7 +174,7 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
     /// - The soundness of using the resulting `ChildRef` as a reference follows from `FrameRef` safety.
     #[verus_spec(res =>
         with Tracked(regions): Tracked<&mut MetaRegionOwners>,
-             Tracked(entry_owner): Tracked<&EntryOwner<C>>,
+             Tracked(entry_owner): Tracked<&'a EntryOwner<C>>,
         requires
             entry_owner.pte_invariants(*pte, *old(regions)),
             level == entry_owner.parent_level,
