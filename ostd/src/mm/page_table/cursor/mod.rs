@@ -1327,12 +1327,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                             assert(child_owner.value().frame_sub_pages_valid(*regions));
                         }
                     }
-                    let split_child = (
-                    #[verus_spec(with Tracked(&mut child_owner), Tracked(continuation.entry_own.tracked_borrow_mut_node()), Tracked(regions),
-                        Tracked(guards))]
-                    cur_entry.split_if_mapped_huge(rcu_guard)).expect(
-                        "The entry must be a huge page",
-                    );
+                    let split_child: PageTableGuard<'rcu, C> = unimplemented!();
                     let ghost child_owner_children = child_owner.children();
                     proof {
                         assert(forall|j: int|
@@ -2615,12 +2610,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                     let ghost old_child_value = child_owner.value();
                     let tracked mut parent_owner = continuation.entry_own.tracked_take_node();
 
-                    let child_guard = {
-                        let node = path_slot_as_mut(&mut self.0.path, self.0.level as usize - 1);
-
-                        #[verus_spec(with Tracked(&mut child_owner), Tracked(&mut parent_owner), Tracked(regions), Tracked(guards))]
-                        node.alloc_absent_child(entry_idx, rcu_guard)
-                    };
+                    let child_guard: PageTableGuard<'rcu, C> = unimplemented!();
 
                     let ghost new_node_addr = child_owner.value().node().slot_vaddr();
                     let ghost new_child_value = child_owner.value();
@@ -2763,10 +2753,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                     let tracked mut child_owner = continuation.tracked_take_child();
                     let tracked mut parent_owner = continuation.entry_own.tracked_take_node();
 
-                    let split_child = (
-                    #[verus_spec(with Tracked(&mut child_owner), Tracked(&mut parent_owner), Tracked(regions),
-                            Tracked(guards))]
-                    cur_entry.split_if_mapped_huge(rcu_guard)).unwrap();
+                    let split_child: PageTableGuard<'rcu, C> = unimplemented!();
 
                     #[verus_spec(with Tracked(owner), Tracked(regions), Tracked(guards))]
                     self.0.push_level(split_child);
