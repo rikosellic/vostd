@@ -7,6 +7,7 @@ use crate::specs::{
     arch::{NR_ENTRIES, NR_LEVELS, PAGE_SIZE},
     mm::{
         frame::{
+            frame_specs::FrameRawPerms,
             mapping::{frame_to_index, group_page_meta, meta_to_index},
             meta_region_owners::MetaRegionOwners,
         },
@@ -636,51 +637,37 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             }
 
             proof_decl! {
-                let tracked mut new_node_owner: Tracked<OwnerSubtree<C>>;
+                let tracked mut new_node_owner: Tracked<FlatNodeRecord<C>>;
             }
 
-            #[verus_spec(with Tracked(parent_owner), Tracked(regions), Tracked(guards), Ghost(self.idx) => Tracked(new_node_owner))]
+            #[verus_spec(with Tracked(parent_owner), Tracked(regions), Tracked(guards), Ghost(self.idx), Ghost(old_path) => Tracked(new_node_owner))]
             let new_page = PageTableNode::<C>::alloc(level - 1);
-            let ghost fresh_children = new_node_owner.children();
-            proof {
-                assert forall|i: int| 0 <= i < NR_ENTRIES implies (
-                #[trigger] fresh_children[i]) is Some by {
-                    assert(crate::specs::mm::page_table::allocated_empty_node_owner(
-                        new_node_owner,
-                        (level - 1) as PagingLevel,
-                    ));
-                    assert(new_node_owner.has_child(i));
-                };
-            }
-
             proof {
                 let pte = C::E::new_pt_spec(
-                    meta_to_frame(new_node_owner.value().node().slot_vaddr()),
+                    meta_to_frame(new_node_owner.node.slot_vaddr()),
                 );
                 C::E::lemma_page_table_entry_properties();
             }
 
             let paddr = new_page.start_paddr();
 
-            let new_pte = {
-                let tracked new_node_value = new_node_owner.tracked_borrow_mut_value();
-                #[verus_spec(with Tracked(new_node_value))]
-                Child::PageTable(new_page).into_pte()
-            };
+            proof_decl! {
+                let tracked raw_perms: FrameRawPerms;
+            }
+            let raw_paddr = #[verus_spec(with => Tracked(raw_perms))] new_page.into_raw();
+            let new_pte = C::E::new_pt(raw_paddr);
             self.pte = new_pte;
 
-            let tracked new_node_value = new_node_owner.tracked_borrow_value();
-            let tracked new_node = new_node_value.tracked_borrow_node();
+            let tracked new_node = &new_node_owner.node;
             let tracked slot_perm = *regions.slots.tracked_borrow(new_node.slot_index);
             let pt_ref = unsafe {
-                #[verus_spec(with Tracked(slot_perm), Tracked(&new_node.frame_permission))]
+                #[verus_spec(with Tracked(slot_perm), Tracked(&raw_perms.metadata_perm))]
                 PageTableNodeRef::borrow_paddr(paddr)
             };
 
             // Lock before writing the PTE, so no one else can operate on it.
             let mut pt_lock_guard = {
-                let tracked new_node_value = new_node_owner.tracked_borrow_value();
-                #[verus_spec(with Tracked(new_node_value.tracked_borrow_node()), Tracked(guards))]
+                #[verus_spec(with Tracked(new_node), Tracked(guards))]
                 pt_ref.lock(guard)
             };
 
@@ -704,23 +691,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             nr_children.write(Tracked(&mut parent_owner.meta_own.nr_children), _tmp + 1);
 
             proof {
-                // For `final(owner).inv()`'s `child.level == self.level + 1`:
-                // the grafted children carry `new_node_owner.level + 1`, and
-                // `owner.level` is unchanged. The fresh node's depth equals
-                // `owner.level` (from `allocated_empty_node_owner` + the
-                // `owner.level + parent_owner.level == INC_LEVELS` precond), so
-                // the grafted children's levels line up with `owner.level + 1`.
-                let tracked new_node_value = new_node_owner.tracked_borrow_mut_value();
-                new_node_value.parent_level = level as PagingLevel;
-                new_node_value.path = old_path;
                 *owner = new_node_owner;
-                // Rebase children's paths from `[i]` (rooted at empty) onto
-                // the cursor path `old_path` so `pt_edge_at`'s
-                // `child.path == parent.path.push_tail(i)` holds.
-                assert(owner.children() == fresh_children);
-                assert forall|i: int| 0 <= i < NR_ENTRIES implies (
-                #[trigger] owner.children()[i]) is Some by {};
-                crate::specs::mm::page_table::rebase_freshly_allocated_children(owner, old_path);
 
                 let new_paddr = owner.value().meta_slot_paddr().unwrap();
                 regions.lemma_contains_valid_frame_paddr(new_paddr);
@@ -899,12 +870,14 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         }
 
         proof_decl!{
-            let tracked mut new_owner: OwnerSubtree<C>;
+            let tracked mut new_owner: FlatNodeRecord<C>;
         }
+
+        let ghost old_path = owner.value().path;
 
         // alloc takes the NEW NODE level (level - 1, one below the cursor's
         // level which is `level`). Convention: alloc(M) produces node.level=M.
-        #[verus_spec(with Tracked(parent_owner), Tracked(regions), Tracked(guards), Ghost(self.idx) => Tracked(new_owner))]
+        #[verus_spec(with Tracked(parent_owner), Tracked(regions), Tracked(guards), Ghost(self.idx), Ghost(old_path) => Tracked(new_owner))]
         let new_page = PageTableNode::<C>::alloc(level - 1);
         proof {
             assert forall|i: int| 0 <= i < NR_ENTRIES implies (
@@ -1297,11 +1270,11 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             }
         }
 
-        self.pte = {
-            let tracked new_owner_value = new_owner.tracked_borrow_mut_value();
-            #[verus_spec(with Tracked(new_owner_value))]
-            Child::PageTable(new_page).into_pte()
-        };
+        proof_decl! {
+            let tracked raw_perms: FrameRawPerms;
+        }
+        let raw_paddr = #[verus_spec(with => Tracked(raw_perms))] new_page.into_raw();
+        self.pte = C::E::new_pt(raw_paddr);
 
         proof {
             *owner = new_owner;
@@ -1849,52 +1822,38 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         let ghost old_owner_val = owner.value();
 
         proof_decl! {
-            let tracked mut new_node_owner: Tracked<OwnerSubtree<C>>;
+            let tracked mut new_node_owner: Tracked<FlatNodeRecord<C>>;
         }
 
-        #[verus_spec(with Tracked(parent_owner), Tracked(regions), Tracked(guards), Ghost(idx) => Tracked(new_node_owner))]
+        #[verus_spec(with Tracked(parent_owner), Tracked(regions), Tracked(guards), Ghost(idx), Ghost(old_path) => Tracked(new_node_owner))]
         let new_page = PageTableNode::<C>::alloc(level - 1);
-        let ghost fresh_children = new_node_owner.children();
         proof {
-            assert forall|i: int| 0 <= i < NR_ENTRIES implies (
-            #[trigger] fresh_children[i]) is Some by {
-                assert(crate::specs::mm::page_table::allocated_empty_node_owner(
-                    new_node_owner,
-                    (level - 1) as PagingLevel,
-                ));
-                assert(new_node_owner.has_child(i));
-            };
-        }
-
-        proof {
-            let pte = C::E::new_pt_spec(meta_to_frame(new_node_owner.value().node().slot_vaddr()));
+            let pte = C::E::new_pt_spec(meta_to_frame(new_node_owner.node.slot_vaddr()));
             C::E::lemma_page_table_entry_properties();
         }
 
         let paddr = new_page.start_paddr();
 
-        let new_pte = {
-            let tracked new_node_value = new_node_owner.tracked_borrow_mut_value();
-            #[verus_spec(with Tracked(new_node_value))]
-            Child::PageTable(new_page).into_pte()
-        };
+        proof_decl! {
+            let tracked raw_perms: FrameRawPerms;
+        }
+        let raw_paddr = #[verus_spec(with => Tracked(raw_perms))] new_page.into_raw();
+        let new_pte = C::E::new_pt(raw_paddr);
 
         proof {
             broadcast use group_page_meta;
 
         }
 
-        let tracked new_node_value = new_node_owner.tracked_borrow_value();
-        let tracked new_node = new_node_value.tracked_borrow_node();
+        let tracked new_node = &new_node_owner.node;
         let tracked slot_perm = *regions.slots.tracked_borrow(new_node.slot_index);
         let pt_ref = unsafe {
-            #[verus_spec(with Tracked(slot_perm), Tracked(&new_node.frame_permission))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(&raw_perms.metadata_perm))]
             PageTableNodeRef::borrow_paddr(paddr)
         };
 
         let pt_lock_guard = {
-            let tracked new_node_value = new_node_owner.tracked_borrow_value();
-            #[verus_spec(with Tracked(new_node_value.tracked_borrow_node()), Tracked(guards))]
+            #[verus_spec(with Tracked(new_node), Tracked(guards))]
             pt_ref.lock(guard)
         };
 
@@ -1934,14 +1893,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         }
 
         proof {
-            {
-                let tracked new_node_value = new_node_owner.tracked_borrow_mut_value();
-                new_node_value.parent_level = level as PagingLevel;
-                new_node_value.path = old_path;
-            }
             *owner = new_node_owner;
-            assert(owner.children() == fresh_children);
-            crate::specs::mm::page_table::rebase_freshly_allocated_children(owner, old_path);
 
             let new_paddr = owner.value().meta_slot_paddr().unwrap();
             regions.lemma_contains_valid_frame_paddr(new_paddr);
