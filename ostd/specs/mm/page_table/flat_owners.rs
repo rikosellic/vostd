@@ -220,7 +220,6 @@ impl<C: PageTableConfig> FlatNodeOwner<C> {
         &&& meta_to_frame(self.slot_vaddr()) < MAX_PADDR
         &&& meta_to_frame(self.slot_vaddr()) == self.children_perm.addr()
     }
-
 }
 
 /// Linear structural resources and PTE owners for one physical page-table
@@ -683,6 +682,51 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
         Self { root, remainder, leases }
     }
 
+    /// Installs a freshly converted raw child in one atomic tracked step:
+    /// the parent PTE owner stores only the child's paddr, while the child's
+    /// structural record and metadata permission enter the flat maps.
+    pub proof fn tracked_attach_and_lease_child(
+        tracked self,
+        parent: Paddr,
+        idx: int,
+        tracked record: FlatNodeRecord<C>,
+        tracked permission: FracMetadataPerm,
+    ) -> (tracked result: Self)
+        requires
+            self.contains_leased(parent),
+            0 <= idx < self.leased_record(parent).entries.len(),
+            self.leased_record(parent).entries[idx].is_absent(),
+            !self.contains_leased(record.paddr()),
+            !self.contains_unleased(record.paddr()),
+            permission.frac() == 1,
+            record.path == self.leased_record(parent).entries[idx].path,
+            record.node.level + 1
+                == self.leased_record(parent).entries[idx].parent_level,
+        ensures
+            result.contains_leased(parent),
+            result.contains_raw_leased(record.paddr()),
+            result.leased_record(parent).entries[idx].is_node(),
+            result.leased_record(parent).entries[idx].child_paddr() == record.paddr(),
+            result.leased_record(parent).entries[idx].path
+                == self.leased_record(parent).entries[idx].path,
+            result.leased_record(parent).entries[idx].parent_level
+                == self.leased_record(parent).entries[idx].parent_level,
+    {
+        let ghost child = record.paddr();
+        let ghost old_entry = self.leased_record(parent).entries[idx];
+        let tracked mut this = self;
+        let tracked child_entry = FlatEntryOwner::tracked_new_node(
+            child,
+            old_entry.path,
+            old_entry.parent_level,
+        );
+        {
+            let tracked parent_record = this.tracked_borrow_record_mut(parent);
+            parent_record.tracked_set_entry(idx, child_entry);
+        }
+        this.tracked_insert_and_lease_node(child, record, permission)
+    }
+
     pub proof fn tracked_borrow_permission(
         tracked &self,
         paddr: Paddr,
@@ -862,6 +906,43 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             final(self).continuations == old(self).continuations,
     {
         self.resources.tracked_borrow_record_mut(paddr)
+    }
+
+    pub proof fn tracked_attach_and_lease_child(
+        tracked self,
+        parent: Paddr,
+        idx: int,
+        tracked record: FlatNodeRecord<C>,
+        tracked permission: FracMetadataPerm,
+    ) -> (tracked result: Self)
+        requires
+            self.resources.contains_leased(parent),
+            0 <= idx < self.resources.leased_record(parent).entries.len(),
+            self.resources.leased_record(parent).entries[idx].is_absent(),
+            !self.resources.contains_leased(record.paddr()),
+            !self.resources.contains_unleased(record.paddr()),
+            permission.frac() == 1,
+            record.path == self.resources.leased_record(parent).entries[idx].path,
+            record.node.level + 1
+                == self.resources.leased_record(parent).entries[idx].parent_level,
+        ensures
+            result.root == self.root,
+            result.level == self.level,
+            result.guard_level == self.guard_level,
+            result.continuations == self.continuations,
+            result.resources.contains_leased(parent),
+            result.resources.contains_raw_leased(record.paddr()),
+            result.resources.leased_record(parent).entries[idx].is_node(),
+            result.resources.leased_record(parent).entries[idx].child_paddr() == record.paddr(),
+    {
+        let tracked Self { resources, continuations, root, level, guard_level } = self;
+        let tracked resources = resources.tracked_attach_and_lease_child(
+            parent,
+            idx,
+            record,
+            permission,
+        );
+        Self { resources, continuations, root, level, guard_level }
     }
 }
 
