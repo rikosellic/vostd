@@ -478,7 +478,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             owner.meta_own.nr_children.value(),
     )]
     pub fn nr_children(&self) -> u16 {
-        let tracked metadata_perm = self.inner.tracked_metadata_perm@.tracked_borrow();
+        let tracked metadata_perm = *self.inner.tracked_metadata_perm.borrow();
         #[verus_spec(with
             Tracked(Some(metadata_perm)),
             Tracked(&())
