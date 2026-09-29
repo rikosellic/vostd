@@ -133,7 +133,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     )]
     pub(in crate::mm) fn is_node(&self) -> bool {
         self.pte.is_present() && !self.pte.is_last(
-            #[verus_spec(with Tracked(&*parent_owner))]
+            #[verus_spec(with Tracked(Some(parent_owner.tracked_borrow_metadata_perm())))]
             self.node.level(),
         )
     }
@@ -162,7 +162,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             final(regions).inv(),
     )]
     pub(in crate::mm) fn to_ref(&self) -> ChildRef<'rcu, C> {
-        #[verus_spec(with Tracked(&*parent_owner))]
+        #[verus_spec(with Tracked(Some(parent_owner.tracked_borrow_metadata_perm())))]
         let level = self.node.level();
 
         // SAFETY:
@@ -366,7 +366,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         // SAFETY:
         //  - The PTE is not referenced by other `ChildRef`s (since we have `&mut self`).
         //  - The level matches the current node.
-        #[verus_spec(with Tracked(&*parent_owner))]
+        #[verus_spec(with Tracked(Some(parent_owner.tracked_borrow_metadata_perm())))]
         let level = self.node.level();
 
         let old_child = unsafe {
@@ -616,7 +616,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         // For restoring `count_consistent` after adding the child below.
         let ghost cp0 = parent_owner.children_perm.value();
 
-        #[verus_spec(with Tracked(&*parent_owner))]
+        #[verus_spec(with Tracked(Some(parent_owner.tracked_borrow_metadata_perm())))]
         let level = self.node.level();
 
         if entry_is_present || level <= 1 {
@@ -633,7 +633,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 let tracked mut new_node_owner: Tracked<FlatNodeRecord<C>>;
             }
 
-            #[verus_spec(with Tracked(parent_owner), Tracked(regions), Tracked(guards), Ghost(self.idx), Ghost(old_path) => Tracked(new_node_owner))]
+            #[verus_spec(with Tracked(regions), Tracked(guards), Ghost(old_path) => Tracked(new_node_owner))]
             let new_page = PageTableNode::<C>::alloc(level - 1);
             proof {
                 let pte = C::E::new_pt_spec(
@@ -843,7 +843,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     pub(in crate::mm) fn split_if_mapped_huge<A: InAtomicMode>(&mut self, guard: &'rcu A) -> Option<
         PageTableGuard<'rcu, C>,
     > {
-        #[verus_spec(with Tracked(&*parent_owner))]
+        #[verus_spec(with Tracked(Some(parent_owner.tracked_borrow_metadata_perm())))]
         let level = self.node.level();
 
         if !(self.pte.is_last(level) && level > 1) {
@@ -870,7 +870,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
         // alloc takes the NEW NODE level (level - 1, one below the cursor's
         // level which is `level`). Convention: alloc(M) produces node.level=M.
-        #[verus_spec(with Tracked(parent_owner), Tracked(regions), Tracked(guards), Ghost(self.idx), Ghost(old_path) => Tracked(new_owner))]
+        #[verus_spec(with Tracked(regions), Tracked(guards), Ghost(old_path) => Tracked(new_owner))]
         let new_page = PageTableNode::<C>::alloc(level - 1);
         proof {
             assert forall|i: int| 0 <= i < NR_ENTRIES implies (
@@ -1556,7 +1556,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             self.read_pte(idx)
         };
 
-        #[verus_spec(with Tracked(&*parent_owner))]
+        #[verus_spec(with Tracked(Some(parent_owner.tracked_borrow_metadata_perm())))]
         let level = self.level();
 
         let old_child = unsafe {
@@ -1782,7 +1782,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         idx: usize,
         guard: &'rcu A,
     ) -> PageTableGuard<'rcu, C> {
-        #[verus_spec(with Tracked(&*parent_owner))]
+        #[verus_spec(with Tracked(Some(parent_owner.tracked_borrow_metadata_perm())))]
         let level = self.level();
 
         let ghost old_path = owner.value().path;
@@ -1807,7 +1807,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             let tracked mut new_node_owner: Tracked<FlatNodeRecord<C>>;
         }
 
-        #[verus_spec(with Tracked(parent_owner), Tracked(regions), Tracked(guards), Ghost(idx), Ghost(old_path) => Tracked(new_node_owner))]
+        #[verus_spec(with Tracked(regions), Tracked(guards), Ghost(old_path) => Tracked(new_node_owner))]
         let new_page = PageTableNode::<C>::alloc(level - 1);
         proof {
             let pte = C::E::new_pt_spec(meta_to_frame(new_node_owner.node.slot_vaddr()));
