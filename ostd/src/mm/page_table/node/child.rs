@@ -180,7 +180,8 @@ impl<'a, C: PageTableConfig> ChildRef<'a, C> {
         requires
             entry_owner.pte_invariants(*pte, *old(regions)),
             level == entry_owner.parent_level,
-            entry_owner.is_node() ==> *metadata_permission == entry_owner.node().frame_permission,
+            entry_owner.is_node() ==>
+                entry_owner.node().permission_matches(*metadata_permission),
         ensures
             res.invariants(*entry_owner, *final(regions)),
             final(regions).slot_owners == old(regions).slot_owners,

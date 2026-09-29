@@ -472,15 +472,15 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     #[verus_spec(nr =>
         with Tracked(owner) : Tracked<&NodeOwner<C>>,
         requires
-            owner.meta_own.nr_children.id() == owner.meta_value().nr_children.id(),
-            self.inner.inner@.invariants(*owner),
-            self.inner.inner@.external_meta_wf(owner.frame_permission.resource(), ()),
+            owner.inv(),
+            owner.relate_guard(*self),
         returns
             owner.meta_own.nr_children.value(),
     )]
     pub fn nr_children(&self) -> u16 {
+        let tracked metadata_perm = self.inner.tracked_metadata_perm@.tracked_borrow();
         #[verus_spec(with
-            Tracked(Some(owner.tracked_borrow_metadata_perm())),
+            Tracked(Some(metadata_perm)),
             Tracked(&())
         )]
         let meta = self.meta();
@@ -525,10 +525,11 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     ///
     /// The caller must ensure that the index is within the bound.
     #[verus_spec(pte =>
-        with Tracked(owner): Tracked<&NodeOwner<C>>,
+        with Tracked(owner): Tracked<&FlatNodeOwner<C>>,
              Tracked(regions): Tracked<&MetaRegionOwners>,
         requires
-            self.inner.inner@.invariants(*owner),
+            owner.inv(),
+            owner.relate_guard(*self),
             regions.inv(),
             regions.contains(owner.slot_index),
             idx < NR_ENTRIES,
@@ -563,18 +564,18 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     ///  3. The page table node will have the ownership of the [`Child`]
     ///     after this method.
     #[verus_spec(
-        with Tracked(owner): Tracked<&mut NodeOwner<C>>,
+        with Tracked(owner): Tracked<&mut FlatNodeOwner<C>>,
              Tracked(regions): Tracked<&MetaRegionOwners>,
         requires
-            old(self).inner.inner@.invariants(*old(owner)),
+            old(owner).inv(),
+            old(owner).relate_guard(*old(self)),
             regions.inv(),
             regions.contains(old(owner).slot_index),
             idx < NR_ENTRIES,
         ensures
             final(owner).inv(),
-            final(owner).level() == old(owner).level(),
+            final(owner).level == old(owner).level,
             final(owner).meta_own == old(owner).meta_own,
-            final(owner).frame_permission == old(owner).frame_permission,
             final(owner).slot_index == old(owner).slot_index,
             final(owner).children_perm.value() == old(owner).children_perm.value().update(
                 idx as int,

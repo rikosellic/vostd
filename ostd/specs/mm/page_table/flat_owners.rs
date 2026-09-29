@@ -9,6 +9,7 @@ use vstd_extra::{array_ptr, ghost_tree::TreePath, ownership::*};
 use crate::mm::frame::meta::{META_SLOT_SIZE, mapping::meta_to_frame};
 use crate::mm::kspace::{FRAME_METADATA_RANGE, LINEAR_MAPPING_BASE_VADDR, VMALLOC_BASE_VADDR};
 use crate::mm::page_table::{PageTableConfig, PageTableEntryTrait, PageTableGuard};
+use crate::mm::page_prop::PageProperty;
 use crate::mm::{Paddr, PagingLevel, Vaddr, paddr_to_vaddr, page_size};
 use crate::specs::arch::{MAX_PADDR, NR_ENTRIES, NR_LEVELS, valid_frame_paddr};
 use crate::specs::mm::frame::mapping::{index_to_meta, max_meta_slots};
@@ -164,123 +165,47 @@ impl<C: PageTableConfig> FlatEntryOwner<C> {
     {
         Self { kind: FlatEntryOwnerKind::Node(child), path, parent_level }
     }
-}
 
-/// The structural resources of a page-table node.
-///
-/// In particular, this type does not contain a `FracMetadataPerm`.  The
-/// permission is owned either by the live `Frame` (for the root or a detached
-/// node), or by `FlatPageTableOwner::raw_node_permissions` while the node is
-/// represented by a raw PTE.
-pub tracked struct FlatNodeOwner<C: PageTableConfig> {
-    pub meta_own: PageMetaOwner,
-    pub children_perm: array_ptr::PointsTo<C::E, NR_ENTRIES>,
-    pub ghost level: PagingLevel,
-    pub ghost tree_level: int,
-    pub ghost slot_index: int,
-}
-
-impl<C: PageTableConfig> FlatNodeOwner<C> {
-    pub open spec fn new(
-        meta_own: PageMetaOwner,
-        children_perm: array_ptr::PointsTo<C::E, NR_ENTRIES>,
-        level: PagingLevel,
-        tree_level: int,
-        slot_index: int,
+    pub open spec fn new_frame(
+        paddr: Paddr,
+        path: TreePath<NR_ENTRIES>,
+        parent_level: PagingLevel,
+        prop: PageProperty,
+        permission: Option<C::Perm>,
     ) -> Self {
-        Self { meta_own, children_perm, level, tree_level, slot_index }
+        Self {
+            kind: FlatEntryOwnerKind::Frame(
+                FrameEntryOwner { mapped_pa: paddr, prop, permission },
+            ),
+            path,
+            parent_level,
+        }
     }
 
-    pub proof fn tracked_new(
-        tracked meta_own: PageMetaOwner,
-        tracked children_perm: array_ptr::PointsTo<C::E, NR_ENTRIES>,
-        level: PagingLevel,
-        tree_level: int,
-        slot_index: int,
+    pub proof fn tracked_new_frame(
+        paddr: Paddr,
+        path: TreePath<NR_ENTRIES>,
+        parent_level: PagingLevel,
+        prop: PageProperty,
+        tracked permission: Option<C::Perm>,
     ) -> (tracked result: Self)
         returns
-            Self::new(meta_own, children_perm, level, tree_level, slot_index),
+            Self::new_frame(paddr, path, parent_level, prop, permission),
     {
-        Self { meta_own, children_perm, level, tree_level, slot_index }
-    }
-
-    pub open spec fn slot_vaddr(self) -> Vaddr {
-        index_to_meta(self.slot_index)
-    }
-
-    pub open spec fn inv(self) -> bool {
-        &&& self.meta_own.inv()
-        &&& 0 <= self.meta_own.nr_children.value() <= NR_ENTRIES
-        &&& 1 <= self.level <= NR_LEVELS
-        &&& self.children_perm.wf()
-        &&& self.children_perm.is_init_all()
-        &&& self.children_perm.addr() == paddr_to_vaddr(meta_to_frame(self.slot_vaddr()))
-        &&& self.tree_level == INC_LEVELS - self.level - 1
-        &&& 0 <= self.slot_index < max_meta_slots()
-        &&& FRAME_METADATA_RANGE.start <= self.slot_vaddr() < FRAME_METADATA_RANGE.end
-        &&& self.slot_vaddr() % META_SLOT_SIZE == 0
-        &&& meta_to_frame(self.slot_vaddr()) < VMALLOC_BASE_VADDR - LINEAR_MAPPING_BASE_VADDR
-        &&& meta_to_frame(self.slot_vaddr()) < MAX_PADDR
-        &&& meta_to_frame(self.slot_vaddr()) == self.children_perm.addr()
-    }
-
-    pub open spec fn meta_value(
-        self,
-        permission: FracMetadataPerm,
-    ) -> crate::mm::page_table::PageTablePageMeta<C> {
-        crate::specs::mm::frame::meta_owners::typed_meta_value::<
-            crate::mm::page_table::PageTablePageMeta<C>,
-        >(permission.resource(), ())
-    }
-
-    /// The metadata permission is stored beside the record in the flat map,
-    /// not inside this structural owner.  This predicate reconnects the two
-    /// resources whenever a raw node is borrowed.
-    pub open spec fn permission_matches(self, permission: FracMetadataPerm) -> bool {
-        &&& permission.frac() == 1
-        &&& self.meta_value(permission).wf(self.meta_own)
-        &&& self.meta_value(permission).level == self.level
-        &&& self.meta_value(permission).nr_children.id() == self.meta_own.nr_children.id()
-    }
-
-    pub open spec fn count_consistent(self) -> bool {
-        self.meta_own.nr_children.value()
-            == crate::specs::mm::page_table::node::owners::count_present(
-                self.children_perm.value(),
-            )
-    }
-
-    pub open spec fn metaregion_sound(
-        self,
-        permission: FracMetadataPerm,
-        regions: MetaRegionOwners,
-    ) -> bool {
-        &&& regions.contains(self.slot_index)
-        &&& permission.id() == regions.slot_owners[self.slot_index].metadata_perm.id()
-        &&& typed_meta_wf::<crate::mm::page_table::PageTablePageMeta<C>>(
-            *regions.slots[self.slot_index],
-            permission.resource(),
-            (),
-        )
-        &&& self.permission_matches(permission)
-        &&& regions.slot_owners[self.slot_index].usage is PageTable
-        &&& self.count_consistent()
-    }
-
-    /// Relates the structural owner to a live guard.  The metadata
-    /// permission is deliberately read from the guard's `FrameRef`; it is
-    /// not duplicated in `FlatNodeOwner`.
-    pub open spec fn relate_guard<'rcu>(self, guard: PageTableGuard<'rcu, C>) -> bool {
-        &&& guard.inner.inner@.ptr.addr() == self.slot_vaddr()
-        &&& guard.inner.inner@.ptr_inv()
-        &&& guard.inner.tracked_metadata_perm.frac() == 1
-        &&& guard.inner.inner@.external_meta_wf(
-            guard.inner.tracked_metadata_perm.resource(),
-            (),
-        )
-        &&& self.permission_matches(**guard.inner.tracked_metadata_perm)
+        Self {
+            kind: FlatEntryOwnerKind::Frame(
+                FrameEntryOwner { mapped_pa: paddr, prop, permission },
+            ),
+            path,
+            parent_level,
+        }
     }
 }
+
+/// Structural node ownership is shared by both the flat page-table map and
+/// node operations.  It deliberately excludes the metadata permission; live
+/// frames own that permission, while raw children park it in the flat map.
+pub type FlatNodeOwner<C> = crate::specs::mm::page_table::node::owners::NodeOwner<C>;
 
 /// Linear structural resources and PTE owners for one physical page-table
 /// node.  Metadata permission intentionally lives outside this record.
@@ -448,6 +373,46 @@ impl<C: PageTableConfig> FlatNodeRecord<C> {
     {
         let tracked slot = self.entries.tracked_borrow_mut(idx);
         *slot = entry;
+    }
+
+    /// Replaces one absent flat entry with a frame owner.  The caller updates
+    /// `node.children_perm` through the actual PTE write; keeping that linear
+    /// array permission in `node` avoids recreating recursive child ownership.
+    pub proof fn tracked_set_absent_entry_to_frame(
+        tracked &mut self,
+        idx: int,
+        paddr: Paddr,
+        level: PagingLevel,
+        prop: PageProperty,
+        tracked permission: Option<C::Perm>,
+    )
+        requires
+            0 <= idx < old(self).entries.len(),
+            old(self).entries[idx].is_absent(),
+            old(self).entries[idx].parent_level == level,
+        ensures
+            final(self).node == old(self).node,
+            final(self).path == old(self).path,
+            final(self).entries == old(self).entries.update(
+                idx,
+                FlatEntryOwner::new_frame(
+                    paddr,
+                    old(self).entries[idx].path,
+                    level,
+                    prop,
+                    permission,
+                ),
+            ),
+    {
+        let ghost path = self.entries[idx].path;
+        let tracked entry = FlatEntryOwner::tracked_new_frame(
+            paddr,
+            path,
+            level,
+            prop,
+            permission,
+        );
+        self.tracked_set_entry(idx, entry);
     }
 }
 
@@ -872,6 +837,52 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
         this.tracked_insert_and_lease_node(child, record, permission)
     }
 
+    /// Replaces an existing entry (not necessarily absent) with a freshly
+    /// allocated raw child.  Huge-page splitting uses this operation: the old
+    /// frame entry is consumed and the new node is parked in the flat maps in
+    /// the same tracked transition.
+    pub proof fn tracked_replace_and_lease_child(
+        tracked self,
+        parent: Paddr,
+        idx: int,
+        tracked record: FlatNodeRecord<C>,
+        tracked permission: FracMetadataPerm,
+    ) -> (tracked result: Self)
+        requires
+            self.contains_leased(parent),
+            0 <= idx < self.leased_record(parent).entries.len(),
+            !self.contains_leased(record.paddr()),
+            !self.contains_unleased(record.paddr()),
+            permission.frac() == 1,
+            record.node.permission_matches(permission),
+            record.path == self.leased_record(parent).entries[idx].path,
+            record.node.level + 1
+                == self.leased_record(parent).entries[idx].parent_level,
+        ensures
+            result.contains_leased(parent),
+            result.contains_raw_leased(record.paddr()),
+            result.leased_record(parent).entries[idx].is_node(),
+            result.leased_record(parent).entries[idx].child_paddr() == record.paddr(),
+            result.leased_record(parent).entries[idx].path
+                == self.leased_record(parent).entries[idx].path,
+            result.leased_record(parent).entries[idx].parent_level
+                == self.leased_record(parent).entries[idx].parent_level,
+    {
+        let ghost child = record.paddr();
+        let ghost old_entry = self.leased_record(parent).entries[idx];
+        let tracked mut this = self;
+        let tracked child_entry = FlatEntryOwner::tracked_new_node(
+            child,
+            old_entry.path,
+            old_entry.parent_level,
+        );
+        {
+            let tracked parent_record = this.tracked_borrow_record_mut(parent);
+            parent_record.tracked_set_entry(idx, child_entry);
+        }
+        this.tracked_insert_and_lease_node(child, record, permission)
+    }
+
     pub proof fn tracked_borrow_permission(
         tracked &self,
         paddr: Paddr,
@@ -913,6 +924,23 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
         } else {
             let tracked lease = self.leases.tracked_borrow_mut(paddr);
             &mut *lease.record
+        }
+    }
+
+    pub proof fn tracked_borrow_record<'b>(
+        tracked &'b self,
+        paddr: Paddr,
+    ) -> (tracked record: &'b FlatNodeRecord<C>)
+        requires
+            self.contains_leased(paddr),
+        ensures
+            *record == self.leased_record(paddr),
+    {
+        if self.root.paddr == paddr {
+            &*self.root.record
+        } else {
+            let tracked lease = self.leases.tracked_borrow(paddr);
+            &*lease.record
         }
     }
 }
@@ -1261,6 +1289,51 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
     {
         let ghost child = record.paddr();
         let tracked result = self.tracked_attach_current_and_lease_child(record, permission);
+        let tracked stable_permission = result.tracked_borrow_node_permission(child);
+        (result, stable_permission)
+    }
+
+    /// Huge-page counterpart of `tracked_attach_current_and_lease_child`.
+    /// The current frame owner is replaced by the child edge while the new
+    /// node and its raw metadata permission are installed in the flat maps.
+    pub proof fn tracked_replace_current_and_lease_child_with_permission(
+        tracked self,
+        tracked record: FlatNodeRecord<C>,
+        tracked permission: FracMetadataPerm,
+    ) -> (tracked (result, stable_permission): (Self, &'a FracMetadataPerm))
+        requires
+            self.continuations.contains_key(self.level - 1),
+            self.resources.contains_leased(self.current_paddr()),
+            self.current().idx < self.current_record().entries.len(),
+            self.current_entry().is_frame(),
+            !self.resources.contains_leased(record.paddr()),
+            !self.resources.contains_unleased(record.paddr()),
+            permission.frac() == 1,
+            record.node.permission_matches(permission),
+            record.path == self.current_entry().path,
+            record.node.level + 1 == self.current_entry().parent_level,
+        ensures
+            result.root == self.root,
+            result.level == self.level,
+            result.guard_level == self.guard_level,
+            result.continuations == self.continuations,
+            result.resources.contains_raw_leased(record.paddr()),
+            result.current_entry().is_node(),
+            result.current_entry().child_paddr() == record.paddr(),
+            *stable_permission
+                == *result.resources.leases[record.paddr()].permission,
+    {
+        let ghost parent = self.current_paddr();
+        let ghost idx = self.current().idx;
+        let ghost child = record.paddr();
+        let tracked Self { resources, continuations, root, level, guard_level } = self;
+        let tracked resources = resources.tracked_replace_and_lease_child(
+            parent,
+            idx as int,
+            record,
+            permission,
+        );
+        let tracked result = Self { resources, continuations, root, level, guard_level };
         let tracked stable_permission = result.tracked_borrow_node_permission(child);
         (result, stable_permission)
     }
