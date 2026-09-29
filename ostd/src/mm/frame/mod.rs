@@ -524,6 +524,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         ensures
             r == self.start_paddr_spec(),
             raw_permission@.inv(),
+            raw_permission@.metadata_perm == self.frac_metadata_perm(),
+            *raw_permission@.slot_perm == self.slot_perm(),
     )]
     pub(in crate::mm) fn into_raw(self) -> Paddr {
         broadcast use group_page_meta;

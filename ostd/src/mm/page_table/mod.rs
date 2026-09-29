@@ -1286,6 +1286,26 @@ impl PageTable<KernelPtConfig> {
 
 #[verus_verify]
 impl<C: PageTableConfig> PageTable<C> {
+    /// Relates the executable root handle to the flat ownership store.  Raw
+    /// children obtain their metadata permissions from the flat map; the root
+    /// deliberately uses the permission already carried by its live `Frame`.
+    pub open spec fn relates_flat_owner(
+        &self,
+        owner: FlatPageTableOwner<C>,
+        regions: MetaRegionOwners,
+    ) -> bool {
+        &&& owner.inv()
+        &&& owner.raw_nodes_metaregion_sound(regions)
+        &&& self.root.inv()
+        &&& self.root.start_paddr_spec() == owner.root
+        &&& self.root.ptr.addr() == owner.node(owner.root).node.slot_vaddr()
+        &&& owner.node(owner.root).node.permission_matches(self.root.frac_metadata_perm())
+        &&& owner.node(owner.root).node.metaregion_sound(
+            self.root.frac_metadata_perm(),
+            regions,
+        )
+    }
+
     /// Relates this executable page-table handle to its tracked ownership tree.
     pub open spec fn relates_owner(
         &self,

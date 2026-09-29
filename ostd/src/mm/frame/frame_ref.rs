@@ -10,7 +10,7 @@ use crate::specs::{
     mm::frame::{
         frame_specs::FrameRawPerms,
         mapping::meta_to_index,
-        meta_owners::{FracMetadataPerm, MetaSlotStorage},
+        meta_owners::{FracMetadataPerm, MetaSlotStorage, typed_meta_wf},
         meta_region_owners::MetaRegionOwners,
     },
 };
@@ -63,6 +63,11 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'a, M> {
         ensures
             r.inner@.ptr.addr() == frame_to_meta(raw),
             r.inv(),
+            r.inner@.slot_perm() == *slot_perm,
+            **r.tracked_metadata_perm == *metadata_perm,
+            forall|repr_perm: M::ReprPerm|
+                typed_meta_wf::<M>(*slot_perm, metadata_perm.resource(), repr_perm)
+                    ==> r.inner@.external_meta_wf(metadata_perm.resource(), repr_perm),
     )]
     pub(in crate::mm) unsafe fn borrow_paddr(raw: Paddr) -> Self {
         proof_with!{ tracked_slot_perm: Tracked(slot_perm), tracked_metadata_perm: Tracked(None)}
