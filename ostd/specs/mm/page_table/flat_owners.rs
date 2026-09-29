@@ -3,13 +3,14 @@
 //! The model does not recursively own child node resources. A node entry
 //! records only the physical address of its child;
 //! the corresponding linear resources live in `FlatPageTableOwner::nodes`.
+use core::ops::Range;
 use vstd::prelude::*;
 use vstd_extra::{array_ptr, ghost_tree::TreePath, ownership::*};
 
 use crate::mm::frame::meta::{META_SLOT_SIZE, mapping::meta_to_frame};
 use crate::mm::kspace::{FRAME_METADATA_RANGE, LINEAR_MAPPING_BASE_VADDR, VMALLOC_BASE_VADDR};
-use crate::mm::page_table::{PageTableConfig, PageTableEntryTrait, PageTableGuard};
 use crate::mm::page_prop::PageProperty;
+use crate::mm::page_table::{PageTableConfig, PageTableEntryTrait, PageTableGuard};
 use crate::mm::{Paddr, PagingLevel, Vaddr, paddr_to_vaddr, page_size};
 use crate::specs::arch::{MAX_PADDR, NR_ENTRIES, NR_LEVELS, valid_frame_paddr};
 use crate::specs::mm::frame::mapping::{index_to_meta, max_meta_slots};
@@ -17,10 +18,10 @@ use crate::specs::mm::frame::{
     meta_owners::{FracMetadataPerm, PageUsage, typed_meta_wf},
     meta_region_owners::MetaRegionOwners,
 };
-use crate::specs::mm::page_table::Mapping;
 use crate::specs::mm::page_table::node::entry_owners::FrameEntryOwner;
 use crate::specs::mm::page_table::node::owners::PageMetaOwner;
 use crate::specs::mm::page_table::owners::INC_LEVELS;
+use crate::specs::mm::page_table::{Mapping, PageTableView, vaddr_of};
 
 verus! {
 
@@ -174,9 +175,7 @@ impl<C: PageTableConfig> FlatEntryOwner<C> {
         permission: Option<C::Perm>,
     ) -> Self {
         Self {
-            kind: FlatEntryOwnerKind::Frame(
-                FrameEntryOwner { mapped_pa: paddr, prop, permission },
-            ),
+            kind: FlatEntryOwnerKind::Frame(FrameEntryOwner { mapped_pa: paddr, prop, permission }),
             path,
             parent_level,
         }
@@ -193,9 +192,7 @@ impl<C: PageTableConfig> FlatEntryOwner<C> {
             Self::new_frame(paddr, path, parent_level, prop, permission),
     {
         Self {
-            kind: FlatEntryOwnerKind::Frame(
-                FrameEntryOwner { mapped_pa: paddr, prop, permission },
-            ),
+            kind: FlatEntryOwnerKind::Frame(FrameEntryOwner { mapped_pa: paddr, prop, permission }),
             path,
             parent_level,
         }
@@ -249,14 +246,15 @@ impl<C: PageTableConfig> FlatNodeRecord<C> {
         &&& self.node.tree_level == INC_LEVELS - level - 1
         &&& self.path == path
         &&& self.entries.len() == NR_ENTRIES
-        &&& forall|i: int| 0 <= i < NR_ENTRIES ==> {
-            let entry = #[trigger] self.entries[i];
-            &&& entry.is_absent()
-            &&& entry.inv()
-            &&& entry.path == path.push_tail(i)
-            &&& entry.parent_level == level
-            &&& self.node.children_perm.value()[i] == C::E::new_absent_spec()
-        }
+        &&& forall|i: int|
+            0 <= i < NR_ENTRIES ==> {
+                let entry = #[trigger] self.entries[i];
+                &&& entry.is_absent()
+                &&& entry.inv()
+                &&& entry.path == path.push_tail(i)
+                &&& entry.parent_level == level
+                &&& self.node.children_perm.value()[i] == C::E::new_absent_spec()
+            }
     }
 
     pub open spec fn new(
@@ -285,12 +283,13 @@ impl<C: PageTableConfig> FlatNodeRecord<C> {
     ) -> (tracked entries: Seq<FlatEntryOwner<C>>)
         ensures
             entries.len() == len,
-            forall|i: int| 0 <= i < len ==> {
-                let entry = #[trigger] entries[i];
-                &&& entry.is_absent()
-                &&& entry.path == path.push_tail(i)
-                &&& entry.parent_level == parent_level
-            },
+            forall|i: int|
+                0 <= i < len ==> {
+                    let entry = #[trigger] entries[i];
+                    &&& entry.is_absent()
+                    &&& entry.path == path.push_tail(i)
+                    &&& entry.parent_level == parent_level
+                },
         decreases len,
     {
         if len == 0 {
@@ -321,12 +320,13 @@ impl<C: PageTableConfig> FlatNodeRecord<C> {
             result.node == node,
             result.path == path,
             result.entries.len() == NR_ENTRIES,
-            forall|i: int| 0 <= i < NR_ENTRIES ==> {
-                let entry = #[trigger] result.entries[i];
-                &&& entry.is_absent()
-                &&& entry.path == path.push_tail(i)
-                &&& entry.parent_level == node.level
-            },
+            forall|i: int|
+                0 <= i < NR_ENTRIES ==> {
+                    let entry = #[trigger] result.entries[i];
+                    &&& entry.is_absent()
+                    &&& entry.path == path.push_tail(i)
+                    &&& entry.parent_level == node.level
+                },
     {
         let ghost parent_level = node.level;
         let tracked entries = Self::tracked_new_absent_entries(
@@ -405,13 +405,7 @@ impl<C: PageTableConfig> FlatNodeRecord<C> {
             ),
     {
         let ghost path = self.entries[idx].path;
-        let tracked entry = FlatEntryOwner::tracked_new_frame(
-            paddr,
-            path,
-            level,
-            prop,
-            permission,
-        );
+        let tracked entry = FlatEntryOwner::tracked_new_frame(paddr, path, level, prop, permission);
         self.tracked_set_entry(idx, entry);
     }
 }
@@ -510,14 +504,10 @@ impl<'a, C: PageTableConfig> FlatOwnerPartition<'a, C> {
     /// Splits one raw node out of the partition.  Unlike borrowing directly
     /// from the full maps, this freezes only the selected slots; `remainder`
     /// can still be mutated or split again while `lease` is alive.
-    pub proof fn tracked_lease_raw_node(
-        tracked self,
-        paddr: Paddr,
-    ) -> (tracked (lease, remainder): (
-        FlatRawNodeLease<'a, C>,
-        FlatOwnerPartition<'a, C>,
-    ))
-        requires self.contains_raw_node(paddr),
+    pub proof fn tracked_lease_raw_node(tracked self, paddr: Paddr) -> (tracked (lease, remainder):
+        (FlatRawNodeLease<'a, C>, FlatOwnerPartition<'a, C>))
+        requires
+            self.contains_raw_node(paddr),
         ensures
             lease.paddr == paddr,
             *lease.record == (*old(self.nodes))[paddr],
@@ -527,15 +517,10 @@ impl<'a, C: PageTableConfig> FlatOwnerPartition<'a, C> {
     {
         let ghost key = set![paddr];
         let tracked (node_slot, nodes) = self.nodes.tracked_borrow_mut_split(key);
-        let tracked (permission_slot, permissions) = self
-            .permissions
-            .tracked_borrow_mut_split(key);
+        let tracked (permission_slot, permissions) = self.permissions.tracked_borrow_mut_split(key);
         let tracked record = node_slot.tracked_borrow_mut(paddr);
         let tracked permission = permission_slot.tracked_borrow(paddr);
-        (
-            FlatRawNodeLease { paddr, record, permission },
-            FlatOwnerPartition { nodes, permissions },
-        )
+        (FlatRawNodeLease { paddr, record, permission }, FlatOwnerPartition { nodes, permissions })
     }
 
     pub proof fn tracked_insert_raw_node(
@@ -567,10 +552,7 @@ impl<'a, C: PageTableConfig> FlatOwnerPartition<'a, C> {
         paddr: Paddr,
         tracked record: FlatNodeRecord<C>,
         tracked permission: FracMetadataPerm,
-    ) -> (tracked (lease, remainder): (
-        FlatRawNodeLease<'a, C>,
-        FlatOwnerPartition<'a, C>,
-    ))
+    ) -> (tracked (lease, remainder): (FlatRawNodeLease<'a, C>, FlatOwnerPartition<'a, C>))
         requires
             !self.nodes.contains_key(paddr),
             !self.permissions.contains_key(paddr),
@@ -602,8 +584,9 @@ impl<'a, C: PageTableConfig> FlatRawNodeLease<'a, C> {
         self.record.entries[idx]
     }
 
-    pub proof fn tracked_borrow_entry(tracked &self, idx: int) -> (tracked entry:
-        &FlatEntryOwner<C>)
+    pub proof fn tracked_borrow_entry(tracked &self, idx: int) -> (tracked entry: &FlatEntryOwner<
+        C,
+    >)
         requires
             0 <= idx < self.record.entries.len(),
         ensures
@@ -714,10 +697,10 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
 
     /// Leases an existing raw node and returns the stable metadata-permission
     /// reference needed to construct its `FrameRef`.
-    pub proof fn tracked_lease_node_with_permission(
-        tracked self,
-        paddr: Paddr,
-    ) -> (tracked (result, permission): (Self, &'a FracMetadataPerm))
+    pub proof fn tracked_lease_node_with_permission(tracked self, paddr: Paddr) -> (tracked (
+        result,
+        permission,
+    ): (Self, &'a FracMetadataPerm))
         requires
             self.contains_unleased(paddr),
             !self.contains_leased(paddr),
@@ -725,8 +708,9 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             result.contains_raw_leased(paddr),
             result.leases.dom() == self.leases.dom().insert(paddr),
             *result.remainder.nodes == old(self.remainder.nodes).remove_keys(set![paddr]),
-            *result.remainder.permissions
-                == old(self.remainder.permissions).remove_keys(set![paddr]),
+            *result.remainder.permissions == old(self.remainder.permissions).remove_keys(
+                set![paddr],
+            ),
             *permission == *result.leases[paddr].permission,
     {
         let tracked result = self.tracked_lease_node(paddr);
@@ -810,17 +794,18 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             permission.frac() == 1,
             record.node.permission_matches(permission),
             record.path == self.leased_record(parent).entries[idx].path,
-            record.node.level + 1
-                == self.leased_record(parent).entries[idx].parent_level,
+            record.node.level + 1 == self.leased_record(parent).entries[idx].parent_level,
         ensures
             result.contains_leased(parent),
             result.contains_raw_leased(record.paddr()),
             result.leased_record(parent).entries[idx].is_node(),
             result.leased_record(parent).entries[idx].child_paddr() == record.paddr(),
-            result.leased_record(parent).entries[idx].path
-                == self.leased_record(parent).entries[idx].path,
-            result.leased_record(parent).entries[idx].parent_level
-                == self.leased_record(parent).entries[idx].parent_level,
+            result.leased_record(parent).entries[idx].path == self.leased_record(
+                parent,
+            ).entries[idx].path,
+            result.leased_record(parent).entries[idx].parent_level == self.leased_record(
+                parent,
+            ).entries[idx].parent_level,
     {
         let ghost child = record.paddr();
         let ghost old_entry = self.leased_record(parent).entries[idx];
@@ -856,17 +841,18 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             permission.frac() == 1,
             record.node.permission_matches(permission),
             record.path == self.leased_record(parent).entries[idx].path,
-            record.node.level + 1
-                == self.leased_record(parent).entries[idx].parent_level,
+            record.node.level + 1 == self.leased_record(parent).entries[idx].parent_level,
         ensures
             result.contains_leased(parent),
             result.contains_raw_leased(record.paddr()),
             result.leased_record(parent).entries[idx].is_node(),
             result.leased_record(parent).entries[idx].child_paddr() == record.paddr(),
-            result.leased_record(parent).entries[idx].path
-                == self.leased_record(parent).entries[idx].path,
-            result.leased_record(parent).entries[idx].parent_level
-                == self.leased_record(parent).entries[idx].parent_level,
+            result.leased_record(parent).entries[idx].path == self.leased_record(
+                parent,
+            ).entries[idx].path,
+            result.leased_record(parent).entries[idx].parent_level == self.leased_record(
+                parent,
+            ).entries[idx].parent_level,
     {
         let ghost child = record.paddr();
         let ghost old_entry = self.leased_record(parent).entries[idx];
@@ -883,10 +869,8 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
         this.tracked_insert_and_lease_node(child, record, permission)
     }
 
-    pub proof fn tracked_borrow_permission(
-        tracked &self,
-        paddr: Paddr,
-    ) -> (tracked permission: &'a FracMetadataPerm)
+    pub proof fn tracked_borrow_permission(tracked &self, paddr: Paddr) -> (tracked permission:
+        &'a FracMetadataPerm)
         requires
             self.contains_raw_leased(paddr),
         ensures
@@ -927,10 +911,8 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
         }
     }
 
-    pub proof fn tracked_borrow_record<'b>(
-        tracked &'b self,
-        paddr: Paddr,
-    ) -> (tracked record: &'b FlatNodeRecord<C>)
+    pub proof fn tracked_borrow_record<'b>(tracked &'b self, paddr: Paddr) -> (tracked record:
+        &'b FlatNodeRecord<C>)
         requires
             self.contains_leased(paddr),
         ensures
@@ -982,8 +964,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
         &&& self.resources.root.paddr == self.root
         &&& 1 <= self.level <= self.guard_level <= NR_LEVELS
         &&& forall|key: int| #[trigger]
-            self.continuations.contains_key(key)
-                <==> self.level - 1 <= key < self.guard_level
+            self.continuations.contains_key(key) <==> self.level - 1 <= key < self.guard_level
         &&& forall|key: int| #[trigger]
             self.continuations.contains_key(key) ==> self.continuation_inv(key)
         &&& forall|child_key: int|
@@ -1036,11 +1017,14 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
         guard: PageTableGuard<'rcu, C>,
     ) -> (tracked result: Self)
         requires
+            resources.inv(),
             resources.root.paddr == root,
             resources.root.record.node.level == NR_LEVELS,
             resources.root.record.path == path,
+            resources.root.record.node.relate_guard(guard),
             idx < NR_ENTRIES,
         ensures
+            result.inv(),
             result.root == root,
             result.level == NR_LEVELS,
             result.guard_level == NR_LEVELS,
@@ -1066,10 +1050,8 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
         }
     }
 
-    pub proof fn tracked_borrow_node_permission(
-        tracked &self,
-        paddr: Paddr,
-    ) -> (tracked permission: &'a FracMetadataPerm)
+    pub proof fn tracked_borrow_node_permission(tracked &self, paddr: Paddr) -> (tracked permission:
+        &'a FracMetadataPerm)
         requires
             self.resources.contains_raw_leased(paddr),
         ensures
@@ -1094,9 +1076,8 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
         self.resources.tracked_borrow_record_mut(paddr)
     }
 
-    pub proof fn tracked_borrow_current_record_mut<'b>(
-        tracked &'b mut self,
-    ) -> (tracked record: &'b mut FlatNodeRecord<C>)
+    pub proof fn tracked_borrow_current_record_mut<'b>(tracked &'b mut self) -> (tracked record:
+        &'b mut FlatNodeRecord<C>)
         requires
             old(self).continuations.contains_key(old(self).level - 1),
             old(self).resources.contains_leased(old(self).current_paddr()),
@@ -1111,12 +1092,95 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
         self.resources.tracked_borrow_record_mut(current)
     }
 
+    pub proof fn tracked_borrow_current_record<'b>(tracked &'b self) -> (tracked record:
+        &'b FlatNodeRecord<C>)
+        requires
+            self.continuations.contains_key(self.level - 1),
+            self.resources.contains_leased(self.current_paddr()),
+        ensures
+            *record == self.current_record(),
+    {
+        self.resources.tracked_borrow_record(self.current_paddr())
+    }
+
+    pub proof fn tracked_borrow_current_entry<'b>(tracked &'b self) -> (tracked entry:
+        &'b FlatEntryOwner<C>)
+        requires
+            self.continuations.contains_key(self.level - 1),
+            self.resources.contains_leased(self.current_paddr()),
+            self.current().idx < self.current_record().entries.len(),
+        ensures
+            *entry == self.current_entry(),
+    {
+        let tracked record = self.tracked_borrow_current_record();
+        record.tracked_borrow_entry(self.current().idx as int)
+    }
+
+    pub proof fn tracked_borrow_current_entry_mut<'b>(tracked &'b mut self) -> (tracked entry:
+        &'b mut FlatEntryOwner<C>)
+        requires
+            old(self).continuations.contains_key(old(self).level - 1),
+            old(self).resources.contains_leased(old(self).current_paddr()),
+            old(self).current().idx < old(self).current_record().entries.len(),
+        ensures
+            *entry == old(self).current_entry(),
+            final(self).root == old(self).root,
+            final(self).level == old(self).level,
+            final(self).guard_level == old(self).guard_level,
+            final(self).continuations == old(self).continuations,
+    {
+        let ghost idx = self.current().idx;
+        let tracked record = self.tracked_borrow_current_record_mut();
+        record.tracked_borrow_entry_mut(idx as int)
+    }
+
+    /// Changes only the navigation index of the current continuation.
+    pub proof fn tracked_set_current_index(tracked &mut self, idx: usize)
+        requires
+            old(self).continuations.contains_key(old(self).level - 1),
+            idx < NR_ENTRIES,
+        ensures
+            final(self).resources == old(self).resources,
+            final(self).root == old(self).root,
+            final(self).level == old(self).level,
+            final(self).guard_level == old(self).guard_level,
+            final(self).current().node == old(self).current().node,
+            final(self).current().idx == idx,
+            final(self).current().path == old(self).current().path,
+            final(self).current().level == old(self).current().level,
+            final(self).current().guard == old(self).current().guard,
+    {
+        let ghost key = self.level - 1;
+        let ghost current = self.continuations[key];
+        let ghost updated = FlatCursorContinuation { idx, ..current };
+        self.continuations = self.continuations.insert(key, updated);
+    }
+
+    /// Pops one navigation level.  Node leases intentionally remain in the
+    /// cursor resource set so guards and permission borrows stay stable.
+    pub proof fn tracked_pop_level(tracked &mut self)
+        requires
+            old(self).level < old(self).guard_level,
+            old(self).continuations.contains_key(old(self).level - 1),
+            old(self).continuations.contains_key(old(self).level as int),
+        ensures
+            final(self).resources == old(self).resources,
+            final(self).root == old(self).root,
+            final(self).guard_level == old(self).guard_level,
+            final(self).level == old(self).level + 1,
+            final(self).continuations == old(self).continuations.remove(old(self).level - 1),
+    {
+        let ghost key = self.level - 1;
+        self.continuations = self.continuations.remove(key);
+        self.level = (self.level + 1) as PagingLevel;
+    }
+
     /// First half of descending to an existing raw child.  Navigation is
     /// unchanged until the caller has built a guard from `permission`.
-    pub proof fn tracked_lease_child_with_permission(
-        tracked self,
-        child: Paddr,
-    ) -> (tracked (result, permission): (Self, &'a FracMetadataPerm))
+    pub proof fn tracked_lease_child_with_permission(tracked self, child: Paddr) -> (tracked (
+        result,
+        permission,
+    ): (Self, &'a FracMetadataPerm))
         requires
             self.continuations.contains_key(self.level - 1),
             self.resources.contains_leased(self.current_paddr()),
@@ -1134,8 +1198,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             *permission == *result.resources.leases[child].permission,
     {
         let tracked Self { resources, continuations, root, level, guard_level } = self;
-        let tracked (resources, permission) = resources
-            .tracked_lease_node_with_permission(child);
+        let tracked (resources, permission) = resources.tracked_lease_node_with_permission(child);
         (Self { resources, continuations, root, level, guard_level }, permission)
     }
 
@@ -1161,28 +1224,20 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             self.resources.leased_record(child).path == path,
             self.resources.leased_record(child).node.level == child_level,
             self.resources.leased_record(child).node.relate_guard(guard),
-            **guard.inner.tracked_metadata_perm
-                == *self.resources.leases[child].permission,
+            **guard.inner.tracked_metadata_perm == *self.resources.leases[child].permission,
         ensures
             result.root == self.root,
             result.level == child_level,
             result.guard_level == self.guard_level,
             result.resources == self.resources,
-            result.continuations.dom()
-                == self.continuations.dom().insert((child_level - 1) as int),
+            result.continuations.dom() == self.continuations.dom().insert((child_level - 1) as int),
             result.continuations[child_level - 1].node == child,
             result.continuations[child_level - 1].idx == idx,
             result.continuations[child_level - 1].path == path,
             result.continuations[child_level - 1].guard == guard,
     {
         let tracked Self { resources, continuations, root, level: _, guard_level } = self;
-        let ghost continuation = FlatCursorContinuation::new(
-            child,
-            idx,
-            path,
-            child_level,
-            guard,
-        );
+        let ghost continuation = FlatCursorContinuation::new(child, idx, path, child_level, guard);
         let ghost continuations = continuations.insert((child_level - 1) as int, continuation);
         Self { resources, continuations, root, level: child_level, guard_level }
     }
@@ -1203,8 +1258,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             permission.frac() == 1,
             record.node.permission_matches(permission),
             record.path == self.resources.leased_record(parent).entries[idx].path,
-            record.node.level + 1
-                == self.resources.leased_record(parent).entries[idx].parent_level,
+            record.node.level + 1 == self.resources.leased_record(parent).entries[idx].parent_level,
         ensures
             result.root == self.root,
             result.level == self.level,
@@ -1284,8 +1338,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             result.resources.contains_raw_leased(record.paddr()),
             result.current_entry().is_node(),
             result.current_entry().child_paddr() == record.paddr(),
-            *stable_permission
-                == *result.resources.leases[record.paddr()].permission,
+            *stable_permission == *result.resources.leases[record.paddr()].permission,
     {
         let ghost child = record.paddr();
         let tracked result = self.tracked_attach_current_and_lease_child(record, permission);
@@ -1320,8 +1373,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             result.resources.contains_raw_leased(record.paddr()),
             result.current_entry().is_node(),
             result.current_entry().child_paddr() == record.paddr(),
-            *stable_permission
-                == *result.resources.leases[record.paddr()].permission,
+            *stable_permission == *result.resources.leases[record.paddr()].permission,
     {
         let ghost parent = self.current_paddr();
         let ghost idx = self.current().idx;
@@ -1363,6 +1415,52 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
             self.contains_node(paddr),
     {
         self.nodes[paddr]
+    }
+
+    /// Mapping view of every entry in one flat node.  Recursion follows
+    /// address edges in the map; no linear owner is reconstructed or moved.
+    pub open spec fn view_node_children(self, paddr: Paddr, depth: nat) -> Seq<Set<Mapping>>
+        decreases depth, 0nat,
+    {
+        if depth == 0 || !self.contains_node(paddr) {
+            Seq::empty()
+        } else {
+            self.node(paddr).entries.map(
+                |_, entry: FlatEntryOwner<C>|
+                    if entry.is_frame() {
+                        let va = vaddr_of::<C>(entry.path);
+                        let size = page_size(entry.parent_level);
+                        set![Mapping {
+                            va_range: Range { start: va as int, end: va + size },
+                            pa_range: Range {
+                                start: entry.frame().mapped_pa,
+                                end: (entry.frame().mapped_pa + size) as Paddr,
+                            },
+                            page_size: size,
+                            property: entry.frame().prop,
+                        }]
+                    } else if entry.is_node() {
+                        self.view_rec_at(entry.child_paddr(), (depth - 1) as nat)
+                    } else {
+                        Set::empty()
+                    },
+            )
+        }
+    }
+
+    /// Abstract mappings reachable from `paddr` in the flat ownership map.
+    pub open spec fn view_rec_at(self, paddr: Paddr, depth: nat) -> Set<Mapping>
+        decreases depth, 1nat,
+    {
+        if depth == 0 || !self.contains_node(paddr) {
+            Set::empty()
+        } else {
+            self.view_node_children(paddr, depth).to_set().flatten()
+        }
+    }
+
+    pub open spec fn view_rec(self) -> Set<Mapping> {
+        self.view_rec_at(self.root, NR_LEVELS as nat)
     }
 
     pub open spec fn local_node_inv(self, paddr: Paddr) -> bool {
@@ -1453,13 +1551,10 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
         &&& self.contains_node(self.root)
         &&& self.raw_node_permissions.dom() == self.nodes.dom().remove(self.root)
         &&& forall|paddr: Paddr| #[trigger]
-            self.raw_node_permissions.contains_key(paddr)
-                ==> {
-                    &&& self.raw_node_permissions[paddr].frac() == 1
-                    &&& self.node(paddr).node.permission_matches(
-                        self.raw_node_permissions[paddr],
-                    )
-                }
+            self.raw_node_permissions.contains_key(paddr) ==> {
+                &&& self.raw_node_permissions[paddr].frac() == 1
+                &&& self.node(paddr).node.permission_matches(self.raw_node_permissions[paddr])
+            }
         &&& self.node(self.root).path == TreePath::<NR_ENTRIES>::new(Seq::empty())
         &&& self.subtree_inv_at(self.root, NR_LEVELS as nat)
         &&& self.unique_parent()
@@ -1539,9 +1634,8 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
     /// Borrows both authoritative maps as a consumable partition.  Leases
     /// produced from this partition are disjoint and do not move their
     /// `FlatNodeRecord`s.
-    pub proof fn tracked_partition<'a>(
-        tracked &'a mut self,
-    ) -> (tracked partition: FlatOwnerPartition<'a, C>)
+    pub proof fn tracked_partition<'a>(tracked &'a mut self) -> (tracked partition:
+        FlatOwnerPartition<'a, C>)
         ensures
             *partition.nodes == old(self).nodes,
             *partition.permissions == old(self).raw_node_permissions,
@@ -1549,22 +1643,18 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
             final(self).nodes == *final(partition.nodes),
             final(self).raw_node_permissions == *final(partition.permissions),
     {
-        FlatOwnerPartition {
-            nodes: &mut self.nodes,
-            permissions: &mut self.raw_node_permissions,
-        }
+        FlatOwnerPartition { nodes: &mut self.nodes, permissions: &mut self.raw_node_permissions }
     }
 
     /// Starts cursor borrowing directly from the authoritative flat owner.
     /// The root record is split out structurally; only non-root raw nodes can
     /// contribute metadata permissions to later leases.
-    pub proof fn tracked_cursor_resources<'a>(
-        tracked &'a mut self,
-    ) -> (tracked resources: FlatCursorResources<'a, C>)
+    pub proof fn tracked_cursor_resources<'a>(tracked &'a mut self) -> (tracked resources:
+        FlatCursorResources<'a, C>)
         requires
-            old(self).contains_node(old(self).root),
-            !old(self).raw_node_permissions.contains_key(old(self).root),
+            old(self).inv(),
         ensures
+            resources.inv(),
             resources.root.paddr == old(self).root,
             *resources.root.record == old(self).node(old(self).root),
             resources.leases =~= Map::empty(),
@@ -1574,6 +1664,32 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
         let ghost root = self.root;
         let tracked partition = self.tracked_partition();
         FlatCursorResources::tracked_new(partition, root)
+    }
+
+    /// Borrows the authoritative flat maps and initializes cursor navigation
+    /// at the live root.  The owner-map borrow may outlive the RCU guard; it
+    /// only needs to remain valid for at least `'rcu`.
+    pub proof fn tracked_cursor_owner<'a: 'rcu, 'rcu>(
+        tracked &'a mut self,
+        idx: usize,
+        guard: PageTableGuard<'rcu, C>,
+    ) -> (tracked result: FlatCursorOwner<'a, 'rcu, C>)
+        requires
+            old(self).inv(),
+            idx < NR_ENTRIES,
+            old(self).node(old(self).root).node.relate_guard(guard),
+        ensures
+            result.inv(),
+            result.root == old(self).root,
+            result.level == NR_LEVELS,
+            result.guard_level == NR_LEVELS,
+            result.current().node == old(self).root,
+            result.current().idx == idx,
+    {
+        let ghost root = self.root;
+        let ghost path = self.node(root).path;
+        let tracked resources = self.tracked_cursor_resources();
+        FlatCursorOwner::tracked_new(resources, root, idx, path, guard)
     }
 
     pub proof fn tracked_borrow_subtree<'a>(tracked &'a self, root: Paddr) -> (tracked subtree:
@@ -1794,6 +1910,14 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
         let tracked record = self.nodes.tracked_remove(child);
         let tracked permission = self.raw_node_permissions.tracked_remove(child);
         (record, permission)
+    }
+}
+
+impl<C: PageTableConfig> View for FlatPageTableOwner<C> {
+    type V = PageTableView;
+
+    open spec fn view(&self) -> Self::V {
+        PageTableView { mappings: self.view_rec() }
     }
 }
 

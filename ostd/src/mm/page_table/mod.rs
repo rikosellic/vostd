@@ -1201,7 +1201,7 @@ impl PageTable<KernelPtConfig> {
             let ghost pre_to_ref_regions: MetaRegionOwners = *regions;
             let tracked child_owner = entry_owner.tracked_borrow_node();
             #[verus_spec(with Tracked(entry_owner), Tracked(root_owner), Tracked(regions),
-                Tracked(&child_owner.frame_permission))]
+                Tracked(entry_owner.tracked_borrow_node_permission()))]
             let child = root_entry.to_ref();
 
             proof {

@@ -387,7 +387,7 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
             let tracked node_owner = cont.entry_own.tracked_borrow_node();
             let tracked slot_perm = *regions.slots.tracked_borrow(node_owner.slot_index);
             let node_ref = unsafe {
-                #[verus_spec(with Tracked(slot_perm), Tracked(&node_owner.frame_permission))]
+                #[verus_spec(with Tracked(slot_perm), Tracked(cont.entry_own.tracked_borrow_node_permission()))]
                 PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr)
             };
             node_ref.lock(guard)
@@ -472,7 +472,7 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
         let tracked node_owner = cont.entry_own.tracked_borrow_node();
         let tracked slot_perm = *regions.slots.tracked_borrow(node_owner.slot_index);
         let node_ref = unsafe {
-            #[verus_spec(with Tracked(slot_perm), Tracked(&node_owner.frame_permission))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(cont.entry_own.tracked_borrow_node_permission()))]
             PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr)
         };
         node_ref.lock(guard)
