@@ -3,7 +3,7 @@
 //! The model does not recursively own child node resources. A node entry
 //! records only the physical address of its child;
 //! the corresponding linear resources live in `FlatPageTableOwner::nodes`.
-use core::ops::Range;
+use core::{marker::PhantomData, ops::Range};
 use vstd::prelude::*;
 use vstd_extra::{array_ptr, ghost_tree::TreePath, ownership::*};
 
@@ -539,6 +539,33 @@ pub ghost struct FlatCursorContinuation<'rcu, C: PageTableConfig> {
     pub ghost guard: PageTableGuard<'rcu, C>,
 }
 
+/// One borrow-free level of long-lived cursor navigation state.
+pub ghost struct FlatCursorStateContinuation {
+    pub ghost node: Paddr,
+    pub ghost idx: usize,
+    pub ghost path: TreePath<NR_ENTRIES>,
+    pub ghost level: PagingLevel,
+}
+
+/// Borrow-free cursor state used by long-lived logical stores.
+///
+/// The executable cursor may outlive an individual proof step, but a global
+/// owner store cannot contain a `FlatCursorOwner` that borrows another field
+/// of the same store.  This projection keeps only navigation state;
+/// linear node resources remain in the authoritative `FlatPageTableOwner` and
+/// guards and resources are borrowed by `FlatCursorOwner` only while an
+/// operation is in progress.
+pub ghost struct FlatCursorState<C: PageTableConfig> {
+    pub ghost continuations: Map<int, FlatCursorStateContinuation>,
+    pub ghost root: Paddr,
+    pub ghost level: PagingLevel,
+    pub ghost guard_level: PagingLevel,
+    pub ghost va: AbstractVaddr,
+    pub ghost prefix: AbstractVaddr,
+    pub ghost popped_too_high: bool,
+    pub ghost phantom: PhantomData<C>,
+}
+
 /// Cursor ownership after the recursive tree has been removed.
 ///
 /// `continuations` contains navigation state only.  Linear node resources and
@@ -1026,7 +1053,103 @@ impl<'rcu, C: PageTableConfig> FlatCursorContinuation<'rcu, C> {
     }
 }
 
+impl<C: PageTableConfig> FlatCursorState<C> {
+    pub open spec fn is_path_node(self, paddr: Paddr) -> bool {
+        exists|key: int|
+            self.continuations.contains_key(key) && self.continuations[key].node == paddr
+    }
+
+    pub open spec fn current(self) -> FlatCursorStateContinuation
+        recommends
+            self.continuations.contains_key(self.level - 1),
+    {
+        self.continuations[self.level - 1]
+    }
+
+    pub open spec fn locked_range(self) -> Range<Vaddr> {
+        Range {
+            start: self.prefix.align_down(self.guard_level as int).to_vaddr(),
+            end: self.prefix.align_up(self.guard_level as int).to_vaddr(),
+        }
+    }
+
+    pub open spec fn in_locked_range(self) -> bool {
+        self.locked_range().start <= self.va.to_vaddr() < self.locked_range().end
+    }
+
+    pub open spec fn local_inv(self, owner: FlatPageTableOwner<C>) -> bool {
+        &&& owner.inv()
+        &&& self.root == owner.root
+        &&& self.va.inv()
+        &&& self.va.offset == 0
+        &&& self.prefix.inv()
+        &&& self.prefix.offset == 0
+        &&& self.va.leading_bits == C::LEADING_BITS_spec()
+        &&& self.prefix.leading_bits == C::LEADING_BITS_spec()
+        &&& 1 <= self.level <= self.guard_level <= NR_LEVELS
+        &&& forall|key: int| #[trigger]
+            self.continuations.contains_key(key) <==> self.level - 1 <= key < self.guard_level
+        &&& forall|key: int| #[trigger]
+            self.continuations.contains_key(key) ==> {
+                let cont = self.continuations[key];
+                &&& cont.level == key + 1
+                &&& cont.idx < NR_ENTRIES
+                &&& cont.path.inv()
+                &&& owner.contains_node(cont.node)
+                &&& owner.node(cont.node).path == cont.path
+                &&& owner.node(cont.node).node.level == cont.level
+            }
+        &&& self.continuations.contains_key(self.level - 1)
+        &&& self.current().idx == self.va.index[self.level - 1]
+        &&& forall|child_key: int|
+            self.level - 1 <= child_key < self.guard_level - 1 ==> {
+                let child = self.continuations[child_key];
+                let parent = self.continuations[child_key + 1];
+                &&& child.path == parent.path.push_tail(parent.idx as int)
+                &&& owner.node(parent.node).entries[parent.idx as int].is_node()
+                &&& owner.node(parent.node).entries[parent.idx as int].child_paddr() == child.node
+            }
+    }
+
+    pub open spec fn nodes_locked(self, owner: FlatPageTableOwner<C>, guards: Guards) -> bool {
+        forall|key: int| #[trigger]
+            self.continuations.contains_key(key) ==> guards.lock_held(
+                owner.node(self.continuations[key].node).node.slot_vaddr(),
+            )
+    }
+
+    pub open spec fn children_not_locked(
+        self,
+        owner: FlatPageTableOwner<C>,
+        guards: Guards,
+    ) -> bool {
+        forall|paddr: Paddr| #[trigger]
+            owner.contains_node(paddr) && !self.is_path_node(paddr)
+                ==> guards.unlocked(owner.node(paddr).node.slot_vaddr())
+    }
+}
+
 impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
+    pub open spec fn state(self) -> FlatCursorState<C> {
+        FlatCursorState {
+            continuations: self.continuations.map_values(
+                |cont: FlatCursorContinuation<'rcu, C>| FlatCursorStateContinuation {
+                    node: cont.node,
+                    idx: cont.idx,
+                    path: cont.path,
+                    level: cont.level,
+                },
+            ),
+            root: self.root,
+            level: self.level,
+            guard_level: self.guard_level,
+            va: self.va,
+            prefix: self.prefix,
+            popped_too_high: self.popped_too_high,
+            phantom: PhantomData,
+        }
+    }
+
     pub open spec fn as_page_table_owner(self) -> FlatPageTableOwner<C> {
         self.resources.owner_view()
     }

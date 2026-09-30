@@ -27,7 +27,8 @@ use crate::specs::{
             meta_region_owners::MetaRegionOwners,
         },
         page_table::{
-            FlatCursorOwner, Guards, Mapping, lemma_aligned_vaddr_slack, lemma_inc_slot_indices,
+            FlatCursorOwner, FlatCursorState, FlatPageTableOwner, Guards, Mapping,
+            lemma_aligned_vaddr_slack, lemma_inc_slot_indices,
             lemma_lower_indices_aligned, lemma_page_size_base, lemma_page_size_divides,
             lemma_page_size_ge_base, lemma_page_size_is_pow2_pte_index_bit_offset,
             lemma_page_size_next, lemma_pte_index_bound, lemma_vaddr_range_spec_user,
@@ -1788,6 +1789,18 @@ impl<'owner, 'rcu, C: PageTableConfig> View for FlatCursorOwner<'owner, 'rcu, C>
         CursorView {
             cur_va: self.cur_va(),
             mappings: self.view_mappings(),
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<C: PageTableConfig> FlatCursorState<C> {
+    /// Reconstructs the abstract cursor view by pairing borrow-free navigation
+    /// state with its authoritative flat page-table store.
+    pub open spec fn cursor_view(self, owner: FlatPageTableOwner<C>) -> CursorView<C> {
+        CursorView {
+            cur_va: self.va.to_vaddr(),
+            mappings: owner.view_rec(),
             phantom: PhantomData,
         }
     }
