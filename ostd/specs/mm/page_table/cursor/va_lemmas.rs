@@ -297,10 +297,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         }
     }
 
-    // ─── Axioms: VA mutation ─────────────────────────────────────────────
-    /// When jumping within the same page-table node, only indices at levels
-    /// >= level are guaranteed to match. The entry-within-node index (level - 1)
-    /// may change, so we update continuations[level-1].idx along with va.
+    /// >= level are guaranteed to match.
     pub proof fn tracked_set_va_in_node(tracked &mut self, new_va: AbstractVaddr)
         requires
             old(self).inv(),
@@ -311,11 +308,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 #![auto]
                 old(self).level <= i < NR_LEVELS ==> new_va.index[i] == old(self).va.index[i],
             old(self).locked_range().start <= new_va.to_vaddr() < old(self).locked_range().end,
-            // Needed for soundness of the asserted `final(self).inv()`:
-            // we clear `popped_too_high`, so `CursorOwner::inv`'s
-            // `!popped_too_high ==> level <= guard_level || above_locked_range`
-            // clause must hold; the new VA is in-range (not above), so
-            // we require `level <= guard_level`.
             old(self).level <= old(self).guard_level,
         ensures
             *final(self) == old(self).set_va_in_node(new_va),
