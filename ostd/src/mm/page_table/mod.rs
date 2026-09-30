@@ -1295,7 +1295,7 @@ impl<C: PageTableConfig> PageTable<C> {
         regions: MetaRegionOwners,
     ) -> bool {
         &&& owner.inv()
-        &&& owner.raw_nodes_metaregion_sound(regions)
+        &&& owner.metaregion_sound(regions)
         &&& self.root.inv()
         &&& self.root.start_paddr_spec() == owner.root
         &&& self.root.ptr.addr() == owner.node(owner.root).node.slot_vaddr()

@@ -17,7 +17,7 @@ use crate::specs::{
             meta_region_owners::MetaRegionOwners,
         },
         page_table::{
-            AbstractVaddr, Guards, Mapping,
+            AbstractVaddr, FlatCursorOwner, Guards, Mapping,
             cursor::page_size_lemmas::{
                 lemma_page_size_divides, lemma_page_size_ge_page_size, lemma_page_size_spec_level1,
             },
@@ -1943,6 +1943,18 @@ impl<'rcu, C: PageTableConfig> View for CursorOwner<'rcu, C> {
 
     open spec fn view(&self) -> Self::V {
         CursorView { cur_va: self.cur_va(), mappings: self.view_mappings(), phantom: PhantomData }
+    }
+}
+
+impl<'owner, 'rcu, C: PageTableConfig> View for FlatCursorOwner<'owner, 'rcu, C> {
+    type V = CursorView<C>;
+
+    open spec fn view(&self) -> Self::V {
+        CursorView {
+            cur_va: self.cur_va(),
+            mappings: self.view_mappings(),
+            phantom: PhantomData,
+        }
     }
 }
 
