@@ -33,7 +33,6 @@ verus! {
 broadcast use group_ghost_tree_lemmas;
 
 impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
-    // ─── Spec helpers ────────────────────────────────────────────────────
     pub open spec fn zero_below_level_rec(self, level: PagingLevel) -> Self
         decreases self.level - level,
     {
@@ -77,28 +76,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             popped_too_high: false,
             ..self
         }
-    }
-
-    // ─── Proofs: zero preserves structure ────────────────────────────────
-    pub proof fn zero_below_level_rec_preserves_above(self, level: PagingLevel)
-        ensures
-            forall|lv: int|
-                lv >= self.level ==> self.zero_below_level_rec(level).va.index[lv]
-                    == #[trigger] self.va.index[lv],
-        decreases self.level - level,
-    {
-        if self.level > level {
-            self.zero_below_level_rec_preserves_above((level + 1) as u8);
-        }
-    }
-
-    /// Unfolds zero_below_level to expose the VA as align_down(level).
-    pub proof fn zero_below_level_va(self)
-        requires
-            1 <= self.level <= NR_LEVELS,
-        ensures
-            self.zero_below_level().va == self.va.align_down(self.level as int),
-    {
     }
 
     pub proof fn do_zero_below_level(tracked &mut self)
@@ -169,7 +146,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.zero_rec_preserves_all_but_va(1u8);
     }
 
-    // ─── Proofs: inc + zero ──────────────────────────────────────────────
     pub proof fn inc_and_zero_increases_va(self)
         requires
             self.inv(),
@@ -183,7 +159,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.lemma_inc_index_va_inv();
         let inc = self.inc_index();
         inc.zero_preserves_all_but_va();
-        inc.zero_below_level_va();
         assert(inc.va.inv()) by {
             assert(inc.va.offset == self.va.offset);
             assert(inc.va.leading_bits == self.va.leading_bits);
