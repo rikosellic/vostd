@@ -7,18 +7,21 @@ use core::ops::Range;
 use vstd::prelude::*;
 use vstd_extra::{array_ptr, ghost_tree::TreePath, ownership::*};
 
-use crate::mm::frame::meta::{META_SLOT_SIZE, mapping::meta_to_frame};
+use crate::mm::frame::meta::{
+    META_SLOT_SIZE, REF_COUNT_MAX, REF_COUNT_UNUSED, mapping::meta_to_frame,
+};
 use crate::mm::kspace::{FRAME_METADATA_RANGE, LINEAR_MAPPING_BASE_VADDR, VMALLOC_BASE_VADDR};
 use crate::mm::page_prop::PageProperty;
 use crate::mm::page_table::{PageTableConfig, PageTableEntryTrait, PageTableGuard};
 use crate::mm::{Paddr, PagingLevel, Vaddr, paddr_to_vaddr, page_size};
-use crate::specs::arch::{MAX_PADDR, NR_ENTRIES, NR_LEVELS, valid_frame_paddr};
-use crate::specs::mm::frame::mapping::{index_to_meta, max_meta_slots};
+use crate::specs::arch::{MAX_PADDR, NR_ENTRIES, NR_LEVELS, PAGE_SIZE, valid_frame_paddr};
+use crate::specs::mm::frame::mapping::{frame_to_index, index_to_meta, max_meta_slots};
 use crate::specs::mm::frame::{
     meta_owners::{FracMetadataPerm, PageUsage, typed_meta_wf},
     meta_region_owners::MetaRegionOwners,
 };
 use crate::specs::mm::page_table::node::entry_owners::FrameEntryOwner;
+use crate::specs::mm::page_table::node::Guards;
 use crate::specs::mm::page_table::node::owners::PageMetaOwner;
 use crate::specs::mm::page_table::owners::INC_LEVELS;
 use crate::specs::mm::page_table::{AbstractVaddr, Mapping, PageTableView, vaddr_of};
@@ -84,6 +87,58 @@ impl<C: PageTableConfig> FlatEntryOwner<C> {
             self.is_frame(),
     {
         self.frame().permission
+    }
+
+    pub open spec fn frame_is_tracked(self) -> bool
+        recommends
+            self.is_frame(),
+    {
+        self.frame_permission() is Some
+    }
+
+    /// Metadata-region facts for the base pages covered by a huge mapping.
+    /// This is the flat equivalent of `EntryOwner::frame_sub_pages_valid`;
+    /// node metadata is deliberately handled by the node map instead.
+    pub open spec fn frame_sub_pages_valid(self, regions: MetaRegionOwners) -> bool {
+        self.is_frame() && self.parent_level > 1 ==> {
+            let pa = self.frame().mapped_pa;
+            let nr_pages = page_size(self.parent_level) / PAGE_SIZE;
+            forall|j: usize|
+                #![trigger frame_to_index((pa + j * PAGE_SIZE) as usize)]
+                0 < j < nr_pages ==> {
+                    let sub_idx = frame_to_index((pa + j * PAGE_SIZE) as usize);
+                    &&& regions.slots.contains_key(sub_idx)
+                    &&& self.frame_is_tracked() ==> {
+                        &&& regions.ref_count(sub_idx) != REF_COUNT_UNUSED
+                        &&& 0 < regions.ref_count(sub_idx) <= REF_COUNT_MAX
+                    }
+                }
+        }
+    }
+
+    /// Region relation for a leaf entry. A flat node edge contains only a
+    /// paddr, so its node-side relation is stated once over the node map.
+    pub open spec fn metaregion_sound(self, regions: MetaRegionOwners) -> bool {
+        if self.is_frame() {
+            let idx = frame_to_index(self.frame().mapped_pa);
+            &&& regions.slots.contains_key(idx)
+            &&& regions.slots[idx].addr() == index_to_meta(idx)
+            &&& regions.slots[idx].is_init()
+            &&& regions.slots[idx].value().wf(regions.slot_owners[idx])
+            &&& regions.slot_owners[idx].usage !is PageTable
+            &&& regions.slot_owners[idx].usage !is MMIO ==> {
+                &&& 0 < regions.ref_count(idx) <= REF_COUNT_MAX
+            }
+            &&& regions.slot_owners[idx].paths_in_pt.contains(self.path)
+            &&& self.frame_sub_pages_valid(regions)
+            &&& C::perm_well_formed_with_region(
+                self.frame().mapped_pa,
+                Tracked(self.frame_permission()),
+                regions,
+            )
+        } else {
+            true
+        }
     }
 
     pub open spec fn match_pte(self, pte: C::E) -> bool {
@@ -980,6 +1035,44 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
         self.as_page_table_owner().view_rec()
     }
 
+    pub open spec fn metaregion_sound(self, regions: MetaRegionOwners) -> bool {
+        self.as_page_table_owner().metaregion_sound(regions)
+    }
+
+    pub open spec fn is_path_node(self, paddr: Paddr) -> bool {
+        exists|key: int|
+            self.continuations.contains_key(key) && self.continuations[key].node == paddr
+    }
+
+    /// Every continuation whose runtime guard is retained by the cursor is
+    /// represented by one lock-ledger entry.  Leased records outside the
+    /// current path are intentionally excluded.
+    pub open spec fn nodes_locked(self, guards: Guards) -> bool {
+        forall|key: int| #[trigger]
+            self.continuations.contains_key(key) ==> guards.lock_held(
+                self.resources.leased_record(self.continuations[key].node).node.slot_vaddr(),
+            )
+    }
+
+    /// Flat counterpart of the recursive model's `children_not_locked`:
+    /// records not selected by a continuation are off the active path.
+    pub open spec fn children_not_locked(self, guards: Guards) -> bool {
+        forall|paddr: Paddr| #[trigger]
+            self.as_page_table_owner().contains_node(paddr) && !self.is_path_node(paddr)
+                ==> guards.unlocked(self.as_page_table_owner().node(paddr).node.slot_vaddr())
+    }
+
+    /// During descent the child named by the current PTE may already be
+    /// locked before it is installed as a continuation; all other off-path
+    /// records remain unlocked.
+    pub open spec fn only_current_locked(self, guards: Guards) -> bool {
+        forall|paddr: Paddr| #[trigger]
+            self.as_page_table_owner().contains_node(paddr) && !self.is_path_node(paddr)
+                && (!self.current_entry().is_node()
+                    || self.current_entry().child_paddr() != paddr)
+                ==> guards.unlocked(self.as_page_table_owner().node(paddr).node.slot_vaddr())
+    }
+
     pub open spec fn locked_range(self) -> Range<Vaddr> {
         Range {
             start: self.prefix.align_down(self.guard_level as int).to_vaddr(),
@@ -1071,6 +1164,53 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             self.current().idx < self.current_record().entries.len(),
     {
         self.current_record().entries[self.current().idx as int]
+    }
+
+    pub open spec fn cur_entry_owner(self) -> FlatEntryOwner<C>
+        recommends
+            self.continuations.contains_key(self.level - 1),
+            self.resources.contains_leased(self.current_paddr()),
+            self.current().idx < self.current_record().entries.len(),
+    {
+        self.current_entry()
+    }
+
+    pub open spec fn index(self) -> usize
+        recommends
+            self.continuations.contains_key(self.level - 1),
+    {
+        self.current().idx
+    }
+
+    pub open spec fn cur_va(self) -> Vaddr {
+        self.va.to_vaddr()
+    }
+
+    pub open spec fn cur_va_range(self) -> Range<AbstractVaddr> {
+        Range {
+            start: self.va.align_down(self.level as int),
+            end: self.va.align_up(self.level as int),
+        }
+    }
+
+    pub open spec fn set_va_in_node(self, new_va: AbstractVaddr) -> Self
+        recommends
+            self.continuations.contains_key(self.level - 1),
+    {
+        let key = self.level - 1;
+        let current = self.continuations[key];
+        Self {
+            va: new_va,
+            continuations: self.continuations.insert(
+                key,
+                FlatCursorContinuation {
+                    idx: new_va.index[key] as usize,
+                    ..current
+                },
+            ),
+            popped_too_high: false,
+            ..self
+        }
     }
 
     pub proof fn tracked_new(
@@ -1236,6 +1376,31 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
         let ghost updated = FlatCursorContinuation { idx, ..current };
         self.continuations = self.continuations.insert(key, updated);
         self.va = AbstractVaddr { index: self.va.index.insert(key, idx as int), ..self.va };
+        self.popped_too_high = false;
+    }
+
+    /// Repositions the cursor inside its current node without touching any
+    /// authoritative node or permission slot.
+    pub proof fn tracked_set_va_in_node(tracked &mut self, new_va: AbstractVaddr)
+        requires
+            old(self).continuations.contains_key(old(self).level - 1),
+            new_va.inv(),
+            new_va.offset == 0,
+            new_va.leading_bits == old(self).va.leading_bits,
+            0 <= new_va.index[old(self).level - 1] < NR_ENTRIES,
+        ensures
+            *final(self) == old(self).set_va_in_node(new_va),
+            final(self).resources == old(self).resources,
+            final(self).as_page_table_owner() == old(self).as_page_table_owner(),
+    {
+        let ghost key = self.level - 1;
+        let ghost current = self.continuations[key];
+        let ghost updated = FlatCursorContinuation {
+            idx: new_va.index[key] as usize,
+            ..current
+        };
+        self.continuations = self.continuations.insert(key, updated);
+        self.va = new_va;
         self.popped_too_high = false;
     }
 
@@ -1737,6 +1902,35 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
                     regions,
                 )
             }
+    }
+
+    /// Region facts common to live-root and raw child nodes. Metadata
+    /// permission ownership is intentionally absent here: the live root keeps
+    /// it in its `Frame`, while raw children are covered separately below.
+    pub open spec fn nodes_metaregion_sound(self, regions: MetaRegionOwners) -> bool {
+        forall|paddr: Paddr| #[trigger]
+            self.contains_node(paddr) ==> {
+                let record = self.node(paddr);
+                let idx = record.node.slot_index;
+                &&& regions.ref_count(idx) != REF_COUNT_UNUSED
+                &&& 0 < regions.ref_count(idx) <= REF_COUNT_MAX
+                &&& regions.slot_owners[idx].slot_vaddr == record.node.slot_vaddr()
+                &&& regions.slots[idx].value().wf(regions.slot_owners[idx])
+                &&& regions.slot_owners[idx].paths_in_pt == set![record.path]
+                &&& record.node.metaregion_sound_node(regions)
+            }
+    }
+
+    pub open spec fn entries_metaregion_sound(self, regions: MetaRegionOwners) -> bool {
+        forall|paddr: Paddr, idx: int|
+            self.contains_node(paddr) && 0 <= idx < NR_ENTRIES ==> #[trigger]
+                self.node(paddr).entries[idx].metaregion_sound(regions)
+    }
+
+    pub open spec fn metaregion_sound(self, regions: MetaRegionOwners) -> bool {
+        &&& self.nodes_metaregion_sound(regions)
+        &&& self.raw_nodes_metaregion_sound(regions)
+        &&& self.entries_metaregion_sound(regions)
     }
 
     pub open spec fn inv(self) -> bool {

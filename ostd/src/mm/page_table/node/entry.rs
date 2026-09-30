@@ -132,7 +132,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     pub(in crate::mm) fn is_node(&self) -> bool {
         self.pte.is_present() && !self.pte.is_last(
             #[verus_spec(with Tracked(Some(
-                *self.node.inner.tracked_metadata_perm.borrow(),
+                (*self.node.inner.tracked_metadata_perm.borrow()).tracked_borrow(),
             )))]
             self.node.level(),
         )
@@ -163,7 +163,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     )]
     pub(in crate::mm) fn to_ref(&self) -> ChildRef<'rcu, C> {
         #[verus_spec(with Tracked(Some(
-            *self.node.inner.tracked_metadata_perm.borrow(),
+            (*self.node.inner.tracked_metadata_perm.borrow()).tracked_borrow(),
         )))]
         let level = self.node.level();
 
@@ -369,7 +369,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         //  - The PTE is not referenced by other `ChildRef`s (since we have `&mut self`).
         //  - The level matches the current node.
         #[verus_spec(with Tracked(Some(
-            *self.node.inner.tracked_metadata_perm.borrow(),
+            (*self.node.inner.tracked_metadata_perm.borrow()).tracked_borrow(),
         )))]
         let level = self.node.level();
 
@@ -381,7 +381,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         if old_child.is_none() && !new_child.is_none() {
             #[verus_spec(with
                 Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
-                    self.node.inner.tracked_metadata_perm@,
+                    *self.node.inner.tracked_metadata_perm.borrow(),
                 )),
                 Ghost(parent_owner.meta_own.nr_children.id())
             )]
@@ -394,7 +394,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         } else if !old_child.is_none() && new_child.is_none() {
             #[verus_spec(with
                 Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
-                    self.node.inner.tracked_metadata_perm@,
+                    *self.node.inner.tracked_metadata_perm.borrow(),
                 )),
                 Ghost(parent_owner.meta_own.nr_children.id())
             )]
@@ -541,7 +541,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         guard: &'rcu A,
     ) -> Option<PageTableGuard<'rcu, C>> {
         let entry_is_present = self.pte.is_present();
-        let tracked metadata_perm = *self.node.inner.tracked_metadata_perm.borrow();
+        let tracked metadata_perm =
+            (*self.node.inner.tracked_metadata_perm.borrow()).tracked_borrow();
         #[verus_spec(with Tracked(Some(metadata_perm)))]
         let level = self.node.level();
 
@@ -602,7 +603,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         {
             let tracked parent_record = cursor_owner.tracked_borrow_current_record_mut();
             let tracked parent_metadata_perm =
-                *self.node.inner.tracked_metadata_perm.borrow();
+                (*self.node.inner.tracked_metadata_perm.borrow()).tracked_borrow();
             #[verus_spec(with
                 Tracked(parent_metadata_perm),
                 Ghost(parent_record.node.meta_own.nr_children.id())
@@ -702,7 +703,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         &mut self,
         guard: &'rcu A,
     ) -> Option<PageTableGuard<'rcu, C>> {
-        let tracked node_metadata_perm = *self.node.inner.tracked_metadata_perm.borrow();
+        let tracked node_metadata_perm =
+            (*self.node.inner.tracked_metadata_perm.borrow()).tracked_borrow();
         #[verus_spec(with Tracked(Some(node_metadata_perm)))]
         let level = self.node.level();
 
@@ -857,6 +859,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         };
         Self::new(pte, idx, guard)
     }
+
 }
 
 #[verus_verify]
@@ -1089,7 +1092,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         };
 
         #[verus_spec(with Tracked(Some(
-            *self.inner.tracked_metadata_perm.borrow(),
+            (*self.inner.tracked_metadata_perm.borrow()).tracked_borrow(),
         )))]
         let level = self.level();
 
@@ -1104,7 +1107,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         if old_child.is_none() && !new_child.is_none() {
             #[verus_spec(with
                 Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
-                    self.inner.tracked_metadata_perm@,
+                    *self.inner.tracked_metadata_perm.borrow(),
                 )),
                 Ghost(parent_owner.meta_own.nr_children.id())
             )]
@@ -1117,7 +1120,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         } else if !old_child.is_none() && new_child.is_none() {
             #[verus_spec(with
                 Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
-                    self.inner.tracked_metadata_perm@,
+                    *self.inner.tracked_metadata_perm.borrow(),
                 )),
                 Ghost(parent_owner.meta_own.nr_children.id())
             )]
@@ -1254,7 +1257,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         idx: usize,
         guard: &'rcu A,
     ) -> PageTableGuard<'rcu, C> {
-        let tracked metadata_perm = *self.inner.tracked_metadata_perm.borrow();
+        let tracked metadata_perm = (*self.inner.tracked_metadata_perm.borrow()).tracked_borrow();
         #[verus_spec(with Tracked(Some(metadata_perm)))]
         let level = self.level();
 
@@ -1310,7 +1313,8 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
 
         {
             let tracked parent_record = cursor_owner.tracked_borrow_current_record_mut();
-            let tracked parent_metadata_perm = *self.inner.tracked_metadata_perm.borrow();
+            let tracked parent_metadata_perm =
+                (*self.inner.tracked_metadata_perm.borrow()).tracked_borrow();
             #[verus_spec(with
                 Tracked(parent_metadata_perm),
                 Ghost(parent_record.node.meta_own.nr_children.id())
@@ -1403,7 +1407,8 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     ) {
         // For restoring `count_consistent` after the absent→frame install.
         let ghost cp0 = parent_owner.children_perm.value();
-        let tracked node_metadata_perm = *self.inner.tracked_metadata_perm.borrow();
+        let tracked node_metadata_perm =
+            (*self.inner.tracked_metadata_perm.borrow()).tracked_borrow();
         #[verus_spec(with Tracked(node_metadata_perm),
             Ghost(parent_owner.meta_own.nr_children.id()))]
         let nr_children = self.nr_children_mut();
