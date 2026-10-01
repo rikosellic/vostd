@@ -1495,17 +1495,15 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                 let ghost old_va = self.va;
                 self.va = va;
                 proof {
+                    C::lemma_paging_consts_properties();
                     // At level == NR_LEVELS the quantifier in set_va_in_node is vacuous.
                     if self.level < NR_LEVELS as PagingLevel {
-                        AbstractVaddr::same_node_indices_match(va, old_va, node_start, self.level);
+                        lemma_same_node_pte_indices_match::<C>(va, old_va, node_start, self.level);
                     }
-                    AbstractVaddr::lemma_same_node_leading_bits_match(
-                        va,
-                        old_va,
-                        node_start,
-                        self.level,
-                    );
-                    owner.tracked_set_va_in_node(va);
+                    lemma_same_node_vaddr_upper_bits_match::<C>(va, old_va, node_start, self.level);
+                    owner0.va.reflect_prop(old_va);
+
+                    owner.tracked_set_vaddr_in_node(va);
                     assert(owner.children_not_locked(*guards) && owner.metaregion_sound(*regions))
                         by {
                         reveal(CursorContinuation::map_children);

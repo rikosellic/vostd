@@ -21,11 +21,13 @@ use crate::specs::{
                 lemma_page_size_divides, lemma_page_size_ge_page_size, lemma_page_size_spec_values,
             },
         },
+        lemma_pte_index_spec_matches_abstract, lemma_vaddr_upper_bits_spec_matches_abstract,
         owners::*,
+        pte_index_spec, vaddr_upper_bits_spec,
     },
 };
 
-use crate::mm::{Paddr, PagingLevel, Vaddr, page_size, page_table::*};
+use crate::mm::{Paddr, PagingConstsTrait, PagingLevel, Vaddr, page_size, page_table::*};
 use core::ops::Range;
 
 verus! {
@@ -300,6 +302,41 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         if old_self.level < old_self.guard_level {
             old_self.lemma_prefix_in_locked_range();
         }
+    }
+
+    /// Architecture-parameterized entry point for repositioning a cursor inside its current
+    /// page-table node. The legacy abstract-address representation is confined to this bridge.
+    pub proof fn tracked_set_vaddr_in_node(tracked &mut self, new_va: Vaddr)
+        requires
+            old(self).inv(),
+            new_va % PAGE_SIZE == 0,
+            vaddr_upper_bits_spec::<C>(new_va) == vaddr_upper_bits_spec::<C>(old(self).cur_va()),
+            forall|i: int|
+                old(self).level <= i < NR_LEVELS ==> (#[trigger] pte_index_spec::<C>(
+                    new_va,
+                    (i + 1) as PagingLevel,
+                )) == pte_index_spec::<C>(old(self).cur_va(), (i + 1) as PagingLevel),
+            old(self).locked_range().start <= new_va < old(self).locked_range().end,
+            old(self).level <= old(self).guard_level,
+        ensures
+            *final(self) == old(self).set_va_in_node(new_va),
+            final(self).inv(),
+    {
+        let ghost old_self = *self;
+
+        C::lemma_paging_consts_properties();
+        old_self.va.reflect_to_vaddr();
+
+        lemma_vaddr_upper_bits_spec_matches_abstract::<C>(new_va);
+        lemma_vaddr_upper_bits_spec_matches_abstract::<C>(old_self.cur_va());
+
+        assert forall|i: int| old_self.level <= i < NR_LEVELS implies (
+        #[trigger] AbstractVaddr::from_vaddr(new_va).index[i]) == old_self.va.index[i] by {
+            lemma_pte_index_spec_matches_abstract::<C>(new_va, (i + 1) as PagingLevel);
+            lemma_pte_index_spec_matches_abstract::<C>(old_self.cur_va(), (i + 1) as PagingLevel);
+        };
+
+        self.tracked_set_va_in_node(new_va);
     }
 }
 

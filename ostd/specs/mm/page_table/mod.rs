@@ -49,6 +49,19 @@ pub open spec fn pte_index_spec<C: PagingConstsTrait>(va: Vaddr, level: PagingLe
     (va >> pte_index_bit_offset_spec::<C>(level)) & ((nr_subpage_per_huge::<C>() - 1) as usize)
 }
 
+/// Width of the complete page-table-address body, including the in-page offset and every
+/// configured page-table index. Bits above this boundary are not interpreted by a page walk.
+#[verifier::inline]
+pub open spec fn paging_body_width_spec<C: PagingConstsTrait>() -> usize {
+    (C::BASE_PAGE_SIZE().ilog2() + nr_pte_index_bits_spec::<C>() * C::NR_LEVELS()) as usize
+}
+
+/// Bits of `va` above the complete architecture-parameterized page-table-address body.
+#[verifier::inline]
+pub open spec fn vaddr_upper_bits_spec<C: PagingConstsTrait>(va: Vaddr) -> usize {
+    va >> paging_body_width_spec::<C>()
+}
+
 #[verifier::inline]
 pub open spec fn top_level_index_width_spec<C: PageTableConfig>() -> usize {
     (C::ADDRESS_WIDTH_spec() - pte_index_bit_offset_spec::<C>(C::NR_LEVELS())) as usize
@@ -119,6 +132,80 @@ pub proof fn lemma_pte_index_spec_matches_abstract<C: PagingConstsTrait>(
     vstd::bits::lemma_usize_shr_is_div(va, offset);
     vstd::bits::lemma_low_bits_mask_values();
     vstd::bits::lemma_usize_low_bits_mask_is_mod(va >> offset, index_bits as nat);
+}
+
+/// Temporary bridge from architecture-parameterized upper bits to the legacy
+/// `AbstractVaddr::leading_bits` field.
+pub proof fn lemma_vaddr_upper_bits_spec_matches_abstract<C: PagingConstsTrait>(va: Vaddr)
+    ensures
+        vaddr_upper_bits_spec::<C>(va) == AbstractVaddr::from_vaddr(va).leading_bits,
+{
+    C::lemma_paging_consts_properties();
+    lemma_arch_specific_consts_properties::<C>();
+
+    let width = paging_body_width_spec::<C>();
+
+    vstd::bits::lemma_usize_shr_is_div(va, width);
+}
+
+/// Architecture-parameterized view of the indices preserved by moving within one page-table
+/// node. The implementation currently delegates to the legacy address decomposition.
+pub proof fn lemma_same_node_pte_indices_match<C: PagingConstsTrait>(
+    va1: Vaddr,
+    va2: Vaddr,
+    node_start: Vaddr,
+    level: PagingLevel,
+)
+    requires
+        1 <= level,
+        level < C::NR_LEVELS(),
+        node_start <= va1,
+        va1 < node_start + page_size((level + 1) as PagingLevel),
+        node_start <= va2,
+        va2 < node_start + page_size((level + 1) as PagingLevel),
+        node_start as nat % page_size((level + 1) as PagingLevel) as nat == 0,
+    ensures
+        forall|i: int|
+            level <= i < C::NR_LEVELS() ==> (#[trigger] pte_index_spec::<C>(
+                va1,
+                (i + 1) as PagingLevel,
+            )) == pte_index_spec::<C>(va2, (i + 1) as PagingLevel),
+{
+    C::lemma_paging_consts_properties();
+    AbstractVaddr::same_node_indices_match(va1, va2, node_start, level);
+
+    assert forall|i: int| level <= i < C::NR_LEVELS() implies (#[trigger] pte_index_spec::<C>(
+        va1,
+        (i + 1) as PagingLevel,
+    )) == pte_index_spec::<C>(va2, (i + 1) as PagingLevel) by {
+        lemma_pte_index_spec_matches_abstract::<C>(va1, (i + 1) as PagingLevel);
+        lemma_pte_index_spec_matches_abstract::<C>(va2, (i + 1) as PagingLevel);
+    };
+}
+
+/// Architecture-parameterized view of the uninterpreted upper bits preserved by moving within
+/// one page-table node.
+pub proof fn lemma_same_node_vaddr_upper_bits_match<C: PagingConstsTrait>(
+    va1: Vaddr,
+    va2: Vaddr,
+    node_start: Vaddr,
+    level: PagingLevel,
+)
+    requires
+        1 <= level,
+        level <= C::NR_LEVELS(),
+        node_start <= va1,
+        va1 - node_start < page_size((level + 1) as PagingLevel),
+        node_start <= va2,
+        va2 - node_start < page_size((level + 1) as PagingLevel),
+        node_start as nat % page_size((level + 1) as PagingLevel) as nat == 0,
+    ensures
+        vaddr_upper_bits_spec::<C>(va1) == vaddr_upper_bits_spec::<C>(va2),
+{
+    C::lemma_paging_consts_properties();
+    AbstractVaddr::lemma_same_node_leading_bits_match(va1, va2, node_start, level);
+    lemma_vaddr_upper_bits_spec_matches_abstract::<C>(va1);
+    lemma_vaddr_upper_bits_spec_matches_abstract::<C>(va2);
 }
 
 /// An abstract representation of a virtual address as a sequence of indices, representing the
