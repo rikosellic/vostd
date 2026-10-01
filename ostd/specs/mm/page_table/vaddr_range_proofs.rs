@@ -12,7 +12,7 @@ use vstd::{
 
 use crate::specs::mm::page_table::pte_index_bit_offset_spec;
 
-use crate::mm::{PagingConstsTrait, Vaddr, page_table::PageTableConfig};
+use crate::mm::{page_table::PageTableConfig, PagingConstsTrait, Vaddr};
 
 verus! {
 

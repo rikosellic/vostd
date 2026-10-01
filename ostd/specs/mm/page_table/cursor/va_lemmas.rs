@@ -57,10 +57,10 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.va.to_vaddr()
     }
 
-    pub open spec fn cur_va_range(self) -> Range<AbstractVaddr> {
+    pub open spec fn cur_va_range(self) -> Range<Vaddr> {
         let start = self.va.align_down(self.level as int);
         let end = self.va.align_up(self.level as int);
-        Range { start, end }
+        Range { start: start.to_vaddr(), end: end.to_vaddr() }
     }
 
     pub open spec fn set_va_in_node(self, new_va: AbstractVaddr) -> Self {

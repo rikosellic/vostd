@@ -13,24 +13,23 @@ use core::marker::PhantomData;
 use crate::{
     error::Error,
     mm::{
-        HasPaddr, Paddr,
-        dma::{Daddr, DmaType, dma_type},
-        frame::{Segment, untyped::AnyUFrameMeta},
+        dma::{dma_type, Daddr, DmaType},
+        frame::{untyped::AnyUFrameMeta, Segment},
         io::{
-            FallibleVmRead, FallibleVmWrite, Infallible, PodOnce, VmIo, VmIoMemView, VmIoOnce,
-            VmIoOwner, VmReader, VmWriter, axiom_kernel_mem_view,
+            axiom_kernel_mem_view, FallibleVmRead, FallibleVmWrite, Infallible, PodOnce, VmIo,
+            VmIoMemView, VmIoOnce, VmIoOwner, VmReader, VmWriter,
         },
         kspace::{KERNEL_BASE_VADDR, KERNEL_END_VADDR, VMALLOC_BASE_VADDR},
-        paddr_to_vaddr,
+        paddr_to_vaddr, HasPaddr, Paddr,
     },
     specs::{
-        arch::{PAGE_SIZE, lemma_max_paddr_range, lemma_paddr_to_vaddr_properties},
+        arch::{lemma_max_paddr_range, lemma_paddr_to_vaddr_properties, PAGE_SIZE},
         mm::virt_mem::VirtPtr,
     },
     sync::{PreemptDisabled, RwArc, RwLockReadGuard},
 };
 
-use super::{DmaError, HasDaddr, check_and_insert_dma_mapping, is_valid_daddr};
+use super::{check_and_insert_dma_mapping, is_valid_daddr, DmaError, HasDaddr};
 
 verus! {
 

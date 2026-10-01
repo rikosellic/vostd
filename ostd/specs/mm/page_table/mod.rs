@@ -39,6 +39,16 @@ pub open spec fn pte_index_bit_offset_spec<C: PagingConstsTrait>(level: PagingLe
     (C::BASE_PAGE_SIZE().ilog2() + nr_pte_index_bits_spec::<C>() * (level - 1)) as usize
 }
 
+/// Page-table index selected by `va` at `level`.
+///
+/// This is the architecture-parameterized address view used by executable page-table walks. The
+/// mask width and bit offset both come from `C`; callers should use this instead of decomposing a
+/// virtual address into an architecture-specific ghost structure.
+#[verifier::inline]
+pub open spec fn pte_index_spec<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> usize {
+    (va >> pte_index_bit_offset_spec::<C>(level)) & ((nr_subpage_per_huge::<C>() - 1) as usize)
+}
+
 #[verifier::inline]
 pub open spec fn top_level_index_width_spec<C: PageTableConfig>() -> usize {
     (C::ADDRESS_WIDTH_spec() - pte_index_bit_offset_spec::<C>(C::NR_LEVELS())) as usize
@@ -83,6 +93,32 @@ pub(crate) proof fn lemma_vaddr_range_spec_kernel()
         vaddr_range_spec::<KernelPtConfig>().end == 0xFFFF_FFFF_FFFF_FFFF,
 {
     lemma_arch_specific_consts_properties::<PagingConsts>();
+}
+
+/// Temporary bridge from the architecture-parameterized index view to the legacy
+/// `AbstractVaddr` representation.
+///
+/// New cursor proofs should use `pte_index_spec` directly. This lemma confines the current
+/// architecture-specific `AbstractVaddr` layout to migration sites and can be removed together
+/// with that type.
+pub proof fn lemma_pte_index_spec_matches_abstract<C: PagingConstsTrait>(
+    va: Vaddr,
+    level: PagingLevel,
+)
+    requires
+        1 <= level <= C::NR_LEVELS(),
+    ensures
+        pte_index_spec::<C>(va, level) == AbstractVaddr::from_vaddr(va).index[level - 1],
+{
+    C::lemma_paging_consts_properties();
+    lemma_arch_specific_consts_properties::<C>();
+
+    let offset = pte_index_bit_offset_spec::<C>(level);
+    let index_bits = nr_pte_index_bits_spec::<C>();
+
+    vstd::bits::lemma_usize_shr_is_div(va, offset);
+    vstd::bits::lemma_low_bits_mask_values();
+    vstd::bits::lemma_usize_low_bits_mask_is_mod(va >> offset, index_bits as nat);
 }
 
 /// An abstract representation of a virtual address as a sequence of indices, representing the
@@ -382,6 +418,7 @@ impl AbstractVaddr {
         ensures
             (AbstractVaddr { index: self.index.insert(index, 0), ..self }).inv(),
     {
+        self.lemma_insert_preserves_inv(index, 0);
     }
 
     pub proof fn align_down_inv(self, level: int)

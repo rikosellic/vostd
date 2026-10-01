@@ -15,10 +15,10 @@ use crate::specs::{
 };
 
 use crate::mm::{
-    Paddr, PagingConstsTrait, PagingLevel, Vaddr,
     frame::meta::{REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED},
     page_size,
     page_table::{EntryOwner, EntryOwnerKind, PageTableEntryTrait, PageTableGuard},
+    Paddr, PagingConstsTrait, PagingLevel, Vaddr,
 };
 use core::ops::{Deref, Range};
 

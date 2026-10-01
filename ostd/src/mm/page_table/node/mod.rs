@@ -39,32 +39,32 @@ use crate::specs::mm::{
     frame::{
         mapping::{frame_to_index, lemma_frame_to_index_injective, meta_to_index},
         meta_owners::{
-            FracMetadataPerm, MetaSlotOwner, MetadataPerm, typed_meta_value, typed_meta_wf,
+            typed_meta_value, typed_meta_wf, FracMetadataPerm, MetaSlotOwner, MetadataPerm,
         },
         meta_region_owners::MetaRegionOwners,
     },
     page_table::node::owners::*,
 };
 
-use super::{PageTableConfig, PageTableEntryTrait, nr_subpage_per_huge};
+use super::{nr_subpage_per_huge, PageTableConfig, PageTableEntryTrait};
 use crate::mm::frame::{
     allocator::FrameAllocOptions,
     meta::{
-        META_SLOT_SIZE, MetaSlot, REF_COUNT_MAX, REF_COUNT_UNUSED,
         mapping::{frame_to_meta, meta_to_frame},
+        MetaSlot, META_SLOT_SIZE, REF_COUNT_MAX, REF_COUNT_UNUSED,
     },
 };
 use crate::mm::page_table::*;
 use crate::mm::{Paddr, Vaddr};
 use crate::{
     mm::{
-        PagingConstsTrait,
-        PagingLevel,
         //        FrameAllocOptions, Infallible,
         //        VmReader,
-        frame::{Frame, FrameRef, meta::AnyFrameMeta},
+        frame::{meta::AnyFrameMeta, Frame, FrameRef},
         paddr_to_vaddr,
         page_table::{load_pte, store_pte},
+        PagingConstsTrait,
+        PagingLevel,
     },
     specs::task::InAtomicMode,
 };

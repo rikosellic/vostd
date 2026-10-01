@@ -1301,11 +1301,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
                     proof {
                         assert(continuation.entry_own.node().level() > 1) by {
-                            owner0.cur_va_range().start.reflect_prop(cur_va_range.start);
-                            owner0.cur_va_range().end.reflect_prop(cur_va_range.end);
-                            assert(cur_entry_fits_range == (cur_va
-                                == owner0.cur_va_range().start.to_vaddr()
-                                && owner0.cur_va_range().end.to_vaddr() <= end));
+                            assert(cur_entry_fits_range == (cur_va == owner0.cur_va_range().start
+                                && owner0.cur_va_range().end <= end));
                             assert(cur_va == owner0.cur_va()) by {
                                 owner0.va.reflect_prop(cur_va);
                             };
@@ -1920,7 +1917,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
         let ghost index = meta_to_index(parent_own.slot_vaddr());
 
-        let ghost ptei = AbstractVaddr::from_vaddr(self.va).index[owner.level - 1];
+        let ghost ptei = pte_index_spec::<C>(self.va, owner.level);
 
         proof {
             owner0.lemma_cont_entry_metaregion_at(*regions, owner0.level - 1);
@@ -1968,8 +1965,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             owner.in_locked_range(),
             1 <= self.level <= owner.guard_level,
         ensures
-            owner.cur_va_range().start.reflect(res.start),
-            owner.cur_va_range().end.reflect(res.end),
+            owner.cur_va_range() == res,
+            owner.va.align_down(owner.level as int).reflect(res.start),
+            owner.va.align_up(owner.level as int).reflect(res.end),
             res.start <= self.va,
             res.end <= self.va + page_size(self.level),
             res.start == self.va ==> res.end == self.va + page_size(self.level),
@@ -1981,15 +1979,11 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         proof {
             owner.va.reflect_prop(self.va);
             owner.va.align_down_concrete(self.level as int);
-            // `va + page_size(level) <= usize::MAX` from the cursor invariant; combined
-            // with `nat_align_down(va, ps) <= va`, the aligned end stays below MAX.
+            owner.va.align_down(self.level as int).reflect_prop(start);
+            // Bound the aligned end before proving that align-up advances by one page.
             owner.lemma_va_plus_page_size_no_overflow(self.level);
             owner.va.align_up_advances_general(self.level as int);
-            // align_up.to_vaddr() as nat == nat_align_down(va, ps) + ps.
-            // start as nat == nat_align_down(va, ps) (from align_down_concrete + reflect).
-            // So align_up.to_vaddr() == (start + page_size) as Vaddr.
-            // Bridge: align_up reflects its own to_vaddr, which == start + page_size.
-            owner.cur_va_range().end.reflect_to_vaddr();
+            owner.va.align_up(self.level as int).reflect_to_vaddr();
         }
 
         start..start + page_size

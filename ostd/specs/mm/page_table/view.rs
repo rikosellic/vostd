@@ -4,7 +4,7 @@ use vstd_extra::ownership::*;
 use crate::specs::arch::MAX_PADDR;
 
 use super::*;
-use crate::mm::{Paddr, Vaddr, page_prop::PageProperty};
+use crate::mm::{page_prop::PageProperty, Paddr, Vaddr};
 use core::{marker::PhantomData, ops::Range};
 
 verus! {

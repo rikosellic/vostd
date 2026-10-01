@@ -7,15 +7,15 @@ use crate::specs::{
     mm::{
         frame::meta_region_owners::MetaRegionOwners,
         page_table::{
-            AbstractVaddr, Mapping,
             cursor::owners::{CursorContinuation, CursorOwner},
             nat_align_down,
             owners::*,
+            AbstractVaddr, Mapping,
         },
     },
 };
 
-use crate::mm::{PagingLevel, Vaddr, page_size, page_table::*};
+use crate::mm::{page_size, page_table::*, PagingLevel, Vaddr};
 use core::ops::Range;
 
 verus! {

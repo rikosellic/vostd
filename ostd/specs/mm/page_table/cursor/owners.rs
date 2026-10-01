@@ -17,13 +17,12 @@ use crate::specs::{
             meta_region_owners::MetaRegionOwners,
         },
         page_table::{
-            AbstractVaddr, Guards, Mapping,
             cursor::page_size_lemmas::{
                 lemma_page_size_divides, lemma_page_size_ge_page_size, lemma_page_size_spec_level1,
             },
             lemma_vaddr_range_spec_kernel, lemma_vaddr_range_spec_user,
             owners::*,
-            pte_index_bit_offset_spec, vaddr_range_spec,
+            pte_index_bit_offset_spec, vaddr_range_spec, AbstractVaddr, Guards, Mapping,
         },
     },
     task::InAtomicMode,
@@ -31,16 +30,16 @@ use crate::specs::{
 
 use crate::arch::mm::PagingConsts;
 use crate::mm::{
-    MAX_USERSPACE_VADDR, Paddr, PagingConstsTrait, PagingLevel, Vaddr,
     frame::{
-        Frame,
         meta::{REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED},
+        Frame,
     },
     kspace::KernelPtConfig,
     nr_subpage_per_huge,
     page_prop::PageProperty,
     page_size,
     page_table::*,
+    Paddr, PagingConstsTrait, PagingLevel, Vaddr, MAX_USERSPACE_VADDR,
 };
 use core::{marker::PhantomData, ops::Range};
 

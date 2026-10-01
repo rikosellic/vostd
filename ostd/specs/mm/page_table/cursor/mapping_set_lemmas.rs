@@ -10,16 +10,16 @@ use vstd_extra::{
 use crate::specs::{
     arch::{NR_ENTRIES, NR_LEVELS},
     mm::page_table::{
-        AbstractVaddr, Mapping,
         cursor::{owners::*, page_size_lemmas::lemma_page_size_divides},
         owners::{
-            INC_LEVELS, OwnerSubtree, PageTableOwner, lemma_vaddr_of_eq_int,
-            sibling_paths_disjoint, vaddr, vaddr_of,
+            lemma_vaddr_of_eq_int, sibling_paths_disjoint, vaddr, vaddr_of, OwnerSubtree,
+            PageTableOwner, INC_LEVELS,
         },
+        AbstractVaddr, Mapping,
     },
 };
 
-use crate::mm::{PagingLevel, Vaddr, page_size, page_table::*};
+use crate::mm::{page_size, page_table::*, PagingLevel, Vaddr};
 
 verus! {
 

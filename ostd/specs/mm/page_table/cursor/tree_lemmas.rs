@@ -187,8 +187,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             // cur_va is the cursor's current VA (from the call site: cur_va == self.va).
             cur_va == self.cur_va(),
             // Definition: cur_entry_fits_range iff cur_va is at start of entry AND entry end <= end.
-            cur_entry_fits_range == (cur_va == self.cur_va_range().start.to_vaddr()
-                && self.cur_va_range().end.to_vaddr() <= end),
+            cur_entry_fits_range == (cur_va == self.cur_va_range().start && self.cur_va_range().end
+                <= end),
             // cur_va and end are PAGE_SIZE-aligned
             cur_va as nat % PAGE_SIZE as nat == 0,
             end as nat % PAGE_SIZE as nat == 0,

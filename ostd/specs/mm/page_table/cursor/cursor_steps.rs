@@ -8,19 +8,19 @@ use vstd_extra::{
 use crate::specs::{
     arch::{NR_ENTRIES, NR_LEVELS},
     mm::{
-        Guards, Mapping, MetaRegionOwners,
         frame::mapping::meta_to_index,
         page_table::{
-            AbstractVaddr,
             cursor::{owners::*, page_size_lemmas::lemma_page_size_ge_page_size},
             node::EntryOwner,
-            owners::{INC_LEVELS, OwnerSubtree, PageTableOwner},
+            owners::{OwnerSubtree, PageTableOwner, INC_LEVELS},
+            AbstractVaddr,
         },
+        Guards, Mapping, MetaRegionOwners,
     },
 };
 
 use crate::arch::mm::PagingConsts;
-use crate::mm::{Paddr, PagingConstsTrait, PagingLevel, Vaddr, page_size, page_table::*};
+use crate::mm::{page_size, page_table::*, Paddr, PagingConstsTrait, PagingLevel, Vaddr};
 use core::ops::Range;
 
 verus! {
