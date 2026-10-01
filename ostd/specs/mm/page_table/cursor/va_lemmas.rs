@@ -58,18 +58,19 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     }
 
     pub open spec fn cur_va_range(self) -> Range<Vaddr> {
-        let start = self.va.align_down(self.level as int);
-        let end = self.va.align_up(self.level as int);
-        Range { start: start.to_vaddr(), end: end.to_vaddr() }
+        let size = page_size(self.level);
+        let start = nat_align_down(self.cur_va() as nat, size as nat) as Vaddr;
+        Range { start, end: (start + size) as Vaddr }
     }
 
-    pub open spec fn set_va_in_node(self, new_va: AbstractVaddr) -> Self {
+    pub open spec fn set_va_in_node(self, new_va: Vaddr) -> Self {
+        let new_abs_va = AbstractVaddr::from_vaddr(new_va);
         let old_cont = self.continuations[self.level - 1];
         Self {
-            va: new_va,
+            va: new_abs_va,
             continuations: self.continuations.insert(
                 self.level - 1,
-                CursorContinuation { idx: new_va.index[self.level - 1] as usize, ..old_cont },
+                CursorContinuation { idx: new_abs_va.index[self.level - 1] as usize, ..old_cont },
             ),
             // Repositioning to a concrete in-range VA clears the
             // transient `popped_too_high` state.
@@ -229,25 +230,22 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.va.vaddr_range_from_path(L - 1);
     }
 
-    pub proof fn lemma_locked_range_vaddr_prefix_match(self, new_va: AbstractVaddr)
+    pub proof fn lemma_locked_range_vaddr_prefix_match(self, new_va: Vaddr)
         requires
             self.inv(),
-            new_va.inv(),
-            new_va.offset == 0,
-            new_va.leading_bits == self.prefix.leading_bits,
-            self.locked_range().start <= new_va.to_vaddr() < self.locked_range().end,
+            new_va % PAGE_SIZE == 0,
+            AbstractVaddr::from_vaddr(new_va).leading_bits == self.prefix.leading_bits,
+            self.locked_range().start <= new_va < self.locked_range().end,
         ensures
             forall|i: int|
-                #![trigger new_va.index[i]]
-                self.guard_level - 1 <= i < NR_LEVELS ==> new_va.index[i] == self.prefix.index[i],
+                #![trigger AbstractVaddr::from_vaddr(new_va).index[i]]
+                self.guard_level - 1 <= i < NR_LEVELS ==> AbstractVaddr::from_vaddr(new_va).index[i]
+                    == self.prefix.index[i],
     {
         let gl = self.guard_level;
         let start = self.locked_range().start;
-        let ps = page_size(gl as PagingLevel);
-        let new_val = new_va.to_vaddr();
         let prefix_val = self.prefix.to_vaddr();
 
-        self.lemma_locked_range_span();
         self.lemma_prefix_aligned_to_guard_level();
         self.lemma_prefix_plus_ps_no_overflow();
         self.prefix.aligned_align_down_is_self(gl as int);
@@ -255,16 +253,11 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
 
         lemma_page_size_spec_values();
         if gl == 1 {
-            new_va.reflect_to_vaddr();
-
-            AbstractVaddr::same_page_aligned_vaddrs_equal(new_val, prefix_val, start);
-            AbstractVaddr::to_vaddr_from_vaddr_roundtrip(new_va);
             AbstractVaddr::to_vaddr_from_vaddr_roundtrip(self.prefix);
         } else {
-            AbstractVaddr::to_vaddr_from_vaddr_roundtrip(new_va);
             AbstractVaddr::to_vaddr_from_vaddr_roundtrip(self.prefix);
             AbstractVaddr::same_node_indices_match(
-                new_val,
+                new_va,
                 prefix_val,
                 start,
                 (gl - 1) as PagingLevel,
@@ -273,30 +266,31 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     }
 
     /// >= level are guaranteed to match.
-    pub proof fn tracked_set_va_in_node(tracked &mut self, new_va: AbstractVaddr)
+    pub proof fn tracked_set_va_in_node(tracked &mut self, new_va: Vaddr)
         requires
             old(self).inv(),
-            new_va.inv(),
-            new_va.offset == 0,
-            new_va.leading_bits == old(self).prefix.leading_bits,
+            new_va % PAGE_SIZE == 0,
+            AbstractVaddr::from_vaddr(new_va).leading_bits == old(self).prefix.leading_bits,
             forall|i: int|
                 #![auto]
-                old(self).level <= i < NR_LEVELS ==> new_va.index[i] == old(self).va.index[i],
-            old(self).locked_range().start <= new_va.to_vaddr() < old(self).locked_range().end,
+                old(self).level <= i < NR_LEVELS ==> AbstractVaddr::from_vaddr(new_va).index[i]
+                    == old(self).va.index[i],
+            old(self).locked_range().start <= new_va < old(self).locked_range().end,
             old(self).level <= old(self).guard_level,
         ensures
             *final(self) == old(self).set_va_in_node(new_va),
             final(self).inv(),
     {
         let ghost old_self = *self;
+        let ghost new_abs_va = AbstractVaddr::from_vaddr(new_va);
         let tracked mut cont = self.continuations.tracked_remove(self.level - 1);
 
-        assert(new_va.index.contains_key(old_self.level - 1));
+        AbstractVaddr::from_vaddr_to_vaddr_roundtrip(new_va);
 
-        cont.idx = new_va.index[old_self.level - 1] as usize;
+        cont.idx = new_abs_va.index[old_self.level - 1] as usize;
 
         self.continuations.tracked_insert(self.level - 1, cont);
-        self.va = new_va;
+        self.va = new_abs_va;
         self.popped_too_high = false;
 
         assert(self.continuations == old_self.continuations.insert(old_self.level - 1, cont));

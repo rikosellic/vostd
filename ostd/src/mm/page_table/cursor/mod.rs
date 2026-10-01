@@ -1492,7 +1492,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     assert(old(self).jump_node_holds(self.level, va));
                 }
                 let ghost owner0 = *owner;
-                let ghost new_va = AbstractVaddr::from_vaddr(va);
                 let ghost old_va = self.va;
                 self.va = va;
                 proof {
@@ -1506,9 +1505,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                         node_start,
                         self.level,
                     );
-                    AbstractVaddr::from_vaddr_to_vaddr_roundtrip(va);
-
-                    owner.tracked_set_va_in_node(new_va);
+                    owner.tracked_set_va_in_node(va);
                     assert(owner.children_not_locked(*guards) && owner.metaregion_sound(*regions))
                         by {
                         reveal(CursorContinuation::map_children);
@@ -1619,6 +1616,14 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                 nat_align_down(va as nat, page_size(start_level as PagingLevel) as nat) as Vaddr,
             );
             abs_next_va.reflect_prop(next_va);
+            owner0.lemma_va_plus_page_size_no_overflow(start_level);
+            lemma_page_size_ge_page_size(start_level);
+            vstd_extra::arithmetic::lemma_nat_align_down_sound(
+                va as nat,
+                page_size(start_level as PagingLevel) as nat,
+            );
+            owner0.va.align_up_advances_general(start_level as int);
+            owner0.va.align_up(start_level as int).reflect_to_vaddr();
 
             AbstractVaddr::reflect_eq(abs_next_va, owner0.va.align_up(start_level as int), next_va);
 
@@ -1966,8 +1971,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             1 <= self.level <= owner.guard_level,
         ensures
             owner.cur_va_range() == res,
-            owner.va.align_down(owner.level as int).reflect(res.start),
-            owner.va.align_up(owner.level as int).reflect(res.end),
             res.start <= self.va,
             res.end <= self.va + page_size(self.level),
             res.start == self.va ==> res.end == self.va + page_size(self.level),
@@ -1978,12 +1981,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
         proof {
             owner.va.reflect_prop(self.va);
-            owner.va.align_down_concrete(self.level as int);
-            owner.va.align_down(self.level as int).reflect_prop(start);
-            // Bound the aligned end before proving that align-up advances by one page.
+            // Bound the returned range end.
             owner.lemma_va_plus_page_size_no_overflow(self.level);
-            owner.va.align_up_advances_general(self.level as int);
-            owner.va.align_up(self.level as int).reflect_to_vaddr();
         }
 
         start..start + page_size
