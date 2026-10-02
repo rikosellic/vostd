@@ -11,7 +11,7 @@ use crate::specs::{
         frame::mapping::meta_to_index,
         page_table::{
             cursor::{owners::*, page_size_lemmas::lemma_page_size_ge_page_size},
-            lemma_pte_index_spec_matches_abstract,
+            lemma_page_size_for_level_matches_page_size, lemma_pte_index_spec_matches_abstract,
             node::EntryOwner,
             owners::{OwnerSubtree, PageTableOwner, INC_LEVELS},
             pte_index_spec, AbstractVaddr,
@@ -829,6 +829,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         }
     }
 
+    /// Advancing the cursor reaches the next slot boundary, including carries to a parent.
     #[verifier::spinoff_prover]
     pub proof fn move_forward_va_is_align_up(self)
         requires
@@ -836,110 +837,42 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.level <= NR_LEVELS,
             self.in_locked_range(),
             !self.popped_too_high,
-            // At level == guard_level, the wrap case (index+1 == NR_ENTRIES)
-            // produces a result whose VA does not equal `va.align_up(level)`
-            // when guard_level == NR_LEVELS (the spec returns self unchanged).
-            // Callers (e.g. `do_inc_index_or_pop`) already have this from their
-            // own bounds assume — see [mod.rs:1549].
             self.level == self.guard_level ==> self.index() + 1 < NR_ENTRIES,
         ensures
-            self.move_forward_owner_spec().va == self.va_view().align_up(self.level as int).to_vaddr(),
+            self.move_forward_owner_spec().va == self@.align_up_spec(page_size(self.level)),
         decreases NR_LEVELS - self.level,
     {
         C::lemma_paging_consts_properties();
         reveal(PageTableOwner::pt_inv_at_depth);
-        if self.level == self.guard_level {
-            if self.index() + 1 < NR_ENTRIES {
-                // Same as the no-carry branch below: use align_up_advances_general.
-                let inc = self.inc_index();
-                inc.lemma_zero_below_level_view();
-
-                assert(inc.va_view().inv()) by {
-                    assert forall|i: int| 0 <= i < NR_LEVELS implies inc.va_view().index.contains_key(i)
-                        && 0 <= #[trigger] inc.va_view().index[i] && inc.va_view().index[i] < NR_ENTRIES by {
-                        if i != self.level - 1 {
-                        }
-                    };
-                };
-                inc.va_view().align_down_concrete(self.level as int);
-                let ps = page_size(self.level as PagingLevel) as nat;
-                let self_va = self.va_view().to_vaddr() as nat;
-                lemma_page_size_ge_page_size(self.level as PagingLevel);
-
-                self.va_view().index_increment_adds_page_size(self.level as int);
-
-                vstd::arithmetic::div_mod::lemma_mod_add_multiples_vanish(
-                    self_va as int,
-                    ps as int,
-                );
-                vstd::arithmetic::div_mod::lemma_fundamental_div_mod(self_va as int, ps as int);
-
-                self.va_view().align_up_advances_general(self.level as int);
-
-                AbstractVaddr::to_vaddr_from_vaddr_roundtrip(self.va_view().align_up(self.level as int));
-            }
+        if self.index() + 1 < NR_ENTRIES {
+            self.inc_and_zero_increases_va();
             return;
         }
-        if self.index() + 1 < NR_ENTRIES {
-            self.lemma_inc_index_va_view();
-            let inc = self.inc_index();
-            inc.lemma_zero_below_level_view();
 
-            inc.va_view().align_down_concrete(self.level as int);
-            let ps = page_size(self.level as PagingLevel) as nat;
-            let self_va = self.va_view().to_vaddr() as nat;
-            lemma_page_size_ge_page_size(self.level as PagingLevel);
-
-            self.va_view().index_increment_adds_page_size(self.level as int);
-
-            vstd::arithmetic::div_mod::lemma_mod_add_multiples_vanish(self_va as int, ps as int);
-
-            vstd::arithmetic::div_mod::lemma_fundamental_div_mod(self_va as int, ps as int);
-
-            self.va_view().align_up_advances_general(self.level as int);
-
-            AbstractVaddr::to_vaddr_from_vaddr_roundtrip(self.va_view().align_up(self.level as int));
-        } else if self.level < NR_LEVELS {
-            let popped = self.pop_level_owner().0;
-            if !popped.popped_too_high {
-                popped.move_forward_va_is_align_up();
-            } else {
-                let inc_p = popped.inc_index();
-                inc_p.lemma_zero_below_level_view();
-
-                assert(inc_p.va_view().inv()) by {
-                    assert forall|i: int| 0 <= i < NR_LEVELS implies inc_p.va_view().index.contains_key(i)
-                        && 0 <= #[trigger] inc_p.va_view().index[i] && inc_p.va_view().index[i] < NR_ENTRIES by {
-                        if i != popped.level - 1 {
-                        }
-                    };
-                };
-                inc_p.va_view().align_down_concrete(popped.level as int);
-                let ps_p = page_size(popped.level as PagingLevel) as nat;
-                let popped_va = popped.va_view().to_vaddr() as nat;
-                lemma_page_size_ge_page_size(popped.level as PagingLevel);
-
-                popped.va_view().index_increment_adds_page_size(popped.level as int);
-
-                vstd::arithmetic::div_mod::lemma_mod_add_multiples_vanish(
-                    popped_va as int,
-                    ps_p as int,
-                );
-                vstd::arithmetic::div_mod::lemma_fundamental_div_mod(popped_va as int, ps_p as int);
-
-                // Sound align_up: align_up.to_vaddr() == nat_align_down(popped_va, ps) + ps.
-
-                popped.va_view().align_up_advances_general(popped.level as int);
-
-                AbstractVaddr::to_vaddr_from_vaddr_roundtrip(
-                    popped.va_view().align_up(popped.level as int),
-                );
-
-                assert(popped.move_forward_owner_spec().va == inc_p.zero_below_level().va);
-            }
-
-            self.va_view().align_up_carry(self.level as int);
+        assert(self.level < NR_LEVELS);
+        let popped = self.pop_level_owner().0;
+        assert(self.move_forward_owner_spec().va == popped.move_forward_owner_spec().va);
+        if !popped.popped_too_high {
+            popped.move_forward_va_is_align_up();
+            popped.lemma_va_plus_page_size_no_overflow(popped.level);
+        } else {
+            popped.inc_and_zero_increases_va();
+            popped.lemma_inc_index_va();
+            lemma_page_size_for_level_matches_page_size::<C>(popped.level);
         }
+
+        self.lemma_cur_pte_index();
+        lemma_pte_index_spec_matches_abstract::<C>(self.va, self.level);
+        self.lemma_va_plus_page_size_no_overflow(self.level);
+        lemma_page_size_ge_page_size(self.level);
+        lemma_page_size_ge_page_size(popped.level);
+        lemma_nat_align_down_sound(self.va as nat, page_size(self.level) as nat);
+        lemma_nat_align_down_sound(popped.va as nat, page_size(popped.level) as nat);
+        self.va_view().align_up_carry(self.level as int);
+        self.va_view().align_up_advances_general(self.level as int);
+        popped.va_view().align_up_advances_general(popped.level as int);
+        assert(self@.align_up_spec(page_size(self.level))
+            == popped@.align_up_spec(page_size(popped.level)));
     }
 
     /// After popping a level, the total view_mappings is preserved.

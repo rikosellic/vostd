@@ -8,11 +8,19 @@ pub mod vaddr_range_proofs;
 mod view;
 
 use vstd::{
-    arithmetic::power2::{lemma_pow2_adds, lemma2_to64, lemma2_to64_rest, pow2},
+    arithmetic::{
+        div_mod::{lemma_div_denominator, lemma_fundamental_div_mod, lemma_fundamental_div_mod_converse},
+        mul::{lemma_mul_inequality, lemma_mul_is_distributive_sub},
+        power2::{lemma_pow2_adds, lemma_pow2_pos, lemma2_to64, lemma2_to64_rest, pow2},
+    },
+    bits::{lemma_usize_low_bits_mask_is_mod, lemma_usize_pow2_no_overflow, lemma_usize_shr_is_div},
     prelude::*,
     std_specs::range::RangeInclusiveView,
 };
-use vstd_extra::{arithmetic::*, ghost_tree::TreePath, ownership::*, prelude::*};
+use vstd_extra::{
+    arithmetic::*, external::ilog2::lemma_usize_is_pow2_is_ilog2_pow2, ghost_tree::TreePath,
+    ownership::*, prelude::*,
+};
 
 use crate::specs::arch::*;
 
@@ -47,6 +55,31 @@ pub open spec fn page_size_for_level_spec<C: PagingConstsTrait>(level: PagingLev
     )) as usize
 }
 
+/// A configured page size is the power of two at that level's index-bit offset.
+pub proof fn lemma_page_size_for_level_is_pow2<C: PagingConstsTrait>(level: PagingLevel)
+    requires
+        1 <= level <= C::NR_LEVELS() + 1,
+    ensures
+        pte_index_bit_offset_spec::<C>(level) < usize::BITS,
+        pte_index_bit_offset_spec::<C>(level)
+            == C::BASE_PAGE_SIZE().ilog2() + nr_pte_index_bits_spec::<C>() * (level - 1),
+        0 < page_size_for_level_spec::<C>(level)
+            == pow2(pte_index_bit_offset_spec::<C>(level) as nat),
+{
+    C::lemma_paging_consts_properties();
+    let bits = nr_pte_index_bits_spec::<C>();
+    assert(usize::BITS <= usize::MAX) by (compute_only);
+    lemma_usize_is_pow2_is_ilog2_pow2(C::BASE_PAGE_SIZE());
+    lemma_usize_is_pow2_is_ilog2_pow2(nr_subpage_per_huge::<C>());
+    assert(bits == (C::BASE_PAGE_SIZE() / C::PTE_SIZE()).ilog2());
+    lemma_mul_inequality(level - 1, C::NR_LEVELS() as int, bits as int);
+    assert(C::BASE_PAGE_SIZE().ilog2() + bits * (level - 1) <= C::ADDRESS_WIDTH());
+    assert(pte_index_bit_offset_spec::<C>(level)
+        == C::BASE_PAGE_SIZE().ilog2() + bits * (level - 1));
+    lemma_pow2_adds(C::BASE_PAGE_SIZE().ilog2() as nat, (bits * (level - 1)) as nat);
+    lemma_usize_pow2_no_overflow(pte_index_bit_offset_spec::<C>(level) as nat);
+}
+
 /// Temporary bridge to the architecture-global `page_size` helper used by the executable code.
 pub proof fn lemma_page_size_for_level_matches_page_size<C: PagingConstsTrait>(
     level: PagingLevel,
@@ -67,6 +100,36 @@ pub proof fn lemma_page_size_for_level_matches_page_size<C: PagingConstsTrait>(
 #[verifier::inline]
 pub open spec fn pte_index_spec<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> usize {
     (va >> pte_index_bit_offset_spec::<C>(level)) & ((nr_subpage_per_huge::<C>() - 1) as usize)
+}
+
+/// Selecting an index is division by the slot size followed by reduction modulo the fanout.
+pub proof fn lemma_pte_index_spec_is_div_mod<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel)
+    requires
+        1 <= level <= C::NR_LEVELS(),
+    ensures
+        pte_index_spec::<C>(va, level)
+            == (va / page_size_for_level_spec::<C>(level)) % nr_subpage_per_huge::<C>(),
+{
+    C::lemma_paging_consts_properties();
+    lemma_page_size_for_level_is_pow2::<C>(level);
+    let bits = nr_pte_index_bits_spec::<C>();
+    lemma_mul_inequality(1, C::NR_LEVELS() as int, bits as int);
+    lemma_usize_is_pow2_is_ilog2_pow2(nr_subpage_per_huge::<C>());
+    lemma_usize_shr_is_div(va, pte_index_bit_offset_spec::<C>(level));
+    lemma_usize_low_bits_mask_is_mod(
+        va >> pte_index_bit_offset_spec::<C>(level),
+        bits as nat,
+    );
+}
+
+/// Replace one page-table index while leaving the other address components unchanged.
+pub open spec fn vaddr_with_pte_index_spec<C: PagingConstsTrait>(
+    va: Vaddr,
+    level: PagingLevel,
+    index: int,
+) -> Vaddr {
+    (va as int + (index - pte_index_spec::<C>(va, level))
+        * page_size_for_level_spec::<C>(level)) as Vaddr
 }
 
 /// Width of the complete page-table-address body, including the in-page offset and every
@@ -156,9 +219,9 @@ pub proof fn lemma_pte_index_spec_matches_abstract<C: PagingConstsTrait>(
     let offset = pte_index_bit_offset_spec::<C>(level);
     let index_bits = nr_pte_index_bits_spec::<C>();
 
-    vstd::bits::lemma_usize_shr_is_div(va, offset);
+    lemma_usize_shr_is_div(va, offset);
     vstd::bits::lemma_low_bits_mask_values();
-    vstd::bits::lemma_usize_low_bits_mask_is_mod(va >> offset, index_bits as nat);
+    lemma_usize_low_bits_mask_is_mod(va >> offset, index_bits as nat);
 }
 
 /// Temporary bridge from architecture-parameterized upper bits to the legacy
@@ -172,7 +235,7 @@ pub proof fn lemma_vaddr_upper_bits_spec_matches_abstract<C: PagingConstsTrait>(
 
     let width = paging_body_width_spec::<C>();
 
-    vstd::bits::lemma_usize_shr_is_div(va, width);
+    lemma_usize_shr_is_div(va, width);
 }
 
 /// Temporary bridge from the architecture-parameterized upper-address contribution to the
@@ -189,8 +252,7 @@ pub proof fn lemma_vaddr_upper_base_spec_matches_abstract<C: PagingConstsTrait>(
     vstd::arithmetic::power2::lemma2_to64_rest();
 }
 
-/// Architecture-parameterized view of the indices preserved by moving within one page-table
-/// node. The implementation currently delegates to the legacy address decomposition.
+/// Addresses in one aligned node select the same entries at that node and above.
 pub proof fn lemma_same_node_pte_indices_match<C: PagingConstsTrait>(
     va1: Vaddr,
     va2: Vaddr,
@@ -206,6 +268,8 @@ pub proof fn lemma_same_node_pte_indices_match<C: PagingConstsTrait>(
         va2 < node_start + page_size_for_level_spec::<C>((level + 1) as PagingLevel),
         node_start as nat % page_size_for_level_spec::<C>((level + 1) as PagingLevel) as nat == 0,
     ensures
+        pte_index_spec::<C>(va1, (level + 1) as PagingLevel)
+            == pte_index_spec::<C>(va2, (level + 1) as PagingLevel),
         forall|i: int|
             level <= i < C::NR_LEVELS() ==> (#[trigger] pte_index_spec::<C>(
                 va1,
@@ -213,14 +277,39 @@ pub proof fn lemma_same_node_pte_indices_match<C: PagingConstsTrait>(
             )) == pte_index_spec::<C>(va2, (i + 1) as PagingLevel),
 {
     C::lemma_paging_consts_properties();
-    AbstractVaddr::same_node_indices_match(va1, va2, node_start, level);
+    let small_level = (level + 1) as PagingLevel;
+    lemma_page_size_for_level_is_pow2::<C>(small_level);
+    let small = page_size_for_level_spec::<C>(small_level) as int;
+    let quotient = node_start as int / small;
+    lemma_fundamental_div_mod(node_start as int, small);
+    lemma_fundamental_div_mod_converse(
+        va1 as int, small, quotient, va1 - node_start,
+    );
+    lemma_fundamental_div_mod_converse(
+        va2 as int, small, quotient, va2 - node_start,
+    );
+    lemma_pte_index_spec_is_div_mod::<C>(va1, small_level);
+    lemma_pte_index_spec_is_div_mod::<C>(va2, small_level);
 
     assert forall|i: int| level <= i < C::NR_LEVELS() implies (#[trigger] pte_index_spec::<C>(
-        va1,
-        (i + 1) as PagingLevel,
+        va1, (i + 1) as PagingLevel,
     )) == pte_index_spec::<C>(va2, (i + 1) as PagingLevel) by {
-        lemma_pte_index_spec_matches_abstract::<C>(va1, (i + 1) as PagingLevel);
-        lemma_pte_index_spec_matches_abstract::<C>(va2, (i + 1) as PagingLevel);
+        let large_level = (i + 1) as PagingLevel;
+        lemma_page_size_for_level_is_pow2::<C>(large_level);
+        let delta = (nr_pte_index_bits_spec::<C>() * (i - level)) as nat;
+        lemma_mul_is_distributive_sub(
+            nr_pte_index_bits_spec::<C>() as int, i, level as int,
+        );
+        assert(pte_index_bit_offset_spec::<C>(large_level)
+            == pte_index_bit_offset_spec::<C>(small_level) + delta);
+        lemma_pow2_adds(pte_index_bit_offset_spec::<C>(small_level) as nat, delta);
+        lemma_pow2_pos(delta);
+        let ratio = pow2(delta) as int;
+        assert(page_size_for_level_spec::<C>(large_level) == small * ratio);
+        lemma_div_denominator(va1 as int, small, ratio);
+        lemma_div_denominator(va2 as int, small, ratio);
+        lemma_pte_index_spec_is_div_mod::<C>(va1, large_level);
+        lemma_pte_index_spec_is_div_mod::<C>(va2, large_level);
     };
 }
 
@@ -244,9 +333,33 @@ pub proof fn lemma_same_node_vaddr_upper_bits_match<C: PagingConstsTrait>(
         vaddr_upper_bits_spec::<C>(va1) == vaddr_upper_bits_spec::<C>(va2),
 {
     C::lemma_paging_consts_properties();
-    AbstractVaddr::lemma_same_node_leading_bits_match(va1, va2, node_start, level);
-    lemma_vaddr_upper_bits_spec_matches_abstract::<C>(va1);
-    lemma_vaddr_upper_bits_spec_matches_abstract::<C>(va2);
+    let small_level = (level + 1) as PagingLevel;
+    let body_level = (C::NR_LEVELS() + 1) as PagingLevel;
+    lemma_page_size_for_level_is_pow2::<C>(small_level);
+    lemma_page_size_for_level_is_pow2::<C>(body_level);
+    let small = page_size_for_level_spec::<C>(small_level) as int;
+    let quotient = node_start as int / small;
+    lemma_fundamental_div_mod(node_start as int, small);
+    lemma_fundamental_div_mod_converse(
+        va1 as int, small, quotient, va1 - node_start,
+    );
+    lemma_fundamental_div_mod_converse(
+        va2 as int, small, quotient, va2 - node_start,
+    );
+    let delta = (nr_pte_index_bits_spec::<C>() * (C::NR_LEVELS() - level)) as nat;
+    lemma_mul_is_distributive_sub(
+        nr_pte_index_bits_spec::<C>() as int, C::NR_LEVELS() as int, level as int,
+    );
+    assert(paging_body_width_spec::<C>()
+        == pte_index_bit_offset_spec::<C>(small_level) + delta);
+    lemma_pow2_adds(pte_index_bit_offset_spec::<C>(small_level) as nat, delta);
+    lemma_pow2_pos(delta);
+    let ratio = pow2(delta) as int;
+    assert(pow2(paging_body_width_spec::<C>() as nat) == small * ratio);
+    lemma_div_denominator(va1 as int, small, ratio);
+    lemma_div_denominator(va2 as int, small, ratio);
+    lemma_usize_shr_is_div(va1, paging_body_width_spec::<C>());
+    lemma_usize_shr_is_div(va2, paging_body_width_spec::<C>());
 }
 
 /// An abstract representation of a virtual address as a sequence of indices, representing the
@@ -539,6 +652,65 @@ impl AbstractVaddr {
         }
     }
 
+    /// Compatibility bridge for numeric index replacement during the address-model migration.
+    pub proof fn lemma_index_replacement_vaddr<C: PagingConstsTrait>(
+        self,
+        level: PagingLevel,
+        value: int,
+    )
+        requires
+            self.inv(),
+            1 <= level <= C::NR_LEVELS(),
+            0 <= value < nr_subpage_per_huge::<C>(),
+        ensures
+            (Self { index: self.index.insert(level - 1, value), ..self }).to_vaddr()
+                == vaddr_with_pte_index_spec::<C>(self.to_vaddr(), level, value),
+            0 <= self.to_vaddr() as int + (value - self.index[level - 1])
+                * page_size_for_level_spec::<C>(level) <= usize::MAX,
+    {
+        C::lemma_paging_consts_properties();
+        self.lemma_insert_preserves_inv(level - 1, value);
+        self.lemma_index_replacement_sum::<C>(level - 1, value, 0);
+        let replaced = Self { index: self.index.insert(level - 1, value), ..self };
+        self.to_vaddr_bounded();
+        replaced.to_vaddr_bounded();
+        self.reflect_to_vaddr();
+        lemma_pte_index_spec_matches_abstract::<C>(self.to_vaddr(), level);
+    }
+
+    proof fn lemma_index_replacement_sum<C: PagingConstsTrait>(
+        self,
+        index: int,
+        value: int,
+        start: int,
+    )
+        requires
+            self.inv(),
+            0 <= index < C::NR_LEVELS(),
+            0 <= start <= C::NR_LEVELS(),
+        ensures
+            (Self { index: self.index.insert(index, value), ..self }).to_vaddr_indices(start)
+                == self.to_vaddr_indices(start) + if start <= index {
+                    (value - self.index[index]) * page_size_for_level_spec::<C>((index + 1) as PagingLevel)
+                } else {
+                    0
+                },
+        decreases C::NR_LEVELS() - start,
+    {
+        C::lemma_paging_consts_properties();
+        lemma_arch_specific_consts_properties::<C>();
+        if start < C::NR_LEVELS() {
+            self.lemma_index_replacement_sum::<C>(index, value, start + 1);
+            if start == index {
+                lemma_page_size_for_level_is_pow2::<C>((index + 1) as PagingLevel);
+                assert((value - self.index[index]) * page_size_for_level_spec::<C>((index + 1) as PagingLevel)
+                    == value * page_size_for_level_spec::<C>((index + 1) as PagingLevel)
+                        - self.index[index] * page_size_for_level_spec::<C>((index + 1) as PagingLevel))
+                    by (nonlinear_arith);
+            }
+        }
+    }
+
     proof fn lemma_insert_zero_preserves_inv(self, index: int)
         requires
             self.inv(),
@@ -782,178 +954,7 @@ impl AbstractVaddr {
         aligned.reflect_to_vaddr();
     }
 
-    /// Two virtual addresses in the same page_size(level+1) aligned block
-    /// have the same from_vaddr().index[i] for all i >= level.
-    ///
-    /// page_size(level + 1) = 2^(12 + 9*level). Being in the same aligned block means
-    /// va / 2^(12 + 9*level) is equal, so (va / 2^(12+9*i)) % 512 is equal for i >= level.
-    pub proof fn same_node_indices_match(
-        va1: Vaddr,
-        va2: Vaddr,
-        node_start: Vaddr,
-        level: PagingLevel,
-    )
-        requires
-            1 <= level,
-            level < NR_LEVELS,
-            node_start <= va1,
-            va1 < node_start + page_size((level + 1) as PagingLevel),
-            node_start <= va2,
-            va2 < node_start + page_size((level + 1) as PagingLevel),
-            node_start as nat % page_size((level + 1) as PagingLevel) as nat == 0,
-        ensures
-            forall|i: int|
-                #![auto]
-                level <= i < NR_LEVELS ==> Self::from_vaddr(va1).index[i] == Self::from_vaddr(
-                    va2,
-                ).index[i],
-    {
-        vstd::arithmetic::power2::lemma2_to64();
-        vstd::arithmetic::power2::lemma2_to64_rest();
-        lemma_page_size_spec_values();
-        vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
 
-        let ns = node_start;
-
-        // Bit-vector reasoning: within a `small`-aligned block of size `small`,
-        // `va / big == ns / big` for any `big` that's a multiple of `small`
-        // (so `ns % big` is a multiple of `small` in `[0, big - small]`, and
-        // adding `va - ns < small` stays within the same `big`-segment).
-        if level == 1 {
-            assert((va1 / 0x20_0000usize) % 512 == (va2 / 0x20_0000usize) % 512) by (bit_vector)
-                requires
-                    va1 >= ns,
-                    va1 < ns + 0x20_0000usize,
-                    va2 >= ns,
-                    va2 < ns + 0x20_0000usize,
-                    ns % 0x20_0000usize == 0usize,
-            ;
-            assert((va1 / 0x4000_0000usize) % 512 == (va2 / 0x4000_0000usize) % 512) by (bit_vector)
-                requires
-                    va1 >= ns,
-                    va1 < ns + 0x20_0000usize,
-                    va2 >= ns,
-                    va2 < ns + 0x20_0000usize,
-                    ns % 0x20_0000usize == 0usize,
-            ;
-            assert((va1 / 0x80_0000_0000usize) % 512 == (va2 / 0x80_0000_0000usize) % 512)
-                by (bit_vector)
-                requires
-                    va1 >= ns,
-                    va1 < ns + 0x20_0000usize,
-                    va2 >= ns,
-                    va2 < ns + 0x20_0000usize,
-                    ns % 0x20_0000usize == 0usize,
-            ;
-        } else if level == 2 {
-            assert((va1 / 0x4000_0000usize) % 512 == (va2 / 0x4000_0000usize) % 512) by (bit_vector)
-                requires
-                    va1 >= ns,
-                    va1 < ns + 0x4000_0000usize,
-                    va2 >= ns,
-                    va2 < ns + 0x4000_0000usize,
-                    ns % 0x4000_0000usize == 0usize,
-            ;
-            assert((va1 / 0x80_0000_0000usize) % 512 == (va2 / 0x80_0000_0000usize) % 512)
-                by (bit_vector)
-                requires
-                    va1 >= ns,
-                    va1 < ns + 0x4000_0000usize,
-                    va2 >= ns,
-                    va2 < ns + 0x4000_0000usize,
-                    ns % 0x4000_0000usize == 0usize,
-            ;
-        } else {
-            // level == 3
-            assert((va1 / 0x80_0000_0000usize) % 512 == (va2 / 0x80_0000_0000usize) % 512)
-                by (bit_vector)
-                requires
-                    va1 >= ns,
-                    va1 < ns + 0x80_0000_0000usize,
-                    va2 >= ns,
-                    va2 < ns + 0x80_0000_0000usize,
-                    ns % 0x80_0000_0000usize == 0usize,
-            ;
-        }
-
-        // Lift to `from_vaddr(va).index[i]` via the concrete `pow2((12+9*i) as nat) as usize`
-        // for each i in [level, NR_LEVELS).
-        assert forall|i: int| level <= i < NR_LEVELS implies Self::from_vaddr(va1).index[i]
-            == Self::from_vaddr(va2).index[i] by {
-            let abs1 = Self::from_vaddr(va1);
-            let abs2 = Self::from_vaddr(va2);
-            assert(abs1.index.contains_key(i));
-            assert(abs2.index.contains_key(i));
-            if i == 1 {
-                assert(pow2((12 + 9 * i) as nat) as usize == 0x20_0000);
-            } else if i == 2 {
-                assert(pow2((12 + 9 * i) as nat) as usize == 0x4000_0000);
-            } else {
-                assert(pow2((12 + 9 * i) as nat) as usize == 0x80_0000_0000);
-            }
-        }
-    }
-
-    /// Two virtual addresses in the same page_size(level+1) aligned block
-    /// also have the same leading bits. Cursor jumps use this for the
-    /// canonical-half component that is not covered by page-table indices.
-    pub proof fn lemma_same_node_leading_bits_match(
-        va1: Vaddr,
-        va2: Vaddr,
-        node_start: Vaddr,
-        level: PagingLevel,
-    )
-        requires
-            1 <= level,
-            level <= NR_LEVELS,
-            node_start <= va1,
-            va1 - node_start < page_size((level + 1) as PagingLevel),
-            node_start <= va2,
-            va2 - node_start < page_size((level + 1) as PagingLevel),
-            node_start as nat % page_size((level + 1) as PagingLevel) as nat == 0,
-        ensures
-            Self::from_vaddr(va1).leading_bits == Self::from_vaddr(va2).leading_bits,
-    {
-        lemma_page_size_spec_values();
-        let ns = node_start;
-        if level == 1 {
-            assert(va1 / 0x1_0000_0000_0000usize == va2 / 0x1_0000_0000_0000usize) by (bit_vector)
-                requires
-                    va1 >= ns,
-                    va1 - ns < 0x20_0000usize,
-                    va2 >= ns,
-                    va2 - ns < 0x20_0000usize,
-                    ns % 0x20_0000usize == 0usize,
-            ;
-        } else if level == 2 {
-            assert(va1 / 0x1_0000_0000_0000usize == va2 / 0x1_0000_0000_0000usize) by (bit_vector)
-                requires
-                    va1 >= ns,
-                    va1 - ns < 0x4000_0000usize,
-                    va2 >= ns,
-                    va2 - ns < 0x4000_0000usize,
-                    ns % 0x4000_0000usize == 0usize,
-            ;
-        } else if level == 3 {
-            assert(va1 / 0x1_0000_0000_0000usize == va2 / 0x1_0000_0000_0000usize) by (bit_vector)
-                requires
-                    va1 >= ns,
-                    va1 - ns < 0x80_0000_0000usize,
-                    va2 >= ns,
-                    va2 - ns < 0x80_0000_0000usize,
-                    ns % 0x80_0000_0000usize == 0usize,
-            ;
-        } else {
-            assert(va1 / 0x1_0000_0000_0000usize == va2 / 0x1_0000_0000_0000usize) by (bit_vector)
-                requires
-                    va1 >= ns,
-                    va1 - ns < 0x1_0000_0000_0000usize,
-                    va2 >= ns,
-                    va2 - ns < 0x1_0000_0000_0000usize,
-                    ns % 0x1_0000_0000_0000usize == 0usize,
-            ;
-        }
-    }
 
     pub proof fn same_page_aligned_vaddrs_equal(va1: Vaddr, va2: Vaddr, page_start: Vaddr)
         requires
@@ -1678,47 +1679,17 @@ impl AbstractVaddr {
                 ..self
             }).to_vaddr() == self.to_vaddr() + page_size(level as PagingLevel),
     {
-        let new_va = Self {
-            index: self.index.insert(level - 1, self.index[level - 1] + 1),
-            ..self
-        };
-        assert forall|i: int| #![trigger new_va.index.contains_key(i)] 0 <= i < NR_LEVELS implies {
-            &&& new_va.index.contains_key(i)
-            &&& 0 <= new_va.index[i]
-            &&& new_va.index[i] < NR_ENTRIES
-        } by {
-            assert(self.index.contains_key(i));
-        };
-        self.to_vaddr_bounded();
-        new_va.to_vaddr_bounded();
-
-        vstd::arithmetic::power2::lemma2_to64();
-        vstd::arithmetic::power2::lemma2_to64_rest();
-        if level == 1 {
-            lemma_page_size_spec_level1();
-            new_va.to_vaddr_indices_eq_if_indices_eq(self, 1);
-
-        } else if level == 2 {
-            vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
-            new_va.to_vaddr_indices_eq_if_indices_eq(self, 2);
-
-            assert(new_va.to_vaddr_indices(1) == self.to_vaddr_indices(1) + 0x20_0000);
-        } else if level == 3 {
-            vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
-            new_va.to_vaddr_indices_eq_if_indices_eq(self, 3);
-
-            assert(new_va.to_vaddr_indices(2) == self.to_vaddr_indices(2) + 0x4000_0000);
-            assert(new_va.to_vaddr_indices(1) == self.to_vaddr_indices(1) + 0x4000_0000);
-        } else {
-            vstd_extra::external::ilog2::lemma_usize_ilog2_to32();
-            new_va.to_vaddr_indices_eq_if_indices_eq(self, 4);
-
-            assert((self.index[3] + 1) * 0x80_0000_0000 == self.index[3] * 0x80_0000_0000
-                + 0x80_0000_0000) by (nonlinear_arith);
-            assert(new_va.to_vaddr_indices(3) == self.to_vaddr_indices(3) + 0x80_0000_0000);
-            assert(new_va.to_vaddr_indices(2) == self.to_vaddr_indices(2) + 0x80_0000_0000);
-            assert(new_va.to_vaddr_indices(1) == self.to_vaddr_indices(1) + 0x80_0000_0000);
-        }
+        PagingConsts::lemma_paging_consts_properties();
+        assert(self.index.contains_key(level - 1));
+        self.lemma_index_replacement_vaddr::<PagingConsts>(
+            level as PagingLevel,
+            self.index[level - 1] + 1,
+        );
+        lemma_page_size_for_level_matches_page_size::<PagingConsts>(level as PagingLevel);
+        lemma_pte_index_spec_matches_abstract::<PagingConsts>(self.to_vaddr(), level as PagingLevel);
+        self.reflect_to_vaddr();
+        reveal(vaddr_with_pte_index_spec);
+        vstd::arithmetic::mul::lemma_mul_basics(page_size(level as PagingLevel) as int);
     }
 
     /// Path extracted from abstract vaddr has correct length.

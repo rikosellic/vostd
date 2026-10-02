@@ -1129,9 +1129,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                                 owner_before_move.lemma_va_plus_page_size_no_overflow(
                                     owner_before_move.level,
                                 );
-                                owner_before_move.va_view().align_up_advances_general(
-                                    owner_before_move.level as int,
-                                );
                                 assert(self.va == (nat_align_down(
                                     va_before_move as nat,
                                     cur_slot_size as nat,
@@ -1205,9 +1202,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                             lemma_nat_align_down_sound(va_before_move as nat, cur_slot_size as nat);
                             owner_before_move.lemma_va_plus_page_size_no_overflow(
                                 owner_before_move.level,
-                            );
-                            owner_before_move.va_view().align_up_advances_general(
-                                owner_before_move.level as int,
                             );
                             assert(self.va == (nat_align_down(
                                 va_before_move as nat,
@@ -1556,7 +1550,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             final(owner).children_not_locked(*final(guards)),
             final(owner).nodes_locked(*final(guards)),
             final(owner).metaregion_sound(*final(regions)),
-            final(owner).va == old(owner).va_view().align_up(old(self).level as int).to_vaddr(),
+            final(owner).va == old(owner)@.align_up_spec(page_size(old(self).level)),
             final(self).va <= old(self).va + page_size(old(self).level),
             // move_forward only calls pop_level, which does not touch regions.
             forall|idx: int|
