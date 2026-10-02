@@ -61,7 +61,7 @@ use core::{fmt::Debug, marker::PhantomData, mem::ManuallyDrop, ops::Range};
 
 verus! {
 
-broadcast use group_ghost_tree_lemmas;
+broadcast use {group_ghost_tree_lemmas, AbstractVaddr::reflect_from_vaddr};
 
 /// The state of virtual pages represented by a page table.
 ///
@@ -386,13 +386,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     #[verifier::rlimit(200)]
     pub fn query(&mut self) -> Result<PagesState<C>, PageTableError> {
         if self.va >= self.barrier_va.end {
-            proof {
-                owner.va.reflect_prop(self.va);
-            }
             return Err(PageTableError::InvalidVaddr(self.va));
-        }
-        proof {
-            owner.va.reflect_prop(self.va);
         }
         let rcu_guard = self.rcu_guard;
 
@@ -845,6 +839,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         // Keep solver tuning for this scan proof local to the function.
         hide(CursorContinuation::inv_children_rel);
         hide(CursorContinuation::pt_inv_children);
+        broadcast use AbstractVaddr::from_vaddr_to_vaddr_roundtrip;
         assert_eq!(len % PAGE_SIZE, 0);
 
         // [KNOWN] BUG FOUND BY FV: `self.va + len` could overflow. For now assume that it doesn't. https://github.com/asterinas/asterinas/issues/3159
@@ -863,7 +858,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         let rcu_guard = self.rcu_guard;
 
         proof {
-            owner.va.reflect_prop(self.va);
             owner.view_preserves_inv();
         }
         let ghost old_owner_cur_va: Vaddr = owner@.cur_va;
@@ -918,6 +912,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                 split_happened ==> self.va == old(self).va,
             decreases owner.max_steps(),
         {
+            broadcast use AbstractVaddr::from_vaddr_to_vaddr_roundtrip;
             proof {
                 owner.lemma_in_locked_range_level_le_nr_levels();
             }
@@ -975,24 +970,23 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     if find_unmap_subtree && cur_entry_fits_range && (C::TOP_LEVEL_CAN_UNMAP()
                         || self.level != C::NR_LEVELS()) {
                         proof {
-                            owner.va.reflect_prop(self.va);
                             if split_huge {
                                 if self.va as usize == old(self).va as usize {
                                     owner.split_while_huge_at_level_noop();
                                 }
                                 owner.lemma_in_locked_range_level_le_nr_levels();
                                 if self.level < NR_LEVELS {
-                                    owner.va.align_down_inv(self.level as int);
-                                    owner.va.align_down_concrete(self.level as int);
-                                    owner.va.align_down(self.level as int).reflect_prop(
+                                    owner.va_view().align_down_inv(self.level as int);
+                                    owner.va_view().align_down_concrete(self.level as int);
+                                    owner.va_view().align_down(self.level as int).reflect_prop(
                                         nat_align_down(
                                             self.va as nat,
                                             page_size(self.level) as nat,
                                         ) as Vaddr,
                                     );
                                 } else {
-                                    owner.va.align_down_concrete(self.level as int);
-                                    owner.va.align_down(self.level as int).reflect_prop(
+                                    owner.va_view().align_down_concrete(self.level as int);
+                                    owner.va_view().align_down(self.level as int).reflect_prop(
                                         nat_align_down(
                                             self.va as nat,
                                             page_size(self.level) as nat,
@@ -1110,15 +1104,11 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
                         let ghost cur_slot_size = page_size(self.level);
                         let ghost owner_before_move = *owner;
-                        proof {
-                            owner.va.reflect_prop(self.va);
-                        }
                         let ghost va_before_move = self.va;
                         #[verus_spec(with Tracked(owner), Tracked(regions), Tracked(guards))]
                         self.move_forward();
 
                         proof {
-                            owner.va.reflect_prop(self.va);
                             assert(*owner == owner_before_move.move_forward_owner_spec());
                             owner_before_move.move_forward_owner_preserves_mappings();
                             if !split_happened {
@@ -1139,7 +1129,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                                 owner_before_move.lemma_va_plus_page_size_no_overflow(
                                     owner_before_move.level,
                                 );
-                                owner_before_move.va.align_up_advances_general(
+                                owner_before_move.va_view().align_up_advances_general(
                                     owner_before_move.level as int,
                                 );
                                 assert(self.va == (nat_align_down(
@@ -1194,15 +1184,11 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     }
 
                     let ghost owner_before_move = *owner;
-                    proof {
-                        owner.va.reflect_prop(self.va);
-                    }
                     let ghost va_before_move = self.va;
                     #[verus_spec(with Tracked(owner), Tracked(regions), Tracked(guards))]
                     self.move_forward();
 
                     proof {
-                        owner.va.reflect_prop(self.va);
                         assert(*owner == owner_before_move.move_forward_owner_spec());
                         owner_before_move.move_forward_owner_preserves_mappings();
                         if !split_happened {
@@ -1220,7 +1206,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                             owner_before_move.lemma_va_plus_page_size_no_overflow(
                                 owner_before_move.level,
                             );
-                            owner_before_move.va.align_up_advances_general(
+                            owner_before_move.va_view().align_up_advances_general(
                                 owner_before_move.level as int,
                             );
                             assert(self.va == (nat_align_down(
@@ -1279,10 +1265,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                                     owner.split_while_huge_at_level_noop();
                                 }
                                 owner.lemma_in_locked_range_level_le_nr_levels();
-                                owner.va.reflect_prop(self.va);
-                                owner.va.align_down_inv(self.level as int);
-                                owner.va.align_down_concrete(self.level as int);
-                                owner.va.align_down(self.level as int).reflect_prop(
+                                owner.va_view().align_down_inv(self.level as int);
+                                owner.va_view().align_down_concrete(self.level as int);
+                                owner.va_view().align_down(self.level as int).reflect_prop(
                                     nat_align_down(
                                         self.va as nat,
                                         page_size(self.level) as nat,
@@ -1304,7 +1289,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                             assert(cur_entry_fits_range == (cur_va == owner0.cur_va_range().start
                                 && owner0.cur_va_range().end <= end));
                             assert(cur_va == owner0.cur_va()) by {
-                                owner0.va.reflect_prop(cur_va);
                             };
                             owner0.frame_not_fits_implies_level_gt_1(
                                 cur_entry_fits_range,
@@ -1370,7 +1354,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
                         let old_level = owner_before_push.level;
                         let cont = owner_before_push.continuations[old_level - 1];
-                        let idx_below = owner_before_push.va.index[old_level - 2] as usize;
+                        let idx_below = owner_before_push.va_view().index[old_level - 2] as usize;
                         let (child_cont, _) = cont.make_cont(idx_below, split_child_ghost);
 
                         assert(child_cont.children == child_owner_children);
@@ -1496,12 +1480,14 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                 self.va = va;
                 proof {
                     C::lemma_paging_consts_properties();
+                    lemma_page_size_for_level_matches_page_size::<C>(
+                        (self.level + 1) as PagingLevel,
+                    );
                     // At level == NR_LEVELS the quantifier in set_va_in_node is vacuous.
                     if self.level < NR_LEVELS as PagingLevel {
                         lemma_same_node_pte_indices_match::<C>(va, old_va, node_start, self.level);
                     }
                     lemma_same_node_vaddr_upper_bits_match::<C>(va, old_va, node_start, self.level);
-                    owner0.va.reflect_prop(old_va);
 
                     owner.tracked_set_vaddr_in_node(va);
                     assert(owner.children_not_locked(*guards) && owner.metaregion_sound(*regions))
@@ -1570,7 +1556,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             final(owner).children_not_locked(*final(guards)),
             final(owner).nodes_locked(*final(guards)),
             final(owner).metaregion_sound(*final(regions)),
-            final(owner).va == old(owner).va.align_up(old(self).level as int),
+            final(owner).va == old(owner).va_view().align_up(old(self).level as int).to_vaddr(),
             final(self).va <= old(self).va + page_size(old(self).level),
             // move_forward only calls pop_level, which does not touch regions.
             forall|idx: int|
@@ -1602,30 +1588,27 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         let next_va = (#[verus_spec(with Tracked(owner))]
         self.cur_va_range()).end;
 
-        let ghost abs_va_down = owner0.va.align_down(start_level as int);
-        let ghost abs_next_va = AbstractVaddr::from_vaddr(next_va);
+        let ghost abs_va_down = owner0.va_view().align_down(start_level as int);
+        let ghost abs_next_va = owner0.va_view().align_up(start_level as int);
 
         proof {
-            AbstractVaddr::reflect_from_vaddr(next_va);
-            owner0.va.reflect_prop(va);
-            owner0.va.align_down_inv(start_level as int);
-            owner0.va.align_down_concrete(start_level as int);
-            owner0.va.align_down(start_level as int).reflect_prop(
+            AbstractVaddr::from_vaddr_to_vaddr_roundtrip(va);
+            C::lemma_paging_consts_properties();
+            owner0.va_view().align_down_inv(start_level as int);
+            owner0.va_view().align_down_concrete(start_level as int);
+            owner0.va_view().align_down(start_level as int).reflect_prop(
                 nat_align_down(va as nat, page_size(start_level as PagingLevel) as nat) as Vaddr,
             );
-            abs_next_va.reflect_prop(next_va);
             owner0.lemma_va_plus_page_size_no_overflow(start_level);
             lemma_page_size_ge_page_size(start_level);
             vstd_extra::arithmetic::lemma_nat_align_down_sound(
                 va as nat,
                 page_size(start_level as PagingLevel) as nat,
             );
-            owner0.va.align_up_advances_general(start_level as int);
-            owner0.va.align_up(start_level as int).reflect_to_vaddr();
+            owner0.va_view().align_up_advances_general(start_level as int);
+            owner0.va_view().align_up(start_level as int).reflect_to_vaddr();
 
-            AbstractVaddr::reflect_eq(abs_next_va, owner0.va.align_up(start_level as int), next_va);
-
-            AbstractVaddr::from_vaddr_wf(self.va);
+            assert(abs_next_va.to_vaddr() == next_va);
             abs_va_down.next_index_wrap_condition(start_level as int);
         }
 
@@ -1637,18 +1620,19 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                 regions.inv(),
                 self.guard_level == guard_level,
                 self.barrier_va == barrier_va,
-                owner0.va.reflect(va),
-                abs_next_va == AbstractVaddr::from_vaddr(next_va),
+                owner0.va_view().reflect(va),
+                abs_next_va.reflect(next_va),
                 owner.move_forward_owner_spec() == owner0.move_forward_owner_spec(),
                 abs_va_down.next_index(start_level as int) == abs_next_va,
                 abs_va_down.wrapped(start_level as int, self.level as int),
                 1 <= start_level <= self.level <= self.guard_level <= NR_LEVELS,
+                C::NR_LEVELS() == NR_LEVELS,
                 owner.va == owner0.va,
                 forall|i: int|
-                    start_level <= i < NR_LEVELS ==> #[trigger] owner0.va.index[i - 1]
+                    start_level <= i < NR_LEVELS ==> #[trigger] owner0.va_view().index[i - 1]
                         == abs_va_down.index[i - 1],
                 forall|i: int|
-                    self.level <= i < NR_LEVELS ==> #[trigger] owner0.va.index[i - 1]
+                    self.level <= i < NR_LEVELS ==> #[trigger] owner0.va_view().index[i - 1]
                         == owner.continuations[i - 1].idx,
                 owner.in_locked_range(),
                 owner.children_not_locked(*guards),
@@ -1659,9 +1643,12 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         )]
         while self.level < self.guard_level && pte_index::<C>(next_va, self.level) == 0 {
             proof {
+                lemma_pte_index_spec_matches_abstract::<C>(next_va, self.level);
+                assert(AbstractVaddr::from_vaddr(next_va) == abs_next_va);
+                assert(abs_next_va.index[self.level - 1] == 0);
                 abs_va_down.wrapped_unwrap(start_level as int, self.level as int);
                 abs_va_down.use_wrapped(start_level as int, self.level as int);
-                assert(owner0.va.index[self.level - 1] + 1 == NR_ENTRIES);
+                assert(owner0.va_view().index[self.level - 1] + 1 == NR_ENTRIES);
                 assert(owner.move_forward_owner_spec()
                     == owner.pop_level_owner().0.move_forward_owner_spec());
                 owner.pop_level_owner_preserves_invs(*guards, *regions);
@@ -1671,6 +1658,10 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             self.pop_level();
         }
 
+        proof {
+            lemma_pte_index_spec_matches_abstract::<C>(next_va, self.level);
+            assert(AbstractVaddr::from_vaddr(next_va) == abs_next_va);
+        }
         let ghost index = abs_next_va.index[self.level - 1];
 
         self.va = next_va;
@@ -1678,7 +1669,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         proof {
             if owner.level == NR_LEVELS {
                 owner0.lemma_in_locked_range_top_index_lt_top_end();
-                assert(owner0.va.index[NR_LEVELS - 1] < C::TOP_LEVEL_INDEX_RANGE().end);
+                assert(owner0.va_view().index[NR_LEVELS - 1] < C::TOP_LEVEL_INDEX_RANGE().end);
                 assert(owner.continuations[owner.level - 1].idx + 1
                     <= C::TOP_LEVEL_INDEX_RANGE().end);
             }
@@ -1910,6 +1901,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     #[verifier::spinoff_prover]
     fn cur_entry(&mut self) -> Entry<'_, 'rcu, C> {
         let ghost owner0 = *owner;
+        proof {
+            self.lemma_pte_index_matches_owner(owner0);
+        }
 
         let node = path_slot_as_mut(&mut self.path, self.level as usize - 1);
         let tracked mut parent_continuation = owner.continuations.tracked_remove(owner.level - 1);
@@ -1974,11 +1968,11 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             res.start == self.va ==> res.end == self.va + page_size(self.level),
     )]
     fn cur_va_range(&self) -> Range<Vaddr> {
+        broadcast use AbstractVaddr::from_vaddr_to_vaddr_roundtrip;
         let page_size = page_size(self.level);
         let start = self.va.align_down(page_size);
 
         proof {
-            owner.va.reflect_prop(self.va);
             // Bound the returned range end.
             owner.lemma_va_plus_page_size_no_overflow(self.level);
         }
@@ -2032,6 +2026,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     fn protect_cur_entry(&mut self, op: impl FnOnce(PageProperty) -> PageProperty) {
         proof {
             owner.lemma_cont_entry_metaregion_at(*regions, owner.level - 1);
+            self.0.lemma_pte_index_matches_owner(*owner);
             let cont = owner.continuations[owner.level - 1];
             cont.lemma_map_children_unroll(
                 PageTableOwner::<C>::metaregion_sound_pred(*regions),
@@ -2041,6 +2036,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             assert(self.0.path[self.0.level - 1] is Some);
         }
         let entry_idx = pte_index::<C>(self.0.va, self.0.level);
+        proof {
+            assert(entry_idx == owner.continuations[owner.level - 1].idx);
+        }
         let ghost cur_path_guard = self.0.path[self.0.level - 1]->0;
 
         let ghost owner0 = *owner;
@@ -2590,7 +2588,14 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                     let ghost owner_pre_none = *owner;
                     let ghost level_pre_none = cur_level;
                     let ghost guards_pre_none = *guards;
+                    proof {
+                        self.0.lemma_pte_index_matches_owner(owner_pre_none);
+                    }
                     let entry_idx = pte_index::<C>(self.0.va, self.0.level);
+                    proof {
+                        assert(entry_idx
+                            == owner_pre_none.continuations[owner_pre_none.level - 1].idx);
+                    }
                     let ghost cur_path_guard = self.0.path[cur_level - 1]->0;
 
                     let tracked mut continuation = owner.continuations.tracked_remove(
@@ -2698,6 +2703,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                                 cont_pre_alloc.entry_own.node(),
                             );
                         };
+                        owner_pre_none.lemma_cur_pte_index();
                         owner.map_branch_none_inv_holds(owner_pre_none);
                     }
 
@@ -2866,6 +2872,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     pub unsafe fn map(&mut self, item: C::Item) -> (res: Result<(), PageTableFrag<C>>) {
         hide(MetaSlotOwner::storage_perm);
         hide(MetaSlotOwner::vtable_ptr_perm);
+        broadcast use AbstractVaddr::from_vaddr_to_vaddr_roundtrip;
         let ghost self0 = *self;
         let ghost owner0 = *owner;
 
@@ -2883,7 +2890,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         assert_eq!(self.0.va % size, 0);
 
         proof {
-            owner.va.reflect_prop(self.0.va);
             assert(owner.in_locked_range());
             owner.lemma_va_plus_page_size_no_overflow(level);
         }
@@ -2989,8 +2995,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         self.0.move_forward();
 
         proof {
-            owner.va.reflect_prop(self.0.va);
-            owner2.va.aligned_align_up_advances(level as int);
+            owner2.va_view().aligned_align_up_advances(level as int);
         }
 
         proof {
@@ -3154,21 +3159,16 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         hide(CursorOwner::map_only_children);
         hide(CursorOwner::nodes_locked);
         hide(TreeNode::inv);
+        broadcast use AbstractVaddr::from_vaddr_to_vaddr_roundtrip;
         proof {
-            assert(owner.va.inv()) by {
-                reveal(<CursorOwner as Inv>::inv);
-            };
-            owner.va.reflect_prop(self.0.va);
+            AbstractVaddr::from_vaddr_wf(owner.va);
         }
         let find_result = #[verus_spec(with Tracked(owner), Tracked(regions), Tracked(guards))]
         self.0.find_next_impl(len, true, true);
 
         if find_result.is_none() {
             proof {
-                assert(owner.va.inv()) by {
-                    reveal(<CursorOwner as Inv>::inv);
-                };
-                owner.va.reflect_prop(self.0.va);
+                AbstractVaddr::from_vaddr_wf(owner.va);
             }
             return None;
         }
@@ -3208,9 +3208,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         let ghost regions_after_replace = *regions;
 
         proof {
-            assert(owner.va.inv()) by {
-                reveal(<CursorOwner as Inv>::inv);
-            };
+            AbstractVaddr::from_vaddr_wf(owner.va);
             owner.move_forward_increases_va();
         }
         let ghost owner_before_move = *owner;
@@ -3219,10 +3217,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         self.0.move_forward();
 
         proof {
-            assert(owner.va.inv()) by {
-                reveal(<CursorOwner as Inv>::inv);
-            };
-            owner.va.reflect_prop(self.0.va);
+            AbstractVaddr::from_vaddr_wf(owner.va);
             old(owner).view_preserves_inv();
 
             owner_before_move.move_forward_owner_preserves_mappings();
@@ -3247,7 +3242,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                     level_after_find,
                     cur_st.value().frame().prop,
                 );
-                owner_before_replace.va.reflect_prop(va_after_find);
 
                 let view = CursorView::<C> {
                     cur_va: va,
@@ -3313,7 +3307,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 };
             }
             let ghost ps = page_size(level_after_find);
-            owner_before_replace.va.reflect_prop(va_after_find);
             owner_before_replace.cur_subtree_eq_filtered_mappings();
             let ghost obr_subtree = PageTableOwner(owner_before_replace.cur_subtree())@.mappings;
         }
@@ -3536,7 +3529,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         let va = self.0.va;
         let level = self.0.level;
 
-        assert(1 <= owner0.level <= NR_LEVELS && owner0.va.index[owner0.level - 1]
+        assert(1 <= owner0.level <= NR_LEVELS && owner0.va_view().index[owner0.level - 1]
             == owner0.continuations[owner0.level - 1].idx && owner0.continuations[owner0.level
             - 1].all_some() && owner0.continuations[owner0.level - 1].level() == owner0.level
             && self.0.path[level - 1] is Some) by {
@@ -3544,8 +3537,12 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         };
         proof {
             owner0.lemma_inv_continuation(owner0.level - 1);
+            self.0.lemma_pte_index_matches_owner(owner0);
         }
         let entry_idx = pte_index::<C>(self.0.va, self.0.level);
+        proof {
+            assert(entry_idx == owner0.continuations[owner0.level - 1].idx);
+        }
         let ghost cur_path_guard = self.0.path[level - 1]->0;
 
         let tracked mut continuation = owner.continuations.tracked_remove(owner.level - 1);

@@ -6,6 +6,7 @@ use vstd_extra::{ghost_tree::*, ownership::*};
 use crate::specs::{
     arch::{NR_ENTRIES, NR_LEVELS, PAGE_SIZE},
     mm::page_table::{
+        AbstractVaddr,
         cursor::owners::{CursorContinuation, CursorOwner},
         node::entry_owners::EntryOwner,
         owners::*,
@@ -16,6 +17,8 @@ use crate::mm::{Paddr, PagingLevel, Vaddr, page_prop::PageProperty, page_size, p
 use core::ops::Range;
 
 verus! {
+
+broadcast use {AbstractVaddr::from_vaddr_to_vaddr_roundtrip, AbstractVaddr::reflect_from_vaddr};
 
 // ─── Tree predicate lifting (CursorContinuation) ───────────────────
 impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
@@ -202,10 +205,10 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         // !cur_entry_fits_range.
         if self.level == 1 {
             crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_spec_level1();
-            self.va.align_down_concrete(1);
+            self.va_view().align_down_concrete(1);
             // cur_va is PAGE_SIZE-aligned and cur_va < end, so cur_va + PAGE_SIZE <= end <= usize::MAX.
-            self.va.aligned_align_up_advances(1);
-            // align_up(1).to_vaddr() == self.va.to_vaddr() + PAGE_SIZE.
+            self.va_view().aligned_align_up_advances(1);
+            // align_up(1).to_vaddr() == self.va_view().to_vaddr() + PAGE_SIZE.
         }
     }
 }

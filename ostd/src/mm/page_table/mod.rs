@@ -856,18 +856,12 @@ fn nr_pte_index_bits<C: PagingConstsTrait>() -> usize
 /// The index of a VA's PTE in a page table node at the given level.
 fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> (res: usize)
     requires
-        1 <= level
-            <= NR_LEVELS,
-// Migration compatibility for CursorOwner while it still stores AbstractVaddr.
-
-    ensures
-        res == AbstractVaddr::from_vaddr(va).index[level - 1],
+        1 <= level <= C::NR_LEVELS(),
     returns
         pte_index_spec::<C>(va, level),
 {
     proof {
         C::lemma_paging_consts_properties();
-        lemma_pte_index_spec_matches_abstract::<C>(va, level);
     }
     (va >> pte_index_bit_offset::<C>(level)) & (nr_subpage_per_huge::<C>() - 1)
 }

@@ -15,7 +15,8 @@ use crate::specs::{
             lemma_vaddr_of_eq_int, sibling_paths_disjoint, vaddr, vaddr_of, OwnerSubtree,
             PageTableOwner, INC_LEVELS,
         },
-        AbstractVaddr, Mapping,
+        lemma_vaddr_upper_base_spec_matches_abstract, vaddr_upper_base_spec, AbstractVaddr,
+        Mapping,
     },
 };
 
@@ -23,7 +24,11 @@ use crate::mm::{page_size, page_table::*, PagingLevel, Vaddr};
 
 verus! {
 
-broadcast use group_ghost_tree_lemmas;
+broadcast use {
+    group_ghost_tree_lemmas,
+    AbstractVaddr::from_vaddr_to_vaddr_roundtrip,
+    AbstractVaddr::reflect_from_vaddr,
+};
 // ─── CursorContinuation mapping lemmas ───────────────────────────────────────
 
 impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
@@ -259,12 +264,12 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         //   identify the two boundaries.
         self.cur_subtree_eq_filtered_mappings_path();
         self.cur_va_in_cont_child_range(self.level - 1);
-        self.va.to_path_vaddr_concrete(self.level - 1);
+        self.va_view().to_path_vaddr_concrete(self.level - 1);
     }
 
     /// The cursor's VA falls within the canonical VA range of any ancestor
     /// continuation's child that the cursor descended through. Canonical
-    /// form: positional `vaddr(path)` plus the `leading_bits * 2^48` shift.
+    /// form: positional `vaddr(path)` plus the architecture-parameterized upper-address base.
     proof fn cur_va_in_cont_child_range(self, lvl: int)
         requires
             self.inv(),
@@ -272,24 +277,26 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.level - 1 <= lvl < NR_LEVELS,
         ensures
             vaddr(self.continuations[lvl].path().push_tail(self.continuations[lvl].idx as int))
-                + self.va.leading_bits * 0x1_0000_0000_0000int <= self.cur_va(),
+                + vaddr_upper_base_spec::<C>(self.cur_va()) <= self.cur_va(),
             self.cur_va() < vaddr(
                 self.continuations[lvl].path().push_tail(self.continuations[lvl].idx as int),
-            ) + self.va.leading_bits * 0x1_0000_0000_0000int + page_size((lvl + 1) as PagingLevel),
+            ) + vaddr_upper_base_spec::<C>(self.cur_va()) + page_size((lvl + 1) as PagingLevel),
             vaddr(self.continuations[lvl].path().push_tail(self.continuations[lvl].idx as int))
-                == vaddr(self.va.to_path(lvl)),
+                == vaddr(self.va_view().to_path(lvl)),
     {
+        self.va_view().reflect_to_vaddr();
+        lemma_vaddr_upper_base_spec_matches_abstract::<C>(self.cur_va());
         let cont = self.continuations[lvl];
         let child_path = cont.path().push_tail(cont.idx as int);
-        let va_path = self.va.to_path(lvl);
+        let va_path = self.va_view().to_path(lvl);
 
-        self.va.to_path_len(lvl);
+        self.va_view().to_path_len(lvl);
         assert forall|k: int| 0 <= k < child_path.len() implies child_path[k] == va_path[k] by {
-            self.va.to_path_index(lvl, k);
+            self.va_view().to_path_index(lvl, k);
         };
 
         AbstractVaddr::rec_vaddr_eq_if_indices_eq(child_path, va_path, 0);
-        self.va.vaddr_range_from_path(lvl);
+        self.va_view().vaddr_range_from_path(lvl);
     }
 
     /// The current subtree's VA range [subtree_va, subtree_va + page_size(level)) is contained
@@ -313,8 +320,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     {
         self.cur_va_in_cont_child_range(self.level - 1);
         self.cur_va_in_cont_child_range(lvl);
-        self.va.to_path_vaddr_concrete(self.level - 1);
-        self.va.to_path_vaddr_concrete(lvl);
+        self.va_view().to_path_vaddr_concrete(self.level - 1);
+        self.va_view().to_path_vaddr_concrete(lvl);
 
         let x = self.cur_va() as nat;
         let fine = page_size(self.level as PagingLevel) as nat;
@@ -334,10 +341,11 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             j != self.index(),
             self.continuations[self.level - 1].children[j] is Some,
         ensures
-            vaddr(self.continuations[self.level - 1].path().push_tail(j)) + self.va.leading_bits
-                * 0x1_0000_0000_0000int + page_size(self.level as PagingLevel) <= self.cur_va()
+            vaddr(self.continuations[self.level - 1].path().push_tail(j))
+                + vaddr_upper_base_spec::<C>(self.cur_va()) + page_size(self.level as PagingLevel)
+                <= self.cur_va()
                 || self.cur_va() < vaddr(self.continuations[self.level - 1].path().push_tail(j))
-                + self.va.leading_bits * 0x1_0000_0000_0000int,
+                + vaddr_upper_base_spec::<C>(self.cur_va()),
     {
         let cont = self.continuations[self.level - 1];
         let idx = self.index();
@@ -362,10 +370,11 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             j != self.continuations[i].idx,
             self.continuations[i].children[j] is Some,
         ensures
-            vaddr(self.continuations[i].path().push_tail(j)) + self.va.leading_bits
-                * 0x1_0000_0000_0000int + page_size((i + 1) as PagingLevel) <= self.cur_va()
+            vaddr(self.continuations[i].path().push_tail(j))
+                + vaddr_upper_base_spec::<C>(self.cur_va()) + page_size((i + 1) as PagingLevel)
+                <= self.cur_va()
                 || self.cur_va() < vaddr(self.continuations[i].path().push_tail(j))
-                + self.va.leading_bits * 0x1_0000_0000_0000int,
+                + vaddr_upper_base_spec::<C>(self.cur_va()),
     {
         let cont = self.continuations[i];
 
@@ -393,6 +402,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             ),
     {
         broadcast use {CursorContinuation::group_lemmas, CursorOwner::group_lemmas};
+        self.va_view().reflect_to_vaddr();
+        lemma_vaddr_upper_base_spec_matches_abstract::<C>(self.cur_va());
         // m comes from some continuation level i
 
         let i = choose|i: int|
@@ -493,9 +504,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
 
                     if j as usize != cont_i.idx as int {
                         old_self.cur_va_in_cont_child_range(level as int);
-                        old_self.va.to_path_vaddr_concrete(level as int);
+                        old_self.va_view().to_path_vaddr_concrete(level as int);
                         old_self.cur_va_in_cont_child_range(i);
-                        old_self.va.to_path_vaddr_concrete(i);
+                        old_self.va_view().to_path_vaddr_concrete(i);
 
                         let x = old_self.cur_va() as nat;
                         let ps_node = page_size((level + 1) as PagingLevel) as nat;

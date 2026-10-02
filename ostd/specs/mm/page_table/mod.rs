@@ -39,6 +39,26 @@ pub open spec fn pte_index_bit_offset_spec<C: PagingConstsTrait>(level: PagingLe
     (C::BASE_PAGE_SIZE().ilog2() + nr_pte_index_bits_spec::<C>() * (level - 1)) as usize
 }
 
+/// Page size at `level`, derived entirely from the selected paging constants.
+#[verifier::inline]
+pub open spec fn page_size_for_level_spec<C: PagingConstsTrait>(level: PagingLevel) -> usize {
+    (C::BASE_PAGE_SIZE() * pow2(
+        (nr_pte_index_bits_spec::<C>() * (level - 1)) as nat,
+    )) as usize
+}
+
+/// Temporary bridge to the architecture-global `page_size` helper used by the executable code.
+pub proof fn lemma_page_size_for_level_matches_page_size<C: PagingConstsTrait>(
+    level: PagingLevel,
+)
+    requires
+        1 <= level <= C::NR_LEVELS() + 1,
+    ensures
+        page_size_for_level_spec::<C>(level) == page_size(level),
+{
+    C::lemma_paging_consts_properties();
+}
+
 /// Page-table index selected by `va` at `level`.
 ///
 /// This is the architecture-parameterized address view used by executable page-table walks. The
@@ -60,6 +80,13 @@ pub open spec fn paging_body_width_spec<C: PagingConstsTrait>() -> usize {
 #[verifier::inline]
 pub open spec fn vaddr_upper_bits_spec<C: PagingConstsTrait>(va: Vaddr) -> usize {
     va >> paging_body_width_spec::<C>()
+}
+
+/// Contribution of the uninterpreted upper virtual-address bits to the concrete address.
+/// Unlike the legacy fixed `leading_bits * 2^48` expression, the boundary is derived from `C`.
+#[verifier::inline]
+pub open spec fn vaddr_upper_base_spec<C: PagingConstsTrait>(va: Vaddr) -> int {
+    vaddr_upper_bits_spec::<C>(va) as int * pow2(paging_body_width_spec::<C>() as nat) as int
 }
 
 #[verifier::inline]
@@ -148,6 +175,20 @@ pub proof fn lemma_vaddr_upper_bits_spec_matches_abstract<C: PagingConstsTrait>(
     vstd::bits::lemma_usize_shr_is_div(va, width);
 }
 
+/// Temporary bridge from the architecture-parameterized upper-address contribution to the
+/// fixed-width arithmetic used by the legacy decomposed address proofs.
+pub proof fn lemma_vaddr_upper_base_spec_matches_abstract<C: PagingConstsTrait>(va: Vaddr)
+    ensures
+        vaddr_upper_base_spec::<C>(va)
+            == AbstractVaddr::from_vaddr(va).leading_bits * 0x1_0000_0000_0000int,
+{
+    C::lemma_paging_consts_properties();
+    lemma_arch_specific_consts_properties::<C>();
+    lemma_vaddr_upper_bits_spec_matches_abstract::<C>(va);
+    vstd::arithmetic::power2::lemma2_to64();
+    vstd::arithmetic::power2::lemma2_to64_rest();
+}
+
 /// Architecture-parameterized view of the indices preserved by moving within one page-table
 /// node. The implementation currently delegates to the legacy address decomposition.
 pub proof fn lemma_same_node_pte_indices_match<C: PagingConstsTrait>(
@@ -160,10 +201,10 @@ pub proof fn lemma_same_node_pte_indices_match<C: PagingConstsTrait>(
         1 <= level,
         level < C::NR_LEVELS(),
         node_start <= va1,
-        va1 < node_start + page_size((level + 1) as PagingLevel),
+        va1 < node_start + page_size_for_level_spec::<C>((level + 1) as PagingLevel),
         node_start <= va2,
-        va2 < node_start + page_size((level + 1) as PagingLevel),
-        node_start as nat % page_size((level + 1) as PagingLevel) as nat == 0,
+        va2 < node_start + page_size_for_level_spec::<C>((level + 1) as PagingLevel),
+        node_start as nat % page_size_for_level_spec::<C>((level + 1) as PagingLevel) as nat == 0,
     ensures
         forall|i: int|
             level <= i < C::NR_LEVELS() ==> (#[trigger] pte_index_spec::<C>(
@@ -195,10 +236,10 @@ pub proof fn lemma_same_node_vaddr_upper_bits_match<C: PagingConstsTrait>(
         1 <= level,
         level <= C::NR_LEVELS(),
         node_start <= va1,
-        va1 - node_start < page_size((level + 1) as PagingLevel),
+        va1 - node_start < page_size_for_level_spec::<C>((level + 1) as PagingLevel),
         node_start <= va2,
-        va2 - node_start < page_size((level + 1) as PagingLevel),
-        node_start as nat % page_size((level + 1) as PagingLevel) as nat == 0,
+        va2 - node_start < page_size_for_level_spec::<C>((level + 1) as PagingLevel),
+        node_start as nat % page_size_for_level_spec::<C>((level + 1) as PagingLevel) as nat == 0,
     ensures
         vaddr_upper_bits_spec::<C>(va1) == vaddr_upper_bits_spec::<C>(va2),
 {
@@ -309,9 +350,9 @@ impl AbstractVaddr {
     /// With `leading_bits` carrying the high 16 bits of the VA, this now
     /// holds **unconditionally** for any 64-bit `Vaddr` — the positional
     /// decomposition covers all 64 bits (12 offset + 4×9 index + 16 top).
-    pub proof fn from_vaddr_to_vaddr_roundtrip(va: Vaddr)
+    pub broadcast proof fn from_vaddr_to_vaddr_roundtrip(va: Vaddr)
         ensures
-            Self::from_vaddr(va).to_vaddr() == va,
+            #[trigger] Self::from_vaddr(va).to_vaddr() == va,
     {
         vstd::arithmetic::power2::lemma2_to64();
         vstd::arithmetic::power2::lemma2_to64_rest();
