@@ -28,6 +28,7 @@ use crate::specs::{
     },
 };
 
+use crate::arch::mm::PagingConsts;
 use crate::mm::{
     Paddr, PagingConstsTrait, PagingLevel, Vaddr,
     frame::meta::{REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED},
@@ -174,8 +175,8 @@ pub proof fn lemma_vaddr_top_index_cell(path: TreePath<NR_ENTRIES>)
         1 <= path.len() <= INC_LEVELS - 1,
     ensures
         (path[0]) * 0x80_0000_0000int <= vaddr(path),
-        vaddr(path) + page_size((INC_LEVELS - path.len()) as PagingLevel) <= (path[0] + 1)
-            * 0x80_0000_0000int,
+        vaddr(path) + page_size::<PagingConsts>((INC_LEVELS - path.len()) as PagingLevel) <= (
+        path[0] + 1) * 0x80_0000_0000int,
 {
     broadcast use TreePath::lemma_index_satisfies_elem_inv;
 
@@ -237,7 +238,6 @@ pub proof fn lemma_vaddr_of_eq_int<C: PageTableConfig>(path: TreePath<NR_ENTRIES
     lemma_vaddr_strict_bound(path);
     let body_level = (C::NR_LEVELS() + 1) as PagingLevel;
     lemma_page_size_for_level_is_pow2::<C>(body_level);
-    lemma_page_size_for_level_matches_page_size::<C>(body_level);
     lemma_page_size_spec_values();
 }
 
@@ -254,14 +254,14 @@ pub proof fn lemma_vaddr_path_aligned<C: PageTableConfig>(path: TreePath<NR_ENTR
     ensures
         vaddr(path) + vaddr_upper_part_spec::<C>(va) == nat_align_down(
             va as nat,
-            page_size_for_level_spec::<C>((C::NR_LEVELS() - path.len() + 1) as PagingLevel) as nat,
+            page_size::<C>((C::NR_LEVELS() - path.len() + 1) as PagingLevel) as nat,
         ),
     decreases path.len(),
 {
     C::lemma_paging_consts_properties();
     let level = (C::NR_LEVELS() - path.len() + 1) as PagingLevel;
     lemma_page_size_for_level_is_pow2::<C>(level);
-    let size = page_size_for_level_spec::<C>(level) as int;
+    let size = page_size::<C>(level) as int;
     lemma_fundamental_div_mod(va as int, size);
     vstd::arithmetic::div_mod::lemma_mod_bound(va as int, size);
     vstd::arithmetic::div_mod::lemma_div_pos_is_pos(va as int, size);
@@ -280,18 +280,22 @@ pub proof fn lemma_vaddr_path_aligned<C: PageTableConfig>(path: TreePath<NR_ENTR
         };
         lemma_vaddr_path_aligned::<C>(parent, va);
         PageTableOwner::<C>::lemma_vaddr_push_tail_eq(parent, index);
-        lemma_page_size_for_level_matches_page_size::<C>(level);
         lemma_page_size_for_level_next::<C>(level);
         lemma_pte_index_spec_is_div_mod::<C>(va, level);
 
         let fanout = nr_subpage_per_huge::<C>() as int;
         let quotient = va as int / size;
-        let parent_size = page_size_for_level_spec::<C>((level + 1) as PagingLevel) as int;
+        let parent_size = page_size::<C>((level + 1) as PagingLevel) as int;
         lemma_div_denominator(va as int, size, fanout);
         lemma_fundamental_div_mod(quotient, fanout);
         lemma_fundamental_div_mod(va as int, parent_size);
         vstd::arithmetic::div_mod::lemma_mod_bound(va as int, parent_size);
         vstd::arithmetic::div_mod::lemma_div_pos_is_pos(va as int, parent_size);
+        assert(vaddr(parent) + vaddr_upper_part_spec::<C>(va) == nat_align_down(
+            va as nat,
+            parent_size as nat,
+        ));
+        assert(vaddr(path) == vaddr(parent) + index * size);
         assert(index == pte_index_spec::<C>(va, level));
         assert(quotient == fanout * (va as int / parent_size) + index);
         assert(size * quotient == parent_size * (va as int / parent_size) + size * index)
@@ -308,12 +312,12 @@ pub proof fn page_size_monotonic(a: PagingLevel, b: PagingLevel)
     requires
         1 <= a <= b <= NR_LEVELS + 1,
     ensures
-        page_size(a) <= page_size(b),
+        page_size::<PagingConsts>(a) <= page_size::<PagingConsts>(b),
 {
     if a == b {
     } else {
-        let ps_a = page_size(a);
-        let ps_b = page_size(b);
+        let ps_a = page_size::<PagingConsts>(a);
+        let ps_b = page_size::<PagingConsts>(b);
 
         lemma_page_size_ge_page_size(b);
 
@@ -348,7 +352,7 @@ pub proof fn sibling_paths_disjoint<C: PageTableConfig>(
         j < NR_ENTRIES,
         k < NR_ENTRIES,
         j != k,
-        size == page_size((INC_LEVELS - prefix.len() - 1) as PagingLevel),
+        size == page_size::<PagingConsts>((INC_LEVELS - prefix.len() - 1) as PagingLevel),
     ensures
         vaddr(prefix.push_tail(j)) + size <= vaddr(prefix.push_tail(k)) || vaddr(
             prefix.push_tail(k),
@@ -769,7 +773,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
         if self.0.value().is_frame() {
             let va = vaddr_of::<C>(path);
             let pt_level = INC_LEVELS - path.len();
-            let page_size = page_size(pt_level as PagingLevel);
+            let page_size = page_size::<PagingConsts>(pt_level as PagingLevel);
 
             set![Mapping {
                 va_range: Range { start: va as int, end: va + page_size },
@@ -860,11 +864,12 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             path.len() < INC_LEVELS - 1,
             0 <= i < NR_ENTRIES,
         ensures
-            vaddr(path.push_tail(i)) == vaddr(path) + i * page_size(
+            vaddr(path.push_tail(i)) == vaddr(path) + i * page_size::<PagingConsts>(
                 (INC_LEVELS - path.len() - 1) as PagingLevel,
             ),
-            vaddr(path) + (i + 1) * page_size((INC_LEVELS - path.len() - 1) as PagingLevel)
-                <= usize::MAX,
+            vaddr(path) + (i + 1) * page_size::<PagingConsts>(
+                (INC_LEVELS - path.len() - 1) as PagingLevel,
+            ) <= usize::MAX,
     {
         broadcast use {
             TreePath::lemma_push_tail_len,
@@ -941,7 +946,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
         ensures
             vaddr_of::<C>(path) <= m.va_range.start,
             m.va_range.start < m.va_range.end,
-            m.va_range.end <= vaddr_of::<C>(path) + page_size(
+            m.va_range.end <= vaddr_of::<C>(path) + page_size::<PagingConsts>(
                 (INC_LEVELS - path.len()) as PagingLevel,
             ),
         decreases INC_LEVELS - path.len(),
@@ -955,13 +960,13 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             let expected = Mapping {
                 va_range: Range {
                     start: vaddr_of::<C>(path) as int,
-                    end: vaddr_of::<C>(path) + page_size(pt_level),
+                    end: vaddr_of::<C>(path) + page_size::<PagingConsts>(pt_level),
                 },
                 pa_range: Range {
                     start: frame.mapped_pa,
-                    end: (frame.mapped_pa + page_size(pt_level)) as Paddr,
+                    end: (frame.mapped_pa + page_size::<PagingConsts>(pt_level)) as Paddr,
                 },
-                page_size: page_size(pt_level),
+                page_size: page_size::<PagingConsts>(pt_level),
                 property: frame.prop,
             };
         } else if self.0.value().is_node() && path.len() < INC_LEVELS - 1 {
@@ -975,7 +980,9 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             child.view_rec_vaddr_range(path.push_tail(i), m);
             Self::lemma_vaddr_push_tail_eq(path, i);
 
-            let child_ps = page_size((INC_LEVELS - path.len() - 1) as PagingLevel) as int;
+            let child_ps = page_size::<PagingConsts>(
+                (INC_LEVELS - path.len() - 1) as PagingLevel,
+            ) as int;
             assert((i + 1) * child_ps <= 512 * child_ps) by (nonlinear_arith)
                 requires
                     0 <= i < 512,
@@ -1103,13 +1110,13 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             let expected = Mapping {
                 va_range: Range {
                     start: vaddr_of::<C>(path) as int,
-                    end: vaddr_of::<C>(path) + page_size(pt_level),
+                    end: vaddr_of::<C>(path) + page_size::<PagingConsts>(pt_level),
                 },
                 pa_range: Range {
                     start: frame.mapped_pa,
-                    end: (frame.mapped_pa + page_size(pt_level)) as Paddr,
+                    end: (frame.mapped_pa + page_size::<PagingConsts>(pt_level)) as Paddr,
                 },
-                page_size: page_size(pt_level),
+                page_size: page_size::<PagingConsts>(pt_level),
                 property: frame.prop,
             };
             assert(self.view_rec(path).contains(expected));
@@ -1170,7 +1177,9 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             } else {
                 self.pt_inv_unroll(i1);
                 self.pt_inv_unroll(i2);
-                let child_ps = page_size((INC_LEVELS - path.len() - 1) as PagingLevel);
+                let child_ps = page_size::<PagingConsts>(
+                    (INC_LEVELS - path.len() - 1) as PagingLevel,
+                );
                 PageTableOwner(self.0.children()[i1].unwrap()).view_rec_vaddr_range(
                     path.push_tail(i1),
                     m1,
@@ -1247,8 +1256,9 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             path.len() <= INC_LEVELS - 1,
             1 <= INC_LEVELS - path.len() <= NR_LEVELS,
         ensures
-            vaddr(path) % page_size((INC_LEVELS - path.len()) as PagingLevel) == 0,
-            vaddr(path) + page_size((INC_LEVELS - path.len()) as PagingLevel) <= usize::MAX,
+            vaddr(path) % page_size::<PagingConsts>((INC_LEVELS - path.len()) as PagingLevel) == 0,
+            vaddr(path) + page_size::<PagingConsts>((INC_LEVELS - path.len()) as PagingLevel)
+                <= usize::MAX,
     {
         lemma_page_size_spec_values();
         vstd::arithmetic::power2::lemma2_to64();
@@ -1363,17 +1373,17 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             let m = Mapping {
                 va_range: Range {
                     start: vaddr_of::<C>(path) as int,
-                    end: vaddr_of::<C>(path) + page_size(pt_level),
+                    end: vaddr_of::<C>(path) + page_size::<PagingConsts>(pt_level),
                 },
                 pa_range: Range {
                     start: frame.mapped_pa,
-                    end: (frame.mapped_pa + page_size(pt_level)) as Paddr,
+                    end: (frame.mapped_pa + page_size::<PagingConsts>(pt_level)) as Paddr,
                 },
-                page_size: page_size(pt_level),
+                page_size: page_size::<PagingConsts>(pt_level),
                 property: frame.prop,
             };
 
-            let ps = page_size(pt_level) as int;
+            let ps = page_size::<PagingConsts>(pt_level) as int;
             vstd_extra::arithmetic::lemma_mod_0_add(frame.mapped_pa as int, ps, ps);
             lemma_vaddr_of_eq_int::<C>(path);
             C::lemma_page_table_config_constant_properties();
@@ -1620,7 +1630,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
                 |e: EntryOwner<C>, p: TreePath<NR_ENTRIES>|
                     e.is_frame() && e.parent_level > 1 ==> {
                         let pa = e.frame().mapped_pa;
-                        let nr_pages = page_size(e.parent_level) / PAGE_SIZE;
+                        let nr_pages = page_size::<PagingConsts>(e.parent_level) / PAGE_SIZE;
                         forall|j: usize|
                             0 < j < nr_pages ==> {
                                 let sub_idx = #[trigger] frame_to_index(
@@ -1672,7 +1682,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
                 |e: EntryOwner<C>, p: TreePath<NR_ENTRIES>|
                     e.is_frame() && e.parent_level > 1 ==> {
                         let pa = e.frame().mapped_pa;
-                        let nr_pages = page_size(e.parent_level) / PAGE_SIZE;
+                        let nr_pages = page_size::<PagingConsts>(e.parent_level) / PAGE_SIZE;
                         forall|j: usize|
                             0 < j < nr_pages ==> {
                                 let sub_idx = #[trigger] frame_to_index(
@@ -1759,7 +1769,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             path.len() <= INC_LEVELS - 1,
             self.view_rec(path).contains(m),
         ensures
-            m.page_size <= page_size((INC_LEVELS - path.len()) as PagingLevel),
+            m.page_size <= page_size::<PagingConsts>((INC_LEVELS - path.len()) as PagingLevel),
         decreases INC_LEVELS - path.len(),
     {
         broadcast use PageTableOwner::group_lemmas;
@@ -1790,7 +1800,9 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             path.len() < INC_LEVELS - 1,
             self.view_rec(path).contains(m),
         ensures
-            m.page_size <= page_size(((INC_LEVELS - path.len()) - 1) as PagingLevel),
+            m.page_size <= page_size::<PagingConsts>(
+                ((INC_LEVELS - path.len()) - 1) as PagingLevel,
+            ),
         decreases INC_LEVELS - path.len(),
     {
         broadcast use PageTableOwner::group_lemmas;

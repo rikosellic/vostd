@@ -12,11 +12,10 @@ use crate::specs::{
         frame::mapping::meta_to_index,
         page_table::{
             cursor::{owners::*, page_size_lemmas::lemma_page_size_ge_page_size},
-            lemma_next_slot_pte_index, lemma_page_size_for_level_matches_page_size,
-            lemma_page_size_for_level_next, lemma_pte_index_bound,
+            lemma_next_slot_pte_index, lemma_page_size_for_level_next, lemma_pte_index_bound,
             node::EntryOwner,
             owners::{INC_LEVELS, OwnerSubtree, PageTableOwner},
-            page_size_for_level_spec, pte_index_spec,
+            pte_index_spec,
         },
     },
 };
@@ -623,7 +622,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             // self.level == NR_LEVELS && self.index() + 1 == NR_ENTRIES.
             // Preserve lower address bits and the former address-word wrapping semantics.
             Self {
-                va: (self.va + page_size_for_level_spec::<C>(C::NR_LEVELS())) as Vaddr,
+                va: (self.va + page_size::<C>(C::NR_LEVELS())) as Vaddr,
                 popped_too_high: false,
                 ..self
             }
@@ -643,7 +642,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.move_forward_va_is_align_up();
         self.lemma_va_plus_page_size_no_overflow(self.level);
         lemma_page_size_ge_page_size(self.level);
-        lemma_nat_align_down_sound(self.va as nat, page_size(self.level) as nat);
+        lemma_nat_align_down_sound(self.va as nat, page_size::<PagingConsts>(self.level) as nat);
     }
 
     pub proof fn move_forward_not_popped_too_high(self)
@@ -798,7 +797,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             !self.popped_too_high,
             self.level == self.guard_level ==> self.index() + 1 < NR_ENTRIES,
         ensures
-            self.move_forward_owner_spec().va == self@.align_up_spec(page_size(self.level)),
+            self.move_forward_owner_spec().va == self@.align_up_spec(
+                page_size::<PagingConsts>(self.level),
+            ),
         decreases NR_LEVELS - self.level,
     {
         C::lemma_paging_consts_properties();
@@ -816,26 +817,23 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         } else {
             popped.inc_and_zero_increases_va();
             popped.lemma_inc_index_va();
-            lemma_page_size_for_level_matches_page_size::<C>(popped.level);
         }
 
         self.lemma_cur_pte_index();
         self.lemma_va_plus_page_size_no_overflow(self.level);
-        lemma_page_size_for_level_matches_page_size::<C>(self.level);
-        lemma_page_size_for_level_matches_page_size::<C>(popped.level);
         lemma_page_size_for_level_next::<C>(self.level);
         lemma_page_size_ge_page_size(self.level);
-        lemma_nat_align_down_sound(self.va as nat, page_size(self.level) as nat);
-        let next = self@.align_up_spec(page_size(self.level));
+        lemma_nat_align_down_sound(self.va as nat, page_size::<PagingConsts>(self.level) as nat);
+        let next = self@.align_up_spec(page_size::<PagingConsts>(self.level));
         lemma_mod_add_multiples_vanish(
-            nat_align_down(self.va as nat, page_size(self.level) as nat) as int,
-            page_size(self.level) as int,
+            nat_align_down(self.va as nat, page_size::<PagingConsts>(self.level) as nat) as int,
+            page_size::<PagingConsts>(self.level) as int,
         );
         lemma_next_slot_pte_index::<C>(self.va, next, self.level);
         assert(pte_index_spec::<C>(next, self.level) == 0);
         lemma_next_slot_pte_index::<C>(popped.va, next, popped.level);
-        assert(self@.align_up_spec(page_size(self.level)) == popped@.align_up_spec(
-            page_size(popped.level),
+        assert(self@.align_up_spec(page_size::<PagingConsts>(self.level)) == popped@.align_up_spec(
+            page_size::<PagingConsts>(popped.level),
         ));
     }
 
