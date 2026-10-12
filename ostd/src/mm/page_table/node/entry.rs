@@ -10,7 +10,9 @@ use crate::specs::{
             mapping::{frame_to_index, group_page_meta, meta_to_index},
             meta_region_owners::MetaRegionOwners,
         },
-        page_table::{INC_LEVELS, PageTableOwner},
+        page_table::{
+            INC_LEVELS, PageTableOwner, cursor::page_size_lemmas::lemma_split_sub_page_big_j,
+        },
     },
     task::InAtomicMode,
 };
@@ -316,10 +318,6 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                     ==> final(regions).slot_owners[idx].paths_in_pt == old(
                     regions,
                 ).slot_owners[idx].paths_in_pt,
-            forall|k: int|
-                old(regions).slots.contains_key(k) ==> #[trigger] final(regions).slots.contains_key(
-                    k,
-                ),
             forall|idx: int|
                 #![trigger final(regions).slot_owners[idx].ref_count()]
                 final(regions).ref_count(idx) == old(
@@ -333,17 +331,12 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             final(regions).slots == old(regions).slots,
             // When both old and new are not nodes: from_pte/into_pte are identity.
             (!old(owner).is_node() && !final(new_owner).is_node()) ==> {
-                &&& final(regions).slots == old(regions).slots
                 &&& forall|i: int|
                     #![trigger final(regions).slot_owners[i]]
                     final(regions).slot_owners[i] == old(
                         regions,
                     ).slot_owners[i]
             },
-            // When old child is absent and new child is not a node: slots values unchanged.
-            (old(owner).is_absent() && !final(new_owner).is_node()) ==> forall|k: int|
-                old(regions).slots.contains_key(k) ==> old(regions).slots[k]
-                    == #[trigger] final(regions).slots[k],
             Self::replace_nonpanic_condition(*old(parent_owner), *old(new_owner)),
     )]
     #[verifier::spinoff_prover]
@@ -1115,11 +1108,11 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
             proof {
                 let idx = frame_to_index(small_pa);
-                if i != 0 {
-                    let ghost big_j =
-                        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_split_sub_page_big_j(
-                    pa, level, i);
-                }
+                let big_j = if i != 0 {
+                    lemma_split_sub_page_big_j(pa, level, i)
+                } else {
+                    0usize
+                };
                 if level - 1 > 1 {
                     let nr_subpages = page_size::<PagingConsts>((level - 1) as PagingLevel)
                         / PAGE_SIZE;
@@ -1196,9 +1189,6 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                         );
                     }
                 } else {
-                    let ghost big_j =
-                        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_split_sub_page_big_j(
-                    pa, level, i);
                     assert(regions.slots.contains_key(
                         frame_to_index((pa + big_j * PAGE_SIZE) as usize),
                     ));
@@ -1208,15 +1198,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 let tracked mut small_slot = regions.tracked_borrow_mut_slot_owner(small_pa);
                 small_slot.paths_in_pt = small_slot.paths_in_pt.insert(child_owner.path);
 
-                if (level - 1) > 1 {
-                }
                 let ghost target_idx = frame_to_index(small_pa);
-                if i != 0 {
-                    let ghost _ =
-                        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_split_sub_page_big_j(
-                    pa, level, i);
-
-                }
                 C::lemma_raw_item_well_formed_split(
                     pa,
                     level,
@@ -1554,8 +1536,6 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
                     ==> final(regions).slot_owners[slot].paths_in_pt == old(
                     regions,
                 ).slot_owners[slot].paths_in_pt,
-            forall|k: int|
-                old(regions).slots.contains_key(k) ==> #[trigger] final(regions).slots.contains_key(k),
             forall|slot: int|
                 #![trigger final(regions).slot_owners[slot].ref_count()]
                 final(regions).ref_count(slot) == old(
@@ -1568,16 +1548,12 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
                 ),
             final(regions).slots == old(regions).slots,
             (!old(owner).is_node() && !final(new_owner).is_node()) ==> {
-                &&& final(regions).slots == old(regions).slots
                 &&& forall|i: int|
                     #![trigger final(regions).slot_owners[i]]
                     final(regions).slot_owners[i] == old(
                         regions,
                     ).slot_owners[i]
             },
-            (old(owner).is_absent() && !final(new_owner).is_node()) ==> forall|k: int|
-                old(regions).slots.contains_key(k) ==> old(regions).slots[k]
-                    == #[trigger] final(regions).slots[k],
             Entry::<C>::replace_nonpanic_condition(*old(parent_owner), *old(new_owner)),
             *final(self) == *old(self),
     )]

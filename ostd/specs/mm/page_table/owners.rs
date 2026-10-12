@@ -996,11 +996,8 @@ impl<C: PageTableConfig> PageTableOwner<C> {
 
     /// `pt_inv` (plus the root's recorded path) lifts to a full
     /// `path_correct_pred` tree predicate: every entry's `.path` field
-    /// equals its structural position.  `PageTableOwner::inv()` already
-    /// bundles this (see the `Inv` impl below) but only for *node*-rooted
-    /// trees; callers that need it for an arbitrary `pt_inv` subtree
-    /// (including the leaf/frame-rooted child subtrees of a cursor
-    /// continuation) need a standalone form not gated on `value.is_node()`.
+    /// equals its structural position. This also applies to leaf/frame-rooted
+    /// child subtrees of a cursor continuation.
     pub proof fn pt_inv_implies_path_correct(subtree: OwnerSubtree<C>, path: TreePath<NR_ENTRIES>)
         requires
             PageTableOwner(subtree).pt_inv(),
@@ -1176,7 +1173,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
     /// Structural induction using the invariant that `parent_level` of each
     /// subtree equals `INC_LEVELS - tree_level`, chained through `rel_children`.
     /// At a leaf frame, `parent_level < NR_LEVELS` (from the tightened
-    /// `inv_base`) ensures the page size is one of the allowed values.
+    /// `inv`) ensures the page size is one of the allowed values.
     pub proof fn view_rec_mapping_page_size(self, path: TreePath<NR_ENTRIES>)
         requires
             self.pt_inv(),
@@ -1316,7 +1313,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
     /// Every mapping in `view_rec` satisfies `Mapping::inv()`.
     ///
     /// Structural induction on the subtree. At a leaf frame, the PA-side
-    /// clauses follow from `EntryOwner::inv_base`, the VA-size clause
+    /// clauses follow from `EntryOwner::inv`, the VA-size clause
     /// by construction, the page-size clause from the tightened
     /// `parent_level < NR_LEVELS` constraint plus the arithmetic identity
     /// `page_size(k) ∈ {4K, 2M, 1G}` for `k ∈ {1, 2, 3}`, and VA alignment
@@ -1707,29 +1704,6 @@ impl<C: PageTableConfig> PageTableOwner<C> {
         |entry: EntryOwner<C>, path: TreePath<NR_ENTRIES>| { entry.path == path }
     }
 
-    pub open spec fn not_in_scope_pred() -> spec_fn(EntryOwner<C>, TreePath<NR_ENTRIES>) -> bool {
-        |entry: EntryOwner<C>, _path: TreePath<NR_ENTRIES>| true
-    }
-
-    /// `subtree_satisfies` for the trivial `not_in_scope_pred`.
-    pub proof fn tree_not_in_scope(subtree: OwnerSubtree<C>, path: TreePath<NR_ENTRIES>)
-        requires
-            subtree.inv(),
-        ensures
-            subtree.subtree_satisfies(path, Self::not_in_scope_pred()),
-        decreases INC_LEVELS - subtree.level(),
-    {
-        // `not_in_scope_pred` is trivially `true`; recurse to discharge it.
-        if subtree.level() < INC_LEVELS - 1 {
-            assert forall|i: int|
-                0 <= i < subtree.children().len() && (
-                #[trigger] subtree.children()[i]) is Some implies subtree.children()[i].unwrap().subtree_satisfies(
-            path.push_tail(i), Self::not_in_scope_pred()) by {
-                Self::tree_not_in_scope(subtree.children()[i].unwrap(), path.push_tail(i));
-            };
-        }
-    }
-
     /// All mappings in a subtree's `view_rec` have
     /// `page_size <= page_size(INC_LEVELS - path.len())`.
     pub proof fn view_rec_page_size_bound(self, path: TreePath<NR_ENTRIES>, m: Mapping)
@@ -1876,7 +1850,6 @@ impl<C: PageTableConfig> Inv for PageTableOwner<C> {
         &&& self.0.value().path.len() == self.0.level()
         &&& self.0.value().parent_level == (INC_LEVELS - self.0.level()) as PagingLevel
         &&& self.0.value().node().tree_level == self.0.value().path.len()
-        &&& self.0.subtree_satisfies(self.0.value().path, Self::path_correct_pred())
     }
 }
 
