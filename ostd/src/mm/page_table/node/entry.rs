@@ -195,13 +195,13 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     /// `regions` is passed read-only to source the parent node's slot perm
     /// via the borrow-model bridge (used by `write_pte`'s `start_paddr` call).
     #[verus_spec(
-        with Tracked(owner) : Tracked<&mut EntryOwner<C>>,
+        with Tracked(owner) : Tracked<&mut FlatEntryOwner<C>>,
              Tracked(parent_owner): Tracked<&mut NodeOwner<C>>,
              Tracked(regions): Tracked<&MetaRegionOwners>,
         requires
             old(owner).inv(),
-            old(self).wf(*old(owner)),
-            old(self).node_matching(*old(owner), *old(parent_owner), *old(self).node),
+            old(self).wf(old(owner).leaf_decode_model()),
+            old(self).node_matching(old(owner).leaf_decode_model(), *old(parent_owner), *old(self).node),
             op.requires((old(self).pte.prop(),)),
             old(owner).is_frame(),
             regions.inv(),
@@ -225,8 +225,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                     ==> C::E::new_page_req(pa, level, p_out),
         ensures
             final(owner).inv(),
-            final(self).wf(*final(owner)),
-            final(self).node_matching(*final(owner), *final(parent_owner), *final(self).node),
+            final(self).wf(final(owner).leaf_decode_model()),
+            final(self).node_matching(final(owner).leaf_decode_model(), *final(parent_owner), *final(self).node),
             final(self).parent_perms_preserved(*old(parent_owner), *final(parent_owner)),
             final(owner).is_frame(),
             final(owner).frame().mapped_pa == old(owner).frame().mapped_pa,
@@ -930,7 +930,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 #[verus_verify]
 impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     #[verus_spec(res =>
-        with Tracked(owner): Tracked<&mut EntryOwner<C>>,
+        with Tracked(owner): Tracked<&mut FlatEntryOwner<C>>,
              Tracked(parent_owner): Tracked<&mut NodeOwner<C>>,
              Tracked(regions): Tracked<&MetaRegionOwners>,
         requires
@@ -938,7 +938,6 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             old(owner).is_frame(),
             old(owner).match_pte(
                 old(parent_owner).children_perm.value()[idx as int],
-                old(owner).parent_level,
             ),
             old(parent_owner).inv(),
             old(parent_owner).relate_guard(*old(self)),
@@ -962,10 +961,9 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         ensures
             final(owner).inv(),
             final(owner).is_frame(),
-            final(owner).match_pte(res, final(parent_owner).level()),
+            final(owner).match_pte(res),
             final(owner).match_pte(
                 final(parent_owner).children_perm.value()[idx as int],
-                final(parent_owner).level(),
             ),
             res == final(parent_owner).children_perm.value()[idx as int],
             final(parent_owner).inv(),

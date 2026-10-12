@@ -50,6 +50,37 @@ pub tracked struct FlatEntryOwner<C: PageTableConfig> {
 }
 
 impl<C: PageTableConfig> FlatEntryOwner<C> {
+    /// Read-only leaf model for node APIs. It does not manufacture or
+    /// transfer an owning node or metadata permission.
+    pub open spec fn leaf_decode_model(self) -> EntryOwner<C>
+        recommends !self.is_node(),
+    {
+        EntryOwner {
+            kind: match self.kind {
+                FlatEntryOwnerKind::Frame(frame) => EntryOwnerKind::Frame(frame),
+                FlatEntryOwnerKind::Borrowed(mappings) => EntryOwnerKind::Borrowed(mappings),
+                _ => EntryOwnerKind::Absent,
+            },
+            node_permission: None,
+            path: self.path,
+            parent_level: self.parent_level,
+        }
+    }
+
+    pub proof fn tracked_set_frame_prop(tracked &mut self, prop: PageProperty)
+        requires old(self).is_frame(),
+        ensures
+            *final(self) == Self::new_frame(
+                old(self).frame().mapped_pa, old(self).path, old(self).parent_level,
+                prop, old(self).frame_permission(),
+            ),
+    {
+        match &mut self.kind {
+            FlatEntryOwnerKind::Frame(frame) => { frame.prop = prop; },
+            _ => { proof_from_false::<()>(); },
+        }
+    }
+
     pub open spec fn is_node(self) -> bool {
         self.kind is Node
     }

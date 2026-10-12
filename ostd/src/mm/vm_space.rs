@@ -538,24 +538,32 @@ impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
     /// it ensures that the cursor is safe to use after the call.
     #[verus_spec(res =>
         with
-            Tracked(owner): Tracked<&mut CursorOwner<'rcu, UserPtConfig>>,
+            Tracked(owner): Tracked<FlatCursorOwner<'owner, 'rcu, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>,
+                -> final_owner: Tracked<FlatCursorOwner<'owner, 'rcu, UserPtConfig>>,
         requires
-            old(self).0.invariants(*old(owner), *old(regions), *old(guards)),
+            old(self).0.invariants_flat(owner, *old(regions), *old(guards)),
             old(self).0.find_next_panic_condition(len) ==> may_panic(),
         ensures
             !old(self).0.find_next_panic_condition(len),
-            final(self).0.invariants(*final(owner), *final(regions), *final(guards)),
+            final(self).0.invariants_flat(final_owner@, *final(regions), *final(guards)),
             res is Some ==> {
                 &&& res->0 == final(self).0.va
-                &&& final(owner).level <= final(owner).guard_level
-                &&& final(owner).in_locked_range()
+                &&& final_owner@.level <= final_owner@.guard_level
+                &&& final_owner@.in_locked_range()
             },
     )]
-    pub fn find_next(&mut self, len: usize) -> Option<Vaddr> {
-        #[verus_spec(with Tracked(owner), Tracked(regions), Tracked(guards))]
-        self.0.find_next(len)
+    pub fn find_next<'owner: 'rcu>(&mut self, len: usize) -> Option<Vaddr> {
+        proof_decl! {
+            let tracked next_owner: FlatCursorOwner<'owner, 'rcu, UserPtConfig>;
+        }
+        #[verus_spec(with
+            Tracked(owner), Tracked(regions), Tracked(guards) => Tracked(next_owner)
+        )]
+        let result = self.0.find_next(len);
+        #[verus_spec(with |= Tracked(next_owner))]
+        result
     }
 
     // [FIXED] BUG FOUND BY FV: missing panic documentation. https://github.com/asterinas/asterinas/pull/3007
@@ -708,24 +716,32 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
     /// it ensures that the cursor is safe to use after the call.
     #[verus_spec(res =>
         with
-            Tracked(owner): Tracked<&mut CursorOwner<'a, UserPtConfig>>,
+            Tracked(owner): Tracked<FlatCursorOwner<'owner, 'a, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>,
+                -> final_owner: Tracked<FlatCursorOwner<'owner, 'a, UserPtConfig>>,
         requires
-            old(self).pt_cursor.0.invariants(*old(owner), *old(regions), *old(guards)),
+            old(self).pt_cursor.0.invariants_flat(owner, *old(regions), *old(guards)),
             old(self).pt_cursor.0.find_next_panic_condition(len) ==> may_panic(),
         ensures
             !old(self).pt_cursor.0.find_next_panic_condition(len),
-            final(self).pt_cursor.0.invariants(*final(owner), *final(regions), *final(guards)),
+            final(self).pt_cursor.0.invariants_flat(final_owner@, *final(regions), *final(guards)),
             res is Some ==> {
                 &&& res->0 == final(self).pt_cursor.0.va
-                &&& final(owner).level <= final(owner).guard_level
-                &&& final(owner).in_locked_range()
+                &&& final_owner@.level <= final_owner@.guard_level
+                &&& final_owner@.in_locked_range()
             },
     )]
-    pub fn find_next(&mut self, len: usize) -> Option<Vaddr> {
-        #[verus_spec(with Tracked(owner), Tracked(regions), Tracked(guards))]
-        self.pt_cursor.find_next(len)
+    pub fn find_next<'owner: 'a>(&mut self, len: usize) -> Option<Vaddr> {
+        proof_decl! {
+            let tracked next_owner: FlatCursorOwner<'owner, 'a, UserPtConfig>;
+        }
+        #[verus_spec(with
+            Tracked(owner), Tracked(regions), Tracked(guards) => Tracked(next_owner)
+        )]
+        let result = self.pt_cursor.find_next(len);
+        #[verus_spec(with |= Tracked(next_owner))]
+        result
     }
 
     // [FIXED] BUG FOUND BY FV: missing panic documentation. https://github.com/asterinas/asterinas/pull/3007
@@ -1505,11 +1521,12 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
     /// - From a soundness perspective changing a userspace page's `prop` field is safe.
     #[verus_spec(r =>
         with
-            Tracked(owner): Tracked<&mut CursorOwner<'a, UserPtConfig>>,
+            Tracked(owner): Tracked<FlatCursorOwner<'owner, 'a, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>,
+                -> final_owner: Tracked<FlatCursorOwner<'owner, 'a, UserPtConfig>>,
         requires
-            old(self).pt_cursor.0.invariants(*old(owner), *old(regions), *old(guards)),
+            old(self).pt_cursor.0.invariants_flat(owner, *old(regions), *old(guards)),
             forall |p: PageProperty| op.requires((p,)),
             // POTENTIALLY UNSOUND PATCH: trackedness preservation. For UserPtConfig
             // this is trivially true (tracked is constant). See `Entry::protect`.
@@ -1528,19 +1545,26 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
             old(self).pt_cursor.0.find_next_panic_condition(len) ==> may_panic(),
         ensures
             !old(self).pt_cursor.0.find_next_panic_condition(len),
-            final(self).pt_cursor.0.invariants(*final(owner), *final(regions), *final(guards)),
+            final(self).pt_cursor.0.invariants_flat(final_owner@, *final(regions), *final(guards)),
             final(self).pt_cursor.0.barrier_va == old(self).pt_cursor.0.barrier_va,
     )]
-    pub fn protect_next(
+    pub fn protect_next<'owner: 'a>(
         &mut self,
         len: usize,
         op: impl FnOnce(PageProperty) -> PageProperty,
     ) -> Option<Range<Vaddr>> {
-        // SAFETY: It is safe to protect memory in the userspace.
-        unsafe {
-            #[verus_spec(with Tracked(owner), Tracked(regions), Tracked(guards))]
-            self.pt_cursor.protect_next(len, op)
+        proof_decl! {
+            let tracked next_owner: FlatCursorOwner<'owner, 'a, UserPtConfig>;
         }
+        // SAFETY: It is safe to protect memory in the userspace.
+        let result = unsafe {
+            #[verus_spec(with
+                Tracked(owner), Tracked(regions), Tracked(guards) => Tracked(next_owner)
+            )]
+            self.pt_cursor.protect_next(len, op)
+        };
+        #[verus_spec(with |= Tracked(next_owner))]
+        result
     }
 }
 
