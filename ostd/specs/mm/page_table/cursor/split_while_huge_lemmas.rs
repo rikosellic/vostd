@@ -311,6 +311,14 @@ impl<C: PageTableConfig> CursorView<C> {
         }
         let new_size = m.page_size / NR_ENTRIES;
         self.lemma_query_mapping();
+        assert(m.page_size == 2097152 || m.page_size == 1073741824);
+        assert(m.page_size % new_size == 0) by {
+            if m.page_size == 2097152 {
+                assert(new_size == 4096);
+            } else {
+                assert(new_size == 2097152);
+            }
+        };
         assert(set![4096usize, 2097152, 1073741824].contains(new_size)) by {
             if m.page_size == 2097152 {
             } else {

@@ -37,6 +37,9 @@ broadcast use group_ghost_tree_lemmas;
         pt.relates_flat_owner(*old(pt_own), *old(regions)),
         old(pt_own).node(old(pt_own).root).node.relate_guard(root_guard),
         va.start < va.end,
+        va.start % C::BASE_PAGE_SIZE() == 0,
+        va.end % C::BASE_PAGE_SIZE() == 0,
+        crate::specs::mm::page_table::is_valid_range_spec::<C>(*va),
         // Per-config tightening; see `Cursor::new`. Pulled through to the
         // cursor's `LOCKED_END_BOUND_spec` invariant.
         va.end <= C::LOCKED_END_BOUND_spec(),
@@ -44,12 +47,13 @@ broadcast use group_ghost_tree_lemmas;
         ret.0.invariants_flat(*ret.1, *final(regions), *final(guards)),
         (*ret.1).in_locked_range(),
         ret.0.level == ret.0.guard_level,
-        ret.0.guard_level == NR_LEVELS,
+        1 <= ret.0.guard_level <= NR_LEVELS,
         ret.0.va < ret.0.barrier_va.end,
         ret.0.va == va.start,
         ret.0.barrier_va == *va,
         (*ret.1).as_page_table_owner() == *old(pt_own),
-        (*ret.1).continuations[3].path == old(pt_own).node(old(pt_own).root).path,
+        ret.0.guard_level == NR_LEVELS ==>
+            (*ret.1).continuations[3].path == old(pt_own).node(old(pt_own).root).path,
         (forall |i: int| #![trigger old(regions).slot_owners[i]]
             old(regions).contains(i)
             && old(regions).ref_count(i)
@@ -101,7 +105,12 @@ pub fn lock_range<'owner: 'rcu, 'rcu, C: PageTableConfig, A: InAtomicMode>(
     guard: &'rcu A,
     va: &Range<Vaddr>,
 ) -> (Cursor<'rcu, C, A>, Tracked<FlatCursorOwner<'owner, 'rcu, C>>) {
+    proof {
+        C::lemma_paging_consts_properties();
+        crate::specs::mm::page_table::lemma_valid_range_start_upper_bits::<C>(*va);
+    }
     let ghost pt0 = *pt_own;
+    let ghost regions0 = *regions;
     let tracked mut cursor_own = pt_own.tracked_cursor_owner(va.start, root_guard);
 
     // Retry if the candidate subtree became stray before we acquired its lock.
@@ -109,7 +118,25 @@ pub fn lock_range<'owner: 'rcu, 'rcu, C: PageTableConfig, A: InAtomicMode>(
     #[verus_spec(
         invariant
             cursor_own.inv(),
+            regions.inv(),
+            forall|idx: int| #![trigger regions.slot_owners[idx].paths_in_pt]
+                regions0.ref_count(idx) != REF_COUNT_UNUSED ==>
+                    regions.slot_owners[idx].paths_in_pt == regions0.slot_owners[idx].paths_in_pt,
+            forall|idx: int| #![trigger regions.slot_owners[idx]]
+                regions0.contains(idx) && regions0.ref_count(idx) != REF_COUNT_UNUSED ==>
+                    regions.ref_count(idx) == regions0.ref_count(idx)
+                        && regions.slot_owners[idx].usage == regions0.slot_owners[idx].usage,
+            forall|idx: int| #![trigger regions.slot_owners[idx].ref_count()]
+                regions.ref_count(idx) >= REF_COUNT_MAX ==>
+                    regions0.ref_count(idx) == regions.ref_count(idx),
+            forall|idx: int| #![trigger regions0.slot_owners[idx].ref_count()]
+                regions0.ref_count(idx) >= REF_COUNT_MAX ==>
+                    regions.ref_count(idx) == regions0.ref_count(idx),
+            forall|item: C::Item| #![trigger CursorMut::<C, A>::item_not_mapped(item, regions0)]
+                CursorMut::<C, A>::item_not_mapped(item, regions0) ==>
+                    CursorMut::<C, A>::item_not_mapped(item, *regions),
             cursor_own.va == va.start,
+            subtree_root is None ==> *regions == regions0,
             subtree_root is None ==> cursor_own.level == NR_LEVELS,
             subtree_root is Some ==> {
                 &&& regions.inv()
@@ -135,6 +162,14 @@ pub fn lock_range<'owner: 'rcu, 'rcu, C: PageTableConfig, A: InAtomicMode>(
         (*subtree_root.inner.tracked_metadata_perm.borrow()).tracked_borrow(),
     )))]
     let guard_level = subtree_root.level();
+    proof {
+        C::lemma_paging_consts_properties();
+        cursor_own.as_page_table_owner().lemma_node_inv(cursor_own.current_paddr());
+        assert(guard_level == cursor_own.level);
+        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_is_pow2_pte_index_bit_offset::<C>(
+            (guard_level + 1) as PagingLevel,
+        );
+    }
     proof { cursor_own.guard_level = guard_level; }
     let cur_node_va = va.start.align_down(page_size::<C>(guard_level + 1));
     #[verus_spec(with

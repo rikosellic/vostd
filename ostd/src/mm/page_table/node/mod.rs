@@ -256,10 +256,14 @@ impl<C: PageTableConfig> PageTableNode<C> {
         ensures
             final(regions).inv(),
             owner@.allocated_empty(level, path),
+            owner@.node.meta_own.nr_children.value() == 0,
             owner@.node.permission_matches(res.frac_metadata_perm()),
             res.ptr.addr() == owner@.node.slot_vaddr(),
             res.inv(),
             res.wf_with_region(*final(regions)),
+            typed_meta_wf::<PageTablePageMeta<C>>(
+                res.slot_perm(), res.metadata_perm(), (),
+            ),
             guards.unlocked(owner@.node.slot_vaddr()),
             MetaSlot::get_node_from_unused_spec(meta_to_frame(owner@.node.slot_vaddr()), *old(regions), *final(regions)),
             MetaSlot::slot_perm_reparked_spec(meta_to_frame(owner@.node.slot_vaddr()), *old(regions), *final(regions)),
@@ -401,6 +405,7 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
             final(guards).lock_held(owner.slot_vaddr()),
             Self::locks_preserved_except(owner.slot_vaddr(), *old(guards), *final(guards)),
             owner.relate_guard(res),
+            res.inner == self,
     )]
     pub unsafe fn make_guard_unchecked<'rcu, A: InAtomicMode>(
         self,
@@ -442,6 +447,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         ensures
             res.wf(child_owner),
             res.idx == idx,
+            res.pte == owner.children_perm.value()[idx as int],
             *res.node == *old(self),
             *final(self) == *final(res.node),
             owner.relate_guard(*res.node),

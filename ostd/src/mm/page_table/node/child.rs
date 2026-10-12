@@ -184,6 +184,10 @@ impl<'a, C: PageTableConfig> ChildRef<'a, C> {
             level == entry_owner.parent_level,
             entry_owner.is_node() ==>
                 entry_owner.node().permission_matches(*metadata_permission),
+            entry_owner.is_node() ==> {
+                &&& entry_owner.node_permission is Some
+                &&& *metadata_permission == entry_owner.node_permission()
+            },
         ensures
             res.invariants(entry_owner, *final(regions)),
             final(regions).slot_owners == old(regions).slot_owners,

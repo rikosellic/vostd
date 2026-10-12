@@ -57,6 +57,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'a, M> {
             Tracked(metadata_perm): Tracked<&'a FracMetadataPerm>
         requires
             valid_frame_paddr(raw),
+            metadata_perm.frac() == 1,
             MetaSlot::perms_related(*slot_perm,metadata_perm.resource()),
             slot_perm.pptr().addr() == frame_to_meta(raw),
             slot_perm.is_init(),

@@ -1151,6 +1151,10 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             new_regions.inv(),
             self.metaregion_sound(new_regions),
     {
+        let cont = self.continuations[self.level - 1];
+        cont.lemma_map_children_unroll(
+            PageTableOwner::<C>::metaregion_sound_pred(old_regions), cont.idx as int,
+        );
         self.lemma_metaregion_slot_owners_rc_increment(old_regions, new_regions, idx);
     }
 
@@ -1663,6 +1667,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.inv(),
             self.metaregion_sound(regions0),
             regions0.inv(),
+            regions0.slot_owners.contains_key(idx),
+            regions0.slot_owners[idx].usage !is PageTable,
             regions1.slots == regions0.slots,
             regions1.slot_owners.dom() == regions0.slot_owners.dom(),
             regions1.ref_count(idx) == regions0.ref_count(idx) + 1,
@@ -1692,6 +1698,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         assert(OwnerSubtree::implies(f, g)) by {
             assert forall|entry: EntryOwner<C>, path: TreePath<NR_ENTRIES>|
                 entry.inv() && f(entry, path) implies #[trigger] g(entry, path) by {
+                if entry.is_node() {
+                    assert(entry.node().slot_index != idx);
+                }
                 if entry.is_frame() {
                     let pa = entry.frame().mapped_pa;
                     C::lemma_perm_well_formed_with_region_preserved(

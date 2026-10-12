@@ -145,6 +145,20 @@ pub proof fn lemma_count_present_upto_zero_all_absent<E: PageTableEntryTrait>(s:
     }
 }
 
+/// If every slot below `n` is absent, the present count is zero.
+pub proof fn lemma_count_present_upto_all_absent_zero<E: PageTableEntryTrait>(s: Seq<E>, n: int)
+    requires
+        0 <= n <= s.len(),
+        forall|i: int| 0 <= i < n ==> !#[trigger] s[i].is_present(),
+    ensures
+        count_present_upto(s, n) == 0,
+    decreases n,
+{
+    if n > 0 {
+        lemma_count_present_upto_all_absent_zero(s, n - 1);
+    }
+}
+
 /// If two sequences agree on `[0, n)`, their counts up to `n` are equal.
 pub proof fn lemma_count_present_upto_unchanged<E: PageTableEntryTrait>(
     s: Seq<E>,
@@ -222,7 +236,6 @@ impl<C: PageTableConfig> Inv for NodeOwner<C> {
         &&& meta_to_frame(index_to_meta(self.slot_index)) < VMALLOC_BASE_VADDR
             - LINEAR_MAPPING_BASE_VADDR
         &&& meta_to_frame(index_to_meta(self.slot_index)) < MAX_PADDR
-        &&& meta_to_frame(index_to_meta(self.slot_index)) == self.children_perm.addr()
     }
 }
 

@@ -408,6 +408,33 @@ impl<C: PageTableConfig> FlatNodeRecord<C> {
             }
     }
 
+    pub proof fn lemma_allocated_empty_inv(self, level: PagingLevel, path: TreePath<NR_ENTRIES>)
+        requires self.allocated_empty(level, path), path.inv(),
+        ensures
+            self.local_inv(),
+            crate::specs::mm::page_table::node::owners::count_present(
+                self.node.children_perm.value(),
+            ) == 0,
+    {
+        C::E::lemma_page_table_entry_properties();
+        assert forall|i: int| 0 <= i < NR_ENTRIES implies {
+            let entry = #[trigger] self.entries[i];
+            let pte = self.node.children_perm.value()[i];
+            &&& entry.inv()
+            &&& entry.path == self.path.push_tail(i)
+            &&& entry.parent_level == self.node.level
+            &&& entry.match_pte(pte)
+        } by {};
+        assert forall|i: int| 0 <= i < NR_ENTRIES implies
+            !#[trigger] self.node.children_perm.value()[i].is_present() by {
+            assert(self.entries[i].is_absent());
+            assert(self.node.children_perm.value()[i] == C::E::new_absent_spec());
+        };
+        crate::specs::mm::page_table::node::owners::lemma_count_present_upto_all_absent_zero(
+            self.node.children_perm.value(), NR_ENTRIES as int,
+        );
+    }
+
     pub open spec fn new(
         node: FlatNodeOwner<C>,
         entries: Seq<FlatEntryOwner<C>>,
@@ -942,6 +969,7 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
         &&& !self.remainder.permissions.contains_key(paddr)
     }
 
+    #[verifier::opaque]
     pub open spec fn inv(self) -> bool {
         &&& self.root.record.paddr() == self.root.paddr
         &&& self.root.record.local_inv()
@@ -1006,6 +1034,9 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
         ensures
             result.contains_leased(paddr),
             result.root.paddr == self.root.paddr,
+            *result.root.record == *old(self.root.record),
+            forall|other: Paddr| self.leases.contains_key(other) ==>
+                #[trigger] result.leases[other] == self.leases[other],
             result.leases.dom() == self.leases.dom().insert(paddr),
             *result.remainder.nodes == old(self.remainder.nodes).remove_keys(set![paddr]),
             *result.remainder.permissions == old(self.remainder.permissions).remove_keys(
@@ -1014,7 +1045,9 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             result.owner_view() == self.owner_view(),
             result.writeback_node_map() == self.writeback_node_map(),
             result.writeback_permission_map() == self.writeback_permission_map(),
+            self.inv() ==> result.inv(),
     {
+        reveal(FlatCursorResources::inv);
         let tracked Self { root, remainder, mut leases } = self;
         let tracked (lease, remainder) = remainder.tracked_lease_raw_node(paddr);
         leases.tracked_insert(paddr, lease);
@@ -1047,6 +1080,9 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
         ensures
             result.contains_raw_leased(paddr),
             result.root.paddr == self.root.paddr,
+            *result.root.record == *old(self.root.record),
+            forall|other: Paddr| self.leases.contains_key(other) ==>
+                #[trigger] result.leases[other] == self.leases[other],
             result.leases.dom() == self.leases.dom().insert(paddr),
             *result.remainder.nodes == if self.contains_raw_leased(paddr) {
                 *old(self.remainder.nodes)
@@ -1064,6 +1100,7 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             result.writeback_node_map() == self.writeback_node_map(),
             result.writeback_permission_map() == self.writeback_permission_map(),
             self.contains_raw_leased(paddr) ==> result == self,
+            self.inv() ==> result.inv(),
     {
         let tracked result = if self.contains_raw_leased(paddr) {
             self
@@ -1091,10 +1128,13 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             record.node.permission_matches(permission),
         ensures
             result.contains_leased(paddr),
+            result.leased_record(paddr) == record,
             result.root.paddr == self.root.paddr,
             result.leases.dom() == self.leases.dom().insert(paddr),
             *result.remainder.nodes == *old(self.remainder.nodes),
             *result.remainder.permissions == *old(self.remainder.permissions),
+            forall|other: Paddr| self.contains_leased(other) ==>
+                #[trigger] result.leased_record(other) == self.leased_record(other),
             result.node_map() == self.node_map().insert(paddr, record),
             result.permission_map() == self.permission_map().insert(paddr, permission),
             result.writeback_node_map() == self.writeback_node_map(),
@@ -1164,6 +1204,15 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
         ensures
             result.contains_leased(parent),
             result.contains_raw_leased(record.paddr()),
+            result.leased_record(record.paddr()) == record,
+            result.permission_map() == self.permission_map().insert(record.paddr(), permission),
+            result.leased_record(parent).node == self.leased_record(parent).node,
+            result.node_map() == self.node_map().insert(parent,
+                self.leased_record(parent).set_entry(idx, FlatEntryOwner::new_node(
+                    record.paddr(), self.leased_record(parent).entries[idx].path,
+                    self.leased_record(parent).entries[idx].parent_level,
+                )),
+            ).insert(record.paddr(), record),
             result.leased_record(parent).entries[idx].is_node(),
             result.leased_record(parent).entries[idx].child_paddr() == record.paddr(),
             result.leased_record(parent).entries[idx].path == self.leased_record(
@@ -1219,7 +1268,19 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             old(self).contains_leased(paddr),
         ensures
             *record == old(self).leased_record(paddr),
+            old(self).inv() && *final(record) == *record ==> final(self).inv(),
+            old(self).inv() && final(record).local_inv() && final(record).paddr() == paddr
+                && (old(self).contains_raw_leased(paddr) ==>
+                    final(record).node.permission_matches(*old(self).leases[paddr].permission))
+                ==> final(self).inv(),
+            forall|other: Paddr| old(self).contains_leased(other) ==>
+                final(self).contains_leased(other) && #[trigger] final(self).leased_record(other)
+                    == if other == paddr { *final(record) } else { old(self).leased_record(other) },
+            forall|other: Paddr| old(self).contains_raw_leased(other) ==>
+                final(self).contains_raw_leased(other) &&
+                *final(self).leases[other].permission == *old(self).leases[other].permission,
             final(self).root.paddr == old(self).root.paddr,
+            final(self).leased_record(paddr) == *final(record),
             final(self).node_map() == old(self).node_map().insert(paddr, *final(record)),
             final(self).permission_map() == old(self).permission_map(),
             final(self).writeback_node_map() == old(self).writeback_node_map(),
@@ -1228,6 +1289,7 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             *final(self).remainder.nodes == *old(self).remainder.nodes,
             *final(self).remainder.permissions == *old(self).remainder.permissions,
     {
+        reveal(FlatCursorResources::inv);
         if self.root.paddr == paddr {
             &mut *self.root.record
         } else {
@@ -1325,8 +1387,8 @@ impl<C: PageTableConfig> FlatCursorState<C> {
             }
         &&& self.continuations.contains_key(self.level - 1)
         &&& self.current().idx == pte_index_spec::<C>(self.va, self.level)
-        &&& forall|child_key: int|
-            self.level - 1 <= child_key < self.guard_level - 1 ==> {
+        &&& forall|child_key: int| #![trigger self.continuations.contains_key(child_key)]
+            self.continuations.contains_key(child_key) && child_key < self.guard_level - 1 ==> {
                 let child = self.continuations[child_key];
                 let parent = self.continuations[child_key + 1];
                 &&& child.path == parent.path.push_tail(parent.idx as int)
@@ -1383,6 +1445,37 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
         )[self.current().idx as int]
     }
 
+    /// Extract local facts from the authoritative record without rebuilding
+    /// an owning recursive subtree.
+    #[verifier::rlimit(20)]
+    pub proof fn lemma_current_entry_inv(self, regions: MetaRegionOwners)
+        requires
+            self.inv(),
+            self.metaregion_sound(regions),
+        ensures
+            self.as_page_table_owner().local_node_inv(self.current_paddr()),
+            self.current_record().local_inv(),
+            self.current_record().node.metaregion_sound_node(regions),
+            self.current_entry().inv(),
+            self.current_entry().metaregion_sound(regions),
+            self.current_entry().parent_level == self.level,
+            self.current_entry_decode_model().inv(),
+            self.current_entry_decode_model().metaregion_sound(regions),
+    {
+        C::lemma_paging_consts_properties();
+        let owner = self.as_page_table_owner();
+        let paddr = self.current_paddr();
+        let idx = self.current().idx as int;
+        owner.lemma_node_inv(paddr);
+        assert(self.current_record() == owner.node(paddr)) by {};
+        assert(owner.node(paddr).entries[idx].inv()) by {};
+        assert(owner.node(paddr).entries[idx].metaregion_sound(regions)) by {};
+        assert(owner.node(paddr).node.metaregion_sound_node(regions)) by {};
+        if self.current_entry().is_node() {
+            owner.lemma_node_inv(self.current_entry().child_paddr());
+        }
+    }
+
     pub open spec fn state(self) -> FlatCursorState<C> {
         FlatCursorState {
             continuations: self.continuations.map_values(
@@ -1402,6 +1495,27 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             popped_too_high: self.popped_too_high,
             phantom: PhantomData,
         }
+    }
+
+    /// Allocation chooses an UNUSED metadata slot, disjoint from every live
+    /// node in the authoritative store, including nodes leased by the cursor.
+    pub proof fn lemma_fresh_node_can_insert(self, paddr: Paddr, regions: MetaRegionOwners)
+        requires
+            self.inv(),
+            self.metaregion_sound(regions),
+            regions.inv(),
+            valid_frame_paddr(paddr),
+            regions.ref_count(frame_to_index(paddr)) == REF_COUNT_UNUSED,
+        ensures self.resources.can_insert_raw_node(paddr),
+    {
+        let owner = self.as_page_table_owner();
+        if owner.contains_node(paddr) {
+            owner.lemma_node_inv(paddr);
+            assert(owner.node(paddr).node.slot_index == frame_to_index(paddr));
+            assert(regions.ref_count(owner.node(paddr).node.slot_index) != REF_COUNT_UNUSED);
+        }
+        assert(!owner.contains_node(paddr));
+        assert(!owner.raw_node_permissions.contains_key(paddr));
     }
 
     pub open spec fn as_page_table_owner(self) -> FlatPageTableOwner<C> {
@@ -1495,10 +1609,13 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             self.continuations.contains_key(key) <==> self.level - 1 <= key < self.guard_level
         &&& forall|key: int| #[trigger]
             self.continuations.contains_key(key) ==> self.continuation_inv(key)
+        &&& forall|key: int| #[trigger]
+            self.continuations.contains_key(key) ==> self.continuations[key].idx
+                == pte_index_spec::<C>(self.va, (key + 1) as PagingLevel)
         &&& self.continuations.contains_key(self.level - 1)
         &&& self.current().idx == pte_index_spec::<C>(self.va, self.level)
-        &&& forall|child_key: int|
-            self.level - 1 <= child_key < self.guard_level - 1 ==> {
+        &&& forall|child_key: int| #![trigger self.continuations.contains_key(child_key)]
+            self.continuations.contains_key(child_key) && child_key < self.guard_level - 1 ==> {
                 let child = self.continuations[child_key];
                 let parent = self.continuations[child_key + 1];
                 let parent_record = self.resources.leased_record(parent.node);
@@ -1565,6 +1682,46 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
         Range { start: start as Vaddr, end: (start + size) as Vaddr }
     }
 
+    pub proof fn lemma_cur_va_range_bounds(self)
+        requires
+            self.inv(),
+            self.in_locked_range(),
+        ensures
+            self.va < self.cur_va_range().end,
+            nat_align_down(self.va as nat, page_size::<C>(self.level) as nat)
+                + page_size::<C>(self.level) <= usize::MAX,
+    {
+        use crate::specs::mm::page_table::cursor::page_size_lemmas::*;
+        use vstd_extra::arithmetic::*;
+        C::lemma_paging_consts_properties();
+        lemma_page_size_divides::<C>(self.level, self.guard_level);
+        let fine = page_size::<C>(self.level) as nat;
+        let coarse = page_size::<C>(self.guard_level) as nat;
+        let base = nat_align_down(self.prefix as nat, coarse);
+        lemma_nat_align_down_sound(self.prefix as nat, coarse);
+        assert(base + coarse <= usize::MAX) by {
+            if base + coarse > usize::MAX {
+                let a = base as usize;
+                let b = coarse as usize;
+                assert(((a as u128 + b as u128) as usize) <= a) by (bit_vector)
+                    requires a as u128 + b as u128 > usize::MAX;
+            }
+        };
+        lemma_nat_align_down_sound(self.va as nat, coarse);
+        assert(nat_align_down(self.va as nat, coarse) == base) by {
+            vstd::arithmetic::div_mod::lemma_fundamental_div_mod(base as int, coarse as int);
+            vstd::arithmetic::mul::lemma_mul_is_commutative(
+                base as int / coarse as int, coarse as int,
+            );
+            vstd::arithmetic::div_mod::lemma_fundamental_div_mod_converse(
+                self.va as int, coarse as int, base as int / coarse as int,
+                self.va as int - base as int,
+            );
+        };
+        lemma_nat_align_down_within_block(self.va as nat, fine, coarse);
+        lemma_nat_align_down_sound(self.va as nat, fine);
+    }
+
     pub open spec fn set_va_in_node(self, new_va: Vaddr) -> Self
         recommends
             self.continuations.contains_key(self.level - 1),
@@ -1615,6 +1772,10 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             result.prefix == va,
             !result.popped_too_high,
     {
+        C::lemma_paging_consts_properties();
+        crate::specs::mm::page_table::lemma_pte_index_bound::<C>(
+            va, NR_LEVELS as PagingLevel,
+        );
         let ghost idx = pte_index_spec::<C>(va, NR_LEVELS as PagingLevel);
         let ghost root_cont = FlatCursorContinuation::new(
             root,
@@ -1654,6 +1815,12 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             old(self).resources.contains_leased(paddr),
         ensures
             *record == old(self).resources.leased_record(paddr),
+            final(self).resources.leased_record(paddr) == *final(record),
+            forall|other: Paddr| old(self).resources.contains_leased(other) ==>
+                final(self).resources.contains_leased(other) &&
+                #[trigger] final(self).resources.leased_record(other)
+                    == if other == paddr { *final(record) }
+                        else { old(self).resources.leased_record(other) },
             final(self).root == old(self).root,
             final(self).level == old(self).level,
             final(self).guard_level == old(self).guard_level,
@@ -1681,6 +1848,24 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             old(self).resources.contains_leased(old(self).current_paddr()),
         ensures
             *record == old(self).current_record(),
+            old(self).resources.inv() && final(record).local_inv()
+                && final(record).paddr() == old(self).current_paddr()
+                && (old(self).resources.contains_raw_leased(old(self).current_paddr()) ==>
+                    final(record).node.permission_matches(
+                        *old(self).resources.leases[old(self).current_paddr()].permission))
+                ==> final(self).resources.inv(),
+            final(self).resources.contains_leased(old(self).current_paddr()),
+            final(self).current_record() == *final(record),
+            final(self).resources.root.paddr == old(self).resources.root.paddr,
+            forall|other: Paddr| old(self).resources.contains_raw_leased(other) ==>
+                final(self).resources.contains_raw_leased(other) &&
+                *final(self).resources.leases[other].permission
+                    == *old(self).resources.leases[other].permission,
+            forall|other: Paddr| old(self).resources.contains_leased(other) ==>
+                final(self).resources.contains_leased(other) &&
+                #[trigger] final(self).resources.leased_record(other)
+                    == if other == old(self).current_paddr() { *final(record) }
+                        else { old(self).resources.leased_record(other) },
             final(self).root == old(self).root,
             final(self).level == old(self).level,
             final(self).guard_level == old(self).guard_level,
@@ -1829,10 +2014,47 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             final(self).prefix == old(self).prefix,
             final(self).popped_too_high == old(self).popped_too_high,
             final(self).as_page_table_owner() == old(self).as_page_table_owner(),
+            old(self).inv() ==> final(self).inv(),
     {
+        let ghost before = *self;
         let ghost key = self.level - 1;
         self.continuations = self.continuations.remove(key);
         self.level = (self.level + 1) as PagingLevel;
+        if before.inv() {
+            assert(self.resources.root.paddr == self.root);
+            assert(self.va % C::BASE_PAGE_SIZE() == 0);
+            assert(self.prefix % C::BASE_PAGE_SIZE() == 0);
+            assert(vaddr_upper_bits_spec::<C>(self.va) == C::LEADING_BITS_spec());
+            assert(vaddr_upper_bits_spec::<C>(self.prefix) == C::LEADING_BITS_spec());
+            assert(1 <= self.level <= self.guard_level <= NR_LEVELS);
+            assert forall|k: int| #[trigger] self.continuations.contains_key(k)
+                <==> self.level - 1 <= k < self.guard_level by {};
+            assert forall|k: int| #[trigger] self.continuations.contains_key(k)
+                implies self.continuation_inv(k) by {
+                assert(before.continuation_inv(k));
+            };
+            assert(self.continuations.contains_key(self.level - 1));
+            assert(self.current().idx == pte_index_spec::<C>(self.va, self.level));
+            assert(self.resources.inv());
+            assert(self.as_page_table_owner().inv());
+            assert forall|k: int| #[trigger] self.continuations.contains_key(k)
+                implies self.continuations[k].idx
+                    == pte_index_spec::<C>(self.va, (k + 1) as PagingLevel) by {
+                assert(before.continuations.contains_key(k));
+            };
+            assert forall|child_key: int| #![trigger self.continuations.contains_key(child_key)]
+                self.continuations.contains_key(child_key) && child_key < self.guard_level - 1 implies {
+                    let child = self.continuations[child_key];
+                    let parent = self.continuations[child_key + 1];
+                    let parent_record = self.resources.leased_record(parent.node);
+                    &&& child.path == parent.path.push_tail(parent.idx as int)
+                    &&& parent_record.entries[parent.idx as int].is_node()
+                    &&& parent_record.entries[parent.idx as int].child_paddr() == child.node
+                } by {
+                assert(before.continuations.contains_key(child_key));
+            };
+            assert(self.inv());
+        }
     }
 
     /// Commits the subtree root selected by the range-locking phase.  Path
@@ -1888,6 +2110,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             result.resources.writeback_permission_map()
                 == self.resources.writeback_permission_map(),
             self.resources.contains_raw_leased(child) ==> result.resources == self.resources,
+            self.inv() ==> result.inv(),
     {
         let tracked Self {
             resources,
@@ -1900,8 +2123,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             popped_too_high,
         } = self;
         let tracked (resources, permission) = resources.tracked_lease_node_with_permission(child);
-        (
-            Self {
+        let tracked result = Self {
                 resources,
                 continuations,
                 root,
@@ -1910,9 +2132,36 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
                 va,
                 prefix,
                 popped_too_high,
-            },
-            permission,
-        )
+            };
+        if self.inv() {
+            assert forall|key: int| #[trigger] result.continuations.contains_key(key)
+                implies result.continuation_inv(key) by {
+                assert(self.continuation_inv(key));
+                let paddr = self.continuations[key].node;
+                assert(result.resources.leased_record(paddr) == self.resources.leased_record(paddr));
+                if paddr != self.root {
+                    assert(*result.resources.leases[paddr].permission
+                        == *self.resources.leases[paddr].permission);
+                }
+            };
+            assert forall|key: int| #![trigger result.continuations.contains_key(key)]
+                result.continuations.contains_key(key) && key < result.guard_level - 1 implies {
+                    let child = result.continuations[key];
+                    let parent = result.continuations[key + 1];
+                    let record = result.resources.leased_record(parent.node);
+                    &&& child.path == parent.path.push_tail(parent.idx as int)
+                    &&& record.entries[parent.idx as int].is_node()
+                    &&& record.entries[parent.idx as int].child_paddr() == child.node
+                } by {
+                assert(self.continuations.contains_key(key));
+                assert(self.continuations.contains_key(key + 1));
+                let parent = self.continuations[key + 1];
+                assert(result.resources.leased_record(parent.node)
+                    == self.resources.leased_record(parent.node));
+            };
+            assert(result.inv());
+        }
+        (result, permission)
     }
 
     /// Second half of descent: records navigation only after a guard borrowing
@@ -1945,6 +2194,10 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             result.guard_level == self.guard_level,
             result.resources == self.resources,
             result.continuations.dom() == self.continuations.dom().insert((child_level - 1) as int),
+            result.continuations == self.continuations.insert(
+                (child_level - 1) as int,
+                FlatCursorContinuation::new(child, idx, path, child_level, guard),
+            ),
             result.continuations[child_level - 1].node == child,
             result.continuations[child_level - 1].idx == idx,
             result.continuations[child_level - 1].path == path,
@@ -1953,6 +2206,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             result.prefix == self.prefix,
             result.popped_too_high == self.popped_too_high,
             result.as_page_table_owner() == self.as_page_table_owner(),
+            self.inv() ==> result.inv(),
     {
         let tracked Self {
             resources,
@@ -1966,7 +2220,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
         } = self;
         let ghost continuation = FlatCursorContinuation::new(child, idx, path, child_level, guard);
         let ghost continuations = continuations.insert((child_level - 1) as int, continuation);
-        Self {
+        let tracked result = Self {
             resources,
             continuations,
             root,
@@ -1975,7 +2229,52 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             va,
             prefix,
             popped_too_high,
+        };
+        if self.inv() {
+            self.as_page_table_owner().lemma_node_inv(self.current_paddr());
+            assert(result.resources.inv());
+            assert(result.resources.root.paddr == result.root);
+            assert(result.as_page_table_owner().inv());
+            assert(result.va % C::BASE_PAGE_SIZE() == 0);
+            assert(result.prefix % C::BASE_PAGE_SIZE() == 0);
+            assert(vaddr_upper_bits_spec::<C>(result.va) == C::LEADING_BITS_spec());
+            assert(vaddr_upper_bits_spec::<C>(result.prefix) == C::LEADING_BITS_spec());
+            assert(self.current_record().local_inv());
+            assert(self.current_entry().inv());
+            assert(self.current_entry().parent_level == self.level);
+            assert(1 <= result.level <= result.guard_level <= NR_LEVELS);
+            assert forall|key: int| #[trigger] result.continuations.contains_key(key)
+                <==> result.level - 1 <= key < result.guard_level by {};
+            assert forall|key: int| #[trigger] result.continuations.contains_key(key)
+                implies result.continuation_inv(key) by {
+                if key != child_level - 1 {
+                    assert(self.continuation_inv(key));
+                }
+            };
+            assert(result.current().idx == pte_index_spec::<C>(result.va, result.level));
+            assert forall|key: int| #[trigger] result.continuations.contains_key(key)
+                implies result.continuations[key].idx
+                    == pte_index_spec::<C>(result.va, (key + 1) as PagingLevel) by {
+                if key != child_level - 1 {
+                    assert(self.continuations.contains_key(key));
+                }
+            };
+            assert forall|child_key: int| #![trigger result.continuations.contains_key(child_key)]
+                result.continuations.contains_key(child_key) && child_key < result.guard_level - 1 implies {
+                    let child = result.continuations[child_key];
+                    let parent = result.continuations[child_key + 1];
+                    let parent_record = result.resources.leased_record(parent.node);
+                    &&& child.path == parent.path.push_tail(parent.idx as int)
+                    &&& parent_record.entries[parent.idx as int].is_node()
+                    &&& parent_record.entries[parent.idx as int].child_paddr() == child.node
+                } by {
+                if child_key != child_level - 1 {
+                    assert(self.continuations.contains_key(child_key));
+                }
+            };
+            assert(result.inv());
         }
+        result
     }
 
     pub proof fn tracked_attach_and_lease_child(
@@ -1999,8 +2298,14 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             result.level == self.level,
             result.guard_level == self.guard_level,
             result.continuations == self.continuations,
+            result.va == self.va,
+            result.prefix == self.prefix,
+            result.popped_too_high == self.popped_too_high,
             result.resources.contains_leased(parent),
             result.resources.contains_raw_leased(record.paddr()),
+            result.resources.leased_record(record.paddr()) == record,
+            result.resources.permission_map() == self.resources.permission_map().insert(record.paddr(), permission),
+            result.resources.leased_record(parent).node == self.resources.leased_record(parent).node,
             result.resources.leased_record(parent).entries[idx].is_node(),
             result.resources.leased_record(parent).entries[idx].child_paddr() == record.paddr(),
     {
@@ -2046,7 +2351,14 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             result.level == self.level,
             result.guard_level == self.guard_level,
             result.continuations == self.continuations,
+            result.va == self.va,
+            result.prefix == self.prefix,
+            result.popped_too_high == self.popped_too_high,
+            result.resources.contains_leased(self.current_paddr()),
             result.resources.contains_raw_leased(record.paddr()),
+            result.resources.leased_record(record.paddr()) == record,
+            result.resources.permission_map() == self.resources.permission_map().insert(record.paddr(), permission),
+            result.current_record().node == self.current_record().node,
             result.current_entry().is_node(),
             result.current_entry().child_paddr() == record.paddr(),
     {
@@ -2077,14 +2389,22 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             result.level == self.level,
             result.guard_level == self.guard_level,
             result.continuations == self.continuations,
+            result.va == self.va,
+            result.prefix == self.prefix,
+            result.popped_too_high == self.popped_too_high,
+            result.resources.contains_leased(self.current_paddr()),
             result.resources.contains_raw_leased(record.paddr()),
+            result.resources.leased_record(record.paddr()) == record,
+            result.resources.permission_map() == self.resources.permission_map().insert(record.paddr(), permission),
+            result.current_record().node == self.current_record().node,
             result.current_entry().is_node(),
             result.current_entry().child_paddr() == record.paddr(),
             *stable_permission == *result.resources.leases[record.paddr()].permission,
+            *stable_permission == permission,
     {
         let ghost child = record.paddr();
         let tracked result = self.tracked_attach_current_and_lease_child(record, permission);
-        let tracked stable_permission = result.tracked_borrow_node_permission(child);
+        let tracked stable_permission = result.resources.tracked_borrow_permission(child);
         (result, stable_permission)
     }
 
@@ -2100,6 +2420,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             self.resources.writeback_permission_map()
                 == self.as_page_table_owner().raw_node_permissions,
     {
+        reveal(FlatCursorResources::inv);
         let ghost state = self.state();
         self.resources.tracked_finish();
         state
@@ -2134,6 +2455,7 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
 
     /// Mapping view of every entry in one flat node.  Recursion follows
     /// address edges in the map; no linear owner is reconstructed or moved.
+    #[verifier::opaque]
     pub open spec fn view_node_children(self, paddr: Paddr, depth: nat) -> Seq<Set<Mapping>>
         decreases depth, 0nat,
     {
@@ -2164,6 +2486,7 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
     }
 
     /// Abstract mappings reachable from `paddr` in the flat ownership map.
+    #[verifier::opaque]
     pub open spec fn view_rec_at(self, paddr: Paddr, depth: nat) -> Set<Mapping>
         decreases depth, 1nat,
     {
@@ -2194,7 +2517,178 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
             }
     }
 
+    /// Extract a local invariant along a reachable path without rebuilding
+    /// recursive ownership. `steps` bounds the search, independently of the
+    /// remaining paging depth at `from`.
+    pub proof fn lemma_reachable_node_inv(
+        self, from: Paddr, target: Paddr, depth: nat, steps: nat,
+    )
+        requires
+            self.subtree_inv_at(from, depth),
+            self.reachable_from(from, target, steps),
+        ensures
+            self.local_node_inv(target),
+        decreases steps,
+    {
+        reveal_with_fuel(FlatPageTableOwner::subtree_inv_at, 2);
+        reveal_with_fuel(FlatPageTableOwner::reachable_from, 2);
+        if from != target {
+            let i = choose|i: int| #![trigger self.node(from).entries[i]] 0 <= i < NR_ENTRIES && {
+                let entry = self.node(from).entries[i];
+                entry.is_node() && self.reachable_from(
+                    entry.child_paddr(), target, (steps - 1) as nat,
+                )
+            };
+            let entry = self.node(from).entries[i];
+            self.lemma_reachable_node_inv(
+                entry.child_paddr(), target, (depth - 1) as nat, (steps - 1) as nat,
+            );
+        }
+    }
+
+    pub proof fn lemma_node_inv(self, paddr: Paddr)
+        requires
+            self.inv(),
+            self.contains_node(paddr),
+        ensures
+            self.local_node_inv(paddr),
+    {
+        self.lemma_reachable_node_inv(self.root, paddr, NR_LEVELS as nat, NR_LEVELS as nat);
+    }
+
+    /// Leaf updates may change PTEs and frame properties without changing
+    /// the address graph, node levels, or paths in the flat store.
+    pub open spec fn same_node_edges(self, other: Self) -> bool {
+        &&& self.nodes.dom() == other.nodes.dom()
+        &&& forall|paddr: Paddr| #[trigger] self.contains_node(paddr) ==> {
+            &&& self.node(paddr).entries.len() == NR_ENTRIES
+            &&& other.node(paddr).entries.len() == NR_ENTRIES
+            &&& self.node(paddr).path == other.node(paddr).path
+            &&& self.node(paddr).node.level == other.node(paddr).node.level
+            &&& forall|i: int| 0 <= i < NR_ENTRIES ==> {
+                let entry = #[trigger] self.node(paddr).entries[i];
+                let updated = other.node(paddr).entries[i];
+                &&& entry.is_node() == updated.is_node()
+                &&& entry.is_node() ==> entry.child_paddr() == updated.child_paddr()
+            }
+        }
+    }
+
+    pub proof fn lemma_same_edges_reachable(
+        self, other: Self, from: Paddr, target: Paddr, depth: nat,
+    )
+        requires self.same_node_edges(other),
+        ensures self.reachable_from(from, target, depth)
+            == other.reachable_from(from, target, depth),
+        decreases depth,
+    {
+        reveal_with_fuel(FlatPageTableOwner::reachable_from, 2);
+        assert(self.contains_node(from) == other.contains_node(from));
+        if depth > 0 && self.contains_node(from) {
+            assert forall|i: int| 0 <= i < NR_ENTRIES implies {
+                let entry = #[trigger] self.node(from).entries[i];
+                let updated = other.node(from).entries[i];
+                (entry.is_node() && self.reachable_from(
+                    entry.child_paddr(), target, (depth - 1) as nat,
+                )) == (updated.is_node() && other.reachable_from(
+                    updated.child_paddr(), target, (depth - 1) as nat,
+                ))
+            } by {
+                if self.node(from).entries[i].is_node() {
+                    self.lemma_same_edges_reachable(other,
+                        self.node(from).entries[i].child_paddr(), target, (depth - 1) as nat,
+                    );
+                }
+            };
+            if from != target {
+                if self.reachable_from(from, target, depth) {
+                    let i = choose|i: int| #![trigger self.node(from).entries[i]]
+                        0 <= i < NR_ENTRIES && self.node(from).entries[i].is_node()
+                        && self.reachable_from(self.node(from).entries[i].child_paddr(),
+                            target, (depth - 1) as nat);
+                    assert(other.node(from).entries[i].is_node());
+                    assert(other.reachable_from(other.node(from).entries[i].child_paddr(),
+                        target, (depth - 1) as nat));
+                }
+                if other.reachable_from(from, target, depth) {
+                    let i = choose|i: int| #![trigger other.node(from).entries[i]]
+                        0 <= i < NR_ENTRIES && other.node(from).entries[i].is_node()
+                        && other.reachable_from(other.node(from).entries[i].child_paddr(),
+                            target, (depth - 1) as nat);
+                    assert(self.node(from).entries[i].is_node());
+                    assert(self.reachable_from(self.node(from).entries[i].child_paddr(),
+                        target, (depth - 1) as nat));
+                }
+            }
+        }
+    }
+
+    proof fn lemma_same_edges_subtree_inv(self, other: Self, paddr: Paddr, depth: nat)
+        requires
+            self.same_node_edges(other),
+            self.subtree_inv_at(paddr, depth),
+            forall|node: Paddr| #[trigger] other.contains_node(node) ==> other.local_node_inv(node),
+        ensures other.subtree_inv_at(paddr, depth),
+        decreases depth,
+    {
+        reveal_with_fuel(FlatPageTableOwner::subtree_inv_at, 2);
+        assert(self.contains_node(paddr));
+        assert(other.contains_node(paddr));
+        assert(other.local_node_inv(paddr));
+        assert forall|i: int| 0 <= i < NR_ENTRIES implies {
+            let entry = #[trigger] other.node(paddr).entries[i];
+            entry.is_node() ==> other.subtree_inv_at(entry.child_paddr(), (depth - 1) as nat)
+        } by {
+            if other.node(paddr).entries[i].is_node() {
+                assert(self.node(paddr).entries[i].is_node());
+                self.lemma_same_edges_subtree_inv(other,
+                    self.node(paddr).entries[i].child_paddr(), (depth - 1) as nat,
+                );
+            }
+        };
+    }
+
+    pub proof fn lemma_same_edges_inv(self, other: Self)
+        requires
+            self.inv(),
+            self.same_node_edges(other),
+            other.root == self.root,
+            other.raw_node_permissions == self.raw_node_permissions,
+            forall|paddr: Paddr| #[trigger] other.contains_node(paddr) ==> other.local_node_inv(paddr),
+            forall|paddr: Paddr| #[trigger] other.raw_node_permissions.contains_key(paddr) ==>
+                other.node(paddr).node.permission_matches(other.raw_node_permissions[paddr]),
+        ensures other.inv(),
+    {
+        self.lemma_same_edges_subtree_inv(other, self.root, NR_LEVELS as nat);
+        reveal(FlatPageTableOwner::unique_parent);
+        assert forall|parent1: Paddr, parent2: Paddr, i: int, j: int|
+            other.contains_node(parent1) && other.contains_node(parent2)
+            && 0 <= i < NR_ENTRIES && 0 <= j < NR_ENTRIES
+            && (#[trigger] other.node(parent1).entries[i]).is_node()
+            && (#[trigger] other.node(parent2).entries[j]).is_node()
+            && other.node(parent1).entries[i].child_paddr()
+                == other.node(parent2).entries[j].child_paddr()
+            implies parent1 == parent2 && i == j by {
+            assert(self.contains_node(parent1) && self.contains_node(parent2));
+            assert(self.node(parent1).entries[i].is_node());
+            assert(self.node(parent2).entries[j].is_node());
+        };
+        assert forall|parent: Paddr, i: int| other.contains_node(parent)
+            && 0 <= i < NR_ENTRIES && (#[trigger] other.node(parent).entries[i]).is_node()
+            implies other.node(parent).entries[i].child_paddr() != other.root by {
+            assert(self.contains_node(parent));
+            assert(self.node(parent).entries[i].is_node());
+        };
+        assert forall|paddr: Paddr| #[trigger] other.contains_node(paddr) implies
+            other.reachable_from(other.root, paddr, NR_LEVELS as nat) by {
+            assert(self.contains_node(paddr));
+            assert(self.reachable_from(self.root, paddr, NR_LEVELS as nat));
+            self.lemma_same_edges_reachable(other, self.root, paddr, NR_LEVELS as nat);
+        };
+    }
+
     /// Paging level decreases on every node edge, bounding recursion.
+    #[verifier::opaque]
     pub open spec fn subtree_inv_at(self, paddr: Paddr, depth: nat) -> bool
         decreases depth,
     {
@@ -2211,6 +2705,7 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
         }
     }
 
+    #[verifier::opaque]
     pub open spec fn reachable_from(self, from: Paddr, target: Paddr, depth: nat) -> bool
         decreases depth,
     {
@@ -2225,6 +2720,7 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
             })
     }
 
+    #[verifier::opaque]
     pub open spec fn unique_parent(self) -> bool {
         forall|parent1: Paddr, parent2: Paddr, i: int, j: int|
             self.contains_node(parent1) && self.contains_node(parent2) && 0 <= i < NR_ENTRIES && 0
@@ -2410,9 +2906,47 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
             final(self).nodes == resources.writeback_node_map(),
             final(self).raw_node_permissions == resources.writeback_permission_map(),
     {
+        reveal(FlatCursorResources::inv);
         let ghost root = self.root;
+        let ghost before = *self;
+        self.lemma_node_inv(root);
+        assert forall|paddr: Paddr| #[trigger] before.nodes.contains_key(paddr)
+            implies before.local_node_inv(paddr) by {
+            before.lemma_node_inv(paddr);
+        };
         let tracked partition = self.tracked_partition();
-        FlatCursorResources::tracked_new(partition, root)
+        let tracked resources = FlatCursorResources::tracked_new(partition, root);
+        assert(resources.node_map() =~= before.nodes);
+        assert(resources.permission_map() =~= before.raw_node_permissions);
+        assert(resources.root.record.paddr() == resources.root.paddr);
+        assert(resources.root.record.local_inv());
+        assert(!resources.leases.contains_key(root));
+        assert(!resources.remainder.nodes.contains_key(root));
+        assert(!resources.remainder.permissions.contains_key(root));
+        assert(resources.remainder.nodes.dom() =~= resources.remainder.permissions.dom());
+        assert(resources.leases.dom().disjoint(resources.remainder.nodes.dom()));
+        assert forall|paddr: Paddr| #[trigger] resources.remainder.nodes.contains_key(paddr)
+            implies {
+                &&& resources.remainder.nodes[paddr].paddr() == paddr
+                &&& resources.remainder.nodes[paddr].local_inv()
+                &&& resources.remainder.permissions[paddr].frac() == 1
+                &&& resources.remainder.nodes[paddr].node.permission_matches(
+                    resources.remainder.permissions[paddr],
+                )
+            } by {
+            assert(before.local_node_inv(paddr));
+            assert(before.raw_node_permissions.contains_key(paddr));
+        };
+        assert forall|paddr: Paddr| #[trigger] resources.leases.contains_key(paddr)
+            implies {
+                let lease = resources.leases[paddr];
+                &&& lease.paddr == paddr
+                &&& lease.record.paddr() == paddr
+                &&& lease.record.local_inv()
+                &&& lease.permission.frac() == 1
+                &&& lease.record.node.permission_matches(*lease.permission)
+            } by {};
+        resources
     }
 
     /// Borrows the authoritative flat maps and initializes cursor navigation
@@ -2441,6 +2975,7 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
             final(self).nodes == result.resources.writeback_node_map(),
             final(self).raw_node_permissions == result.resources.writeback_permission_map(),
     {
+        reveal(FlatPageTableOwner::subtree_inv_at);
         let ghost root = self.root;
         let ghost path = self.node(root).path;
         let tracked resources = self.tracked_cursor_resources();
@@ -2466,6 +3001,8 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
     ) -> (tracked subtree: FlatSubtreeMut<'a, C>)
         requires
             old(self).contains_node(root),
+            old(self).subtree_nodes(root).remove(old(self).root)
+                <= old(self).raw_node_permissions.dom(),
         ensures
             subtree.root == root,
             *subtree.nodes == old(self).nodes.restrict(old(self).subtree_nodes(root)),
@@ -2627,6 +3164,7 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
             old(self).contains_node(parent),
             0 <= idx < old(self).node(parent).entries.len(),
             old(self).node(parent).entries[idx].is_node(),
+            old(self).node(parent).entries[idx].child_paddr() != parent,
             old(self).contains_node(old(self).node(parent).entries[idx].child_paddr()),
             old(self).raw_node_permissions.contains_key(
                 old(self).node(parent).entries[idx].child_paddr(),
@@ -2976,6 +3514,8 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
         ensures
             result.root == self.root,
             result.leases.dom() == self.leases.dom().insert(loan.paddr),
+            forall|other: Paddr| self.contains_leased(other) ==>
+                #[trigger] result.leased_record(other) == self.leased_record(other),
             *result.remainder.nodes == *old(self.remainder.nodes),
             *result.remainder.permissions == *old(self.remainder.permissions),
             result.node_map() == self.node_map().insert(loan.paddr, record),

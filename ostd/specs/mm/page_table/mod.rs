@@ -287,6 +287,32 @@ pub open spec fn is_valid_range_spec<C: PageTableConfig>(r: Range<Vaddr>) -> boo
     (r.start == 0 && r.end == 0) || (va_range.start <= r.start && r.end - 1 <= va_range.end)
 }
 
+/// A nonempty managed range starts in this configuration's canonical body.
+pub proof fn lemma_valid_range_start_upper_bits<C: PageTableConfig>(r: Range<Vaddr>)
+    requires
+        r.start < r.end,
+        is_valid_range_spec::<C>(r),
+    ensures
+        vaddr_upper_bits_spec::<C>(r.start) == C::LEADING_BITS_spec(),
+{
+    C::lemma_paging_consts_properties();
+    C::lemma_page_table_config_constant_properties();
+    lemma_arch_specific_consts_properties::<C>();
+    vstd::arithmetic::power2::lemma2_to64_rest();
+    let leading = C::LEADING_BITS_spec();
+    let base = leading as int * 281474976710656int;
+    assert(0 <= base + C::TOP_LEVEL_INDEX_RANGE().start * pow2(39) <= usize::MAX);
+    assert(0 <= base + C::TOP_LEVEL_INDEX_RANGE().end * pow2(39) - 1 <= usize::MAX);
+    assert(base <= r.start < base + 281474976710656int);
+    let start = r.start;
+    assert(start >> 48 == leading) by (bit_vector)
+        requires
+            leading < 65536,
+            leading as u128 * 281474976710656u128 <= start as u128,
+            (start as u128) < (leading as u128 + 1u128) * 281474976710656u128,
+    ;
+}
+
 /// Sanity-check: for x86_64 user PT, the bounds are
 /// `(0, 0x0000_7FFF_FFFF_FFFF)`, i.e. the low-half 47-bit user VA space.
 pub(crate) proof fn lemma_vaddr_range_spec_user()

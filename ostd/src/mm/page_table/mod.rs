@@ -1285,6 +1285,7 @@ impl<C: PageTableConfig> PageTable<C> {
     ) -> bool {
         &&& owner.inv()
         &&& owner.metaregion_sound(regions)
+        &&& regions.inv()
         &&& self.root.inv()
         &&& self.root.start_paddr_spec() == owner.root
         &&& self.root.ptr.addr() == owner.node(owner.root).node.slot_vaddr()
@@ -1458,7 +1459,7 @@ impl<C: PageTableConfig> PageTable<C> {
                 &&& r.unwrap().0.0.invariants_flat(*r.unwrap().1, *final(regions), *final(guards))
                 &&& r.unwrap().1.in_locked_range()
                 &&& r.unwrap().0.0.level == r.unwrap().0.0.guard_level
-                &&& r.unwrap().0.0.guard_level == NR_LEVELS as PagingLevel
+                &&& 1 <= r.unwrap().0.0.guard_level <= NR_LEVELS
                 &&& r.unwrap().0.0.va < r.unwrap().0.0.barrier_va.end
                 &&& r.unwrap().0.0.va == va.start
                 &&& r.unwrap().0.0.barrier_va == *va
@@ -1518,7 +1519,8 @@ impl<C: PageTableConfig> PageTable<C> {
                 &&& r.unwrap().0.va == va.start
                 &&& r.unwrap().0.barrier_va == *va
                 &&& r.unwrap().1@.as_page_table_owner() == *old(owner)
-                &&& r.unwrap().1@.continuations[3].path == old(owner).node(old(owner).root).path
+                &&& r.unwrap().0.guard_level == NR_LEVELS ==>
+                    r.unwrap().1@.continuations[3].path == old(owner).node(old(owner).root).path
             },
             !Cursor::<C, G>::cursor_new_success_conditions(*va) ==> r is Err,
             forall|idx: int| #![trigger final(regions).slot_owners[idx].paths_in_pt]
