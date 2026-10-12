@@ -35,8 +35,8 @@ pub struct FrameRef<'a, M: AnyFrameMeta + ?Sized + Repr<MetaSlotStorage>> {
     pub tracked_metadata_perm: Tracked<&'a FracMetadataPerm>,
 }
 
-impl<'a, M: AnyFrameMeta + ?Sized + Repr<MetaSlotStorage>> Inv for FrameRef<'a,M> {
-    open spec fn inv (self) -> bool {
+impl<'a, M: AnyFrameMeta + ?Sized + Repr<MetaSlotStorage>> Inv for FrameRef<'a, M> {
+    open spec fn inv(self) -> bool {
         &&& self.inner@.ptr_inv()
         &&& self.inner@.tracked_metadata_perm@ is None
         &&& self.tracked_metadata_perm.frac() == 1
@@ -226,8 +226,12 @@ unsafe impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + 'static> NonNullPtr for Fr
             tracked_metadata_perm: Tracked(None),
         };
         let dropped = ManuallyDrop::<Frame<M>>::new(frame);
-        Self::Ref { inner: dropped, _marker: PhantomData, #[cfg(verus_keep_ghost_body)]
-            tracked_metadata_perm: Tracked::assume_new() }
+        Self::Ref {
+            inner: dropped,
+            _marker: PhantomData,
+            #[cfg(verus_keep_ghost_body)]
+            tracked_metadata_perm: Tracked::assume_new(),
+        }
     }
 
     fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> PPtr<Self::Target> {

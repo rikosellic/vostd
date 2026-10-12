@@ -344,11 +344,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
 
 #[verus_verify]
 impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
-    pub open spec fn locks_preserved_except(
-        addr: usize,
-        guards0: Guards,
-        guards1: Guards,
-    ) -> bool {
+    pub open spec fn locks_preserved_except(addr: usize, guards0: Guards, guards1: Guards) -> bool {
         &&& forall|i: usize| guards0.lock_held(i) ==> guards1.lock_held(i)
         &&& forall|i: usize| guards0.unlocked(i) && i != addr ==> guards1.unlocked(i)
     }

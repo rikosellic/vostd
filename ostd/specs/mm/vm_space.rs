@@ -7,10 +7,8 @@ use crate::specs::{
         frame::meta_region_owners::MetaRegionOwners,
         io::{VmIoMemView, VmIoOwner},
         page_table::{
-            FlatCursorOwner, FlatPageTableOwner, Mapping,
-            cursor::CursorView,
-            mappings_disjoint_vaddrs,
-            node::entry_owners::EntryOwner,
+            FlatCursorOwner, FlatPageTableOwner, Mapping, cursor::CursorView,
+            mappings_disjoint_vaddrs, node::entry_owners::EntryOwner,
         },
         virt_mem::MemView,
     },

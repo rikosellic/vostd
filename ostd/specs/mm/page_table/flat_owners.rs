@@ -5,7 +5,7 @@
 //! the corresponding linear resources live in `FlatPageTableOwner::nodes`.
 use core::{marker::PhantomData, ops::Range};
 use vstd::prelude::*;
-use vstd_extra::{array_ptr, ghost_tree::TreePath, ownership::*};
+use vstd_extra::{arithmetic::nat_align_down, array_ptr, ghost_tree::TreePath, ownership::*};
 
 use crate::mm::frame::meta::{
     META_SLOT_SIZE, REF_COUNT_MAX, REF_COUNT_UNUSED, mapping::meta_to_frame,
@@ -13,18 +13,21 @@ use crate::mm::frame::meta::{
 use crate::mm::kspace::{FRAME_METADATA_RANGE, LINEAR_MAPPING_BASE_VADDR, VMALLOC_BASE_VADDR};
 use crate::mm::page_prop::PageProperty;
 use crate::mm::page_table::{PageTableConfig, PageTableEntryTrait, PageTableGuard};
-use crate::mm::{Paddr, PagingLevel, Vaddr, paddr_to_vaddr, page_size};
+use crate::mm::{Paddr, PagingConstsTrait, PagingLevel, Vaddr, paddr_to_vaddr, page_size};
 use crate::specs::arch::{MAX_PADDR, NR_ENTRIES, NR_LEVELS, PAGE_SIZE, valid_frame_paddr};
 use crate::specs::mm::frame::mapping::{frame_to_index, index_to_meta, max_meta_slots};
 use crate::specs::mm::frame::{
     meta_owners::{FracMetadataPerm, PageUsage, typed_meta_wf},
     meta_region_owners::MetaRegionOwners,
 };
-use crate::specs::mm::page_table::node::entry_owners::FrameEntryOwner;
 use crate::specs::mm::page_table::node::Guards;
+use crate::specs::mm::page_table::node::entry_owners::FrameEntryOwner;
 use crate::specs::mm::page_table::node::owners::PageMetaOwner;
 use crate::specs::mm::page_table::owners::INC_LEVELS;
-use crate::specs::mm::page_table::{AbstractVaddr, Mapping, PageTableView, vaddr_of};
+use crate::specs::mm::page_table::{
+    Mapping, PageTableView, pte_index_spec, vaddr_of, vaddr_replace_pte_index_spec,
+    vaddr_upper_bits_spec,
+};
 
 verus! {
 
@@ -102,7 +105,7 @@ impl<C: PageTableConfig> FlatEntryOwner<C> {
     pub open spec fn frame_sub_pages_valid(self, regions: MetaRegionOwners) -> bool {
         self.is_frame() && self.parent_level > 1 ==> {
             let pa = self.frame().mapped_pa;
-            let nr_pages = page_size(self.parent_level) / PAGE_SIZE;
+            let nr_pages = page_size::<C>(self.parent_level) / PAGE_SIZE;
             forall|j: usize|
                 #![trigger frame_to_index((pa + j * PAGE_SIZE) as usize)]
                 0 < j < nr_pages ==> {
@@ -175,8 +178,8 @@ impl<C: PageTableConfig> FlatEntryOwner<C> {
         &&& self.is_frame() ==> {
             &&& self.parent_level < NR_LEVELS
             &&& valid_frame_paddr(self.frame().mapped_pa)
-            &&& self.frame().mapped_pa % page_size(self.parent_level) == 0
-            &&& self.frame().mapped_pa + page_size(self.parent_level) <= MAX_PADDR
+            &&& self.frame().mapped_pa % page_size::<C>(self.parent_level) == 0
+            &&& self.frame().mapped_pa + page_size::<C>(self.parent_level) <= MAX_PADDR
             &&& C::raw_item_well_formed(
                 (
                     self.frame().mapped_pa,
@@ -560,8 +563,8 @@ pub ghost struct FlatCursorState<C: PageTableConfig> {
     pub ghost root: Paddr,
     pub ghost level: PagingLevel,
     pub ghost guard_level: PagingLevel,
-    pub ghost va: AbstractVaddr,
-    pub ghost prefix: AbstractVaddr,
+    pub ghost va: Vaddr,
+    pub ghost prefix: Vaddr,
     pub ghost popped_too_high: bool,
     pub ghost phantom: PhantomData<C>,
 }
@@ -578,10 +581,10 @@ pub tracked struct FlatCursorOwner<'a, 'rcu, C: PageTableConfig> {
     pub ghost guard_level: PagingLevel,
     /// Logical cursor position.  Keeping this beside the flat path avoids
     /// rebuilding an owning tree merely to recover the current PTE index.
-    pub ghost va: AbstractVaddr,
+    pub ghost va: Vaddr,
     /// Start of the locked page-table chunk.  This is navigation state only;
     /// all linear node resources remain in `resources`.
-    pub ghost prefix: AbstractVaddr,
+    pub ghost prefix: Vaddr,
     pub ghost popped_too_high: bool,
 }
 
@@ -1067,25 +1070,22 @@ impl<C: PageTableConfig> FlatCursorState<C> {
     }
 
     pub open spec fn locked_range(self) -> Range<Vaddr> {
-        Range {
-            start: self.prefix.align_down(self.guard_level as int).to_vaddr(),
-            end: self.prefix.align_up(self.guard_level as int).to_vaddr(),
-        }
+        let size = page_size::<C>(self.guard_level) as nat;
+        let start = nat_align_down(self.prefix as nat, size);
+        Range { start: start as Vaddr, end: (start + size) as Vaddr }
     }
 
     pub open spec fn in_locked_range(self) -> bool {
-        self.locked_range().start <= self.va.to_vaddr() < self.locked_range().end
+        self.locked_range().start <= self.va < self.locked_range().end
     }
 
     pub open spec fn local_inv(self, owner: FlatPageTableOwner<C>) -> bool {
         &&& owner.inv()
         &&& self.root == owner.root
-        &&& self.va.inv()
-        &&& self.va.offset == 0
-        &&& self.prefix.inv()
-        &&& self.prefix.offset == 0
-        &&& self.va.leading_bits == C::LEADING_BITS_spec()
-        &&& self.prefix.leading_bits == C::LEADING_BITS_spec()
+        &&& self.va % C::BASE_PAGE_SIZE() == 0
+        &&& self.prefix % C::BASE_PAGE_SIZE() == 0
+        &&& vaddr_upper_bits_spec::<C>(self.va) == C::LEADING_BITS_spec()
+        &&& vaddr_upper_bits_spec::<C>(self.prefix) == C::LEADING_BITS_spec()
         &&& 1 <= self.level <= self.guard_level <= NR_LEVELS
         &&& forall|key: int| #[trigger]
             self.continuations.contains_key(key) <==> self.level - 1 <= key < self.guard_level
@@ -1100,7 +1100,7 @@ impl<C: PageTableConfig> FlatCursorState<C> {
                 &&& owner.node(cont.node).node.level == cont.level
             }
         &&& self.continuations.contains_key(self.level - 1)
-        &&& self.current().idx == self.va.index[self.level - 1]
+        &&& self.current().idx == pte_index_spec::<C>(self.va, self.level)
         &&& forall|child_key: int|
             self.level - 1 <= child_key < self.guard_level - 1 ==> {
                 let child = self.continuations[child_key];
@@ -1124,8 +1124,9 @@ impl<C: PageTableConfig> FlatCursorState<C> {
         guards: Guards,
     ) -> bool {
         forall|paddr: Paddr| #[trigger]
-            owner.contains_node(paddr) && !self.is_path_node(paddr)
-                ==> guards.unlocked(owner.node(paddr).node.slot_vaddr())
+            owner.contains_node(paddr) && !self.is_path_node(paddr) ==> guards.unlocked(
+                owner.node(paddr).node.slot_vaddr(),
+            )
     }
 }
 
@@ -1133,12 +1134,13 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
     pub open spec fn state(self) -> FlatCursorState<C> {
         FlatCursorState {
             continuations: self.continuations.map_values(
-                |cont: FlatCursorContinuation<'rcu, C>| FlatCursorStateContinuation {
-                    node: cont.node,
-                    idx: cont.idx,
-                    path: cont.path,
-                    level: cont.level,
-                },
+                |cont: FlatCursorContinuation<'rcu, C>|
+                    FlatCursorStateContinuation {
+                        node: cont.node,
+                        idx: cont.idx,
+                        path: cont.path,
+                        level: cont.level,
+                    },
             ),
             root: self.root,
             level: self.level,
@@ -1190,25 +1192,23 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
     /// records remain unlocked.
     pub open spec fn only_current_locked(self, guards: Guards) -> bool {
         forall|paddr: Paddr| #[trigger]
-            self.as_page_table_owner().contains_node(paddr) && !self.is_path_node(paddr)
-                && (!self.current_entry().is_node()
-                    || self.current_entry().child_paddr() != paddr)
+            self.as_page_table_owner().contains_node(paddr) && !self.is_path_node(paddr) && (
+            !self.current_entry().is_node() || self.current_entry().child_paddr() != paddr)
                 ==> guards.unlocked(self.as_page_table_owner().node(paddr).node.slot_vaddr())
     }
 
     pub open spec fn locked_range(self) -> Range<Vaddr> {
-        Range {
-            start: self.prefix.align_down(self.guard_level as int).to_vaddr(),
-            end: self.prefix.align_up(self.guard_level as int).to_vaddr(),
-        }
+        let size = page_size::<C>(self.guard_level) as nat;
+        let start = nat_align_down(self.prefix as nat, size);
+        Range { start: start as Vaddr, end: (start + size) as Vaddr }
     }
 
     pub open spec fn in_locked_range(self) -> bool {
-        self.locked_range().start <= self.va.to_vaddr() < self.locked_range().end
+        self.locked_range().start <= self.va < self.locked_range().end
     }
 
     pub open spec fn above_locked_range(self) -> bool {
-        self.va.to_vaddr() >= self.locked_range().end
+        self.va >= self.locked_range().end
     }
 
     pub open spec fn continuation_inv(self, key: int) -> bool
@@ -1234,19 +1234,17 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
         &&& self.resources.inv()
         &&& self.resources.root.paddr == self.root
         &&& self.as_page_table_owner().inv()
-        &&& self.va.inv()
-        &&& self.va.offset == 0
-        &&& self.prefix.inv()
-        &&& self.prefix.offset == 0
-        &&& self.va.leading_bits == C::LEADING_BITS_spec()
-        &&& self.prefix.leading_bits == C::LEADING_BITS_spec()
+        &&& self.va % C::BASE_PAGE_SIZE() == 0
+        &&& self.prefix % C::BASE_PAGE_SIZE() == 0
+        &&& vaddr_upper_bits_spec::<C>(self.va) == C::LEADING_BITS_spec()
+        &&& vaddr_upper_bits_spec::<C>(self.prefix) == C::LEADING_BITS_spec()
         &&& 1 <= self.level <= self.guard_level <= NR_LEVELS
         &&& forall|key: int| #[trigger]
             self.continuations.contains_key(key) <==> self.level - 1 <= key < self.guard_level
         &&& forall|key: int| #[trigger]
             self.continuations.contains_key(key) ==> self.continuation_inv(key)
         &&& self.continuations.contains_key(self.level - 1)
-        &&& self.current().idx == self.va.index[self.level - 1]
+        &&& self.current().idx == pte_index_spec::<C>(self.va, self.level)
         &&& forall|child_key: int|
             self.level - 1 <= child_key < self.guard_level - 1 ==> {
                 let child = self.continuations[child_key];
@@ -1306,17 +1304,16 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
     }
 
     pub open spec fn cur_va(self) -> Vaddr {
-        self.va.to_vaddr()
+        self.va
     }
 
-    pub open spec fn cur_va_range(self) -> Range<AbstractVaddr> {
-        Range {
-            start: self.va.align_down(self.level as int),
-            end: self.va.align_up(self.level as int),
-        }
+    pub open spec fn cur_va_range(self) -> Range<Vaddr> {
+        let size = page_size::<C>(self.level) as nat;
+        let start = nat_align_down(self.va as nat, size);
+        Range { start: start as Vaddr, end: (start + size) as Vaddr }
     }
 
-    pub open spec fn set_va_in_node(self, new_va: AbstractVaddr) -> Self
+    pub open spec fn set_va_in_node(self, new_va: Vaddr) -> Self
         recommends
             self.continuations.contains_key(self.level - 1),
     {
@@ -1326,10 +1323,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             va: new_va,
             continuations: self.continuations.insert(
                 key,
-                FlatCursorContinuation {
-                    idx: new_va.index[key] as usize,
-                    ..current
-                },
+                FlatCursorContinuation { idx: pte_index_spec::<C>(new_va, self.level), ..current },
             ),
             popped_too_high: false,
             ..self
@@ -1339,7 +1333,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
     pub proof fn tracked_new(
         tracked resources: FlatCursorResources<'a, C>,
         root: Paddr,
-        va: AbstractVaddr,
+        va: Vaddr,
         path: TreePath<NR_ENTRIES>,
         guard: PageTableGuard<'rcu, C>,
     ) -> (tracked result: Self)
@@ -1350,9 +1344,8 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             resources.root.record.node.level == NR_LEVELS,
             resources.root.record.path == path,
             resources.root.record.node.relate_guard(guard),
-            va.inv(),
-            va.offset == 0,
-            va.leading_bits == C::LEADING_BITS_spec(),
+            va % C::BASE_PAGE_SIZE() == 0,
+            vaddr_upper_bits_spec::<C>(va) == C::LEADING_BITS_spec(),
         ensures
             result.inv(),
             result.root == root,
@@ -1360,13 +1353,16 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             result.guard_level == NR_LEVELS,
             result.continuations.dom() == set![(NR_LEVELS - 1) as int],
             result.continuations[(NR_LEVELS - 1) as int].node == root,
-            result.continuations[(NR_LEVELS - 1) as int].idx == va.index[NR_LEVELS - 1],
+            result.continuations[(NR_LEVELS - 1) as int].idx == pte_index_spec::<C>(
+                va,
+                NR_LEVELS as PagingLevel,
+            ),
             result.continuations[(NR_LEVELS - 1) as int].path == path,
             result.va == va,
             result.prefix == va,
             !result.popped_too_high,
     {
-        let ghost idx = va.index[NR_LEVELS - 1] as usize;
+        let ghost idx = pte_index_spec::<C>(va, NR_LEVELS as PagingLevel);
         let ghost root_cont = FlatCursorContinuation::new(
             root,
             idx,
@@ -1486,10 +1482,11 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             final(self).current().path == old(self).current().path,
             final(self).current().level == old(self).current().level,
             final(self).current().guard == old(self).current().guard,
-            final(self).va == (AbstractVaddr {
-                index: old(self).va.index.insert(old(self).level - 1, idx as int),
-                ..old(self).va
-            }),
+            final(self).va == vaddr_replace_pte_index_spec::<C>(
+                old(self).va,
+                old(self).level,
+                idx as int,
+            ),
             final(self).prefix == old(self).prefix,
             final(self).popped_too_high == false,
             final(self).as_page_table_owner() == old(self).as_page_table_owner(),
@@ -1498,19 +1495,18 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
         let ghost current = self.continuations[key];
         let ghost updated = FlatCursorContinuation { idx, ..current };
         self.continuations = self.continuations.insert(key, updated);
-        self.va = AbstractVaddr { index: self.va.index.insert(key, idx as int), ..self.va };
+        self.va = vaddr_replace_pte_index_spec::<C>(self.va, self.level, idx as int);
         self.popped_too_high = false;
     }
 
     /// Repositions the cursor inside its current node without touching any
     /// authoritative node or permission slot.
-    pub proof fn tracked_set_va_in_node(tracked &mut self, new_va: AbstractVaddr)
+    pub proof fn tracked_set_va_in_node(tracked &mut self, new_va: Vaddr)
         requires
             old(self).continuations.contains_key(old(self).level - 1),
-            new_va.inv(),
-            new_va.offset == 0,
-            new_va.leading_bits == old(self).va.leading_bits,
-            0 <= new_va.index[old(self).level - 1] < NR_ENTRIES,
+            new_va % C::BASE_PAGE_SIZE() == 0,
+            vaddr_upper_bits_spec::<C>(new_va) == vaddr_upper_bits_spec::<C>(old(self).va),
+            pte_index_spec::<C>(new_va, old(self).level) < NR_ENTRIES,
         ensures
             *final(self) == old(self).set_va_in_node(new_va),
             final(self).resources == old(self).resources,
@@ -1519,7 +1515,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
         let ghost key = self.level - 1;
         let ghost current = self.continuations[key];
         let ghost updated = FlatCursorContinuation {
-            idx: new_va.index[key] as usize,
+            idx: pte_index_spec::<C>(new_va, self.level),
             ..current
         };
         self.continuations = self.continuations.insert(key, updated);
@@ -1642,7 +1638,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             idx < NR_ENTRIES,
             path == self.current_entry().path,
             child_level + 1 == self.level,
-            idx == self.va.index[child_level - 1],
+            idx == pte_index_spec::<C>(self.va, child_level),
             self.resources.leased_record(child).path == path,
             self.resources.leased_record(child).node.level == child_level,
             self.resources.leased_record(child).node.relate_guard(guard),
@@ -1729,16 +1725,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             record,
             permission,
         );
-        Self {
-            resources,
-            continuations,
-            root,
-            level,
-            guard_level,
-            va,
-            prefix,
-            popped_too_high,
-        }
+        Self { resources, continuations, root, level, guard_level, va, prefix, popped_too_high }
     }
 
     /// Attaches a child at the cursor's current entry.  Navigation state is
@@ -1909,7 +1896,7 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
                 |_, entry: FlatEntryOwner<C>|
                     if entry.is_frame() {
                         let va = vaddr_of::<C>(entry.path);
-                        let size = page_size(entry.parent_level);
+                        let size = page_size::<C>(entry.parent_level);
                         set![Mapping {
                             va_range: Range { start: va as int, end: va + size },
                             pa_range: Range {
@@ -2046,8 +2033,9 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
 
     pub open spec fn entries_metaregion_sound(self, regions: MetaRegionOwners) -> bool {
         forall|paddr: Paddr, idx: int|
-            self.contains_node(paddr) && 0 <= idx < NR_ENTRIES ==> #[trigger]
-                self.node(paddr).entries[idx].metaregion_sound(regions)
+            self.contains_node(paddr) && 0 <= idx < NR_ENTRIES ==> #[trigger] self.node(
+                paddr,
+            ).entries[idx].metaregion_sound(regions)
     }
 
     pub open spec fn metaregion_sound(self, regions: MetaRegionOwners) -> bool {
@@ -2181,14 +2169,13 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
     /// only needs to remain valid for at least `'rcu`.
     pub proof fn tracked_cursor_owner<'a: 'rcu, 'rcu>(
         tracked &'a mut self,
-        va: AbstractVaddr,
+        va: Vaddr,
         guard: PageTableGuard<'rcu, C>,
     ) -> (tracked result: FlatCursorOwner<'a, 'rcu, C>)
         requires
             old(self).inv(),
-            va.inv(),
-            va.offset == 0,
-            va.leading_bits == C::LEADING_BITS_spec(),
+            va % C::BASE_PAGE_SIZE() == 0,
+            vaddr_upper_bits_spec::<C>(va) == C::LEADING_BITS_spec(),
             old(self).node(old(self).root).node.relate_guard(guard),
         ensures
             result.inv(),
@@ -2196,7 +2183,7 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
             result.level == NR_LEVELS,
             result.guard_level == NR_LEVELS,
             result.current().node == old(self).root,
-            result.current().idx == va.index[NR_LEVELS - 1],
+            result.current().idx == pte_index_spec::<C>(va, NR_LEVELS as PagingLevel),
             result.va == va,
             result.prefix == va,
     {

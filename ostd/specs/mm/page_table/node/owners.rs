@@ -270,8 +270,7 @@ impl<C: PageTableConfig> NodeOwner<C> {
         regions: MetaRegionOwners,
     ) -> bool {
         &&& regions.contains(self.slot_index)
-        &&& permission.id()
-            == regions.slot_owners[self.slot_index].metadata_perm.id()
+        &&& permission.id() == regions.slot_owners[self.slot_index].metadata_perm.id()
         &&& typed_meta_wf::<PageTablePageMeta<C>>(
             *regions.slots[self.slot_index],
             permission.resource(),
@@ -294,9 +293,9 @@ impl<C: PageTableConfig> NodeOwner<C> {
         &&& regions.contains(idx)
         &&& self.meta_wf(regions)
         &&& meta_value.wf(self.meta_own)
-        &&& self.meta_own.nr_children.id()
-            == meta_value.nr_children.id()
-        &&& meta_value.level == self.level
+        &&& self.meta_own.nr_children.id() == meta_value.nr_children.id()
+        &&& meta_value.level
+            == self.level
         // A page-table node's slot is tracked with `PageTable` usage (set at
         // allocation via `get_node_from_unused_spec`). This discriminates node
         // slots from data-frame slots (`Frame`/MMIO) by `usage` alone, so a
@@ -358,10 +357,7 @@ impl<'rcu, C: PageTableConfig> NodeOwner<C> {
         &&& guard.inner.inner@.ptr.addr() == self.slot_vaddr()
         &&& guard.inner.inner@.ptr_inv()
         &&& guard.inner.tracked_metadata_perm.frac() == 1
-        &&& guard.inner.inner@.external_meta_wf(
-            guard.inner.tracked_metadata_perm.resource(),
-            (),
-        )
+        &&& guard.inner.inner@.external_meta_wf(guard.inner.tracked_metadata_perm.resource(), ())
         &&& self.permission_matches(**guard.inner.tracked_metadata_perm)
     }
 }

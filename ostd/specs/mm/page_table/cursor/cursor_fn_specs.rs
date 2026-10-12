@@ -51,11 +51,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     /// Runtime/ghost correspondence for the flat cursor owner.  This is kept
     /// separate during the cut-over so callers can migrate without any
     /// `OwnerSubtree` <-> flat conversion layer.
-    pub open spec fn wf_flat<'owner>(
-        self,
-        owner: FlatCursorOwner<'owner, 'rcu, C>,
-    ) -> bool {
-        &&& owner.va.reflect(self.va)
+    pub open spec fn wf_flat<'owner>(self, owner: FlatCursorOwner<'owner, 'rcu, C>) -> bool {
+        &&& owner.va == self.va
         &&& self.level == owner.level
         &&& self.guard_level == owner.guard_level
         &&& self.level <= 4 ==> {

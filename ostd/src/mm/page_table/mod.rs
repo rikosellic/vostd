@@ -1289,10 +1289,7 @@ impl<C: PageTableConfig> PageTable<C> {
         &&& self.root.start_paddr_spec() == owner.root
         &&& self.root.ptr.addr() == owner.node(owner.root).node.slot_vaddr()
         &&& owner.node(owner.root).node.permission_matches(self.root.frac_metadata_perm())
-        &&& owner.node(owner.root).node.metaregion_sound(
-            self.root.frac_metadata_perm(),
-            regions,
-        )
+        &&& owner.node(owner.root).node.metaregion_sound(self.root.frac_metadata_perm(), regions)
     }
 
     /// Relates this executable page-table handle to its tracked ownership tree.

@@ -28,10 +28,10 @@ use crate::specs::{
         },
         page_table::{
             FlatCursorOwner, FlatCursorState, FlatPageTableOwner, Guards, Mapping,
-            lemma_aligned_vaddr_slack, lemma_inc_slot_indices,
-            lemma_lower_indices_aligned, lemma_page_size_base, lemma_page_size_divides,
-            lemma_page_size_ge_base, lemma_page_size_is_pow2_pte_index_bit_offset,
-            lemma_page_size_next, lemma_pte_index_bound, lemma_vaddr_range_spec_user,
+            lemma_aligned_vaddr_slack, lemma_inc_slot_indices, lemma_lower_indices_aligned,
+            lemma_page_size_base, lemma_page_size_divides, lemma_page_size_ge_base,
+            lemma_page_size_is_pow2_pte_index_bit_offset, lemma_page_size_next,
+            lemma_pte_index_bound, lemma_vaddr_range_spec_user,
             lemma_vaddr_upper_part_is_align_down, mappings_disjoint_vaddrs, mappings_well_formed,
             owners::*, page_table_vaddr_bits_spec, pte_index_bit_offset_spec, pte_index_spec,
             vaddr_range_spec, vaddr_replace_pte_index_spec, vaddr_upper_bits_spec,
@@ -1786,11 +1786,7 @@ impl<'owner, 'rcu, C: PageTableConfig> View for FlatCursorOwner<'owner, 'rcu, C>
     type V = CursorView<C>;
 
     open spec fn view(&self) -> Self::V {
-        CursorView {
-            cur_va: self.cur_va(),
-            mappings: self.view_mappings(),
-            phantom: PhantomData,
-        }
+        CursorView { cur_va: self.cur_va(), mappings: self.view_mappings(), phantom: PhantomData }
     }
 }
 
@@ -1798,11 +1794,7 @@ impl<C: PageTableConfig> FlatCursorState<C> {
     /// Reconstructs the abstract cursor view by pairing borrow-free navigation
     /// state with its authoritative flat page-table store.
     pub open spec fn cursor_view(self, owner: FlatPageTableOwner<C>) -> CursorView<C> {
-        CursorView {
-            cur_va: self.va.to_vaddr(),
-            mappings: owner.view_rec(),
-            phantom: PhantomData,
-        }
+        CursorView { cur_va: self.va, mappings: owner.view_rec(), phantom: PhantomData }
     }
 }
 
