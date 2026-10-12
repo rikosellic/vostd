@@ -725,34 +725,44 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             Ghost(child_path)
                 => Tracked(new_record)
         )]
-        let new_page = PageTableNode::<C>::alloc(level - 1);
+        /* The inherited RcuDrop migration is intentionally out of scope.
+         * Origin Rust:
+         * let new_page = RcuDrop::new(PageTableNode::<C>::alloc(level - 1));
+         */
+        let mut new_page = PageTableNode::<C>::alloc(level - 1);
         let paddr = new_page.start_paddr();
-        let ghost new_slot_index = new_record.node.slot_index;
 
-        proof_decl! {
-            let tracked raw_perms: FrameRawPerms;
-        }
-        let raw_paddr = #[verus_spec(with => Tracked(raw_perms))]
-        new_page.into_raw();
-
-        let tracked (new_cursor_owner, stable_permission) =
-            cursor_owner.tracked_replace_current_and_lease_child_with_permission(
-            new_record,
-            raw_perms.metadata_perm,
+        // Only the ghost metadata token is lent to a stable slot. The live
+        // Frame is not consumed, and the structural record is not attached
+        // to the parent while its child entries are being initialized.
+        let tracked permission = new_page.tracked_metadata_perm.tracked_take();
+        let tracked slot_perm = *new_page.tracked_slot_perm.borrow();
+        let tracked FlatCursorOwner {
+            resources,
+            continuations,
+            root,
+            level: cursor_level,
+            guard_level,
+            va,
+            prefix,
+            popped_too_high,
+        } = cursor_owner;
+        let ghost parent_paddr = continuations[cursor_level - 1].node;
+        let tracked (mut resources, loan) = resources.tracked_lend_node_permission(
+            paddr,
+            permission,
         );
-        let tracked mut cursor_owner = new_cursor_owner;
 
-        let tracked slot_perm = *regions.slots.tracked_borrow(new_slot_index);
+        // SAFETY: The live node is retained until Child::into_pte below.
+        // Its metadata loan remains valid for the returned guard's lifetime.
         let pt_ref = unsafe {
-            #[verus_spec(with Tracked(slot_perm), Tracked(stable_permission))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(loan.permission))]
             PageTableNodeRef::borrow_paddr(paddr)
         };
 
-        let mut pt_lock_guard = {
-            let tracked record = cursor_owner.resources.tracked_borrow_record(paddr);
-            #[verus_spec(with Tracked(&record.node), Tracked(guards))]
-            pt_ref.lock(guard)
-        };
+        // Lock before writing the parent PTE, as in the original Rust.
+        #[verus_spec(with Tracked(&new_record.node), Tracked(guards))]
+        let mut pt_lock_guard = pt_ref.lock(guard);
 
         proof {
             C::lemma_paging_consts_properties();
@@ -764,24 +774,24 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 nr_subpage_per_huge_spec::<C>() == NR_ENTRIES,
                 0 <= i <= NR_ENTRIES,
                 1 < level < NR_LEVELS,
-                cursor_owner.resources.contains_raw_leased(paddr),
-                cursor_owner.resources.leased_record(paddr).node.relate_guard(pt_lock_guard),
-                cursor_owner.resources.leased_record(paddr).entries.len() == NR_ENTRIES,
+                resources.can_insert_raw_node(paddr),
+                new_record.paddr() == paddr,
+                new_record.node.relate_guard(pt_lock_guard),
+                new_record.node.permission_matches(*loan.permission),
+                new_record.local_inv(),
+                new_record.path == child_path,
+                new_record.entries.len() == NR_ENTRIES,
+                forall|j: int| i <= j < NR_ENTRIES ==> #[trigger] new_record.entries[j].is_absent(),
+                forall|j: int| 0 <= j < i ==> #[trigger] new_record.entries[j].is_frame(),
+                forall|j: int| 0 <= j < i ==> #[trigger] new_record.entries[j].frame().prop == prop,
                 forall|j: int|
-                    i <= j < NR_ENTRIES ==> #[trigger] cursor_owner.resources.leased_record(
-                        paddr,
-                    ).entries[j].is_absent(),
-                forall|j: int|
-                    0 <= j < i ==> #[trigger] cursor_owner.resources.leased_record(
-                        paddr,
-                    ).entries[j].is_frame(),
+                    0 <= j < NR_ENTRIES ==> #[trigger] new_record.entries[j].parent_level == level
+                        - 1,
                 regions.inv(),
-                guards.lock_held(cursor_owner.resources.leased_record(paddr).node.slot_vaddr()),
+                guards.lock_held(new_record.node.slot_vaddr()),
         {
             let small_pa = pa + i * page_size::<C>(level - 1);
-            let ghost entry_path = cursor_owner.resources.leased_record(
-                paddr,
-            ).entries[i as int].path;
+            let ghost entry_path = new_record.entries[i as int].path;
 
             proof {
                 C::lemma_raw_item_well_formed_split(pa, level, prop, small_pa, i, Tracked(None));
@@ -791,26 +801,82 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 small_slot.paths_in_pt = small_slot.paths_in_pt.insert(entry_path);
             }
 
-            {
-                let tracked child_record = cursor_owner.tracked_borrow_node_record_mut(paddr);
-                let tracked entry_owner = child_record.entries.tracked_borrow_mut(i as int);
-                let tracked node_owner = &mut child_record.node;
-                #[verus_spec(with
-                    Tracked(regions),
-                    Tracked(entry_owner),
-                    Tracked(node_owner)
-                )]
-                pt_lock_guard.replace_absent_with_frame(i, small_pa, level - 1, prop);
+            // These leaf-only owners adapt the remaining legacy Entry API.
+            // No subtree is constructed or converted; the real frame
+            // permission returns to the flat entry immediately afterwards.
+            let tracked mut old_owner = EntryOwner::tracked_new_absent(
+                entry_path,
+                (level - 1) as PagingLevel,
+            );
+            let tracked mut new_owner = EntryOwner::tracked_new_frame(
+                small_pa,
+                entry_path,
+                (level - 1) as PagingLevel,
+                prop,
+                None,
+            );
+            #[verus_spec(with
+                Tracked(&new_record.node), Tracked(&old_owner), Tracked(&*regions)
+            )]
+            let mut entry = pt_lock_guard.entry(i);
+            #[verus_spec(with
+                Tracked(regions), Tracked(&mut old_owner), Tracked(&mut new_owner),
+                Tracked(&mut new_record.node)
+            )]
+            let old = entry.replace(Child::Frame(small_pa, level - 1, prop));
+            debug_assert!(old.is_none());
+
+            proof {
+                let tracked frame = match new_owner.kind {
+                    EntryOwnerKind::Frame(frame) => frame,
+                    _ => proof_from_false(),
+                };
+                new_record.tracked_set_entry(
+                    i as int,
+                    FlatEntryOwner {
+                        kind: FlatEntryOwnerKind::Frame(frame),
+                        path: entry_path,
+                        parent_level: (level - 1) as PagingLevel,
+                    },
+                );
             }
         }
 
-        self.pte = C::E::new_pt(raw_paddr);
+        // The live Frame is consumed at the original Rust boundary, only
+        // after all child PTEs have been initialized. The legacy Child API
+        // temporarily carries the same structural node owner, with no second
+        // metadata token; the existing loan is adopted by the raw-node lease.
+        let tracked FlatNodeRecord { node, entries, path } = new_record;
+        let tracked mut pte_owner = EntryOwner::tracked_new_node(node, None, path);
+        self.pte = #[verus_spec(with Tracked(&mut pte_owner))]
+        Child::PageTable(new_page).into_pte();
+
+        let tracked node = pte_owner.tracked_take_node();
+        let tracked new_record = FlatNodeRecord { node, entries, path };
+        proof {
+            let tracked parent_record = resources.tracked_borrow_record_mut(parent_paddr);
+            parent_record.tracked_set_entry(
+                self.idx as int,
+                FlatEntryOwner::tracked_new_node(paddr, child_path, level),
+            );
+        }
+        let tracked mut resources = resources.tracked_insert_lent_node(new_record, loan);
         unsafe {
-            let tracked parent_record = cursor_owner.tracked_borrow_current_record_mut();
+            let tracked parent_record = resources.tracked_borrow_record_mut(parent_paddr);
             #[verus_spec(with Tracked(&mut parent_record.node), Tracked(&*regions))]
             self.node.write_pte(self.idx, self.pte)
         };
 
+        let tracked cursor_owner = FlatCursorOwner {
+            resources,
+            continuations,
+            root,
+            level: cursor_level,
+            guard_level,
+            va,
+            prefix,
+            popped_too_high,
+        };
         #[verus_spec(with |= Tracked(cursor_owner))]
         Some(pt_lock_guard)
     }

@@ -298,6 +298,9 @@ impl<C: PageTableConfig> FlatNodeRecord<C> {
     /// Structural result of allocating a zero-filled page-table node.
     /// `path` is supplied by the caller, so a fresh node never needs the old
     /// recursive-tree "allocate at empty path, then rebase children" dance.
+    /// The record may stay detached while the live `Frame` owns its metadata
+    /// permission and the original Rust initializes the node. Allocation
+    /// alone does not attach it to the reachable tree or make it a raw node.
     pub open spec fn allocated_empty(self, level: PagingLevel, path: TreePath<NR_ENTRIES>) -> bool {
         &&& self.node.inv()
         &&& self.node.level == level
@@ -606,6 +609,14 @@ impl<'a, C: PageTableConfig> FlatOwnerPartition<'a, C> {
             *lease.permission == (*old(self.permissions))[paddr],
             *remainder.nodes == old(self.nodes).remove_keys(set![paddr]),
             *remainder.permissions == old(self.permissions).remove_keys(set![paddr]),
+            mut_ref_future(self.nodes) == Map::empty().insert(
+                paddr,
+                mut_ref_future(lease.record),
+            ).union_prefer_right(mut_ref_future(remainder.nodes)),
+            mut_ref_future(self.permissions) == Map::empty().insert(
+                paddr,
+                *lease.permission,
+            ).union_prefer_right(mut_ref_future(remainder.permissions)),
     {
         let ghost key = set![paddr];
         let tracked (node_slot, nodes) = self.nodes.tracked_borrow_mut_split(key);
@@ -635,10 +646,10 @@ impl<'a, C: PageTableConfig> FlatOwnerPartition<'a, C> {
         self.permissions.tracked_insert(paddr, permission);
     }
 
-    /// Inserts a freshly converted raw node and immediately splits it out as
-    /// a stable lease.  Allocation paths need this combined operation: the
-    /// returned `PageTableNodeRef` borrows the permission for `'a`, while the
-    /// remainder must stay available for later cursor descents/allocations.
+    /// Inserts an already-consumed raw node and splits it out as a stable
+    /// lease. This must not force an allocation path to consume its live
+    /// frame before borrowing, locking, or initializing the node: the
+    /// original Rust transfers ownership only at `Child::into_pte`.
     pub proof fn tracked_insert_and_lease_raw_node(
         tracked self,
         paddr: Paddr,
@@ -657,6 +668,14 @@ impl<'a, C: PageTableConfig> FlatOwnerPartition<'a, C> {
             *lease.permission == permission,
             *remainder.nodes == *old(self.nodes),
             *remainder.permissions == *old(self.permissions),
+            mut_ref_future(self.nodes) == Map::empty().insert(
+                paddr,
+                mut_ref_future(lease.record),
+            ).union_prefer_right(mut_ref_future(remainder.nodes)),
+            mut_ref_future(self.permissions) == Map::empty().insert(
+                paddr,
+                *lease.permission,
+            ).union_prefer_right(mut_ref_future(remainder.permissions)),
     {
         self.nodes.tracked_insert(paddr, record);
         self.permissions.tracked_insert(paddr, permission);
@@ -717,6 +736,26 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
         )
     }
 
+    /// The map written back when all structural borrows end. Split-map
+    /// writeback gives the remainder precedence, unlike the current view;
+    /// the two views agree once disjoint leases have been released.
+    #[verifier::prophetic]
+    pub open spec fn writeback_node_map(self) -> Map<Paddr, FlatNodeRecord<C>> {
+        Map::empty().insert(self.root.paddr, mut_ref_future(self.root.record)).union_prefer_right(
+            self.leases.map_values(
+                |lease: FlatRawNodeLease<'a, C>| mut_ref_future(lease.record),
+            ).union_prefer_right(mut_ref_future(self.remainder.nodes)),
+        )
+    }
+
+    /// Metadata permissions written back when cursor borrowing ends.
+    #[verifier::prophetic]
+    pub open spec fn writeback_permission_map(self) -> Map<Paddr, FracMetadataPerm> {
+        self.leases.map_values(
+            |lease: FlatRawNodeLease<'a, C>| *lease.permission,
+        ).union_prefer_right(mut_ref_future(self.remainder.permissions))
+    }
+
     pub open spec fn owner_view(self) -> FlatPageTableOwner<C> {
         FlatPageTableOwner {
             root: self.root.paddr,
@@ -735,6 +774,14 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
 
     pub open spec fn contains_unleased(self, paddr: Paddr) -> bool {
         self.remainder.contains_raw_node(paddr)
+    }
+
+    /// A fresh raw-node address must be absent from both resource maps,
+    /// not merely absent from their intersection.
+    pub open spec fn can_insert_raw_node(self, paddr: Paddr) -> bool {
+        &&& !self.contains_leased(paddr)
+        &&& !self.remainder.nodes.contains_key(paddr)
+        &&& !self.remainder.permissions.contains_key(paddr)
     }
 
     pub open spec fn inv(self) -> bool {
@@ -778,6 +825,8 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             result.leases =~= Map::empty(),
             *result.remainder.nodes == old(remainder.nodes).remove_keys(set![root]),
             *result.remainder.permissions == *old(remainder.permissions),
+            result.writeback_node_map() == mut_ref_future(remainder.nodes),
+            result.writeback_permission_map() == mut_ref_future(remainder.permissions),
     {
         let tracked FlatOwnerPartition { nodes, permissions } = remainder;
         let tracked (root_slot, nodes) = nodes.tracked_borrow_mut_split(set![root]);
@@ -798,45 +847,79 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             !self.contains_leased(paddr),
         ensures
             result.contains_leased(paddr),
+            result.root.paddr == self.root.paddr,
             result.leases.dom() == self.leases.dom().insert(paddr),
             *result.remainder.nodes == old(self.remainder.nodes).remove_keys(set![paddr]),
             *result.remainder.permissions == old(self.remainder.permissions).remove_keys(
                 set![paddr],
             ),
             result.owner_view() == self.owner_view(),
+            result.writeback_node_map() == self.writeback_node_map(),
+            result.writeback_permission_map() == self.writeback_permission_map(),
     {
         let tracked Self { root, remainder, mut leases } = self;
         let tracked (lease, remainder) = remainder.tracked_lease_raw_node(paddr);
         leases.tracked_insert(paddr, lease);
-        Self { root, remainder, leases }
+        let tracked result = Self { root, remainder, leases };
+        assert(result.node_map() == self.node_map()) by {
+            assert forall|key: Paddr|
+                result.node_map().contains_key(key) implies #[trigger] result.node_map()[key]
+                == self.node_map()[key] by {};
+        };
+        assert(result.permission_map() == self.permission_map()) by {
+            assert forall|key: Paddr|
+                result.permission_map().contains_key(
+                    key,
+                ) implies #[trigger] result.permission_map()[key]
+                == self.permission_map()[key] by {};
+        };
+        result
     }
 
-    /// Leases an existing raw node and returns the stable metadata-permission
-    /// reference needed to construct its `FrameRef`.
+    /// Leases an existing raw node on first visit, or reuses its lease on a
+    /// later visit. The returned permission remains borrowed from the store,
+    /// independently of subsequent structural mutations through `result`.
     pub proof fn tracked_lease_node_with_permission(tracked self, paddr: Paddr) -> (tracked (
         result,
         permission,
     ): (Self, &'a FracMetadataPerm))
         requires
-            self.contains_unleased(paddr),
-            !self.contains_leased(paddr),
+            self.contains_raw_leased(paddr) || (self.contains_unleased(paddr)
+                && !self.contains_leased(paddr)),
         ensures
             result.contains_raw_leased(paddr),
+            result.root.paddr == self.root.paddr,
             result.leases.dom() == self.leases.dom().insert(paddr),
-            *result.remainder.nodes == old(self.remainder.nodes).remove_keys(set![paddr]),
-            *result.remainder.permissions == old(self.remainder.permissions).remove_keys(
-                set![paddr],
-            ),
+            *result.remainder.nodes == if self.contains_raw_leased(paddr) {
+                *old(self.remainder.nodes)
+            } else {
+                old(self.remainder.nodes).remove_keys(set![paddr])
+            },
+            *result.remainder.permissions == if self.contains_raw_leased(paddr) {
+                *old(self.remainder.permissions)
+            } else {
+                old(self.remainder.permissions).remove_keys(set![paddr])
+            },
             *permission == *result.leases[paddr].permission,
+            *permission == result.permission_map()[paddr],
             result.owner_view() == self.owner_view(),
+            result.writeback_node_map() == self.writeback_node_map(),
+            result.writeback_permission_map() == self.writeback_permission_map(),
+            self.contains_raw_leased(paddr) ==> result == self,
     {
-        let tracked result = self.tracked_lease_node(paddr);
+        let tracked result = if self.contains_raw_leased(paddr) {
+            self
+        } else {
+            self.tracked_lease_node(paddr)
+        };
         let tracked permission = result.tracked_borrow_permission(paddr);
         (result, permission)
     }
 
-    /// Parks a newly allocated node's metadata permission in the flat store
-    /// and retains a lease for the guard returned by the allocation path.
+    /// Parks a consumed node's metadata permission in the flat store and
+    /// retains a structural lease. Fresh nodes still held by a live frame
+    /// need a separate metadata-loan path until the original ownership
+    /// transfer point; early `into_raw` is not a proof-model workaround.
     pub proof fn tracked_insert_and_lease_node(
         tracked self,
         paddr: Paddr,
@@ -844,16 +927,20 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
         tracked permission: FracMetadataPerm,
     ) -> (tracked result: Self)
         requires
-            !self.contains_leased(paddr),
-            !self.contains_unleased(paddr),
+            self.can_insert_raw_node(paddr),
             record.paddr() == paddr,
             permission.frac() == 1,
             record.node.permission_matches(permission),
         ensures
             result.contains_leased(paddr),
+            result.root.paddr == self.root.paddr,
             result.leases.dom() == self.leases.dom().insert(paddr),
             *result.remainder.nodes == *old(self.remainder.nodes),
             *result.remainder.permissions == *old(self.remainder.permissions),
+            result.node_map() == self.node_map().insert(paddr, record),
+            result.permission_map() == self.permission_map().insert(paddr, permission),
+            result.writeback_node_map() == self.writeback_node_map(),
+            result.writeback_permission_map() == self.writeback_permission_map(),
     {
         let tracked Self { root, remainder, mut leases } = self;
         let tracked (lease, remainder) = remainder.tracked_insert_and_lease_raw_node(
@@ -875,17 +962,22 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
         tracked permission: FracMetadataPerm,
     ) -> (tracked (result, stable_permission): (Self, &'a FracMetadataPerm))
         requires
-            !self.contains_leased(paddr),
-            !self.contains_unleased(paddr),
+            self.can_insert_raw_node(paddr),
             record.paddr() == paddr,
             permission.frac() == 1,
             record.node.permission_matches(permission),
         ensures
             result.contains_leased(paddr),
+            result.root.paddr == self.root.paddr,
             result.leases.dom() == self.leases.dom().insert(paddr),
             *result.remainder.nodes == *old(self.remainder.nodes),
             *result.remainder.permissions == *old(self.remainder.permissions),
+            result.node_map() == self.node_map().insert(paddr, record),
+            result.permission_map() == self.permission_map().insert(paddr, permission),
+            result.writeback_node_map() == self.writeback_node_map(),
+            result.writeback_permission_map() == self.writeback_permission_map(),
             *stable_permission == *result.leases[paddr].permission,
+            *stable_permission == result.permission_map()[paddr],
     {
         let tracked result = self.tracked_insert_and_lease_node(paddr, record, permission);
         let tracked stable_permission = result.tracked_borrow_permission(paddr);
@@ -906,55 +998,7 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             self.contains_leased(parent),
             0 <= idx < self.leased_record(parent).entries.len(),
             self.leased_record(parent).entries[idx].is_absent(),
-            !self.contains_leased(record.paddr()),
-            !self.contains_unleased(record.paddr()),
-            permission.frac() == 1,
-            record.node.permission_matches(permission),
-            record.path == self.leased_record(parent).entries[idx].path,
-            record.node.level + 1 == self.leased_record(parent).entries[idx].parent_level,
-        ensures
-            result.contains_leased(parent),
-            result.contains_raw_leased(record.paddr()),
-            result.leased_record(parent).entries[idx].is_node(),
-            result.leased_record(parent).entries[idx].child_paddr() == record.paddr(),
-            result.leased_record(parent).entries[idx].path == self.leased_record(
-                parent,
-            ).entries[idx].path,
-            result.leased_record(parent).entries[idx].parent_level == self.leased_record(
-                parent,
-            ).entries[idx].parent_level,
-    {
-        let ghost child = record.paddr();
-        let ghost old_entry = self.leased_record(parent).entries[idx];
-        let tracked mut this = self;
-        let tracked child_entry = FlatEntryOwner::tracked_new_node(
-            child,
-            old_entry.path,
-            old_entry.parent_level,
-        );
-        {
-            let tracked parent_record = this.tracked_borrow_record_mut(parent);
-            parent_record.tracked_set_entry(idx, child_entry);
-        }
-        this.tracked_insert_and_lease_node(child, record, permission)
-    }
-
-    /// Replaces an existing entry (not necessarily absent) with a freshly
-    /// allocated raw child.  Huge-page splitting uses this operation: the old
-    /// frame entry is consumed and the new node is parked in the flat maps in
-    /// the same tracked transition.
-    pub proof fn tracked_replace_and_lease_child(
-        tracked self,
-        parent: Paddr,
-        idx: int,
-        tracked record: FlatNodeRecord<C>,
-        tracked permission: FracMetadataPerm,
-    ) -> (tracked result: Self)
-        requires
-            self.contains_leased(parent),
-            0 <= idx < self.leased_record(parent).entries.len(),
-            !self.contains_leased(record.paddr()),
-            !self.contains_unleased(record.paddr()),
+            self.can_insert_raw_node(record.paddr()),
             permission.frac() == 1,
             record.node.permission_matches(permission),
             record.path == self.leased_record(parent).entries[idx].path,
@@ -992,6 +1036,7 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             self.contains_raw_leased(paddr),
         ensures
             *permission == *self.leases[paddr].permission,
+            *permission == self.permission_map()[paddr],
     {
         let tracked lease = self.leases.tracked_borrow(paddr);
         lease.permission
@@ -1016,6 +1061,11 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             old(self).contains_leased(paddr),
         ensures
             *record == old(self).leased_record(paddr),
+            final(self).root.paddr == old(self).root.paddr,
+            final(self).node_map() == old(self).node_map().insert(paddr, *final(record)),
+            final(self).permission_map() == old(self).permission_map(),
+            final(self).writeback_node_map() == old(self).writeback_node_map(),
+            final(self).writeback_permission_map() == old(self).writeback_permission_map(),
             final(self).leases.dom() == old(self).leases.dom(),
             *final(self).remainder.nodes == *old(self).remainder.nodes,
             *final(self).remainder.permissions == *old(self).remainder.permissions,
@@ -1041,6 +1091,22 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             let tracked lease = self.leases.tracked_borrow(paddr);
             &*lease.record
         }
+    }
+
+    /// Ends cursor borrowing without moving records or permissions out of
+    /// the authoritative maps. Explicitly draining the lease map resolves
+    /// its nested mutable references for the caller's writeback proof.
+    pub proof fn tracked_finish(tracked self)
+        requires
+            !self.leases.contains_key(self.root.paddr),
+            !self.remainder.nodes.contains_key(self.root.paddr),
+            self.leases.dom().disjoint(self.remainder.nodes.dom()),
+            self.leases.dom().disjoint(self.remainder.permissions.dom()),
+        ensures
+            self.writeback_node_map() == self.node_map(),
+            self.writeback_permission_map() == self.permission_map(),
+    {
+        Self::tracked_finish_raw_leases(self.leases);
     }
 }
 
@@ -1347,6 +1413,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             va % C::BASE_PAGE_SIZE() == 0,
             vaddr_upper_bits_spec::<C>(va) == C::LEADING_BITS_spec(),
         ensures
+            result.resources == resources,
             result.inv(),
             result.root == root,
             result.level == NR_LEVELS,
@@ -1405,6 +1472,18 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             final(self).level == old(self).level,
             final(self).guard_level == old(self).guard_level,
             final(self).continuations == old(self).continuations,
+            final(self).va == old(self).va,
+            final(self).prefix == old(self).prefix,
+            final(self).popped_too_high == old(self).popped_too_high,
+            final(self).resources.node_map() == old(self).resources.node_map().insert(
+                paddr,
+                *final(record),
+            ),
+            final(self).resources.permission_map() == old(self).resources.permission_map(),
+            final(self).resources.writeback_node_map() == old(self).resources.writeback_node_map(),
+            final(self).resources.writeback_permission_map() == old(
+                self,
+            ).resources.writeback_permission_map(),
     {
         self.resources.tracked_borrow_record_mut(paddr)
     }
@@ -1420,6 +1499,18 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             final(self).level == old(self).level,
             final(self).guard_level == old(self).guard_level,
             final(self).continuations == old(self).continuations,
+            final(self).va == old(self).va,
+            final(self).prefix == old(self).prefix,
+            final(self).popped_too_high == old(self).popped_too_high,
+            final(self).resources.node_map() == old(self).resources.node_map().insert(
+                old(self).current_paddr(),
+                *final(record),
+            ),
+            final(self).resources.permission_map() == old(self).resources.permission_map(),
+            final(self).resources.writeback_node_map() == old(self).resources.writeback_node_map(),
+            final(self).resources.writeback_permission_map() == old(
+                self,
+            ).resources.writeback_permission_map(),
     {
         let ghost current = self.current_paddr();
         self.resources.tracked_borrow_record_mut(current)
@@ -1461,6 +1552,18 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             final(self).level == old(self).level,
             final(self).guard_level == old(self).guard_level,
             final(self).continuations == old(self).continuations,
+            final(self).va == old(self).va,
+            final(self).prefix == old(self).prefix,
+            final(self).popped_too_high == old(self).popped_too_high,
+            final(self).resources.node_map() == old(self).resources.node_map().insert(
+                old(self).current_paddr(),
+                old(self).current_record().set_entry(old(self).current().idx as int, *final(entry)),
+            ),
+            final(self).resources.permission_map() == old(self).resources.permission_map(),
+            final(self).resources.writeback_node_map() == old(self).resources.writeback_node_map(),
+            final(self).resources.writeback_permission_map() == old(
+                self,
+            ).resources.writeback_permission_map(),
     {
         let ghost idx = self.current().idx;
         let tracked record = self.tracked_borrow_current_record_mut();
@@ -1570,8 +1673,8 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
         self.guard_level = guard_level;
     }
 
-    /// First half of descending to an existing raw child.  Navigation is
-    /// unchanged until the caller has built a guard from `permission`.
+    /// First half of descending to an existing raw child, including a child
+    /// visited before a pop. Navigation is unchanged until guard creation.
     pub proof fn tracked_lease_child_with_permission(tracked self, child: Paddr) -> (tracked (
         result,
         permission,
@@ -1582,16 +1685,23 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             self.current().idx < self.current_record().entries.len(),
             self.current_entry().is_node(),
             self.current_entry().child_paddr() == child,
-            self.resources.contains_unleased(child),
-            !self.resources.contains_leased(child),
+            self.resources.contains_raw_leased(child) || (self.resources.contains_unleased(child)
+                && !self.resources.contains_leased(child)),
         ensures
             result.root == self.root,
             result.level == self.level,
             result.guard_level == self.guard_level,
             result.continuations == self.continuations,
+            result.va == self.va,
+            result.prefix == self.prefix,
+            result.popped_too_high == self.popped_too_high,
             result.resources.contains_raw_leased(child),
             *permission == *result.resources.leases[child].permission,
             result.as_page_table_owner() == self.as_page_table_owner(),
+            result.resources.writeback_node_map() == self.resources.writeback_node_map(),
+            result.resources.writeback_permission_map()
+                == self.resources.writeback_permission_map(),
+            self.resources.contains_raw_leased(child) ==> result.resources == self.resources,
     {
         let tracked Self {
             resources,
@@ -1693,8 +1803,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             self.resources.contains_leased(parent),
             0 <= idx < self.resources.leased_record(parent).entries.len(),
             self.resources.leased_record(parent).entries[idx].is_absent(),
-            !self.resources.contains_leased(record.paddr()),
-            !self.resources.contains_unleased(record.paddr()),
+            self.resources.can_insert_raw_node(record.paddr()),
             permission.frac() == 1,
             record.node.permission_matches(permission),
             record.path == self.resources.leased_record(parent).entries[idx].path,
@@ -1741,8 +1850,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             self.resources.contains_leased(self.current_paddr()),
             self.current().idx < self.current_record().entries.len(),
             self.current_entry().is_absent(),
-            !self.resources.contains_leased(record.paddr()),
-            !self.resources.contains_unleased(record.paddr()),
+            self.resources.can_insert_raw_node(record.paddr()),
             permission.frac() == 1,
             record.node.permission_matches(permission),
             record.path == self.current_entry().path,
@@ -1773,8 +1881,7 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             self.resources.contains_leased(self.current_paddr()),
             self.current().idx < self.current_record().entries.len(),
             self.current_entry().is_absent(),
-            !self.resources.contains_leased(record.paddr()),
-            !self.resources.contains_unleased(record.paddr()),
+            self.resources.can_insert_raw_node(record.paddr()),
             permission.frac() == 1,
             record.node.permission_matches(permission),
             record.path == self.current_entry().path,
@@ -1795,66 +1902,21 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
         (result, stable_permission)
     }
 
-    /// Huge-page counterpart of `tracked_attach_current_and_lease_child`.
-    /// The current frame owner is replaced by the child edge while the new
-    /// node and its raw metadata permission are installed in the flat maps.
-    pub proof fn tracked_replace_current_and_lease_child_with_permission(
-        tracked self,
-        tracked record: FlatNodeRecord<C>,
-        tracked permission: FracMetadataPerm,
-    ) -> (tracked (result, stable_permission): (Self, &'a FracMetadataPerm))
+    /// Retains only borrow-free navigation state and ends the cursor's
+    /// structural leases. The authoritative owner receives all record edits
+    /// through the writeback contracts established when borrowing began.
+    pub proof fn tracked_finish(tracked self) -> (state: FlatCursorState<C>)
         requires
-            self.continuations.contains_key(self.level - 1),
-            self.resources.contains_leased(self.current_paddr()),
-            self.current().idx < self.current_record().entries.len(),
-            self.current_entry().is_frame(),
-            !self.resources.contains_leased(record.paddr()),
-            !self.resources.contains_unleased(record.paddr()),
-            permission.frac() == 1,
-            record.node.permission_matches(permission),
-            record.path == self.current_entry().path,
-            record.node.level + 1 == self.current_entry().parent_level,
+            self.resources.inv(),
         ensures
-            result.root == self.root,
-            result.level == self.level,
-            result.guard_level == self.guard_level,
-            result.continuations == self.continuations,
-            result.resources.contains_raw_leased(record.paddr()),
-            result.current_entry().is_node(),
-            result.current_entry().child_paddr() == record.paddr(),
-            *stable_permission == *result.resources.leases[record.paddr()].permission,
+            state == self.state(),
+            self.resources.writeback_node_map() == self.as_page_table_owner().nodes,
+            self.resources.writeback_permission_map()
+                == self.as_page_table_owner().raw_node_permissions,
     {
-        let ghost parent = self.current_paddr();
-        let ghost idx = self.current().idx;
-        let ghost child = record.paddr();
-        let tracked Self {
-            resources,
-            continuations,
-            root,
-            level,
-            guard_level,
-            va,
-            prefix,
-            popped_too_high,
-        } = self;
-        let tracked resources = resources.tracked_replace_and_lease_child(
-            parent,
-            idx as int,
-            record,
-            permission,
-        );
-        let tracked result = Self {
-            resources,
-            continuations,
-            root,
-            level,
-            guard_level,
-            va,
-            prefix,
-            popped_too_high,
-        };
-        let tracked stable_permission = result.tracked_borrow_node_permission(child);
-        (result, stable_permission)
+        let ghost state = self.state();
+        self.resources.tracked_finish();
+        state
     }
 }
 
@@ -2158,6 +2220,9 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
             resources.leases =~= Map::empty(),
             *resources.remainder.nodes == old(self).nodes.remove_keys(set![old(self).root]),
             *resources.remainder.permissions == old(self).raw_node_permissions,
+            final(self).root == old(self).root,
+            final(self).nodes == resources.writeback_node_map(),
+            final(self).raw_node_permissions == resources.writeback_permission_map(),
     {
         let ghost root = self.root;
         let tracked partition = self.tracked_partition();
@@ -2186,6 +2251,9 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
             result.current().idx == pte_index_spec::<C>(va, NR_LEVELS as PagingLevel),
             result.va == va,
             result.prefix == va,
+            final(self).root == old(self).root,
+            final(self).nodes == result.resources.writeback_node_map(),
+            final(self).raw_node_permissions == result.resources.writeback_permission_map(),
     {
         let ghost root = self.root;
         let ghost path = self.node(root).path;
@@ -2604,6 +2672,176 @@ impl<'a, C: PageTableConfig> FlatSubtreeMut<'a, C> {
         let tracked record = self.nodes.tracked_borrow_mut(paddr);
         let tracked permission = self.permissions.tracked_borrow(paddr);
         FlatRawNodeMut { record, permission }
+    }
+}
+
+/// Temporary ghost loan for a freshly allocated, still-live node.
+///
+/// The fractional token is kept in a stable map slot; only this shared
+/// reference travels with construction. The node record and executable
+/// Frame stay detached until the original Child::into_pte consumption point.
+pub tracked struct FlatNodePermissionLoan<'a> {
+    pub ghost paddr: Paddr,
+    pub permission: &'a FracMetadataPerm,
+}
+
+impl<'a, C: PageTableConfig> FlatOwnerPartition<'a, C> {
+    /// Lends metadata without publishing a node or consuming its live Frame.
+    pub proof fn tracked_lend_node_permission(
+        tracked self,
+        paddr: Paddr,
+        tracked permission: FracMetadataPerm,
+    ) -> (tracked (loan, remainder): (FlatNodePermissionLoan<'a>, Self))
+        requires
+            !self.permissions.contains_key(paddr),
+        ensures
+            loan.paddr == paddr,
+            *loan.permission == permission,
+            *remainder.nodes == *old(self.nodes),
+            *remainder.permissions == *old(self.permissions),
+            mut_ref_future(self.nodes) == mut_ref_future(remainder.nodes),
+            mut_ref_future(self.permissions) == Map::empty().insert(
+                paddr,
+                *loan.permission,
+            ).union_prefer_right(mut_ref_future(remainder.permissions)),
+    {
+        let tracked Self { nodes, permissions } = self;
+        permissions.tracked_insert(paddr, permission);
+        let tracked (slot, permissions) = permissions.tracked_borrow_mut_split(set![paddr]);
+        let tracked permission = slot.tracked_borrow(paddr);
+        (FlatNodePermissionLoan { paddr, permission }, Self { nodes, permissions })
+    }
+
+    /// Publishes the structural record after its Frame has been consumed.
+    pub proof fn tracked_insert_lent_node(
+        tracked self,
+        tracked record: FlatNodeRecord<C>,
+        tracked loan: FlatNodePermissionLoan<'a>,
+    ) -> (tracked (lease, remainder): (FlatRawNodeLease<'a, C>, Self))
+        requires
+            !self.nodes.contains_key(loan.paddr),
+            !self.permissions.contains_key(loan.paddr),
+            record.paddr() == loan.paddr,
+            loan.permission.frac() == 1,
+            record.node.permission_matches(*loan.permission),
+        ensures
+            lease.paddr == loan.paddr,
+            *lease.record == record,
+            lease.permission == loan.permission,
+            *remainder.nodes == *old(self.nodes),
+            *remainder.permissions == *old(self.permissions),
+            mut_ref_future(self.nodes) == Map::empty().insert(
+                loan.paddr,
+                mut_ref_future(lease.record),
+            ).union_prefer_right(mut_ref_future(remainder.nodes)),
+            mut_ref_future(self.permissions) == mut_ref_future(remainder.permissions),
+    {
+        let tracked Self { nodes, permissions } = self;
+        nodes.tracked_insert(loan.paddr, record);
+        let tracked (slot, nodes) = nodes.tracked_borrow_mut_split(set![loan.paddr]);
+        let tracked record = slot.tracked_borrow_mut(loan.paddr);
+        (
+            FlatRawNodeLease { paddr: loan.paddr, record, permission: loan.permission },
+            Self { nodes, permissions },
+        )
+    }
+}
+
+impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
+    /// Keeps the fresh node outside the reachable owner view during initialization.
+    pub proof fn tracked_lend_node_permission(
+        tracked self,
+        paddr: Paddr,
+        tracked permission: FracMetadataPerm,
+    ) -> (tracked (result, loan): (Self, FlatNodePermissionLoan<'a>))
+        requires
+            self.can_insert_raw_node(paddr),
+        ensures
+            result.root == self.root,
+            result.leases == self.leases,
+            *result.remainder.nodes == *old(self.remainder.nodes),
+            *result.remainder.permissions == *old(self.remainder.permissions),
+            result.owner_view() == self.owner_view(),
+            result.can_insert_raw_node(paddr),
+            loan.paddr == paddr,
+            *loan.permission == permission,
+            result.writeback_node_map() == self.writeback_node_map(),
+            self.writeback_permission_map() == Map::empty().insert(
+                paddr,
+                *loan.permission,
+            ).union_prefer_right(result.writeback_permission_map()),
+    {
+        let tracked Self { root, remainder, leases } = self;
+        let tracked (loan, remainder) = remainder.tracked_lend_node_permission(paddr, permission);
+        (Self { root, remainder, leases }, loan)
+    }
+
+    /// Installs a detached record using its existing metadata loan.
+    pub proof fn tracked_insert_lent_node(
+        tracked self,
+        tracked record: FlatNodeRecord<C>,
+        tracked loan: FlatNodePermissionLoan<'a>,
+    ) -> (tracked result: Self)
+        requires
+            self.can_insert_raw_node(loan.paddr),
+            record.paddr() == loan.paddr,
+            loan.permission.frac() == 1,
+            record.node.permission_matches(*loan.permission),
+        ensures
+            result.root == self.root,
+            result.leases.dom() == self.leases.dom().insert(loan.paddr),
+            *result.remainder.nodes == *old(self.remainder.nodes),
+            *result.remainder.permissions == *old(self.remainder.permissions),
+            result.node_map() == self.node_map().insert(loan.paddr, record),
+            result.permission_map() == self.permission_map().insert(loan.paddr, *loan.permission),
+            result.contains_raw_leased(loan.paddr),
+            result.leased_record(loan.paddr) == record,
+            result.leases[loan.paddr].permission == loan.permission,
+            result.writeback_node_map() == self.writeback_node_map(),
+            result.writeback_permission_map() == Map::empty().insert(
+                loan.paddr,
+                *loan.permission,
+            ).union_prefer_right(self.writeback_permission_map()),
+    {
+        let tracked Self { root, remainder, mut leases } = self;
+        let tracked (lease, remainder) = remainder.tracked_insert_lent_node(record, loan);
+        leases.tracked_insert(loan.paddr, lease);
+        Self { root, remainder, leases }
+    }
+}
+
+// Explicitly consuming each lease exposes resolution of mutable references
+// stored in a tracked Map; dropping that opaque map alone does not do so.
+impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
+    proof fn tracked_finish_raw_leases(tracked leases: Map<Paddr, FlatRawNodeLease<'a, C>>)
+        ensures
+            forall|paddr: Paddr| #[trigger]
+                leases.contains_key(paddr) ==> mut_ref_future(leases[paddr].record)
+                    == *leases[paddr].record,
+            leases.map_values(|lease: FlatRawNodeLease<'a, C>| mut_ref_future(lease.record))
+                == leases.map_values(|lease: FlatRawNodeLease<'a, C>| *lease.record),
+        decreases leases.dom().len(),
+    {
+        if !leases.dom().is_empty() {
+            let ghost paddr = choose|paddr: Paddr| leases.contains_key(paddr);
+            let tracked mut remainder = leases;
+            let tracked lease = remainder.tracked_remove(paddr);
+            Self::tracked_finish_raw_leases(remainder);
+            assert(mut_ref_future(lease.record) == *lease.record);
+            assert forall|other: Paddr| #[trigger]
+                leases.contains_key(other) implies mut_ref_future(leases[other].record)
+                == *leases[other].record by {
+                if other != paddr {
+                    assert(remainder.contains_key(other));
+                }
+            };
+        }
+        assert(leases.map_values(|lease: FlatRawNodeLease<'a, C>| mut_ref_future(lease.record))
+            == leases.map_values(|lease: FlatRawNodeLease<'a, C>| *lease.record)) by {
+            assert forall|paddr: Paddr| #[trigger]
+                leases.contains_key(paddr) implies mut_ref_future(leases[paddr].record)
+                == *leases[paddr].record by {};
+        };
     }
 }
 
