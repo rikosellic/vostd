@@ -50,6 +50,46 @@ pub tracked struct FlatEntryOwner<C: PageTableConfig> {
 }
 
 impl<C: PageTableConfig> FlatEntryOwner<C> {
+    pub open spec fn from_leaf_model(entry: EntryOwner<C>) -> Self
+        recommends !entry.is_node(),
+    {
+        Self {
+            kind: match entry.kind {
+                EntryOwnerKind::Frame(frame) => FlatEntryOwnerKind::Frame(frame),
+                EntryOwnerKind::Borrowed(mappings) => FlatEntryOwnerKind::Borrowed(mappings),
+                _ => FlatEntryOwnerKind::Absent,
+            },
+            path: entry.path,
+            parent_level: entry.parent_level,
+        }
+    }
+
+    pub proof fn tracked_from_leaf(tracked entry: EntryOwner<C>) -> (tracked result: Self)
+        requires !entry.is_node(),
+        returns Self::from_leaf_model(entry),
+    {
+        let tracked kind = match entry.kind {
+            EntryOwnerKind::Frame(frame) => FlatEntryOwnerKind::Frame(frame),
+            EntryOwnerKind::Borrowed(mappings) => FlatEntryOwnerKind::Borrowed(mappings),
+            EntryOwnerKind::Absent => FlatEntryOwnerKind::Absent,
+            EntryOwnerKind::Node(_) => { proof_from_false::<FlatEntryOwnerKind<C>>() },
+        };
+        Self { kind, path: entry.path, parent_level: entry.parent_level }
+    }
+
+    pub proof fn tracked_into_leaf(tracked self) -> (tracked result: EntryOwner<C>)
+        requires !self.is_node(),
+        returns self.leaf_decode_model(),
+    {
+        let tracked kind = match self.kind {
+            FlatEntryOwnerKind::Frame(frame) => EntryOwnerKind::Frame(frame),
+            FlatEntryOwnerKind::Borrowed(mappings) => EntryOwnerKind::Borrowed(mappings),
+            FlatEntryOwnerKind::Absent => EntryOwnerKind::Absent,
+            FlatEntryOwnerKind::Node(_) => { proof_from_false::<EntryOwnerKind<C>>() },
+        };
+        EntryOwner { kind, node_permission: None, path: self.path, parent_level: self.parent_level }
+    }
+
     /// Read-only leaf model for node APIs. It does not manufacture or
     /// transfer an owning node or metadata permission.
     pub open spec fn leaf_decode_model(self) -> EntryOwner<C>
@@ -123,6 +163,23 @@ impl<C: PageTableConfig> FlatEntryOwner<C> {
             self.is_frame(),
     {
         self.frame().permission
+    }
+
+    pub open spec fn leaf_mappings(self) -> Set<Mapping>
+        recommends !self.is_node(),
+    {
+        if self.is_frame() {
+            let va = vaddr_of::<C>(self.path);
+            let size = page_size::<C>(self.parent_level);
+            set![Mapping {
+                va_range: (va as int)..va + size,
+                pa_range: self.frame().mapped_pa..(self.frame().mapped_pa + size) as Paddr,
+                page_size: size,
+                property: self.frame().prop,
+            }]
+        } else {
+            Set::empty()
+        }
     }
 
     pub open spec fn frame_is_tracked(self) -> bool
@@ -469,6 +526,19 @@ impl<C: PageTableConfig> FlatNodeRecord<C> {
         *slot = entry;
     }
 
+    pub proof fn tracked_take_entry(tracked &mut self, idx: int) -> (tracked entry: FlatEntryOwner<C>)
+        requires 0 <= idx < old(self).entries.len(),
+        ensures
+            entry == old(self).entries[idx],
+            *final(self) == old(self).set_entry(idx, FlatEntryOwner::new_absent(entry.path, entry.parent_level)),
+    {
+        let ghost path = self.entries[idx].path;
+        let ghost level = self.entries[idx].parent_level;
+        let tracked mut entry = FlatEntryOwner::tracked_new_absent(path, level);
+        vstd::modes::tracked_swap(self.entries.tracked_borrow_mut(idx), &mut entry);
+        entry
+    }
+
     /// Replaces one absent flat entry with a frame owner.  The caller updates
     /// `node.children_perm` through the actual PTE write; keeping that linear
     /// array permission in `node` avoids recreating recursive child ownership.
@@ -511,6 +581,29 @@ pub tracked struct FlatPageTableOwner<C: PageTableConfig> {
     /// Full metadata permissions parked for nodes currently held raw in PTEs.
     /// The root is deliberately absent: its live `Frame` owns that permission.
     pub raw_node_permissions: Map<Paddr, FracMetadataPerm>,
+}
+
+/// Structural resources of an unmapped subtree. Its root permission belongs
+/// to the live Frame returned to the caller; descendants remain raw.
+/// Unlike FlatPageTableOwner, the root may be below the top paging level.
+pub tracked struct FlatDetachedSubtree<C: PageTableConfig> {
+    pub ghost root: Paddr,
+    pub nodes: Map<Paddr, FlatNodeRecord<C>>,
+    pub raw_node_permissions: Map<Paddr, FracMetadataPerm>,
+}
+
+impl<C: PageTableConfig> FlatDetachedSubtree<C> {
+    pub open spec fn owner_view(self) -> FlatPageTableOwner<C> {
+        FlatPageTableOwner {
+            root: self.root,
+            nodes: self.nodes,
+            raw_node_permissions: self.raw_node_permissions,
+        }
+    }
+
+    pub open spec fn mappings(self) -> Set<Mapping> {
+        self.owner_view().view_rec_at(self.root, NR_LEVELS as nat)
+    }
 }
 
 /// Stable borrow of a raw node.  The two references originate from separate
@@ -754,6 +847,38 @@ impl<'a, C: PageTableConfig> FlatRawNodeLease<'a, C> {
 }
 
 impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
+    /// Removes owned, unleased slots; it never converts a shared permission
+    /// borrow into ownership. Callers must end conflicting leases first.
+    pub proof fn tracked_detach_unleased_subtree(
+        tracked &mut self,
+        root: Paddr,
+        nodes: Set<Paddr>,
+    ) -> (tracked result: (FlatDetachedSubtree<C>, FracMetadataPerm))
+        requires
+            nodes.contains(root),
+            nodes.subset_of(old(self).remainder.nodes.dom()),
+            nodes.subset_of(old(self).remainder.permissions.dom()),
+        ensures
+            result.0.root == root,
+            result.0.nodes == old(self).remainder.nodes.restrict(nodes),
+            result.0.raw_node_permissions ==
+                old(self).remainder.permissions.restrict(nodes).remove(root),
+            result.1 == old(self).remainder.permissions[root],
+            final(self).root == old(self).root,
+            final(self).leases == old(self).leases,
+            *final(self).remainder.nodes == old(self).remainder.nodes.remove_keys(nodes),
+            *final(self).remainder.permissions == old(self).remainder.permissions.remove_keys(nodes),
+    {
+        let tracked detached_nodes = self.remainder.nodes.tracked_remove_keys(nodes);
+        let tracked mut permissions = self.remainder.permissions.tracked_remove_keys(nodes);
+        let tracked root_permission = permissions.tracked_remove(root);
+        (FlatDetachedSubtree {
+            root,
+            nodes: detached_nodes,
+            raw_node_permissions: permissions,
+        }, root_permission)
+    }
+
     /// Reassembles a read-only logical view of the authoritative node map.
     /// This does not move any resource: every value is read through the
     /// stable references held by the root lease, raw leases, and remainder.
@@ -1250,6 +1375,12 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             path: entry.path,
             parent_level: entry.parent_level,
         }
+    }
+
+    pub open spec fn current_entry_mappings(self) -> Set<Mapping> {
+        self.as_page_table_owner().view_node_children(
+            self.current_paddr(), NR_LEVELS as nat,
+        )[self.current().idx as int]
     }
 
     pub open spec fn state(self) -> FlatCursorState<C> {

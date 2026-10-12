@@ -154,6 +154,63 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         &&& res.1 is None
     }
 
+    pub open spec fn cur_va_range_flat_spec(self, owner: FlatCursorOwner<'_, 'rcu, C>) -> Range<Vaddr> {
+        let size = page_size::<PagingConsts>(self.level) as nat;
+        let start = nat_align_down(owner.va as nat, size);
+        start as Vaddr..(start + size) as Vaddr
+    }
+
+    pub open spec fn query_flat_some_condition(self, owner: FlatCursorOwner<'_, 'rcu, C>) -> bool {
+        owner@.present()
+    }
+
+    /// Panic condition for [`Self::query`]. `query` diverges *only* via the
+    /// Arc-style refcount-saturation abort when it clones the **specific**
+    /// frame the cursor resolves to. That happens iff:
+    ///  - the cursor is in range (out-of-range returns `Err` *before* any
+    ///    clone — the early `self.va >= barrier_va.end` exit), and
+    ///  - a mapping is present at the cursor (`owner@.present()`), and
+    ///  - the resolved leaf frame is tracked (non-MMIO, so cloning it bumps
+    ///    its slot's refcount — MMIO/untracked leaves never bump), and
+    ///  - that slot's refcount is already at `REF_COUNT_MAX`, so the
+    ///    `inc_ref_count` in `clone_item` would overflow and abort.
+    /// `owner@.query_mapping().pa_range.start` is exactly the paddr the
+    /// descent lands on (bridged by [`CursorOwner::lemma_cur_entry_frame_present`]).
+    pub open spec fn query_flat_panic_condition(
+        self,
+        owner: FlatCursorOwner<'_, 'rcu, C>,
+        regions: MetaRegionOwners,
+    ) -> bool {
+        let pa = owner@.query_mapping().pa_range.start;
+        let idx = frame_to_index(pa);
+        &&& self.barrier_va.start <= self.va < self.barrier_va.end
+        &&& owner@.present()
+        &&& !is_mmio_paddr(pa)
+        &&& regions.ref_count(idx) >= REF_COUNT_MAX
+    }
+
+    pub open spec fn query_flat_some_ensures(
+        self,
+        owner: FlatCursorOwner<'_, 'rcu, C>,
+        res: PagesState<C>,
+    ) -> bool {
+        &&& self.cur_va_range_flat_spec(owner) == res.0
+        &&& res.1 is Some
+        &&& {
+            let qr = owner@.query_range();
+            owner@.query_item_spec(res.1->0) == Some(qr.start as Vaddr..qr.end as Vaddr)
+        }
+    }
+
+    pub open spec fn query_flat_none_ensures(
+        self,
+        owner: FlatCursorOwner<'_, 'rcu, C>,
+        res: PagesState<C>,
+    ) -> bool {
+        &&& res.1 is None
+    }
+
+
     /// Whether the level-`lv` node around the cursor's own VA contains `va`
     /// — exactly the per-iteration test in `jump`'s loop
     /// (`node_start <= va && va - node_start < node_size`, with

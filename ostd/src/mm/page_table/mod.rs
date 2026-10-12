@@ -1443,19 +1443,19 @@ impl<C: PageTableConfig> PageTable<C> {
     /// If another cursor is already accessing the range, the new cursor may wait until the
     /// previous cursor is dropped.
     #[verus_spec(r =>
-        with Tracked(owner): Tracked<PageTableOwner<C>>,
+        with Tracked(owner): Tracked<&'owner mut FlatPageTableOwner<C>>,
             Ghost(root_guard): Ghost<PageTableGuard<'rcu, C>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>
         requires
-            self.relates_owner(owner, *old(regions)),
-            owner.0.value().node().relate_guard(root_guard),
+            self.relates_flat_owner(*old(owner), *old(regions)),
+            old(owner).node(old(owner).root).node.relate_guard(root_guard),
             // Per-config tightening; see `Cursor::new`.
             0 < va.end <= C::LOCKED_END_BOUND_spec(),
         ensures
             Cursor::<C, G>::cursor_new_success_conditions(*va) ==> {
                 &&& r is Ok
-                &&& r.unwrap().0.0.invariants(*r.unwrap().1, *final(regions), *final(guards))
+                &&& r.unwrap().0.0.invariants_flat(*r.unwrap().1, *final(regions), *final(guards))
                 &&& r.unwrap().1.in_locked_range()
                 &&& r.unwrap().0.0.level == r.unwrap().0.0.guard_level
                 &&& r.unwrap().0.0.guard_level == NR_LEVELS as PagingLevel
@@ -1484,11 +1484,11 @@ impl<C: PageTableConfig> PageTable<C> {
                     && final(regions).slot_owners[idx].usage
                         == old(regions).slot_owners[idx].usage,
     )]
-    pub fn cursor_mut<'rcu, G: InAtomicMode>(
+    pub fn cursor_mut<'owner: 'rcu, 'rcu, G: InAtomicMode>(
         &'rcu self,
         guard: &'rcu G,
         va: &Range<Vaddr>,
-    ) -> Result<(CursorMut<'rcu, C, G>, Tracked<CursorOwner<'rcu, C>>), PageTableError> {
+    ) -> Result<(CursorMut<'rcu, C, G>, Tracked<FlatCursorOwner<'owner, 'rcu, C>>), PageTableError> {
         #[verus_spec(with Tracked(owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
         CursorMut::new(self, guard, va)
     }
@@ -1499,26 +1499,26 @@ impl<C: PageTableConfig> PageTable<C> {
     /// previous cursor is dropped. The modification to the mapping by the cursor may also
     /// block or be overridden by the mapping of another cursor.
     #[verus_spec(r =>
-        with Tracked(owner): Tracked<PageTableOwner<C>>,
+        with Tracked(owner): Tracked<&'owner mut FlatPageTableOwner<C>>,
             Ghost(root_guard): Ghost<PageTableGuard<'rcu, C>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>
         requires
-            self.relates_owner(owner, *old(regions)),
-            owner.0.value().node().relate_guard(root_guard),
+            self.relates_flat_owner(*old(owner), *old(regions)),
+            old(owner).node(old(owner).root).node.relate_guard(root_guard),
             // Per-config tightening; see `Cursor::new`.
             0 < va.end <= C::LOCKED_END_BOUND_spec(),
         ensures
             Cursor::<C, G>::cursor_new_success_conditions(*va) ==> {
                 &&& r is Ok
-                &&& r.unwrap().0.invariants(*r.unwrap().1, *final(regions), *final(guards))
+                &&& r.unwrap().0.invariants_flat(*r.unwrap().1, *final(regions), *final(guards))
                 &&& r.unwrap().1.in_locked_range()
                 &&& r.unwrap().0.level == r.unwrap().0.guard_level
                 &&& r.unwrap().0.va < r.unwrap().0.barrier_va.end
                 &&& r.unwrap().0.va == va.start
                 &&& r.unwrap().0.barrier_va == *va
-                &&& r.unwrap().1@.as_page_table_owner() == owner
-                &&& r.unwrap().1@.continuations[3].path() == owner.0.value().path
+                &&& r.unwrap().1@.as_page_table_owner() == *old(owner)
+                &&& r.unwrap().1@.continuations[3].path == old(owner).node(old(owner).root).path
             },
             !Cursor::<C, G>::cursor_new_success_conditions(*va) ==> r is Err,
             forall|idx: int| #![trigger final(regions).slot_owners[idx].paths_in_pt]
@@ -1551,8 +1551,8 @@ impl<C: PageTableConfig> PageTable<C> {
                 ==> final(regions).ref_count(idx)
                         == old(regions).ref_count(idx),
     )]
-    pub fn cursor<'rcu, G: InAtomicMode>(&'rcu self, guard: &'rcu G, va: &Range<Vaddr>) -> Result<
-        (Cursor<'rcu, C, G>, Tracked<CursorOwner<'rcu, C>>),
+    pub fn cursor<'owner: 'rcu, 'rcu, G: InAtomicMode>(&'rcu self, guard: &'rcu G, va: &Range<Vaddr>) -> Result<
+        (Cursor<'rcu, C, G>, Tracked<FlatCursorOwner<'owner, 'rcu, C>>),
         PageTableError,
     > {
         #[verus_spec(with Tracked(owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]

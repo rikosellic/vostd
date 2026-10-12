@@ -216,10 +216,40 @@ fn collect_largest_pages(va: Vaddr, pa: Paddr, len: usize) -> alloc::vec::Vec<(P
     largest_pages::<KernelPtConfig>(va, pa, len).collect()
 }
 
+/// Read-only kernel ownership accepted while callers are migrated to the flat store.
+/// Neither variant moves or recreates any node or metadata permission.
+pub tracked enum KernelPageTableOwnerRef<'a> {
+    Legacy(&'a PageTableOwner<KernelPtConfig>),
+    Flat(&'a FlatPageTableOwner<KernelPtConfig>),
+}
+
+impl<'a> KernelPageTableOwnerRef<'a> {
+    pub open spec fn inv(self) -> bool {
+        match self {
+            Self::Legacy(owner) => owner.inv(),
+            Self::Flat(owner) => owner.inv(),
+        }
+    }
+
+    pub open spec fn root_node(self) -> NodeOwner<KernelPtConfig> {
+        match self {
+            Self::Legacy(owner) => owner.0.value().node(),
+            Self::Flat(owner) => owner.node(owner.root).node,
+        }
+    }
+
+    pub open spec fn metaregion_sound(self, regions: MetaRegionOwners) -> bool {
+        match self {
+            Self::Legacy(owner) => owner.metaregion_sound(regions),
+            Self::Flat(owner) => owner.metaregion_sound(regions),
+        }
+    }
+}
+
 #[verifier::external_body]
 #[verus_spec(res =>
     with
-        Tracked(kernel_owner): Tracked<&mut Option<&PageTableOwner<KernelPtConfig>>>,
+        Tracked(kernel_owner): Tracked<&mut Option<KernelPageTableOwnerRef<'rcu>>>,
         Tracked(regions): Tracked<&MetaRegionOwners>,
         Tracked(guards): Tracked<&Guards>,
     requires
@@ -229,15 +259,12 @@ fn collect_largest_pages(va: Vaddr, pa: Paddr, len: usize) -> alloc::vec::Vec<(P
     ensures
         final(kernel_owner)@ is Some,
         final(kernel_owner)@->0.inv(),
-        (final(kernel_owner)@->0).0.value().is_node(),
-        res.root.ptr.addr() == (final(kernel_owner)@->0).0.value().node().slot_vaddr(),
+        res.root.ptr.addr() == final(kernel_owner)@->0.root_node().slot_vaddr(),
         old(kernel_owner)@ is Some ==> final(kernel_owner)@ == old(kernel_owner)@,
-        !PageTable::<KernelPtConfig>::create_user_pt_panic_condition(
-            (final(kernel_owner)@->0).0.value().node(),
-        ),
-        (final(kernel_owner)@->0).0.value().metaregion_sound(*regions),
+        old(kernel_owner)@ is None ==> final(kernel_owner)@->0 is Legacy,
+        !PageTable::<KernelPtConfig>::create_user_pt_panic_condition(final(kernel_owner)@->0.root_node()),
         final(kernel_owner)@->0.metaregion_sound(*regions),
-        guards.unlocked((final(kernel_owner)@->0).0.value().node().slot_vaddr()),
+        guards.unlocked(final(kernel_owner)@->0.root_node().slot_vaddr()),
 )]
 pub(crate) fn get_kernel_page_table<'rcu>() -> &'static PageTable<KernelPtConfig> {
     KERNEL_PAGE_TABLE.get().unwrap()
@@ -312,7 +339,7 @@ pub struct KVirtArea {
 
 #[allow(private_interfaces)]
 pub tracked struct KVirtAreaOwner {
-    pub pt_owner: PageTableOwner<KernelPtConfig>,
+    pub pt_owner: FlatPageTableOwner<KernelPtConfig>,
 }
 
 impl KVirtAreaOwner {
@@ -322,7 +349,7 @@ impl KVirtAreaOwner {
     pub closed spec fn cursor_view_at(self, addr: Vaddr) -> CursorView<KernelPtConfig> {
         CursorView {
             cur_va: nat_align_down(addr as nat, PAGE_SIZE as nat) as Vaddr,
-            mappings: self.pt_owner.view_rec(self.pt_owner.0.value().path),
+            mappings: self.pt_owner.view_rec(),
             phantom: PhantomData,
         }
     }
@@ -468,7 +495,7 @@ impl KVirtArea {
             old(regions).inv(),
             owner.inv(),
             owner.pt_owner.metaregion_sound(*old(regions)),
-            owner.pt_owner.0.value().node().relate_guard(root_guard),
+            owner.pt_owner.node(owner.pt_owner.root).node.relate_guard(root_guard),
             // For each frame, the map contains an appropriate owner keyed by
             // that frame's paddr. Duplicates in `frames` share the same owner.
             forall|i: int|
@@ -502,6 +529,7 @@ impl KVirtArea {
         frames: alloc::vec::Vec<DynFrame>,
         prop: PageProperty,
     ) -> Self {
+        let tracked mut owner = owner;
         assert!(map_offset.is_multiple_of(PAGE_SIZE));
 
         let range_res = KVIRT_AREA_ALLOCATOR.alloc(area_size);
@@ -525,7 +553,7 @@ impl KVirtArea {
 
         let page_table = {
             proof_decl! {
-                let tracked mut kpt_owner = Some(&owner.pt_owner);
+                let tracked mut kpt_owner = Some(KernelPageTableOwnerRef::Flat(&owner.pt_owner));
             }
             #[verus_spec(with Tracked(&mut kpt_owner), Tracked(regions), Tracked(guards))]
             get_kernel_page_table()
@@ -534,15 +562,15 @@ impl KVirtArea {
 
         let ghost pre_cursor_regions: MetaRegionOwners = *regions;
 
-        #[verus_spec(with Tracked(owner.pt_owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
+        #[verus_spec(with Tracked(&mut owner.pt_owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
         let cursor_res = page_table.cursor_mut(preempt_guard, &cursor_range);
 
         assert!(cursor_res.is_ok());
-        let (mut cursor, Tracked(cursor_owner)) = cursor_res.unwrap();
+        let (mut cursor, Tracked(mut cursor_owner)) = cursor_res.unwrap();
 
         for frame in it: frames.into_iter()
             invariant
-                cursor.0.invariants(cursor_owner, *regions, *guards),
+                cursor.0.invariants_flat(cursor_owner, *regions, *guards),
                 // Carry the requires implication into the loop body so
                 // that may_panic is derivable per-iteration when a guard
                 // implies the bounds-panic condition (mirrors jump's
@@ -612,10 +640,10 @@ impl KVirtArea {
             let ghost old_cursor_model: CursorView<KernelPtConfig> = cursor_owner@;
             let ghost old_cursor_owner_va = cursor_owner.va;
             proof {
-                cursor_owner.view_preserves_inv();  // old_cursor_model.inv()
+                assert(cursor_owner@.inv());  // old_cursor_model.inv()
                 let (pa, level, prop_from_item, _perm) = KernelPtConfig::item_into_raw(item);
                 lemma_va_align_page_size_level_1::<PagingConsts>(cursor.0.va);
-                cursor_owner.lemma_locked_range_page_aligned();
+                assert(cursor_owner.locked_range().start % PAGE_SIZE == 0);
                 let ghost diff: int = cursor.0.barrier_va.end - cursor.0.va;
                 vstd::arithmetic::mul::lemma_mul_by_zero_is_zero(
                     nr_subpage_per_huge::<PagingConsts>().ilog2() as int,
@@ -628,10 +656,12 @@ impl KVirtArea {
             // `item_slot_in_regions` for the current item is delivered by the
             // loop invariant (instantiated at i = it.index()), itself established by
             // the function precondition.
+            proof_decl! { let tracked next_owner; }
             let res = unsafe {
-                #[verus_spec(with Tracked(&mut cursor_owner), Tracked(entry_owner), Tracked(regions), Tracked(guards))]
+                #[verus_spec(with Tracked(cursor_owner), Tracked(entry_owner), Tracked(regions), Tracked(guards) => Tracked(next_owner))]
                 cursor.map(item)
             };
+            proof { cursor_owner = next_owner; }
 
             // `item_slot_in_regions` preservation for the remaining frames
             // follows from cursor.map's strengthened ensures: ref_count is
@@ -762,7 +792,7 @@ impl KVirtArea {
             old(regions).inv(),
             owner.inv(),
             owner.pt_owner.metaregion_sound(*old(regions)),
-            owner.pt_owner.0.value().node().relate_guard(root_guard),
+            owner.pt_owner.node(owner.pt_owner.root).node.relate_guard(root_guard),
             Self::untracked_range_slots_in_regions(&pa_range, *old(regions)),
             forall|pa: Paddr, level: PagingLevel|
                 #[trigger]
@@ -784,6 +814,7 @@ impl KVirtArea {
         pa_range: Range<Paddr>,
         prop: PageProperty,
     ) -> Self {
+        let tracked mut owner = owner;
         let range_res = KVIRT_AREA_ALLOCATOR.alloc(area_size);
         // Rust's `unwrap()` panics if not ok. TODO: make our own wrapper.
         assert!(range_res.is_ok());
@@ -804,7 +835,7 @@ impl KVirtArea {
 
             let page_table = {
                 proof_decl! {
-                    let tracked mut kpt_owner = Some(&owner.pt_owner);
+                    let tracked mut kpt_owner = Some(KernelPageTableOwnerRef::Flat(&owner.pt_owner));
                 }
                 #[verus_spec(with Tracked(&mut kpt_owner), Tracked(regions), Tracked(guards))]
                 get_kernel_page_table()
@@ -814,10 +845,10 @@ impl KVirtArea {
             // Save regions state before cursor_mut so postcondition trigger can fire.
             let ghost pre_cursor_regions: MetaRegionOwners = *regions;
 
-            #[verus_spec(with Tracked(owner.pt_owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
+            #[verus_spec(with Tracked(&mut owner.pt_owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
             let cursor_res = page_table.cursor_mut(preempt_guard, &va_range);
 
-            let (mut cursor, Tracked(cursor_owner)) = cursor_res.unwrap();
+            let (mut cursor, Tracked(mut cursor_owner)) = cursor_res.unwrap();
 
             proof {
                 assert forall|pa: Paddr|
@@ -836,7 +867,7 @@ impl KVirtArea {
 
             for (pa, level) in it: pages.into_iter()
                 invariant
-                    cursor.0.invariants(cursor_owner, *regions, *guards),
+                    cursor.0.invariants_flat(cursor_owner, *regions, *guards),
                     // Level bounds / alignment from `collect_largest_pages` postconditions.
                     forall|i: int|
                         0 <= i < it.seq().len() ==> (#[trigger] it.seq()[i]).0 % PAGE_SIZE == 0,
@@ -899,13 +930,13 @@ impl KVirtArea {
                 let ghost old_va: nat = cursor.0.va as nat;
 
                 proof {
-                    cursor_owner.view_preserves_inv();  // old_cursor_model.inv()
+                    assert(cursor_owner@.inv());  // old_cursor_model.inv()
                 }
 
                 // Pre-map: capture the overflow bound `cursor_owner.va + page_size(level) <= usize::MAX`.
                 // Valid because the cursor is `in_locked_range` here (required by `cursor.map`).
                 proof {
-                    cursor_owner.lemma_va_plus_page_size_no_overflow(level);
+                    assert(cursor_owner.va + page_size::<PagingConsts>(level) <= usize::MAX);
                 }
 
                 // Save ghost copy of regions before map for post-map invariant maintenance.
@@ -917,10 +948,12 @@ impl KVirtArea {
                 proof {
                     let idx = crate::specs::mm::frame::mapping::frame_to_index(pa);
                 }
+                proof_decl! { let tracked next_owner; }
                 let _ = unsafe {
-                    #[verus_spec(with Tracked(&mut cursor_owner), Tracked(entry_owner), Tracked(regions), Tracked(guards))]
+                    #[verus_spec(with Tracked(cursor_owner), Tracked(entry_owner), Tracked(regions), Tracked(guards) => Tracked(next_owner))]
                     cursor.map(item)
                 };
+                proof { cursor_owner = next_owner; }
 
                 proof {
                     let level_raw = KernelPtConfig::item_into_raw(item).1;

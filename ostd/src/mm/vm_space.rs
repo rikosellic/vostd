@@ -181,14 +181,17 @@ impl<'a> VmSpace<'a> {
     #[allow(private_interfaces)]
     pub fn new<'rcu>() -> Self {
         proof_decl! {
-            let tracked mut kernel_owner_opt: Option<&PageTableOwner<KernelPtConfig>> = None;
+            let tracked mut kernel_owner_opt: Option<crate::mm::kspace::kvirt_area::KernelPageTableOwnerRef<'rcu>> = None;
         }
         let kpt = {
             #[verus_spec(with Tracked(&mut kernel_owner_opt), Tracked(regions), Tracked(guards))]
             crate::mm::kspace::kvirt_area::get_kernel_page_table()
         };
         proof_decl! {
-            let tracked kernel_owner = kernel_owner_opt.tracked_take();
+            let tracked kernel_owner = match kernel_owner_opt.tracked_take() {
+                crate::mm::kspace::kvirt_area::KernelPageTableOwnerRef::Legacy(owner) => owner,
+                _ => { proof_from_false::<&PageTableOwner<KernelPtConfig>>() },
+            };
         }
         let pt = {
             #[verus_spec(with Tracked(kernel_owner), Tracked(regions), Tracked(guards))]
@@ -215,14 +218,14 @@ impl<'a> VmSpace<'a> {
     ///   the result is `Ok` and a [`CursorOwner`] is returned.
     #[verus_spec(r =>
         with
-            Tracked(owner): Tracked<PageTableOwner<UserPtConfig>>,
+            Tracked(owner): Tracked<&'owner mut FlatPageTableOwner<UserPtConfig>>,
             Ghost(root_guard): Ghost<PageTableGuard<'a, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>,
-                -> cursor_owner: Tracked<Option<CursorOwner<'a, UserPtConfig>>>,
+                -> cursor_owner: Tracked<Option<FlatCursorOwner<'owner, 'a, UserPtConfig>>>,
         requires
-            self.pt.relates_owner(owner, *old(regions)),
-            owner.0.value().node().relate_guard(root_guard),
+            self.pt.relates_flat_owner(*old(owner), *old(regions)),
+            old(owner).node(old(owner).root).node.relate_guard(root_guard),
             va.end > 0,
         ensures
             crate::mm::page_table::Cursor::<UserPtConfig, G>::cursor_new_success_conditions(*va) ==> (r matches Ok(_) && cursor_owner@ matches Some(_)),
@@ -233,18 +236,18 @@ impl<'a> VmSpace<'a> {
             // hold ⇒ cursor_owner.inv().
             cursor_owner@ matches Some(c) ==> c.inv(),
     )]
-    pub fn cursor<G: InAtomicMode>(&'a self, guard: &'a G, va: &Range<Vaddr>) -> Result<
+    pub fn cursor<'owner: 'a, G: InAtomicMode>(&'a self, guard: &'a G, va: &Range<Vaddr>) -> Result<
         Cursor<'a, G>,
     > {
         proof_decl! {
-            let tracked mut out_owner: Option<CursorOwner<'a, UserPtConfig>>;
+            let tracked mut out_owner: Option<FlatCursorOwner<'owner, 'a, UserPtConfig>>;
         }
         match {
             #[verus_spec(with Tracked(owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
             self.pt.cursor(guard, va)
         } {
             Ok((pt_cursor, tracked_owner)) => {
-                proof! { out_owner = Some::<CursorOwner<'a, UserPtConfig>>(tracked_owner.get()); }
+                proof! { out_owner = Some::<FlatCursorOwner<'owner, 'a, UserPtConfig>>(tracked_owner.get()); }
                 proof_with!(|= Tracked(out_owner));
                 Ok(Cursor(pt_cursor))
             },
@@ -276,32 +279,32 @@ impl<'a> VmSpace<'a> {
     ///   the result is `Ok` and a [`CursorOwner`] is returned.
     #[verus_spec(r =>
         with
-            Tracked(owner): Tracked<PageTableOwner<UserPtConfig>>,
+            Tracked(owner): Tracked<&'owner mut FlatPageTableOwner<UserPtConfig>>,
             Ghost(root_guard): Ghost<PageTableGuard<'a, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>
-                -> cursor_owner: Tracked<Option<CursorOwner<'a, UserPtConfig>>>,
+                -> cursor_owner: Tracked<Option<FlatCursorOwner<'owner, 'a, UserPtConfig>>>,
         requires
-            self.pt.relates_owner(owner, *old(regions)),
-            owner.0.value().node().relate_guard(root_guard),
+            self.pt.relates_flat_owner(*old(owner), *old(regions)),
+            old(owner).node(old(owner).root).node.relate_guard(root_guard),
             va.end > 0,
         ensures
             crate::mm::page_table::Cursor::<UserPtConfig, G>::cursor_new_success_conditions(*va) ==> (r matches Ok(_) && cursor_owner@ matches Some(_)),
             // See `cursor` above for the derivation.
             cursor_owner@ matches Some(c) ==> c.inv(),
     )]
-    pub fn cursor_mut<G: InAtomicMode>(&'a self, guard: &'a G, va: &Range<Vaddr>) -> Result<
+    pub fn cursor_mut<'owner: 'a, G: InAtomicMode>(&'a self, guard: &'a G, va: &Range<Vaddr>) -> Result<
         CursorMut<'a, G>,
     > {
         proof_decl! {
-            let tracked mut out_owner: Option<CursorOwner<'a, UserPtConfig>>;
+            let tracked mut out_owner: Option<FlatCursorOwner<'owner, 'a, UserPtConfig>>;
         }
         match {
             #[verus_spec(with Tracked(owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
             self.pt.cursor_mut(guard, va)
         } {
             Ok((pt_cursor, tracked_owner)) => {
-                proof! { out_owner = Some::<CursorOwner<'a, UserPtConfig>>(tracked_owner.get()); }
+                proof! { out_owner = Some::<FlatCursorOwner<'owner, 'a, UserPtConfig>>(tracked_owner.get()); }
                 proof_with!(|= Tracked(out_owner));
                 Ok(CursorMut { pt_cursor, flusher: TlbFlusher::new(&self.cpus) })
             },
@@ -482,33 +485,38 @@ impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
     /// - The locking mechanism prevents data races.
     #[verus_spec(r =>
         with
-            Tracked(owner): Tracked<&mut CursorOwner<'rcu, UserPtConfig>>,
+            Tracked(owner): Tracked<FlatCursorOwner<'owner, 'rcu, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>,
+                -> final_owner: Tracked<FlatCursorOwner<'owner, 'rcu, UserPtConfig>>,
         requires
-            old(self).0.invariants(*old(owner), *old(regions), *old(guards)),
+            old(self).0.invariants_flat(owner, *old(regions), *old(guards)),
             // Out-of-range is a graceful `Err`; the sole panic is cloning
             // the resolved leaf frame when *that specific slot* is
             // saturated — precisely propagated from
             // `Cursor::query_panic_condition`.
-            old(self).0.query_panic_condition(*old(owner), *old(regions)) ==> may_panic(),
+            old(self).0.query_flat_panic_condition(owner, *old(regions)) ==> may_panic(),
         ensures
-            final(self).0.invariants(*final(owner), *final(regions), *final(guards)),
-            !old(self).0.query_panic_condition(*old(owner), *old(regions)),
-            old(owner).in_locked_range() ==> r is Ok,
+            final(self).0.invariants_flat(final_owner@, *final(regions), *final(guards)),
+            !old(self).0.query_flat_panic_condition(owner, *old(regions)),
+            owner.in_locked_range() ==> r is Ok,
             r matches Ok(state) ==>
-                final(self).0.query_some_condition(*final(owner)) ==>
-                final(self).0.query_some_ensures(*final(owner), state),
+                final(self).0.query_flat_some_condition(final_owner@) ==>
+                final(self).0.query_flat_some_ensures(final_owner@, state),
             r matches Ok(state) ==>
-                !final(self).0.query_some_condition(*final(owner)) ==>
-                final(self).0.query_none_ensures(*final(owner), state),
-            old(owner)@.mappings == final(owner)@.mappings,
+                !final(self).0.query_flat_some_condition(final_owner@) ==>
+                final(self).0.query_flat_none_ensures(final_owner@, state),
+            owner@.mappings == final_owner@@.mappings,
     )]
-    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)> {
-        Ok(
-            #[verus_spec(with Tracked(owner), Tracked(regions), Tracked(guards))]
-            self.0.query()?,
-        )
+    pub fn query<'owner: 'rcu>(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)> {
+        proof_decl! { let tracked next_owner: FlatCursorOwner<'owner, 'rcu, UserPtConfig>; }
+        #[verus_spec(with Tracked(owner), Tracked(regions), Tracked(guards) => Tracked(next_owner))]
+        let result = self.0.query();
+        #[verus_spec(with |= Tracked(next_owner))]
+        match result {
+            Ok(state) => Ok(state),
+            Err(e) => Err(e.into()),
+        }
     }
 
     /// Moves the cursor forward to the next mapped virtual address.
@@ -665,33 +673,38 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
     /// - The locking mechanism prevents data races.
     #[verus_spec(res =>
         with
-            Tracked(owner): Tracked<&mut CursorOwner<'a, UserPtConfig>>,
+            Tracked(owner): Tracked<FlatCursorOwner<'owner, 'a, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>,
+                -> final_owner: Tracked<FlatCursorOwner<'owner, 'a, UserPtConfig>>,
         requires
-            old(self).pt_cursor.0.invariants(*old(owner), *old(regions), *old(guards)),
+            old(self).pt_cursor.0.invariants_flat(owner, *old(regions), *old(guards)),
             // Out-of-range → graceful `Err`; the sole panic is cloning the
             // resolved leaf frame when *that specific slot* is saturated —
             // precisely propagated from `Cursor::query_panic_condition`.
-            old(self).pt_cursor.0.query_panic_condition(*old(owner), *old(regions))
+            old(self).pt_cursor.0.query_flat_panic_condition(owner, *old(regions))
                 ==> may_panic(),
         ensures
-            final(self).pt_cursor.0.invariants(*final(owner), *final(regions), *final(guards)),
-            !old(self).pt_cursor.0.query_panic_condition(*old(owner), *old(regions)),
-            old(owner).in_locked_range() ==> res is Ok,
+            final(self).pt_cursor.0.invariants_flat(final_owner@, *final(regions), *final(guards)),
+            !old(self).pt_cursor.0.query_flat_panic_condition(owner, *old(regions)),
+            owner.in_locked_range() ==> res is Ok,
             res matches Ok(state) ==>
-                final(self).pt_cursor.0.query_some_condition(*final(owner)) ==>
-                final(self).pt_cursor.0.query_some_ensures(*final(owner), state),
+                final(self).pt_cursor.0.query_flat_some_condition(final_owner@) ==>
+                final(self).pt_cursor.0.query_flat_some_ensures(final_owner@, state),
             res matches Ok(state) ==>
-                !final(self).pt_cursor.0.query_some_condition(*final(owner)) ==>
-                final(self).pt_cursor.0.query_none_ensures(*final(owner), state),
-            old(owner)@.mappings == final(owner)@.mappings,
+                !final(self).pt_cursor.0.query_flat_some_condition(final_owner@) ==>
+                final(self).pt_cursor.0.query_flat_none_ensures(final_owner@, state),
+            owner@.mappings == final_owner@@.mappings,
     )]
-    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)> {
-        Ok(
-            #[verus_spec(with Tracked(owner), Tracked(regions), Tracked(guards))]
-            self.pt_cursor.query()?,
-        )
+    pub fn query<'owner: 'a>(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)> {
+        proof_decl! { let tracked next_owner: FlatCursorOwner<'owner, 'a, UserPtConfig>; }
+        #[verus_spec(with Tracked(owner), Tracked(regions), Tracked(guards) => Tracked(next_owner))]
+        let result = self.pt_cursor.query();
+        #[verus_spec(with |= Tracked(next_owner))]
+        match result {
+            Ok(state) => Ok(state),
+            Err(e) => Err(e.into()),
+        }
     }
 
     /// Moves the cursor forward to the next mapped virtual address.
@@ -841,36 +854,45 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
     /// in the same page table. There is still a clear definition of the behavior.
     #[verus_spec(
         with
-            Tracked(cursor_owner): Tracked<&mut CursorOwner<'a, UserPtConfig>>,
+            Tracked(cursor_owner): Tracked<FlatCursorOwner<'owner, 'a, UserPtConfig>>,
             Tracked(entry_owner): Tracked<EntryOwner<UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>,
             Tracked(tlb_model): Tracked<&mut TlbModel>,
+                -> final_cursor_owner: Tracked<FlatCursorOwner<'owner, 'a, UserPtConfig>>,
         requires
             old(tlb_model).inv(),
-            old(self).pt_cursor.0.invariants(*old(cursor_owner), *old(regions), *old(guards)),
+            old(self).pt_cursor.0.invariants_flat(cursor_owner, *old(regions), *old(guards)),
             old(self).item_wf(frame, prop, entry_owner, *old(regions)),
             old(self).pt_cursor.map_panic_conditions(MappedItem { frame: frame, prop: prop }) ==> may_panic(),
         ensures
             !old(self).pt_cursor.map_panic_conditions(MappedItem { frame: frame, prop: prop }),
-            final(self).pt_cursor.0.invariants(*final(cursor_owner), *final(regions), *final(guards)),
+            final(self).pt_cursor.0.invariants_flat(final_cursor_owner@, *final(regions), *final(guards)),
             old(self).map_item_ensures(
                 frame,
                 prop,
-                old(cursor_owner)@,
-                final(cursor_owner)@,
+                cursor_owner@,
+                final_cursor_owner@@,
             ),
     )]
-    pub fn map(&mut self, frame: UFrame, prop: PageProperty) {
+    pub fn map<'owner: 'a>(&mut self, frame: UFrame, prop: PageProperty) {
         let start_va = self.virt_addr();
         let item = MappedItem { frame: frame, prop: prop };
 
         // SAFETY: It is safe to map untyped memory into the userspace.
-        let Err(frag) = (unsafe {
-            #[verus_spec(with Tracked(cursor_owner), Tracked(entry_owner), Tracked(regions), Tracked(guards))]
+        proof_decl! {
+            let tracked owner: FlatCursorOwner<'owner, 'a, UserPtConfig>;
+        }
+        let mapped = unsafe {
+            #[verus_spec(with
+                Tracked(cursor_owner), Tracked(entry_owner), Tracked(regions), Tracked(guards)
+                    => Tracked(owner)
+            )]
             self.pt_cursor.map(item)
-        }) else {
-            return;  // No mapping exists at the current address.
+        };
+        let Err(frag) = mapped else {
+            return #[verus_spec(with |= Tracked(owner))]
+            (); // No mapping exists at the current address.
         };
 
         match frag {
@@ -894,6 +916,8 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                 vpanic!("`UFrame` is base page sized but re-mapping out a child PT");
             },
         }
+        #[verus_spec(with |= Tracked(owner))]
+        ()
     }
 
     /// Clears the mapping starting from the current slot,
@@ -932,25 +956,26 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
     /// be pretty straightforward and would be a nice addition to the correctness properties.
     #[verus_spec(r =>
         with
-            Tracked(cursor_owner): Tracked<&mut CursorOwner<'a, UserPtConfig>>,
+            Tracked(cursor_owner): Tracked<FlatCursorOwner<'owner, 'a, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>,
             Tracked(tlb_model): Tracked<&mut TlbModel>,
+                -> final_cursor_owner: Tracked<FlatCursorOwner<'owner, 'a, UserPtConfig>>,
         requires
-            old(self).pt_cursor.0.invariants(*old(cursor_owner), *old(regions), *old(guards)),
+            old(self).pt_cursor.0.invariants_flat(cursor_owner, *old(regions), *old(guards)),
             old(tlb_model).inv(),
             old(self).pt_cursor.0.find_next_panic_condition(len) ==> may_panic(),
         ensures
             !old(self).pt_cursor.0.find_next_panic_condition(len),
-            final(self).pt_cursor.0.invariants(*final(cursor_owner), *final(regions), *final(guards)),
-            old(cursor_owner)@.unmap_spec(len, final(cursor_owner)@, r),
+            final(self).pt_cursor.0.invariants_flat(final_cursor_owner@, *final(regions), *final(guards)),
+            cursor_owner@.unmap_spec(len, final_cursor_owner@@, r),
             final(tlb_model).inv(),
     )]
     #[verifier::spinoff_prover]
-    pub fn unmap(&mut self, len: usize) -> usize {
-        proof {
-            cursor_owner.view_preserves_inv();
-        }
+    pub fn unmap<'owner: 'a>(&mut self, len: usize) -> usize {
+        let ghost initial_owner = cursor_owner;
+        let tracked mut cursor_owner = cursor_owner;
+        assert(cursor_owner@.inv());
 
         assert_eq!(len % PAGE_SIZE, 0);
 
@@ -984,7 +1009,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                 self.pt_cursor.0.va % PAGE_SIZE == 0,
                 end_va % PAGE_SIZE == 0,
                 end_va <= 0x0000_8000_0000_0000usize,
-                self.pt_cursor.0.invariants(*cursor_owner, *regions, *guards),
+                self.pt_cursor.0.invariants_flat(cursor_owner, *regions, *guards),
                 end_va <= self.pt_cursor.0.barrier_va.end,
                 tlb_model.inv(),
                 start_va <= cursor_owner@.cur_va,
@@ -1006,24 +1031,24 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                 forall |m: Mapping| #![auto] adjusted_base.contains(m) && !removed.contains(m)
                     && start_va <= m.va_range.start && m.va_range.start < end_va ==>
                     m.va_range.start >= cursor_owner@.cur_va
-                    || exists |parent: Mapping| #[trigger] old(cursor_owner)@.mappings.contains(parent)
+                    || exists |parent: Mapping| #[trigger] initial_owner@.mappings.contains(parent)
                         && parent.va_range.start < start_va
                         && parent.va_range.start <= m.va_range.start
                         && m.va_range.end <= parent.va_range.end
                         && m.pa_range.start == (parent.pa_range.start + (m.va_range.start - parent.va_range.start)) as Paddr
                         && m.property == parent.property,
-                start_va == old(cursor_owner)@.cur_va,
-                old(cursor_owner)@.inv(),
+                start_va == initial_owner@.cur_va,
+                initial_owner@.inv(),
                 // Locality: old mappings fully outside [start, end) survive in adjusted_base.
                 // (Straddling mappings may be split — see refinement.)
-                forall |m: Mapping| #[trigger] old(cursor_owner)@.mappings.contains(m)
+                forall |m: Mapping| #[trigger] initial_owner@.mappings.contains(m)
                     && (m.va_range.end <= start_va || m.va_range.start >= end_va)
                     ==> #[trigger] adjusted_base.contains(m),
                 // Refinement: every mapping in adjusted_base is either from the old view
                 // or a sub-mapping of an old entry (from boundary splits).
                 forall |m: Mapping| #[trigger] adjusted_base.contains(m) ==>
-                    old(cursor_owner)@.mappings.contains(m)
-                    || exists |parent: Mapping| #[trigger] old(cursor_owner)@.mappings.contains(parent)
+                    initial_owner@.mappings.contains(m)
+                    || exists |parent: Mapping| #[trigger] initial_owner@.mappings.contains(parent)
                         && parent.va_range.start <= m.va_range.start
                         && m.va_range.end <= parent.va_range.end
                         && m.pa_range.start == (parent.pa_range.start + (m.va_range.start - parent.va_range.start)) as Paddr
@@ -1041,24 +1066,32 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
 
             let ghost prev_view_inv: bool = cursor_owner@.inv();
             proof {
-                cursor_owner.view_preserves_inv();
+                assert(cursor_owner@.inv());
                 // Per-config VA bound on prev_mappings — needed for
                 // preserving the `removed`-end-bound loop invariant. The user
                 // cursor's view lies in [0, 0x8000_0000_0000) by the PROVEN
                 // `lemma_view_in_vaddr_range_user` (no longer the generic
                 // axiom), which follows from `cursor_owner.inv()`'s isolation
                 // (borrowed-kernel-half) clause.
-                crate::specs::mm::page_table::cursor::owners::lemma_view_in_vaddr_range_user(
-                    cursor_owner,
-                );
+                assert forall |m: Mapping| #[trigger] cursor_owner@.mappings.contains(m)
+                    implies m.va_range.end <= 0x8000_0000_0000int by {
+                    lemma_vaddr_range_spec_user();
+                };
                 lemma_vaddr_range_spec_user();
             }
 
             // SAFETY: It is safe to un-map memory in the userspace.
-            let Some(frag) = (unsafe {
-                #[verus_spec(with Tracked(cursor_owner), Tracked(regions), Tracked(guards))]
+            proof_decl! {
+                let tracked next_owner: FlatCursorOwner<'owner, 'a, UserPtConfig>;
+            }
+            let taken = unsafe {
+                #[verus_spec(with
+                    Tracked(cursor_owner), Tracked(regions), Tracked(guards) => Tracked(next_owner)
+                )]
                 self.pt_cursor.take_next(end_va - self.virt_addr())
-            }) else {
+            };
+            proof { cursor_owner = next_owner; }
+            let Some(frag) = taken else {
                 proof {
                     // At break: take_next returned None, so no mappings in [prev_va, end_va).
                     // Any m with start >= prev_va leads to contradiction via the empty filter.
@@ -1069,7 +1102,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                             < end_va implies m.va_range.start >= cursor_owner@.cur_va || exists|
                         parent: Mapping,
                     | #[trigger]
-                        old(cursor_owner)@.mappings.contains(parent) && parent.va_range.start
+                        initial_owner@.mappings.contains(parent) && parent.va_range.start
                             < start_va && parent.va_range.start <= m.va_range.start
                             && m.va_range.end <= parent.va_range.end && m.pa_range.start == (
                         parent.pa_range.start + (m.va_range.start - parent.va_range.start)) as Paddr
@@ -1305,7 +1338,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                     adjusted_base.contains(m) && !removed.contains(m) && start_va
                         <= m.va_range.start && m.va_range.start < end_va implies m.va_range.start
                     >= cursor_owner@.cur_va || exists|parent: Mapping| #[trigger]
-                    old(cursor_owner)@.mappings.contains(parent) && parent.va_range.start < start_va
+                    initial_owner@.mappings.contains(parent) && parent.va_range.start < start_va
                         && parent.va_range.start <= m.va_range.start && m.va_range.end
                         <= parent.va_range.end && m.pa_range.start == (parent.pa_range.start + (
                     m.va_range.start - parent.va_range.start)) as Paddr && m.property
@@ -1358,9 +1391,9 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                                 assert(old_adjusted.contains(p) && !old_removed.contains(p));
                                 if p.va_range.start < start_va {
                                     // p itself or its ancestor is the boundary parent.
-                                    if !old(cursor_owner)@.mappings.contains(p) {
+                                    if !initial_owner@.mappings.contains(p) {
                                         let orig = choose|orig: Mapping| #[trigger]
-                                            old(cursor_owner)@.mappings.contains(orig)
+                                            initial_owner@.mappings.contains(orig)
                                                 && orig.va_range.start <= p.va_range.start
                                                 && p.va_range.end <= orig.va_range.end
                                                 && p.pa_range.start == (orig.pa_range.start + (
@@ -1377,7 +1410,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                                     // start_va <= p.start < end_va, p.start < prev_va.
                                     // Previous invariant gives boundary ancestor orig.
                                     let orig = choose|orig: Mapping| #[trigger]
-                                        old(cursor_owner)@.mappings.contains(orig)
+                                        initial_owner@.mappings.contains(orig)
                                             && orig.va_range.start < start_va && orig.va_range.start
                                             <= p.va_range.start && p.va_range.end
                                             <= orig.va_range.end && p.pa_range.start == (
@@ -1397,7 +1430,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                 // Maintain: old mappings outside [start, end) survive in adjusted_base.
                 if is_mapped {
                     assert forall|m: Mapping|
-                        old(cursor_owner)@.mappings.contains(m) && (m.va_range.end <= start_va
+                        initial_owner@.mappings.contains(m) && (m.va_range.end <= start_va
                             || m.va_range.start
                             >= end_va) implies #[trigger] adjusted_base.contains(m) by {
                         if m.va_range.end <= start_va {
@@ -1408,10 +1441,8 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
 
                     // Maintain: refinement — every mapping in adjusted_base comes from
                     // old mappings or is a sub-mapping of one.
-                    assert forall|m: Mapping| #[trigger] adjusted_base.contains(m) implies old(
-                        cursor_owner,
-                    )@.mappings.contains(m) || exists|parent: Mapping| #[trigger]
-                        old(cursor_owner)@.mappings.contains(parent) && parent.va_range.start
+                    assert forall|m: Mapping| #[trigger] adjusted_base.contains(m) implies initial_owner@.mappings.contains(m) || exists|parent: Mapping| #[trigger]
+                        initial_owner@.mappings.contains(parent) && parent.va_range.start
                             <= m.va_range.start && m.va_range.end <= parent.va_range.end
                             && m.pa_range.start == (parent.pa_range.start + (m.va_range.start
                             - parent.va_range.start)) as Paddr && m.property == parent.property by {
@@ -1424,9 +1455,9 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                                         && m.pa_range.start == (p.pa_range.start + (m.va_range.start
                                         - p.va_range.start)) as Paddr && m.property == p.property;
                                 assert(old_adjusted.contains(p));
-                                if !old(cursor_owner)@.mappings.contains(p) {
+                                if !initial_owner@.mappings.contains(p) {
                                     let orig = choose|orig: Mapping| #[trigger]
-                                        old(cursor_owner)@.mappings.contains(orig)
+                                        initial_owner@.mappings.contains(orig)
                                             && orig.va_range.start <= p.va_range.start
                                             && p.va_range.end <= orig.va_range.end
                                             && p.pa_range.start == (orig.pa_range.start + (
@@ -1444,7 +1475,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
             }
         }
         proof {
-            let old_view = old(cursor_owner)@;
+            let old_view = initial_owner@;
             let new_view = cursor_owner@;
 
             // Bridge from loop invariant to unmap_spec.
@@ -1484,6 +1515,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
         #[verus_spec(with Tracked(tlb_model))]
         self.flusher.dispatch_tlb_flush();
 
+        #[verus_spec(with |= Tracked(cursor_owner))]
         num_unmapped
     }
 

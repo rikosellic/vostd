@@ -29,28 +29,27 @@ verus! {
 broadcast use group_ghost_tree_lemmas;
 
 #[verus_spec(ret =>
-    with Tracked(pt_own): Tracked<PageTableOwner<C>>,
+    with Tracked(pt_own): Tracked<&'owner mut FlatPageTableOwner<C>>,
         Ghost(root_guard): Ghost<PageTableGuard<'rcu, C>>,
         Tracked(regions): Tracked<&mut MetaRegionOwners>,
         Tracked(guards): Tracked<&mut Guards>
     requires
-        pt.relates_owner(pt_own, *old(regions)),
-        pt_own.0.value().node().relate_guard(root_guard),
-        forall|i: int| 0 <= i < NR_ENTRIES ==> pt_own.0.has_child(i),
+        pt.relates_flat_owner(*old(pt_own), *old(regions)),
+        old(pt_own).node(old(pt_own).root).node.relate_guard(root_guard),
         va.start < va.end,
         // Per-config tightening; see `Cursor::new`. Pulled through to the
         // cursor's `LOCKED_END_BOUND_spec` invariant.
         va.end <= C::LOCKED_END_BOUND_spec(),
     ensures
-        ret.0.invariants(*ret.1, *final(regions), *final(guards)),
+        ret.0.invariants_flat(*ret.1, *final(regions), *final(guards)),
         (*ret.1).in_locked_range(),
         ret.0.level == ret.0.guard_level,
         ret.0.guard_level == NR_LEVELS,
         ret.0.va < ret.0.barrier_va.end,
         ret.0.va == va.start,
         ret.0.barrier_va == *va,
-        (*ret.1).as_page_table_owner() == pt_own,
-        (*ret.1).continuations[3].path() == pt_own.0.value().path,
+        (*ret.1).as_page_table_owner() == *old(pt_own),
+        (*ret.1).continuations[3].path == old(pt_own).node(old(pt_own).root).path,
         (forall |i: int| #![trigger old(regions).slot_owners[i]]
             old(regions).contains(i)
             && old(regions).ref_count(i)
@@ -97,111 +96,71 @@ broadcast use group_ghost_tree_lemmas;
 #[verifier::spinoff_prover]
 #[verifier::exec_allows_no_decreases_clause]
 #[verifier::loop_isolation(false)]
-pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
+pub fn lock_range<'owner: 'rcu, 'rcu, C: PageTableConfig, A: InAtomicMode>(
     pt: &'rcu PageTable<C>,
     guard: &'rcu A,
     va: &Range<Vaddr>,
-) -> (Cursor<'rcu, C, A>, Tracked<CursorOwner<'rcu, C>>) {
-    let ghost start_idx = pte_index_spec::<C>(va.start, C::NR_LEVELS());
-
-    proof {
-        C::lemma_paging_consts_properties();
-        lemma_pte_index_bound::<C>(va.start, C::NR_LEVELS());
-        assert forall|i: int| 0 <= i < NR_ENTRIES implies (
-        #[trigger] pt_own.0.children()[i]) is Some by {
-            assert(pt_own.0.has_child(i));
-        };
-    }
-
-    let tracked mut cursor_own: CursorOwner<'rcu, C> = CursorOwner::tracked_new(
-        pt_own.0,
-        start_idx,
-        root_guard,
-    );
+) -> (Cursor<'rcu, C, A>, Tracked<FlatCursorOwner<'owner, 'rcu, C>>) {
+    let ghost pt0 = *pt_own;
+    let tracked mut cursor_own = pt_own.tracked_cursor_owner(va.start, root_guard);
 
     // Retry if the candidate subtree became stray before we acquired its lock.
     let mut subtree_root = None;
     #[verus_spec(
         invariant
-            subtree_root is None ==> {
-                &&& cursor_own.level == NR_LEVELS
-                &&& cursor_own.continuations.dom().contains(NR_LEVELS - 1)
-                &&& cursor_own.continuations[NR_LEVELS - 1].all_some()
-            },
+            cursor_own.inv(),
+            cursor_own.va == va.start,
+            subtree_root is None ==> cursor_own.level == NR_LEVELS,
             subtree_root is Some ==> {
                 &&& regions.inv()
-                &&& 1 <= cursor_own.level <= NR_LEVELS
-                &&& cursor_own.continuations.dom().contains(cursor_own.level - 1)
-                &&& cursor_own.continuations[cursor_own.level - 1].inv()
-                &&& cursor_own.continuations[cursor_own.level - 1].guard == subtree_root->0
-                &&& cursor_own.continuations[cursor_own.level - 1].entry_own.is_node()
-                &&& cursor_own.continuations[cursor_own.level - 1].entry_own.inv()
-                &&& cursor_own.continuations[cursor_own.level - 1].entry_own.node().relate_guard(
-                    cursor_own.continuations[cursor_own.level - 1].guard,
-                )
-                &&& cursor_own.continuations[cursor_own.level - 1].entry_own.metaregion_sound(
-                    *regions,
-                )
-                &&& guards.lock_held(
-                    cursor_own.continuations[cursor_own.level - 1]
-                        .entry_own.node().slot_vaddr(),
-                )
+                &&& cursor_own.current().guard == subtree_root->0
+                &&& cursor_own.current_record().node.relate_guard(subtree_root->0)
+                &&& guards.lock_held(cursor_own.current_record().node.slot_vaddr())
             },
     )]
     while subtree_root.is_none() {
-        #[verus_spec(with Tracked(&mut cursor_own), Tracked(regions), Tracked(guards))]
+        proof_decl! { let tracked next_owner: FlatCursorOwner<'owner, 'rcu, C>; }
+        #[verus_spec(with
+            Tracked(cursor_own), Tracked(regions), Tracked(guards) => Tracked(next_owner)
+        )]
         let candidate = try_traverse_and_lock_subtree_root(pt, guard, va);
+        proof { cursor_own = next_owner; }
         if let Some(candidate_root) = candidate {
             subtree_root = Some(candidate_root);
         }
     }
     let mut subtree_root = subtree_root.unwrap();
 
-    // Once we have locked the sub-tree that is not stray, we won't read any
-    // stray nodes in the following traversal since we must lock before reading.
-    let tracked mut cont = cursor_own.continuations.tracked_remove(cursor_own.level - 1);
-    let ghost cont_slot_idx = cont.entry_own.tracked_borrow_node().slot_index;
-    proof {
-        assert(cont.entry_own.metaregion_sound(*regions));
-        assert(regions.contains(cont_slot_idx));
-    }
-    let tracked cont_node_owner = cont.entry_own.tracked_borrow_node();
     #[verus_spec(with Tracked(Some(
         (*subtree_root.inner.tracked_metadata_perm.borrow()).tracked_borrow(),
     )))]
     let guard_level = subtree_root.level();
-    proof {
-        cursor_own.guard_level = guard_level;
-    }
+    proof { cursor_own.guard_level = guard_level; }
     let cur_node_va = va.start.align_down(page_size::<C>(guard_level + 1));
-
-    #[verus_spec(with Tracked(cont.entry_own), Tracked(guards), Tracked(regions))]
+    #[verus_spec(with
+        Tracked(cursor_own.tracked_borrow_current_record()),
+        Tracked(guards), Tracked(regions)
+    )]
     dfs_acquire_lock(guard, &mut subtree_root, cur_node_va, va.clone());
 
     let mut path = [None, None, None, None];
     path[guard_level as usize - 1] = Some(subtree_root);
-
     let res = (
         Cursor::<'rcu, C, A> {
-            path,
-            rcu_guard: guard,
-            level: guard_level,
-            guard_level,
-            va: va.start,
-            barrier_va: va.clone(),
-            _phantom: PhantomData,
+            path, rcu_guard: guard,
+            level: guard_level, guard_level,
+            va: va.start, barrier_va: va.clone(), _phantom: PhantomData,
         },
         Tracked(cursor_own),
     );
 
-    // TODO: the details of the locking mechanism being admitted here
-    // are superseded by the CortenMM version. They should be merged, first
-    // at the spec level, then the code.
+    // Existing locking-protocol trust boundary; only its ownership model
+    // changes here. The lock protocol itself remains to be verified.
     proof {
-        assume(res.0.invariants(*res.1, *regions, *guards) && (*res.1).in_locked_range()
+        assume(res.0.invariants_flat(*res.1, *regions, *guards) && (*res.1).in_locked_range()
             && res.0.level == res.0.guard_level && res.0.va < res.0.barrier_va.end && (
-        *res.1).as_page_table_owner() == pt_own && (*res.1).continuations[3].path()
-            == pt_own.0.value().path);
+        *res.1).as_page_table_owner() == pt0 && (*res.1).continuations[3].path
+            == pt0.node(pt0.root).path);
         assume((forall|i: int|
             #![trigger old(regions).slot_owners[i]]
             old(regions).contains(i) && old(regions).ref_count(i) != REF_COUNT_UNUSED ==> old(
@@ -245,42 +204,30 @@ pub fn unlock_range<C: PageTableConfig, A: InAtomicMode>(cursor: &mut Cursor<'_,
 /// page table recycling), it will return `None`. The caller should retry in
 /// this case to lock the proper node.
 #[verus_spec(r =>
-    with Tracked(cursor_own): Tracked<&mut CursorOwner<'rcu, C>>,
+    with Tracked(cursor_own): Tracked<FlatCursorOwner<'owner, 'rcu, C>>,
         Tracked(regions): Tracked<&mut MetaRegionOwners>,
         Tracked(guards): Tracked<&mut Guards>
+            -> final_owner: Tracked<FlatCursorOwner<'owner, 'rcu, C>>,
     requires
-        old(cursor_own).level == NR_LEVELS,
-        old(cursor_own).continuations.dom().contains(NR_LEVELS - 1),
-        old(cursor_own).continuations[NR_LEVELS - 1].all_some(),
+        cursor_own.inv(),
+        cursor_own.level == NR_LEVELS,
     ensures
+        final_owner@.inv(),
         r is None ==> {
-            &&& *final(cursor_own) == *old(cursor_own)
+            &&& final_owner@ == cursor_own
             &&& *final(regions) == *old(regions)
             &&& *final(guards) == *old(guards)
         },
         r is Some ==> {
-            &&& final(cursor_own).va == old(cursor_own).va
-            &&& final(cursor_own).prefix == old(cursor_own).prefix
-            &&& final(cursor_own).view_mappings() == old(cursor_own).view_mappings()
-            &&& final(cursor_own).popped_too_high == false
-            &&& 1 <= final(cursor_own).level <= NR_LEVELS
-            &&& final(cursor_own).continuations.dom().contains(final(cursor_own).level - 1)
-            &&& final(cursor_own).continuations[final(cursor_own).level - 1].inv()
-            &&& final(cursor_own).continuations[final(cursor_own).level - 1].guard == r->0
+            &&& final_owner@.va == cursor_own.va
+            &&& final_owner@.prefix == cursor_own.prefix
+            &&& final_owner@.view_mappings() == cursor_own.view_mappings()
+            &&& !final_owner@.popped_too_high
+            &&& final_owner@.current().guard == r->0
+            &&& final_owner@.current_record().node.relate_guard(r->0)
+            &&& final_owner@.metaregion_sound(*final(regions))
+            &&& final(guards).lock_held(final_owner@.current_record().node.slot_vaddr())
         },
-        // The subtree root's entry_own is a valid node with matching guard.
-        r is Some ==> {
-            let cont = final(cursor_own).continuations[final(cursor_own).level - 1];
-            &&& cont.entry_own.is_node()
-            &&& cont.entry_own.inv()
-            &&& cont.entry_own.node().relate_guard(cont.guard)
-            &&& cont.entry_own.metaregion_sound(*final(regions))
-        },
-        // The subtree root is lock_held in guards.
-        r is Some ==> final(guards).lock_held(
-            final(cursor_own).continuations[final(cursor_own).level - 1]
-                .entry_own.node().slot_vaddr()),
-        // regions invariant preserved
         final(regions).inv(),
         // Locking only allocates fresh page-table nodes from UNUSED slots;
         // it does not mutate any slot that was already in use.
@@ -327,11 +274,12 @@ pub fn unlock_range<C: PageTableConfig, A: InAtomicMode>(cursor: &mut Cursor<'_,
             CursorMut::<C, A>::item_not_mapped(item, *final(regions)),
 )]
 #[verifier::external_body]
-fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>(
+fn try_traverse_and_lock_subtree_root<'owner: 'rcu, 'rcu, C: PageTableConfig, A: InAtomicMode>(
     pt: &PageTable<C>,
     guard: &'rcu A,
     va: &Range<Vaddr>,
 ) -> Option<PageTableGuard<'rcu, C>> {
+    let tracked mut cursor_own = cursor_own;
     let mut cur_node_guard: Option<PageTableGuard<'rcu, C>> = None;
 
     let mut cur_pt_addr = pt.root.start_paddr();
@@ -368,13 +316,13 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
                 proof_decl! {
                     let tracked mut new_guard: PageTableGuard<'rcu, C>;
                 }
-                let tracked mut cont = cursor_own.continuations.tracked_remove(
-                    cursor_own.level - 1,
+                let tracked (next_owner, _permission) =
+                    cursor_own.tracked_lease_child_with_permission(cur_pt_addr);
+                cursor_own = next_owner;
+                let ghost path = cursor_own.current_entry().path;
+                cursor_own = cursor_own.tracked_push_leased_child(
+                    cur_pt_addr, next_idx, path, (cursor_own.level - 1) as PagingLevel, new_guard,
                 );
-                let tracked child_cont = cont.tracked_make_cont(next_idx, new_guard);
-                cursor_own.continuations.tracked_insert(cursor_own.level - 1, cont);
-                cursor_own.continuations.tracked_insert(cursor_own.level - 2, child_cont);
-                cursor_own.level = (cursor_own.level - 1) as PagingLevel;
             }
             continue;
         }
@@ -385,18 +333,22 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
         } else {
             // SAFETY: The node must be alive for at least `'rcu` since the
             // address is read from the page table node.
-            let tracked cont = cursor_own.continuations.tracked_borrow(cursor_own.level - 1);
-            let tracked node_owner = cont.entry_own.tracked_borrow_node();
+            let tracked record = cursor_own.tracked_borrow_current_record();
+            let tracked node_owner = &record.node;
             let tracked slot_perm = *regions.slots.tracked_borrow(node_owner.slot_index);
             let node_ref = unsafe {
-                #[verus_spec(with Tracked(slot_perm), Tracked(cont.entry_own.tracked_borrow_node_permission()))]
+                #[verus_spec(with Tracked(slot_perm), Tracked(if cursor_own.current_paddr() == cursor_own.root {
+                    pt.root.tracked_metadata_perm.borrow().tracked_borrow()
+                } else {
+                    cursor_own.resources.leases.tracked_borrow(cursor_own.current_paddr()).permission
+                }))]
                 PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr)
             };
             node_ref.lock(guard)
         };
 
-        let tracked mut cont = cursor_own.continuations.tracked_remove(cursor_own.level - 1);
-        let tracked node_owner = cont.entry_own.tracked_borrow_node();
+        let tracked record = cursor_own.tracked_borrow_current_record();
+        let tracked node_owner = &record.node;
         #[verus_spec(with
             Tracked((*pt_guard.inner.tracked_metadata_perm.borrow()).tracked_borrow()),
             Tracked(&()),
@@ -404,15 +356,12 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
         )]
         let stray = pt_guard.stray_mut();
         let is_stray = *(stray.borrow(
-            Tracked(&cont.entry_own.tracked_borrow_node().meta_own.stray),
+            Tracked(&node_owner.meta_own.stray),
         ));
 
-        proof {
-            cursor_own.continuations.tracked_insert(cursor_own.level - 1, cont);
-        }
-
         if is_stray {
-            return None;
+            return #[verus_spec(with |= Tracked(cursor_own))]
+            None;
         }
         let mut cur_entry = pt_guard.entry(start_idx);
         if cur_entry.is_none() {
@@ -427,13 +376,13 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
                 proof_decl! {
                     let tracked mut new_guard: PageTableGuard<'rcu, C>;
                 }
-                let tracked mut cont = cursor_own.continuations.tracked_remove(
-                    cursor_own.level - 1,
+                let tracked (next_owner, _permission) =
+                    cursor_own.tracked_lease_child_with_permission(cur_pt_addr);
+                cursor_own = next_owner;
+                let ghost path = cursor_own.current_entry().path;
+                cursor_own = cursor_own.tracked_push_leased_child(
+                    cur_pt_addr, next_idx, path, (cursor_own.level - 1) as PagingLevel, new_guard,
                 );
-                let tracked child_cont = cont.tracked_make_cont(next_idx, new_guard);
-                cursor_own.continuations.tracked_insert(cursor_own.level - 1, cont);
-                cursor_own.continuations.tracked_insert(cursor_own.level - 2, child_cont);
-                cursor_own.level = (cursor_own.level - 1) as PagingLevel;
             }
         } else if cur_entry.is_node() {
             let opt_pt = match cur_entry.to_ref() {
@@ -452,13 +401,13 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
                 proof_decl! {
                     let tracked mut new_guard: PageTableGuard<'rcu, C>;
                 }
-                let tracked mut cont = cursor_own.continuations.tracked_remove(
-                    cursor_own.level - 1,
+                let tracked (next_owner, _permission) =
+                    cursor_own.tracked_lease_child_with_permission(cur_pt_addr);
+                cursor_own = next_owner;
+                let ghost path = cursor_own.current_entry().path;
+                cursor_own = cursor_own.tracked_push_leased_child(
+                    cur_pt_addr, next_idx, path, (cursor_own.level - 1) as PagingLevel, new_guard,
                 );
-                let tracked child_cont = cont.tracked_make_cont(next_idx, new_guard);
-                cursor_own.continuations.tracked_insert(cursor_own.level - 1, cont);
-                cursor_own.continuations.tracked_insert(cursor_own.level - 2, child_cont);
-                cursor_own.level = (cursor_own.level - 1) as PagingLevel;
             }
         } else {
             break;
@@ -470,33 +419,35 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
     } else {
         // SAFETY: The node must be alive for at least `'rcu` since the
         // address is read from the page table node.
-        let tracked cont = cursor_own.continuations.tracked_borrow(cursor_own.level - 1);
-        let tracked node_owner = cont.entry_own.tracked_borrow_node();
+        let tracked record = cursor_own.tracked_borrow_current_record();
+        let tracked node_owner = &record.node;
         let tracked slot_perm = *regions.slots.tracked_borrow(node_owner.slot_index);
         let node_ref = unsafe {
-            #[verus_spec(with Tracked(slot_perm), Tracked(cont.entry_own.tracked_borrow_node_permission()))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(if cursor_own.current_paddr() == cursor_own.root {
+                    pt.root.tracked_metadata_perm.borrow().tracked_borrow()
+                } else {
+                    cursor_own.resources.leases.tracked_borrow(cursor_own.current_paddr()).permission
+                }))]
             PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr)
         };
         node_ref.lock(guard)
     };
 
-    let tracked mut cont = cursor_own.continuations.tracked_remove(cursor_own.level - 1);
-    let tracked node_owner = cont.entry_own.tracked_borrow_node();
+    let tracked record = cursor_own.tracked_borrow_current_record();
+    let tracked node_owner = &record.node;
     #[verus_spec(with
         Tracked((*pt_guard.inner.tracked_metadata_perm.borrow()).tracked_borrow()),
         Tracked(&()),
         Ghost(node_owner.meta_own.stray.id())
     )]
     let stray = pt_guard.stray_mut();
-    let is_stray = *(stray.borrow(Tracked(&cont.entry_own.tracked_borrow_node().meta_own.stray)));
-
-    proof {
-        cursor_own.continuations.tracked_insert(cursor_own.level - 1, cont);
-    }
+    let is_stray = *(stray.borrow(Tracked(&node_owner.meta_own.stray)));
 
     if is_stray {
-        return None;
+        return #[verus_spec(with |= Tracked(cursor_own))]
+            None;
     }
+    #[verus_spec(with |= Tracked(cursor_own))]
     Some(pt_guard)
 }
 
@@ -507,23 +458,22 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
 ///
 /// The function will forget all the [`PageTableGuard`] objects in the sub-tree.
 #[verus_spec(
-    with Tracked(entry_own): Tracked<EntryOwner<C>>,
+    with Tracked(record): Tracked<&FlatNodeRecord<C>>,
         Tracked(guards): Tracked<&mut Guards>,
         Tracked(regions): Tracked<&mut MetaRegionOwners>
     requires
-        entry_own.is_node(),
-        entry_own.inv(),
-        entry_own.node().relate_guard(*cur_node),
-        old(guards).lock_held(entry_own.node().slot_vaddr()),
+        record.node.inv(),
+        record.node.relate_guard(*cur_node),
+        old(guards).lock_held(record.node.slot_vaddr()),
         cur_node_va <= va_range.start,
         va_range.start < va_range.end,
         old(regions).inv(),
     ensures
         // The root node is still lock_held (not ManuallyDrop'd by this fn).
-        final(guards).lock_held(entry_own.node().slot_vaddr()),
+        final(guards).lock_held(record.node.slot_vaddr()),
         // All other locks are preserved: addresses not in this subtree are unchanged.
         forall |addr: usize|
-            addr != entry_own.node().slot_vaddr()
+            addr != record.node.slot_vaddr()
             && old(guards).guards.contains(addr) ==>
             #[trigger] final(guards).guards.contains(addr),
         // Addresses not in old guards don't appear in final guards
@@ -626,45 +576,19 @@ unsafe fn dfs_release_lock<'rcu, C: PageTableConfig, A: InAtomicMode>(
 /// This function must not be called upon a shared node, e.g., the second-
 /// top level nodes that the kernel space and user space share.
 #[verus_spec(res =>
-    with Tracked(owner): Tracked<&mut CursorOwner<'a, C>>,
+    with Tracked(subtree_owner): Tracked<&FlatDetachedSubtree<C>>,
         Tracked(guards): Tracked<&mut Guards>,
-        Ghost(locked_addr): Ghost<usize>,
-        Ghost(subtree_mappings_count): Ghost<nat>
+        Ghost(locked_addr): Ghost<usize>
     requires
-        old(owner).inv(),
-        // The locked_addr must be the address that was locked (held in guards)
+        subtree_owner.nodes.contains_key(subtree_owner.root),
+        subtree_owner.owner_view().subtree_inv_at(subtree_owner.root, NR_LEVELS as nat),
+        subtree_owner.nodes[subtree_owner.root].node.relate_guard(*sub_tree),
+        locked_addr == subtree_owner.nodes[subtree_owner.root].node.slot_vaddr(),
         old(guards).lock_held(locked_addr),
     ensures
-        // The return value equals the number of mappings in the subtree.
-        // This connects the physical DFS frame count to the ghost view_rec mappings count.
-        res as nat == subtree_mappings_count,
-        final(owner).inv(),
-        final(owner).guard_level == old(owner).guard_level,
-        final(owner).level == old(owner).level,
-        final(owner).va == old(owner).va,
-        final(owner).prefix == old(owner).prefix,
-        final(owner).popped_too_high == old(owner).popped_too_high,
-        // Preserve the guard for each continuation level
-        final(owner).level <= 4 ==> final(owner).continuations[3].guard == old(owner).continuations[3].guard,
-        final(owner).level <= 3 ==> final(owner).continuations[2].guard == old(owner).continuations[2].guard,
-        final(owner).level <= 2 ==> final(owner).continuations[1].guard == old(owner).continuations[1].guard,
-        final(owner).level == 1 ==> final(owner).continuations[0].guard == old(owner).continuations[0].guard,
-        final(owner).continuations[final(owner).level - 1].children[final(owner).continuations[final(owner).level - 1].idx as int]->0.value().is_absent(),
-        // entry_own at current level is preserved
-        final(owner).continuations[final(owner).level - 1].entry_own == old(owner).continuations[old(owner).level - 1].entry_own,
-        // Children at current level are preserved
-        forall |i: int| 0 <= i < NR_ENTRIES ==>
-            #[trigger]
-            final(owner).continuations[final(owner).level - 1].children[i] == old(owner).continuations[old(owner).level - 1].children[i],
-        // Continuations at higher levels are completely preserved
-        forall |lvl: int| #![trigger final(owner).continuations[lvl]]
-            final(owner).level <= lvl < NR_LEVELS ==> final(owner).continuations[lvl] == old(owner).continuations[lvl],
-        // Guards postconditions:
-        // 1. Everything that was unlocked before is still unlocked (no new locks added)
+        res as nat == subtree_owner.mappings().len(),
         forall |addr: usize| old(guards).unlocked(addr) ==> final(guards).unlocked(addr),
-        // 2. The locked address is now unlocked
         final(guards).unlocked(locked_addr),
-        // 3. Other locked addresses remain locked
         forall |addr: usize| addr != locked_addr && old(guards).lock_held(addr) ==> final(guards).lock_held(addr),
 )]
 #[verifier::external_body]
