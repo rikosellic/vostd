@@ -140,17 +140,17 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
     /// Gets a reference to the child.
     #[verus_spec(res =>
-        with Tracked(owner): Tracked<&EntryOwner<C>>,
+        with Ghost(owner): Ghost<EntryOwner<C>>,
              Tracked(parent_owner): Tracked<&NodeOwner<C>>,
              Tracked(regions): Tracked<&mut MetaRegionOwners>,
              Tracked(metadata_permission): Tracked<&'rcu FracMetadataPerm>,
         requires
-            self.invariants(*owner, *old(regions)),
-            self.node_matching(*owner, *parent_owner, *self.node),
+            self.invariants(owner, *old(regions)),
+            self.node_matching(owner, *parent_owner, *self.node),
             parent_owner.metaregion_sound_node(*old(regions)),
             owner.is_node() ==> owner.node().permission_matches(*metadata_permission),
         ensures
-            res.invariants(*owner, *final(regions)),
+            res.invariants(owner, *final(regions)),
             final(regions).slot_owners == old(regions).slot_owners,
             forall|k: int|
                 old(regions).slots.contains_key(k) ==> #[trigger] final(regions).slots.contains_key(
@@ -171,7 +171,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         //  - The PTE outlives the reference (since we have `&self`).
         //  - The level matches the current node.
         let res = unsafe {
-            #[verus_spec(with Tracked(regions), Tracked(owner), Tracked(metadata_permission))]
+            #[verus_spec(with Tracked(regions), Ghost(owner), Tracked(metadata_permission))]
             ChildRef::from_pte(&self.pte, level)
         };
 
@@ -816,7 +816,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 None,
             );
             #[verus_spec(with
-                Tracked(&new_record.node), Tracked(&old_owner), Tracked(&*regions)
+                Tracked(&new_record.node), Ghost(old_owner), Tracked(&*regions)
             )]
             let mut entry = pt_lock_guard.entry(i);
             #[verus_spec(with
@@ -897,7 +897,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     /// Because we also require the guard to be correct, it will be safe to use the resulting `Entry` as a handle to the
     /// underlying `PTE`.
     #[verus_spec(res =>
-        with Tracked(owner): Tracked<&EntryOwner<C>>,
+        with Ghost(owner): Ghost<EntryOwner<C>>,
              Tracked(parent_owner): Tracked<&NodeOwner<C>>,
              Tracked(regions): Tracked<&MetaRegionOwners>,
         requires
@@ -909,7 +909,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             regions.inv(),
             regions.slots.contains_key(parent_owner.slot_index),
         ensures
-            res.wf(*owner),
+            res.wf(owner),
             res.idx == idx,
             parent_owner.relate_guard(*res.node),
             // Pinpoint the reborrow: the Entry's node is exactly the guard
@@ -1285,131 +1285,6 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         }
 
         old_child
-    }
-
-    #[verifier::spinoff_prover]
-    #[verus_spec(res =>
-        with Tracked(cursor_owner): Tracked<FlatCursorOwner<'owner, 'rcu, C>>,
-             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-             Tracked(guards): Tracked<&mut Guards>,
-                 -> final_cursor_owner: Tracked<FlatCursorOwner<'owner, 'rcu, C>>,
-        requires
-            old(regions).inv(),
-            cursor_owner.inv(),
-            cursor_owner.continuations.contains_key(cursor_owner.level - 1),
-            cursor_owner.resources.contains_leased(cursor_owner.current_paddr()),
-            cursor_owner.current().idx == idx,
-            cursor_owner.current().guard == *old(self),
-            cursor_owner.current_entry().is_absent(),
-            cursor_owner.current_record().node.relate_guard(*old(self)),
-            cursor_owner.current_record().node.level == cursor_owner.level,
-            cursor_owner.level > 1,
-            idx < NR_ENTRIES,
-        ensures
-            final_cursor_owner@.current_entry().is_node(),
-            final_cursor_owner@.resources.contains_raw_leased(
-                final_cursor_owner@.current_entry().child_paddr(),
-            ),
-            final_cursor_owner@.resources.leased_record(
-                final_cursor_owner@.current_entry().child_paddr(),
-            ).relate_guard(res),
-            final(guards).lock_held(res.inner.inner@.ptr.addr()),
-            final(regions).inv(),
-            forall|i: usize| old(guards).lock_held(i) ==> final(guards).lock_held(i),
-    )]
-    pub(in crate::mm) fn alloc_absent_child<'owner: 'rcu, A: InAtomicMode>(
-        &mut self,
-        idx: usize,
-        guard: &'rcu A,
-    ) -> PageTableGuard<'rcu, C> {
-        let tracked metadata_perm = (*self.inner.tracked_metadata_perm.borrow()).tracked_borrow();
-        #[verus_spec(with Tracked(Some(metadata_perm)))]
-        let level = self.level();
-
-        let ghost child_path = cursor_owner.current_entry().path;
-        let ghost cp0 = cursor_owner.current_record().node.children_perm.value();
-        proof {
-            cursor_owner.current_record().node.nr_children_absent_slot_bound(idx);
-        }
-
-        proof_decl! {
-            let tracked new_record: FlatNodeRecord<C>;
-        }
-        #[verus_spec(with
-            Tracked(regions),
-            Tracked(guards),
-            Ghost(child_path)
-                => Tracked(new_record)
-        )]
-        let new_page = PageTableNode::<C>::alloc(level - 1);
-        let paddr = new_page.start_paddr();
-        let ghost new_slot_index = new_record.node.slot_index;
-
-        proof_decl! {
-            let tracked raw_perms: FrameRawPerms;
-        }
-        let raw_paddr = #[verus_spec(with => Tracked(raw_perms))]
-        new_page.into_raw();
-        let new_pte = C::E::new_pt(raw_paddr);
-
-        let tracked (new_cursor_owner, stable_permission) =
-            cursor_owner.tracked_attach_current_and_lease_child_with_permission(
-            new_record,
-            raw_perms.metadata_perm,
-        );
-        let tracked mut cursor_owner = new_cursor_owner;
-
-        let tracked slot_perm = *regions.slots.tracked_borrow(new_slot_index);
-        let pt_ref = unsafe {
-            #[verus_spec(with Tracked(slot_perm), Tracked(stable_permission))]
-            PageTableNodeRef::borrow_paddr(paddr)
-        };
-        let pt_lock_guard = {
-            let tracked record = cursor_owner.resources.tracked_borrow_record(paddr);
-            #[verus_spec(with Tracked(&record.node), Tracked(guards))]
-            pt_ref.lock(guard)
-        };
-
-        unsafe {
-            let tracked parent_record = cursor_owner.tracked_borrow_current_record_mut();
-            #[verus_spec(with Tracked(&mut parent_record.node), Tracked(&*regions))]
-            self.write_pte(idx, new_pte)
-        };
-
-        {
-            let tracked parent_record = cursor_owner.tracked_borrow_current_record_mut();
-            let tracked parent_metadata_perm = (
-            *self.inner.tracked_metadata_perm.borrow()).tracked_borrow();
-            #[verus_spec(with
-                Tracked(parent_metadata_perm),
-                Ghost(parent_record.node.meta_own.nr_children.id())
-            )]
-            let nr_children = self.nr_children_mut();
-            let old_nr_children = nr_children.read(
-                Tracked(&parent_record.node.meta_own.nr_children),
-            );
-            nr_children.write(
-                Tracked(&mut parent_record.node.meta_own.nr_children),
-                old_nr_children + 1,
-            );
-            proof {
-                crate::specs::mm::page_table::node::owners::lemma_count_present_upto_update(
-                    cp0,
-                    NR_ENTRIES as int,
-                    idx as int,
-                    new_pte,
-                );
-            }
-        }
-
-        proof {
-            regions.lemma_contains_valid_frame_paddr(paddr);
-            let tracked new_meta_slot = regions.tracked_borrow_mut_slot_owner(paddr);
-            new_meta_slot.paths_in_pt = set![child_path];
-        }
-
-        #[verus_spec(with |= Tracked(cursor_owner))]
-        pt_lock_guard
     }
 
     #[verifier::spinoff_prover]

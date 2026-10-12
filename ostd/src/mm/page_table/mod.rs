@@ -1185,11 +1185,11 @@ impl PageTable<KernelPtConfig> {
                 assert(entry_owner.metaregion_sound(*regions));
             }
 
-            #[verus_spec(with Tracked(root_owner), Tracked(entry_owner), Tracked(&*regions))]
+            #[verus_spec(with Tracked(root_owner), Ghost(*entry_owner), Tracked(&*regions))]
             let root_entry = root_node.entry(i);
             let ghost pre_to_ref_regions: MetaRegionOwners = *regions;
             let tracked child_owner = entry_owner.tracked_borrow_node();
-            #[verus_spec(with Tracked(entry_owner), Tracked(root_owner), Tracked(regions),
+            #[verus_spec(with Ghost(*entry_owner), Tracked(root_owner), Tracked(regions),
                 Tracked(entry_owner.tracked_borrow_node_permission()))]
             let child = root_entry.to_ref();
 

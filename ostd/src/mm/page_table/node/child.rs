@@ -173,9 +173,11 @@ impl<'a, C: PageTableConfig> ChildRef<'a, C> {
     /// ## Safety
     /// - The `PTE` safety invariants require that the `PTE` was previously obtained using [`Self::from_pte`]
     /// - The soundness of using the resulting `ChildRef` as a reference follows from `FrameRef` safety.
+    /// The entry is a read-only model snapshot; the separate tracked metadata
+    /// permission supplies the lifetime of any returned node reference.
     #[verus_spec(res =>
         with Tracked(regions): Tracked<&mut MetaRegionOwners>,
-             Tracked(entry_owner): Tracked<&EntryOwner<C>>,
+             Ghost(entry_owner): Ghost<EntryOwner<C>>,
              Tracked(metadata_permission): Tracked<&'a FracMetadataPerm>,
         requires
             entry_owner.pte_invariants(*pte, *old(regions)),
@@ -183,7 +185,7 @@ impl<'a, C: PageTableConfig> ChildRef<'a, C> {
             entry_owner.is_node() ==>
                 entry_owner.node().permission_matches(*metadata_permission),
         ensures
-            res.invariants(*entry_owner, *final(regions)),
+            res.invariants(entry_owner, *final(regions)),
             final(regions).slot_owners == old(regions).slot_owners,
             forall|k: int|
                 old(regions).slots.contains_key(k) ==> #[trigger] final(regions).slots.contains_key(

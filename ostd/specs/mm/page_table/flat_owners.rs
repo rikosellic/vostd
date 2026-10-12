@@ -21,7 +21,9 @@ use crate::specs::mm::frame::{
     meta_region_owners::MetaRegionOwners,
 };
 use crate::specs::mm::page_table::node::Guards;
-use crate::specs::mm::page_table::node::entry_owners::FrameEntryOwner;
+use crate::specs::mm::page_table::node::entry_owners::{
+    EntryOwner, EntryOwnerKind, FrameEntryOwner,
+};
 use crate::specs::mm::page_table::node::owners::PageMetaOwner;
 use crate::specs::mm::page_table::owners::INC_LEVELS;
 use crate::specs::mm::page_table::{
@@ -1197,6 +1199,28 @@ impl<C: PageTableConfig> FlatCursorState<C> {
 }
 
 impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
+    /// A read-only decoder snapshot, not an owning conversion. The actual
+    /// node and metadata permission remain in the authoritative flat maps.
+    pub open spec fn current_entry_decode_model(self) -> EntryOwner<C> {
+        let entry = self.current_entry();
+        EntryOwner {
+            kind: match entry.kind {
+                FlatEntryOwnerKind::Node(paddr) =>
+                    EntryOwnerKind::Node(self.as_page_table_owner().node(paddr).node),
+                FlatEntryOwnerKind::Frame(frame) => EntryOwnerKind::Frame(frame),
+                FlatEntryOwnerKind::Borrowed(mappings) => EntryOwnerKind::Borrowed(mappings),
+                FlatEntryOwnerKind::Absent => EntryOwnerKind::Absent,
+            },
+            node_permission: if entry.is_node() {
+                Some(self.resources.permission_map()[entry.child_paddr()])
+            } else {
+                None
+            },
+            path: entry.path,
+            parent_level: entry.parent_level,
+        }
+    }
+
     pub open spec fn state(self) -> FlatCursorState<C> {
         FlatCursorState {
             continuations: self.continuations.map_values(

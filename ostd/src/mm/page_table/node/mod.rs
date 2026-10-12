@@ -425,7 +425,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     /// [`nr_subpage_per_huge<C>`].
     #[verus_spec(res =>
         with Tracked(owner): Tracked<&NodeOwner<C>>,
-             Tracked(child_owner): Tracked<&EntryOwner<C>>,
+             Ghost(child_owner): Ghost<EntryOwner<C>>,
              Tracked(regions): Tracked<&MetaRegionOwners>,
         requires
             owner.inv(),
@@ -440,7 +440,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             // Panic condition
             idx < NR_ENTRIES,
         ensures
-            res.wf(*child_owner),
+            res.wf(child_owner),
             res.idx == idx,
             *res.node == *old(self),
             *final(self) == *final(res.node),
@@ -452,7 +452,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         // SAFETY: The index is within the bound. `Entry::new_at` returns an
         // entry whose node is the guard value we were handed.
         unsafe {
-            #[verus_spec(with Tracked(child_owner), Tracked(owner), Tracked(regions))]
+            #[verus_spec(with Ghost(child_owner), Tracked(owner), Tracked(regions))]
             Entry::new_at(self, idx)
         }
     }
