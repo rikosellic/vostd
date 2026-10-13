@@ -231,6 +231,8 @@ fn collect_largest_pages(va: Vaddr, pa: Paddr, len: usize) -> alloc::vec::Vec<(P
         final(kernel_owner)@->0.inv(),
         (final(kernel_owner)@->0).0.value().is_node(),
         res.root.ptr.addr() == (final(kernel_owner)@->0).0.value().node().slot_vaddr(),
+        res.root.inv(),
+        (final(kernel_owner)@->0).0.value().node().permission_matches(res.root.frac_metadata_perm()),
         old(kernel_owner)@ is Some ==> final(kernel_owner)@ == old(kernel_owner)@,
         !PageTable::<KernelPtConfig>::create_user_pt_panic_condition(
             (final(kernel_owner)@->0).0.value().node(),
@@ -470,6 +472,9 @@ impl KVirtArea {
             owner.inv(),
             owner.pt_owner.metaregion_sound(*old(regions)),
             owner.pt_owner.0.value().node().relate_guard(root_guard),
+            metadata.remainder is Some,
+            owner.pt_owner.raw_metadata_covers(metadata.permissions()),
+            raw_node_metadata_wf(metadata.permissions(), *old(regions)),
             // For each frame, the map contains an appropriate owner keyed by
             // that frame's paddr. Duplicates in `frames` share the same owner.
             forall|i: int|
@@ -560,7 +565,7 @@ impl KVirtArea {
                 0 <= it.index() <= frames.len(),
                 cursor.0.barrier_va.start == range.start + map_offset,
                 cursor.0.barrier_va.end == range.end,
-                cursor.0.guard_level == NR_LEVELS as u8,
+                1 <= cursor.0.guard_level <= NR_LEVELS,
                 cursor.0.va <= cursor.0.barrier_va.end,
                 range.end - range.start == area_size,
                 cursor.0.va == range.start + map_offset + it.index() * PAGE_SIZE,
@@ -766,6 +771,9 @@ impl KVirtArea {
             owner.inv(),
             owner.pt_owner.metaregion_sound(*old(regions)),
             owner.pt_owner.0.value().node().relate_guard(root_guard),
+            metadata.remainder is Some,
+            owner.pt_owner.raw_metadata_covers(metadata.permissions()),
+            raw_node_metadata_wf(metadata.permissions(), *old(regions)),
             Self::untracked_range_slots_in_regions(&pa_range, *old(regions)),
             forall|pa: Paddr, level: PagingLevel|
                 #[trigger]
@@ -867,7 +875,7 @@ impl KVirtArea {
                     cursor.0.barrier_va.end == va_range.start + len,
                     // `pa_range.end == pa_range.start + len` so pa + page_size(level) stays bounded.
                     pa_range.end as nat == pa_range.start as nat + len as nat,
-                    cursor.0.guard_level == NR_LEVELS as u8,
+                    1 <= cursor.0.guard_level <= NR_LEVELS,
                     pa_range.end <= MAX_PADDR,
                     // Slot facts for the remaining PAs are preserved across iterations.
                     // Initially established by the function precondition; each iteration's

@@ -150,13 +150,17 @@ impl<'a> VmSpace<'a> {
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>,
             Tracked(metadata): Tracked<&mut NodeMetadataLoans<'rcu>>,
+            Tracked(kernel_owner): Tracked<&PageTableOwner<KernelPtConfig>>,
         requires
             old(regions).inv(),
             old(metadata).remainder is Some,
+            kernel_owner.inv(),
+            kernel_owner.metaregion_sound(*old(regions)),
+            kernel_owner.raw_metadata_covers(old(metadata).permissions()),
     )]
     #[allow(private_interfaces)]
     pub fn default<'rcu>() -> Self {
-        proof_with!(Tracked(regions), Tracked(guards), Tracked(metadata));
+        proof_with!(Tracked(regions), Tracked(guards), Tracked(metadata), Tracked(kernel_owner));
         Self::new()
     }
 
@@ -176,15 +180,20 @@ impl<'a> VmSpace<'a> {
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>,
             Tracked(metadata): Tracked<&mut NodeMetadataLoans<'rcu>>,
+            Tracked(kernel_owner): Tracked<&PageTableOwner<KernelPtConfig>>,
         requires
             old(regions).inv(),
+            old(metadata).remainder is Some,
+            kernel_owner.inv(),
+            kernel_owner.metaregion_sound(*old(regions)),
+            kernel_owner.raw_metadata_covers(old(metadata).permissions()),
         ensures
             final(regions).inv(),
     )]
     #[allow(private_interfaces)]
     pub fn new<'rcu>() -> Self {
         proof_decl! {
-            let tracked mut kernel_owner_opt: Option<&PageTableOwner<KernelPtConfig>> = None;
+            let tracked mut kernel_owner_opt: Option<&PageTableOwner<KernelPtConfig>> = Some(kernel_owner);
         }
         let kpt = {
             #[verus_spec(with Tracked(&mut kernel_owner_opt), Tracked(regions), Tracked(guards))]
@@ -226,6 +235,9 @@ impl<'a> VmSpace<'a> {
                 -> cursor_owner: Tracked<Option<CursorOwner<'a, UserPtConfig>>>,
         requires
             self.pt.relates_owner(owner, *old(regions)),
+            metadata.remainder is Some,
+            owner.raw_metadata_covers(metadata.permissions()),
+            raw_node_metadata_wf(metadata.permissions(), *old(regions)),
             owner.0.value().node().relate_guard(root_guard),
             va.end > 0,
         ensures
@@ -288,6 +300,9 @@ impl<'a> VmSpace<'a> {
                 -> cursor_owner: Tracked<Option<CursorOwner<'a, UserPtConfig>>>,
         requires
             self.pt.relates_owner(owner, *old(regions)),
+            metadata.remainder is Some,
+            owner.raw_metadata_covers(metadata.permissions()),
+            raw_node_metadata_wf(metadata.permissions(), *old(regions)),
             owner.0.value().node().relate_guard(root_guard),
             va.end > 0,
         ensures

@@ -869,6 +869,26 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         self.map_full_tree(Self::node_unlocked(guards))
     }
 
+    /// Applies a predicate to both the movable subtrees and the decomposed
+    /// continuation entries, so descent cannot lose a raw-node obligation.
+    pub open spec fn tree_satisfies(
+        self,
+        f: spec_fn(EntryOwner<C>, TreePath<NR_ENTRIES>) -> bool,
+    ) -> bool {
+        &&& self.map_full_tree(f)
+        &&& forall|i: int| #![trigger self.continuations[i]]
+            self.level - 1 <= i < NR_LEVELS ==>
+                f(self.continuations[i].entry_own, self.continuations[i].path())
+    }
+
+    /// Covers all raw nodes, including nodes temporarily decomposed into
+    /// continuations. The root Frame keeps its own counted token.
+    pub open spec fn raw_metadata_covers(self) -> bool {
+        self.tree_satisfies(PageTableOwner::<C>::raw_metadata_pred(
+            self.metadata.permissions(), self.continuations[NR_LEVELS - 1].path(),
+        ))
+    }
+
     pub proof fn lemma_children_not_locked_unroll(self, guards: Guards)
         requires
             self.children_not_locked(guards),

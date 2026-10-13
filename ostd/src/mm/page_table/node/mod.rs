@@ -259,7 +259,8 @@ impl<C: PageTableConfig> PageTableNode<C> {
 
             !crate::specs::mm::frame::meta_owners::is_mmio_paddr(
                 meta_to_frame(owner@.value().node().slot_vaddr())),
-            owner@.value().metaregion_sound(*final(regions)),
+            // Allocation does not register a PTE path. The installer supplies
+            // the actual path; the node-local metadata guarantee is below.
             forall|i: int|
                 #[trigger] old(regions).ref_count(i) != REF_COUNT_UNUSED
                 ==> i != meta_to_index(owner@.value().node().slot_vaddr()),

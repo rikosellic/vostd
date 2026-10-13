@@ -128,19 +128,30 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
 }
 
 impl<C: PageTableConfig> EntryOwner<C> {
+    /// The raw entry's original count is present independently of the
+    /// mutable metadata-region bookkeeping and recursive structural owner.
+    pub open spec fn raw_node_token_in_store(
+        self,
+        permissions: Map<Paddr, FrameRawPerms>,
+    ) -> bool {
+        if self.is_node() {
+            let paddr = self.meta_slot_paddr().unwrap();
+            &&& permissions.contains_key(paddr)
+            &&& permissions[paddr].inv()
+            &&& permissions[paddr].slot_vaddr() == self.node().slot_vaddr()
+            &&& self.node().permission_matches(permissions[paddr].metadata_perm)
+        } else {
+            true
+        }
+    }
+
     /// Relates this raw node entry to its independently stored counted token.
     pub open spec fn raw_node_permission_in_store(
         self,
         permissions: Map<Paddr, FrameRawPerms>,
         regions: MetaRegionOwners,
     ) -> bool {
-        if self.is_node() {
-            let paddr = self.meta_slot_paddr().unwrap();
-            &&& permissions.contains_key(paddr)
-            &&& self.raw_node_permission_matches(Some(permissions[paddr]), regions)
-        } else {
-            true
-        }
+        self.raw_node_token_in_store(permissions)
     }
 
     /// Only raw node entries carry a node-count permission. Mapped data-frame
@@ -154,7 +165,10 @@ impl<C: PageTableConfig> EntryOwner<C> {
             permission matches Some(raw) && {
                 &&& raw.inv()
                 &&& raw.slot_vaddr() == self.node().slot_vaddr()
-                &&& raw.slot_perm == regions.slots[self.node().slot_index]
+                // The PTE invariant separately relates the installed metadata
+                // to the region's slot permission. Restoration uses that slot
+                // permission and consumes this exact counted metadata token;
+                // it does not require equality of the two shared slot witnesses.
                 &&& self.node().permission_matches(raw.metadata_perm)
             }
         } else {
