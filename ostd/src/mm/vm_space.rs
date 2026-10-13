@@ -149,12 +149,14 @@ impl<'a> VmSpace<'a> {
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>,
+            Tracked(metadata): Tracked<&mut NodeMetadataLoans<'rcu>>,
         requires
             old(regions).inv(),
+            old(metadata).remainder is Some,
     )]
     #[allow(private_interfaces)]
     pub fn default<'rcu>() -> Self {
-        proof_with!(Tracked(regions), Tracked(guards));
+        proof_with!(Tracked(regions), Tracked(guards), Tracked(metadata));
         Self::new()
     }
 
@@ -173,6 +175,7 @@ impl<'a> VmSpace<'a> {
         with
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>,
+            Tracked(metadata): Tracked<&mut NodeMetadataLoans<'rcu>>,
         requires
             old(regions).inv(),
         ensures
@@ -191,7 +194,7 @@ impl<'a> VmSpace<'a> {
             let tracked kernel_owner = kernel_owner_opt.tracked_take();
         }
         let pt = {
-            #[verus_spec(with Tracked(kernel_owner), Tracked(regions), Tracked(guards))]
+            #[verus_spec(with Tracked(kernel_owner), Tracked(regions), Tracked(guards), Tracked(metadata))]
             kpt.create_user_page_table::<crate::specs::task::AnyAtomicGuard>()
         };
         Self { pt, cpus: AtomicCpuSet::new(CpuSet::new_empty()), _marker: PhantomData }
@@ -219,6 +222,7 @@ impl<'a> VmSpace<'a> {
             Ghost(root_guard): Ghost<PageTableGuard<'a, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>,
+            Tracked(metadata): Tracked<NodeMetadataLoans<'a>>,
                 -> cursor_owner: Tracked<Option<CursorOwner<'a, UserPtConfig>>>,
         requires
             self.pt.relates_owner(owner, *old(regions)),
@@ -240,7 +244,7 @@ impl<'a> VmSpace<'a> {
             let tracked mut out_owner: Option<CursorOwner<'a, UserPtConfig>>;
         }
         match {
-            #[verus_spec(with Tracked(owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
+            #[verus_spec(with Tracked(owner), Ghost(root_guard), Tracked(regions), Tracked(guards), Tracked(metadata))]
             self.pt.cursor(guard, va)
         } {
             Ok((pt_cursor, tracked_owner)) => {
@@ -279,7 +283,8 @@ impl<'a> VmSpace<'a> {
             Tracked(owner): Tracked<PageTableOwner<UserPtConfig>>,
             Ghost(root_guard): Ghost<PageTableGuard<'a, UserPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards>
+            Tracked(guards): Tracked<&mut Guards>,
+            Tracked(metadata): Tracked<NodeMetadataLoans<'a>>,
                 -> cursor_owner: Tracked<Option<CursorOwner<'a, UserPtConfig>>>,
         requires
             self.pt.relates_owner(owner, *old(regions)),
@@ -297,7 +302,7 @@ impl<'a> VmSpace<'a> {
             let tracked mut out_owner: Option<CursorOwner<'a, UserPtConfig>>;
         }
         match {
-            #[verus_spec(with Tracked(owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
+            #[verus_spec(with Tracked(owner), Ghost(root_guard), Tracked(regions), Tracked(guards), Tracked(metadata))]
             self.pt.cursor_mut(guard, va)
         } {
             Ok((pt_cursor, tracked_owner)) => {

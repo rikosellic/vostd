@@ -953,6 +953,7 @@ impl PageTable<KernelPtConfig> {
         with Tracked(kernel_owner): Tracked<&PageTableOwner<KernelPtConfig>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>,
+            Tracked(metadata): Tracked<&mut NodeMetadataLoans<'rcu>>,
         requires
             kernel_owner.inv(),
             old(regions).inv(),
@@ -1188,7 +1189,7 @@ impl PageTable<KernelPtConfig> {
             #[verus_spec(with Tracked(root_owner), Tracked(entry_owner), Tracked(&*regions))]
             let root_entry = root_node.entry(i);
             let ghost pre_to_ref_regions: MetaRegionOwners = *regions;
-            #[verus_spec(with Tracked(entry_owner), Tracked(root_owner), Tracked(regions))]
+            #[verus_spec(with Tracked(entry_owner), Tracked(root_owner), Tracked(regions), Tracked(metadata))]
             let child = root_entry.to_ref();
 
             proof {
@@ -1427,7 +1428,8 @@ impl<C: PageTableConfig> PageTable<C> {
         with Tracked(owner): Tracked<PageTableOwner<C>>,
             Ghost(root_guard): Ghost<PageTableGuard<'rcu, C>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards>
+            Tracked(guards): Tracked<&mut Guards>,
+            Tracked(metadata): Tracked<NodeMetadataLoans<'rcu>>,
         requires
             self.relates_owner(owner, *old(regions)),
             owner.0.value().node().relate_guard(root_guard),
@@ -1470,7 +1472,7 @@ impl<C: PageTableConfig> PageTable<C> {
         guard: &'rcu G,
         va: &Range<Vaddr>,
     ) -> Result<(CursorMut<'rcu, C, G>, Tracked<CursorOwner<'rcu, C>>), PageTableError> {
-        #[verus_spec(with Tracked(owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
+        #[verus_spec(with Tracked(owner), Ghost(root_guard), Tracked(regions), Tracked(guards), Tracked(metadata))]
         CursorMut::new(self, guard, va)
     }
 
@@ -1483,7 +1485,8 @@ impl<C: PageTableConfig> PageTable<C> {
         with Tracked(owner): Tracked<PageTableOwner<C>>,
             Ghost(root_guard): Ghost<PageTableGuard<'rcu, C>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
-            Tracked(guards): Tracked<&mut Guards>
+            Tracked(guards): Tracked<&mut Guards>,
+            Tracked(metadata): Tracked<NodeMetadataLoans<'rcu>>,
         requires
             self.relates_owner(owner, *old(regions)),
             owner.0.value().node().relate_guard(root_guard),
@@ -1536,7 +1539,7 @@ impl<C: PageTableConfig> PageTable<C> {
         (Cursor<'rcu, C, G>, Tracked<CursorOwner<'rcu, C>>),
         PageTableError,
     > {
-        #[verus_spec(with Tracked(owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
+        #[verus_spec(with Tracked(owner), Ghost(root_guard), Tracked(regions), Tracked(guards), Tracked(metadata))]
         Cursor::new(self, guard, va)
     }/*
     /// Create a new reference to the same page table.

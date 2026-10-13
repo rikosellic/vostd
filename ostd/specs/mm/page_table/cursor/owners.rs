@@ -27,7 +27,7 @@ use crate::specs::{
             meta_region_owners::MetaRegionOwners,
         },
         page_table::{
-            Guards, Mapping, lemma_aligned_vaddr_slack, lemma_inc_slot_indices,
+            Guards, Mapping, NodeMetadataLoans, lemma_aligned_vaddr_slack, lemma_inc_slot_indices,
             lemma_lower_indices_aligned, lemma_page_size_base, lemma_page_size_divides,
             lemma_page_size_ge_base, lemma_page_size_is_pow2_pte_index_bit_offset,
             lemma_page_size_next, lemma_pte_index_bound, lemma_vaddr_range_spec_user,
@@ -627,6 +627,7 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
 }
 
 pub tracked struct CursorOwner<'rcu, C: PageTableConfig> {
+    pub metadata: NodeMetadataLoans<'rcu>,
     pub ghost level: PagingLevel,
     pub continuations: Map<int, CursorContinuation<'rcu, C>>,
     pub ghost va: Vaddr,
@@ -637,6 +638,7 @@ pub tracked struct CursorOwner<'rcu, C: PageTableConfig> {
 
 impl<'rcu, C: PageTableConfig> Inv for CursorOwner<'rcu, C> {
     open spec fn inv(self) -> bool {
+        &&& self.metadata.remainder is Some
         &&& self.va % C::BASE_PAGE_SIZE() == 0
         &&& 1 <= self.level <= NR_LEVELS
         &&& 1 <= self.guard_level
@@ -1721,10 +1723,12 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         owner_subtree: OwnerSubtree<C>,
         idx: usize,
         guard: PageTableGuard<'rcu, C>,
+        metadata: NodeMetadataLoans<'rcu>,
     ) -> Self {
         let va = (C::LEADING_BITS_spec() as int * pow2(page_table_vaddr_bits_spec::<C>() as nat)
             + idx * pow2(pte_index_bit_offset_spec::<C>(C::NR_LEVELS()) as nat)) as Vaddr;
         Self {
+            metadata,
             level: C::NR_LEVELS(),
             continuations: Map::empty().insert(
                 C::NR_LEVELS() - 1,
@@ -1741,9 +1745,10 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         tracked owner_subtree: OwnerSubtree<C>,
         idx: usize,
         guard: PageTableGuard<'rcu, C>,
+        tracked metadata: NodeMetadataLoans<'rcu>,
     ) -> tracked Self
         returns
-            Self::new(owner_subtree, idx, guard),
+            Self::new(owner_subtree, idx, guard, metadata),
     {
         let ghost va = (C::LEADING_BITS_spec() as int * pow2(
             page_table_vaddr_bits_spec::<C>() as nat,
@@ -1752,6 +1757,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let tracked mut continuations = Map::tracked_empty();
         continuations.tracked_insert(C::NR_LEVELS() - 1, continuation);
         Self {
+            metadata,
             level: C::NR_LEVELS(),
             continuations,
             va,

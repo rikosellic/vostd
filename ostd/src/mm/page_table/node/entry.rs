@@ -7,11 +7,13 @@ use crate::specs::{
     arch::{NR_ENTRIES, NR_LEVELS, PAGE_SIZE},
     mm::{
         frame::{
+            frame_specs::FrameRawPerms,
             mapping::{frame_to_index, group_page_meta, meta_to_index},
             meta_region_owners::MetaRegionOwners,
         },
         page_table::{
-            INC_LEVELS, PageTableOwner, cursor::page_size_lemmas::lemma_split_sub_page_big_j,
+            INC_LEVELS, PageTableOwner, raw_node_metadata_wf,
+            cursor::page_size_lemmas::lemma_split_sub_page_big_j,
         },
     },
     task::InAtomicMode,
@@ -142,12 +144,17 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         with Tracked(owner): Tracked<&EntryOwner<C>>,
              Tracked(parent_owner): Tracked<&NodeOwner<C>>,
              Tracked(regions): Tracked<&mut MetaRegionOwners>,
+             Tracked(metadata): Tracked<&mut NodeMetadataLoans<'rcu>>,
         requires
             self.invariants(*owner, *old(regions)),
             self.node_matching(*owner, *parent_owner, *self.node),
             parent_owner.metaregion_sound_node(*old(regions)),
+            old(metadata).remainder is Some,
+            owner.raw_node_permission_in_store(old(metadata).permissions(), *old(regions)),
         ensures
             res.invariants(*owner, *final(regions)),
+            final(metadata).remainder is Some,
+            final(metadata).permissions() == old(metadata).permissions(),
             final(regions).slot_owners == old(regions).slot_owners,
             forall|k: int|
                 old(regions).slots.contains_key(k) ==> #[trigger] final(regions).slots.contains_key(
@@ -159,6 +166,12 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             final(regions).inv(),
     )]
     pub(in crate::mm) fn to_ref(&self) -> ChildRef<'rcu, C> {
+        let tracked metadata_permission = if owner.is_node() {
+            let tracked raw = metadata.tracked_borrow(owner.meta_slot_paddr().unwrap());
+            Some(raw.tracked_borrow_metadata_perm())
+        } else {
+            None
+        };
         #[verus_spec(with Tracked(&*parent_owner))]
         let level = self.node.level();
 
@@ -166,7 +179,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         //  - The PTE outlives the reference (since we have `&self`).
         //  - The level matches the current node.
         let res = unsafe {
-            #[verus_spec(with Tracked(regions), Tracked(owner))]
+            #[verus_spec(with Tracked(regions), Tracked(owner), Tracked(metadata_permission))]
             ChildRef::from_pte(&self.pte, level)
         };
 
@@ -279,13 +292,27 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
              Tracked(owner): Tracked<&mut EntryOwner<C>>,
              Tracked(new_owner): Tracked<&mut EntryOwner<C>>,
              Tracked(parent_owner): Tracked<&mut NodeOwner<C>>,
+             Tracked(metadata): Tracked<&mut NodeMetadataLoans<'rcu>>,
         requires
+            old(metadata).remainder is Some,
+            old(owner).raw_node_permission_in_store(old(metadata).permissions(), *old(regions)),
+            old(owner).is_node() ==> {
+                let paddr = old(owner).meta_slot_paddr().unwrap();
+                &&& old(metadata).remainder->0.permissions.contains_key(paddr)
+                &&& !old(metadata).loans.contains_key(paddr)
+            },
+            old(new_owner).is_node() ==> {
+                let paddr = old(new_owner).meta_slot_paddr().unwrap();
+                !old(metadata).permissions().contains_key(paddr)
+                    || (old(owner).is_node() && old(owner).meta_slot_paddr() == Some(paddr))
+            },
             old(self).invariants(*old(owner), *old(regions)),
             new_child.invariants(*old(new_owner), *old(regions)),
             old(self).node_matching(*old(owner), *old(parent_owner), *old(self).node),
             old(self).new_owner_compatible(new_child, *old(owner), *old(new_owner), *old(regions)),
             old(parent_owner).metaregion_sound_node(*old(regions)),
         ensures
+            final(metadata).remainder is Some,
             final(self).invariants(*final(new_owner), *final(regions)),
             res.invariants(*final(owner), *final(regions)),
             final(self).node_matching(*final(new_owner), *final(parent_owner), *final(self).node),
@@ -366,8 +393,13 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         #[verus_spec(with Tracked(&*parent_owner))]
         let level = self.node.level();
 
+        let tracked old_raw_permission = if owner.is_node() {
+            Some(metadata.tracked_remove(owner.meta_slot_paddr().unwrap()))
+        } else {
+            None
+        };
         let old_child = unsafe {
-            #[verus_spec(with Tracked(regions), Tracked(owner))]
+            #[verus_spec(with Tracked(regions), Tracked(owner), Tracked(old_raw_permission))]
             Child::from_pte(self.pte, level)
         };
 
@@ -392,8 +424,14 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             }
             nr_children.write(Tracked(&mut parent_owner.meta_own.nr_children), _tmp - 1);
         }
-        #[verus_spec(with Tracked(new_owner))]
+        let tracked new_raw_permission: Option<FrameRawPerms>;
+        #[verus_spec(with Tracked(new_owner), Tracked(None) => Tracked(new_raw_permission))]
         let new_pte = new_child.into_pte();
+        proof {
+            if let Some(raw) = new_raw_permission {
+                metadata.tracked_insert(meta_to_frame(raw.slot_vaddr()), raw);
+            }
+        }
 
         // SAFETY:
         //  1. The index is within the bounds.
@@ -507,7 +545,10 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             Tracked(parent_owner): Tracked<&mut NodeOwner<C>>,
             Tracked(regions): Tracked<&mut MetaRegionOwners>,
             Tracked(guards): Tracked<&mut Guards>,
+            Tracked(metadata): Tracked<&mut NodeMetadataLoans<'rcu>>,
         requires
+            old(metadata).remainder is Some,
+            raw_node_metadata_wf(old(metadata).permissions(), *old(regions)),
             old(self).invariants(old(owner).value(), *old(regions)),
             old(owner).inv(),
             old(self).node_matching(old(owner).value(), *old(parent_owner), *old(self).node),
@@ -519,6 +560,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             old(owner).level() + old(parent_owner).level() == INC_LEVELS,
             old(parent_owner).metaregion_sound_node(*old(regions)),
         ensures
+            final(metadata).remainder is Some,
             final(self).invariants(final(owner).value(), *final(regions)),
             final(self).parent_perms_preserved(*old(parent_owner), *final(parent_owner)),
             final(self).idx == old(self).idx,
@@ -647,18 +689,23 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
             let paddr = new_page.start_paddr();
 
+            let tracked new_raw_permission: Option<FrameRawPerms>;
             let new_pte = {
                 let tracked new_node_value = new_node_owner.tracked_borrow_mut_value();
-                #[verus_spec(with Tracked(new_node_value))]
+                #[verus_spec(with Tracked(new_node_value), Tracked(None) => Tracked(new_raw_permission))]
                 Child::PageTable(new_page).into_pte()
             };
             self.pte = new_pte;
 
+            proof {
+                metadata.tracked_insert(paddr, new_raw_permission.tracked_unwrap());
+            }
+            let tracked raw_permission = metadata.tracked_borrow(paddr);
             let tracked new_node_value = new_node_owner.tracked_borrow_value();
             let tracked new_node = new_node_value.tracked_borrow_node();
             let tracked slot_perm = *regions.slots.tracked_borrow(new_node.slot_index);
             let pt_ref = unsafe {
-                #[verus_spec(with Tracked(slot_perm), Tracked(&new_node.frame_permission))]
+                #[verus_spec(with Tracked(slot_perm), Tracked(raw_permission.tracked_borrow_metadata_perm()))]
                 PageTableNodeRef::borrow_paddr(paddr)
             };
 
@@ -775,8 +822,11 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         with Tracked(owner) : Tracked<&mut OwnerSubtree<C>>,
              Tracked(parent_owner): Tracked<&mut NodeOwner<C>>,
              Tracked(regions): Tracked<&mut MetaRegionOwners>,
-             Tracked(guards): Tracked<&mut Guards>
+             Tracked(guards): Tracked<&mut Guards>,
+             Tracked(metadata): Tracked<&mut NodeMetadataLoans<'rcu>>,
         requires
+            old(metadata).remainder is Some,
+            raw_node_metadata_wf(old(metadata).permissions(), *old(regions)),
             old(regions).inv(),
             old(owner).inv(),
             old(self).wf(old(owner).value()),
@@ -793,6 +843,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             old(owner).value().is_frame() && old(parent_owner).level() > 1 ==>
                 old(owner).value().metaregion_sound(*old(regions)),
         ensures
+            final(metadata).remainder is Some,
             old(owner).value().is_frame() && old(parent_owner).level() > 1 ==> {
                 &&& res is Some
                 &&& final(owner).value().is_node()
@@ -887,7 +938,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         // alloc takes the NEW NODE level (level - 1, one below the cursor's
         // level which is `level`). Convention: alloc(M) produces node.level=M.
         #[verus_spec(with Tracked(parent_owner), Tracked(regions), Tracked(guards), Ghost(self.idx) => Tracked(new_owner))]
-        let new_page = PageTableNode::<C>::alloc(level - 1);
+        let mut new_page = PageTableNode::<C>::alloc(level - 1);
         proof {
             assert forall|i: int| 0 <= i < NR_ENTRIES implies (
             #[trigger] new_owner.children()[i]) is Some by {
@@ -901,6 +952,18 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
         let paddr = new_page.start_paddr();
 
+        // Park the original count before borrowing the new node. The live
+        // executable Frame is still consumed only at the original into_pte
+        // call after initialization; it does not carry a duplicate token.
+        let tracked metadata_loan = {
+            let tracked raw = FrameRawPerms {
+                slot_perm: *new_page.tracked_slot_perm.borrow(),
+                metadata_perm: new_page.tracked_metadata_perm.tracked_take(),
+            };
+            metadata.tracked_park_and_lend(paddr, raw)
+        };
+        let tracked raw_permission = metadata_loan.tracked_borrow();
+
         proof {
             broadcast use group_page_meta;
 
@@ -910,7 +973,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         let tracked new_node = new_owner_value.tracked_borrow_node();
         let tracked slot_perm = *regions.slots.tracked_borrow(new_node.slot_index);
         let pt_ref = unsafe {
-            #[verus_spec(with Tracked(slot_perm), Tracked(&new_node.frame_permission))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(raw_permission.tracked_borrow_metadata_perm()))]
             PageTableNodeRef::borrow_paddr(paddr)
         };
 
@@ -1274,9 +1337,11 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             }
         }
 
+        let tracked transferred_permission: Option<FrameRawPerms>;
         self.pte = {
             let tracked new_owner_value = new_owner.tracked_borrow_mut_value();
-            #[verus_spec(with Tracked(new_owner_value))]
+            #[verus_spec(with Tracked(new_owner_value),
+                Tracked(Some(metadata_loan)) => Tracked(transferred_permission))]
             Child::PageTable(new_page).into_pte()
         };
 
@@ -1464,7 +1529,20 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
              Tracked(owner): Tracked<&mut EntryOwner<C>>,
              Tracked(new_owner): Tracked<&mut EntryOwner<C>>,
              Tracked(parent_owner): Tracked<&mut NodeOwner<C>>,
+             Tracked(metadata): Tracked<&mut NodeMetadataLoans<'rcu>>,
         requires
+            old(metadata).remainder is Some,
+            old(owner).raw_node_permission_in_store(old(metadata).permissions(), *old(regions)),
+            old(owner).is_node() ==> {
+                let paddr = old(owner).meta_slot_paddr().unwrap();
+                &&& old(metadata).remainder->0.permissions.contains_key(paddr)
+                &&& !old(metadata).loans.contains_key(paddr)
+            },
+            old(new_owner).is_node() ==> {
+                let paddr = old(new_owner).meta_slot_paddr().unwrap();
+                !old(metadata).permissions().contains_key(paddr)
+                    || (old(owner).is_node() && old(owner).meta_slot_paddr() == Some(paddr))
+            },
             old(owner).inv(),
             old(owner).metaregion_sound(*old(regions)),
             old(owner).match_pte(
@@ -1486,6 +1564,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             },
             old(parent_owner).metaregion_sound_node(*old(regions)),
         ensures
+            final(metadata).remainder is Some,
             res.invariants(*final(owner), *final(regions)),
             final(new_owner).inv(),
             final(new_owner).metaregion_sound(*final(regions)),
@@ -1575,8 +1654,13 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         #[verus_spec(with Tracked(&*parent_owner))]
         let level = self.level();
 
+        let tracked old_raw_permission = if owner.is_node() {
+            Some(metadata.tracked_remove(owner.meta_slot_paddr().unwrap()))
+        } else {
+            None
+        };
         let old_child = unsafe {
-            #[verus_spec(with Tracked(regions), Tracked(owner))]
+            #[verus_spec(with Tracked(regions), Tracked(owner), Tracked(old_raw_permission))]
             Child::from_pte(pte, level)
         };
 
@@ -1604,8 +1688,14 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             }
             nr_children.write(Tracked(&mut parent_owner.meta_own.nr_children), _tmp - 1);
         }
-        #[verus_spec(with Tracked(new_owner))]
+        let tracked new_raw_permission: Option<FrameRawPerms>;
+        #[verus_spec(with Tracked(new_owner), Tracked(None) => Tracked(new_raw_permission))]
         let new_pte = new_child.into_pte();
+        proof {
+            if let Some(raw) = new_raw_permission {
+                metadata.tracked_insert(meta_to_frame(raw.slot_vaddr()), raw);
+            }
+        }
 
         unsafe {
             #[verus_spec(with Tracked(parent_owner), Tracked(&*regions))]
@@ -1701,7 +1791,10 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
              Tracked(parent_owner): Tracked<&mut NodeOwner<C>>,
              Tracked(regions): Tracked<&mut MetaRegionOwners>,
              Tracked(guards): Tracked<&mut Guards>,
+             Tracked(metadata): Tracked<&mut NodeMetadataLoans<'rcu>>,
         requires
+            old(metadata).remainder is Some,
+            raw_node_metadata_wf(old(metadata).permissions(), *old(regions)),
             old(owner).inv(),
             old(owner).value().is_absent(),
             old(owner).level() < INC_LEVELS - 1,
@@ -1719,6 +1812,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             old(regions).inv(),
             old(regions).slots.contains_key(old(parent_owner).slot_index),
         ensures
+            final(metadata).remainder is Some,
             final(owner).inv(),
             final(owner).value().is_node(),
             final(owner).level() == old(owner).level(),
@@ -1838,11 +1932,17 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
 
         let paddr = new_page.start_paddr();
 
+        let tracked new_raw_permission: Option<FrameRawPerms>;
         let new_pte = {
             let tracked new_node_value = new_node_owner.tracked_borrow_mut_value();
-            #[verus_spec(with Tracked(new_node_value))]
+            #[verus_spec(with Tracked(new_node_value), Tracked(None) => Tracked(new_raw_permission))]
             Child::PageTable(new_page).into_pte()
         };
+
+        proof {
+            metadata.tracked_insert(paddr, new_raw_permission.tracked_unwrap());
+        }
+        let tracked raw_permission = metadata.tracked_borrow(paddr);
 
         proof {
             broadcast use group_page_meta;
@@ -1853,7 +1953,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         let tracked new_node = new_node_value.tracked_borrow_node();
         let tracked slot_perm = *regions.slots.tracked_borrow(new_node.slot_index);
         let pt_ref = unsafe {
-            #[verus_spec(with Tracked(slot_perm), Tracked(&new_node.frame_permission))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(raw_permission.tracked_borrow_metadata_perm()))]
             PageTableNodeRef::borrow_paddr(paddr)
         };
 
@@ -2006,7 +2106,8 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         }
         nr_children.write(Tracked(&mut parent_owner.meta_own.nr_children), old_nr_children + 1);
 
-        #[verus_spec(with Tracked(new_owner))]
+        let tracked new_raw_permission: Option<FrameRawPerms>;
+        #[verus_spec(with Tracked(new_owner), Tracked(None) => Tracked(new_raw_permission))]
         let new_pte = Child::<C>::Frame(paddr, level, prop).into_pte();
 
         unsafe {

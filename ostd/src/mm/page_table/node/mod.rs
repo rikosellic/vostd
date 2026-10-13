@@ -34,7 +34,7 @@ mod entry_specs;
 use vstd::{atomic::PAtomicU8, cell::pcell_maybe_uninit, prelude::*, simple_pptr::PPtr};
 use vstd_extra::{array_ptr, cast_ptr::*, ghost_tree::*, ownership::*};
 
-pub use crate::specs::mm::page_table::node::{entry_owners::*, owners::*};
+pub use crate::specs::mm::page_table::node::{NodeMetadataLoan, NodeMetadataLoans, RawNodeMetadataPerms, entry_owners::*, owners::*};
 use crate::specs::mm::{
     frame::{
         mapping::{frame_to_index, lemma_frame_to_index_injective, meta_to_index},
@@ -215,12 +215,14 @@ impl<C: PageTableConfig> PageTableNode<C> {
     )]
     pub(super) fn level(&self) -> PagingLevel
         requires
-            self.external_meta_wf(owner.frame_permission.resource(), ()),
+            self.inv(),
+            owner.permission_matches(self.frac_metadata_perm()),
+            typed_meta_wf::<PageTablePageMeta<C>>(self.slot_perm(), self.metadata_perm(), ()),
         returns
             owner.level(),
     {
         #[verus_spec(with
-            Tracked(Some(owner.tracked_borrow_metadata_perm())),
+            Tracked(None),
             Tracked(&())
         )]
         let meta = self.meta();
@@ -246,6 +248,8 @@ impl<C: PageTableConfig> PageTableNode<C> {
             allocated_empty_node_grandchildren_none(owner@),
             res.ptr.addr() == owner@.value().node().slot_vaddr(),
             res.inv(),
+            owner@.value().node().permission_matches(res.frac_metadata_perm()),
+            typed_meta_wf::<PageTablePageMeta<C>>(res.slot_perm(), res.metadata_perm(), ()),
             res.wf_with_region(*final(regions)),
             guards.unlocked(owner@.value().node().slot_vaddr()),
             MetaSlot::get_node_from_unused_spec(meta_to_frame(owner@.value().node().slot_vaddr()), *old(regions), *final(regions)),
@@ -261,7 +265,8 @@ impl<C: PageTableConfig> PageTableNode<C> {
                 ==> i != meta_to_index(owner@.value().node().slot_vaddr()),
             owner@.value().match_pte(C::E::new_pt_spec(meta_to_frame(owner@.value().node().slot_vaddr())), level as PagingLevel),
             final(parent_owner).meta_own == old(parent_owner).meta_own,
-            final(parent_owner).frame_permission == old(parent_owner).frame_permission,
+            final(parent_owner).metadata == old(parent_owner).metadata,
+            final(parent_owner).metadata_id == old(parent_owner).metadata_id,
             final(parent_owner).slot_index == old(parent_owner).slot_index,
             final(parent_owner).level() == old(parent_owner).level(),
             final(parent_owner).tree_level == old(parent_owner).tree_level,
@@ -347,6 +352,21 @@ impl<C: PageTableConfig> PageTableNode<C> {
 
 #[verus_verify]
 impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
+    /// Reads the level through the metadata borrow retained by FrameRef.
+    #[verus_spec(
+        with Tracked(owner): Tracked<&NodeOwner<C>>,
+        requires
+            self.inv(),
+            owner.permission_matches(**self.tracked_metadata_perm),
+            self.inner@.external_meta_wf(owner.metadata, ()),
+        returns owner.level(),
+    )]
+    pub(super) fn level(&self) -> PagingLevel {
+        #[verus_spec(with Tracked(&()))]
+        let meta = self.meta();
+        meta.level
+    }
+
     pub open spec fn locks_preserved_except<'rcu>(
         addr: usize,
         guards0: Guards,
@@ -375,8 +395,8 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
         requires
             self.inner@.invariants(*owner),
             self.inv(),
-            **self.tracked_metadata_perm == owner.frame_permission,
-            self.inner@.external_meta_wf(owner.frame_permission.resource(), ()),
+            owner.permission_matches(**self.tracked_metadata_perm),
+            self.inner@.external_meta_wf(owner.metadata, ()),
             old(guards).unlocked(owner.slot_vaddr()),
         ensures
             res.inner == self,
@@ -404,8 +424,8 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
         requires
             self.inner@.invariants(*owner),
             self.inv(),
-            **self.tracked_metadata_perm == owner.frame_permission,
-            self.inner@.external_meta_wf(owner.frame_permission.resource(), ()),
+            owner.permission_matches(**self.tracked_metadata_perm),
+            self.inner@.external_meta_wf(owner.metadata, ()),
             old(guards).unlocked(owner.slot_vaddr()),
         ensures
             final(guards).lock_held(owner.slot_vaddr()),
@@ -579,7 +599,8 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             final(owner).inv(),
             final(owner).level() == old(owner).level(),
             final(owner).meta_own == old(owner).meta_own,
-            final(owner).frame_permission == old(owner).frame_permission,
+            final(owner).metadata == old(owner).metadata,
+            final(owner).metadata_id == old(owner).metadata_id,
             final(owner).slot_index == old(owner).slot_index,
             final(owner).children_perm.value() == old(owner).children_perm.value().update(
                 idx as int,

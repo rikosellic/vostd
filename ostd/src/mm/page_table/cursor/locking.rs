@@ -13,6 +13,7 @@ use crate::specs::{
 
 use crate::mm::frame::{
     MetaSlot,
+    meta::mapping::meta_to_frame,
     meta::{REF_COUNT_MAX, REF_COUNT_UNIQUE, REF_COUNT_UNUSED},
 };
 use crate::mm::page_table::*;
@@ -32,7 +33,8 @@ broadcast use group_ghost_tree_lemmas;
     with Tracked(pt_own): Tracked<PageTableOwner<C>>,
         Ghost(root_guard): Ghost<PageTableGuard<'rcu, C>>,
         Tracked(regions): Tracked<&mut MetaRegionOwners>,
-        Tracked(guards): Tracked<&mut Guards>
+        Tracked(guards): Tracked<&mut Guards>,
+        Tracked(metadata): Tracked<NodeMetadataLoans<'rcu>>,
     requires
         pt.relates_owner(pt_own, *old(regions)),
         pt_own.0.value().node().relate_guard(root_guard),
@@ -117,6 +119,7 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
         pt_own.0,
         start_idx,
         root_guard,
+        metadata,
     );
 
     // Retry if the candidate subtree became stray before we acquired its lock.
@@ -326,7 +329,7 @@ pub fn unlock_range<C: PageTableConfig, A: InAtomicMode>(cursor: &mut Cursor<'_,
 )]
 #[verifier::external_body]
 fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>(
-    pt: &PageTable<C>,
+    pt: &'rcu PageTable<C>,
     guard: &'rcu A,
     va: &Range<Vaddr>,
 ) -> Option<PageTableGuard<'rcu, C>> {
@@ -386,8 +389,14 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
             let tracked cont = cursor_own.continuations.tracked_borrow(cursor_own.level - 1);
             let tracked node_owner = cont.entry_own.tracked_borrow_node();
             let tracked slot_perm = *regions.slots.tracked_borrow(node_owner.slot_index);
+            let tracked metadata_permission = if node_owner.slot_vaddr() == pt.root.ptr.addr() {
+                pt.root.tracked_metadata_perm.borrow().tracked_borrow()
+            } else {
+                let tracked raw = cursor_own.metadata.tracked_borrow(meta_to_frame(node_owner.slot_vaddr()));
+                raw.tracked_borrow_metadata_perm()
+            };
             let node_ref = unsafe {
-                #[verus_spec(with Tracked(slot_perm), Tracked(&node_owner.frame_permission))]
+                #[verus_spec(with Tracked(slot_perm), Tracked(metadata_permission))]
                 PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr)
             };
             node_ref.lock(guard)
@@ -469,8 +478,14 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
         let tracked cont = cursor_own.continuations.tracked_borrow(cursor_own.level - 1);
         let tracked node_owner = cont.entry_own.tracked_borrow_node();
         let tracked slot_perm = *regions.slots.tracked_borrow(node_owner.slot_index);
+        let tracked metadata_permission = if node_owner.slot_vaddr() == pt.root.ptr.addr() {
+            pt.root.tracked_metadata_perm.borrow().tracked_borrow()
+        } else {
+            let tracked raw = cursor_own.metadata.tracked_borrow(meta_to_frame(node_owner.slot_vaddr()));
+            raw.tracked_borrow_metadata_perm()
+        };
         let node_ref = unsafe {
-            #[verus_spec(with Tracked(slot_perm), Tracked(&node_owner.frame_permission))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(metadata_permission))]
             PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr)
         };
         node_ref.lock(guard)

@@ -466,16 +466,14 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         }
     }
 
-    /// Borrows a frame whose owning handle is represented by an external
-    /// counting permission, as is the case for page-table nodes stored raw in
-    /// PTEs.
+    /// Borrows a frame using the counted token held by its handle or by the
+    /// independent raw-PTE permission store.
     #[verus_spec(res =>
         with
             Tracked(frame_permission): Tracked<&'a FracMetadataPerm>,
             Tracked(regions): Tracked<&MetaRegionOwners>,
         requires
             self.ptr_inv(),
-            self.tracked_metadata_perm@ is None,
             regions.inv(),
             frame_permission.frac() == 1,
             frame_permission.id() == regions.slot_owners[self.index()].metadata_perm.id(),

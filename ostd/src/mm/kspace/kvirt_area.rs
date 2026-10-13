@@ -461,6 +461,7 @@ impl KVirtArea {
              Tracked(entry_owners): Tracked<&mut Map<Paddr, EntryOwner<KernelPtConfig>>>,
              Tracked(regions): Tracked<&mut MetaRegionOwners>,
              Tracked(guards): Tracked<&mut Guards>,
+             Tracked(metadata): Tracked<NodeMetadataLoans<'a>>,
         requires
             Self::map_frames_bounds_panic_condition(area_size, map_offset, frames.len())
                 ==> may_panic(),
@@ -519,6 +520,7 @@ impl KVirtArea {
             // Bridge: FRAME_METADATA_BASE_VADDR < KERNEL_END_VADDR, so the allocator's
             // tightened bound still satisfies lemma_kernel_range_valid's precondition.
             if cursor_range.start < cursor_range.end {
+                assert(FRAME_METADATA_BASE_VADDR <= KERNEL_END_VADDR) by (compute_only);
                 lemma_kernel_range_valid(cursor_range);
             }
         }
@@ -534,7 +536,7 @@ impl KVirtArea {
 
         let ghost pre_cursor_regions: MetaRegionOwners = *regions;
 
-        #[verus_spec(with Tracked(owner.pt_owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
+        #[verus_spec(with Tracked(owner.pt_owner), Ghost(root_guard), Tracked(regions), Tracked(guards), Tracked(metadata))]
         let cursor_res = page_table.cursor_mut(preempt_guard, &cursor_range);
 
         assert!(cursor_res.is_ok());
@@ -753,6 +755,7 @@ impl KVirtArea {
              Tracked(root_guard): Tracked<PageTableGuard<'a, KernelPtConfig>>,
              Tracked(regions): Tracked<&mut MetaRegionOwners>,
              Tracked(guards): Tracked<&mut Guards>,
+             Tracked(metadata): Tracked<NodeMetadataLoans<'a>>,
         requires
     // **Precise form** (post Phases A/B/C). Bounds are caller-
     // provable; OOM uses the implication form.
@@ -814,7 +817,7 @@ impl KVirtArea {
             // Save regions state before cursor_mut so postcondition trigger can fire.
             let ghost pre_cursor_regions: MetaRegionOwners = *regions;
 
-            #[verus_spec(with Tracked(owner.pt_owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
+            #[verus_spec(with Tracked(owner.pt_owner), Ghost(root_guard), Tracked(regions), Tracked(guards), Tracked(metadata))]
             let cursor_res = page_table.cursor_mut(preempt_guard, &va_range);
 
             let (mut cursor, Tracked(cursor_owner)) = cursor_res.unwrap();

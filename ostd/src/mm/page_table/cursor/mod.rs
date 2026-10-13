@@ -224,6 +224,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
              Ghost(root_guard): Ghost<PageTableGuard<'rcu, C>>,
              Tracked(regions): Tracked<&mut MetaRegionOwners>,
              Tracked(guards): Tracked<&mut Guards>,
+             Tracked(metadata): Tracked<NodeMetadataLoans<'rcu>>,
         requires
             pt.relates_owner(pt_own, *old(regions)),
             pt_own.0.value().node().relate_guard(root_guard),
@@ -308,7 +309,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         }
 
         Ok(
-            #[verus_spec(with Tracked(pt_own), Ghost(root_guard), Tracked(regions), Tracked(guards))]
+            #[verus_spec(with Tracked(pt_own), Ghost(root_guard), Tracked(regions), Tracked(guards), Tracked(metadata))]
             locking::lock_range(pt, guard, va),
         )
     }
@@ -448,7 +449,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
             let cur_child = {
                 let tracked child_value = child_owner.tracked_borrow_value();
-                #[verus_spec(with Tracked(child_value), Tracked(&parent_owner), Tracked(regions))]
+                #[verus_spec(with Tracked(child_value), Tracked(&parent_owner), Tracked(regions), Tracked(&mut owner.metadata))]
                 entry.to_ref()
             };
 
@@ -929,7 +930,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
             let cur_child = {
                 let tracked child_value = child_owner.tracked_borrow_value();
-                #[verus_spec(with Tracked(child_value), Tracked(&node_owner), Tracked(regions))]
+                #[verus_spec(with Tracked(child_value), Tracked(&node_owner), Tracked(regions), Tracked(&mut owner.metadata))]
                 cur_entry.to_ref()
             };
 
@@ -1213,7 +1214,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     }
                     let split_child = (
                     #[verus_spec(with Tracked(&mut child_owner), Tracked(continuation.entry_own.tracked_borrow_mut_node()), Tracked(regions),
-                        Tracked(guards))]
+                        Tracked(guards), Tracked(&mut owner.metadata))]
                     cur_entry.split_if_mapped_huge(rcu_guard)).expect(
                         "The entry must be a huge page",
                     );
@@ -2020,6 +2021,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
              Ghost(root_guard): Ghost<PageTableGuard<'rcu, C>>,
              Tracked(regions): Tracked<&mut MetaRegionOwners>,
              Tracked(guards): Tracked<&mut Guards>,
+             Tracked(metadata): Tracked<NodeMetadataLoans<'rcu>>,
         requires
             pt.relates_owner(pt_own, *old(regions)),
             pt_own.0.value().node().relate_guard(root_guard),
@@ -2065,7 +2067,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         PageTableError,
     > {
         let res =
-            #[verus_spec(with Tracked(pt_own), Ghost(root_guard), Tracked(regions), Tracked(guards))]
+            #[verus_spec(with Tracked(pt_own), Ghost(root_guard), Tracked(regions), Tracked(guards), Tracked(metadata))]
         Cursor::new(pt, guard, va);
         match res {
             Ok((inner_cursor, tracked_owner)) => {
@@ -2430,7 +2432,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 let cur_child = {
                     let tracked child_value = child_owner.tracked_borrow_value();
                     #[verus_spec(with Tracked(child_value), Tracked(&parent_owner),
-                        Tracked(regions))]
+                        Tracked(regions), Tracked(&mut owner.metadata))]
                     cur_entry.to_ref()
                 };
 
@@ -2502,7 +2504,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                     let child_guard = {
                         let node = path_slot_as_mut(&mut self.0.path, self.0.level as usize - 1);
 
-                        #[verus_spec(with Tracked(&mut child_owner), Tracked(&mut parent_owner), Tracked(regions), Tracked(guards))]
+                        #[verus_spec(with Tracked(&mut child_owner), Tracked(&mut parent_owner), Tracked(regions), Tracked(guards), Tracked(&mut owner.metadata))]
                         node.alloc_absent_child(entry_idx, rcu_guard)
                     };
 
@@ -2653,7 +2655,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
 
                     let split_child = (
                     #[verus_spec(with Tracked(&mut child_owner), Tracked(&mut parent_owner), Tracked(regions),
-                            Tracked(guards))]
+                            Tracked(guards), Tracked(&mut owner.metadata))]
                     cur_entry.split_if_mapped_huge(rcu_guard)).unwrap();
 
                     #[verus_spec(with Tracked(owner), Tracked(regions), Tracked(guards))]
@@ -3447,6 +3449,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 Tracked(old_child_value),
                 Tracked(new_value),
                 Tracked(continuation.entry_own.tracked_borrow_mut_node()),
+                Tracked(&mut owner.metadata),
             )]
             node.replace_child(entry_idx, new_child)
         };
@@ -3631,7 +3634,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 let ghost regions_before_borrow = *regions;
 
                 #[verus_spec(with
-                    Tracked(&old_node_owner.frame_permission),
+                    Tracked(pt.tracked_metadata_perm.borrow().tracked_borrow()),
                     Tracked(regions)
                 )]
                 let borrow_pt = pt.borrow_with_permission();
