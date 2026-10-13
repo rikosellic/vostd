@@ -1319,7 +1319,10 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             forall|other: Paddr| old(self).contains_raw_leased(other) ==>
                 final(self).contains_raw_leased(other) &&
                 *final(self).leases[other].permission == *old(self).leases[other].permission,
+            forall|other: Paddr| old(self).contains_raw_leased(other) ==>
+                #[trigger] final(self).leases[other].paddr == old(self).leases[other].paddr,
             final(self).root.paddr == old(self).root.paddr,
+            old(self).root.paddr != paddr ==> *final(self).root.record == *old(self.root.record),
             final(self).leased_record(paddr) == *final(record),
             final(self).node_map() == old(self).node_map().insert(paddr, *final(record)),
             final(self).permission_map() == old(self).permission_map(),
@@ -2055,10 +2058,23 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
         let base = C::LEADING_BITS_spec() as int * 281474976710656int;
         assert(nat_align_down(va as nat, 281474976710656nat) == base);
         let limit = C::TOP_LEVEL_INDEX_RANGE().end;
-        assert(0 <= base + limit * 549755813888int - 1 <= usize::MAX);
+        assert(0 <= base + limit * 549755813888int - 1 <= usize::MAX) by (nonlinear_arith)
+            requires
+                0 <= C::LEADING_BITS_spec() < 65536,
+                1 <= limit <= 512,
+                base == C::LEADING_BITS_spec() as int * 281474976710656int,
+                usize::MAX == 18446744073709551615int,
+        ;
         assert(crate::specs::mm::page_table::vaddr_range_spec::<C>().end
             == base + limit * 549755813888int - 1);
-        assert(barrier_va.end <= base + 281474976710656int);
+        assert(barrier_va.end <= base + 281474976710656int) by (nonlinear_arith)
+            requires
+                barrier_va.start < barrier_va.end,
+                is_valid_range_spec::<C>(barrier_va),
+                crate::specs::mm::page_table::vaddr_range_spec::<C>().end
+                    == base + limit * 549755813888int - 1,
+                limit <= 512,
+        ;
         assert(locked_range_in_node::<C>(barrier_va, NR_LEVELS as PagingLevel));
         let ghost idx = pte_index_spec::<C>(va, NR_LEVELS as PagingLevel);
         let ghost root_cont = FlatCursorContinuation::new(
@@ -3378,6 +3394,345 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
         self.lemma_reachable_empty_range(from, target, depth, steps, idx);
     }
 
+    /// A fresh leaf-only node replaces one non-node edge; all existing
+    /// node records retain their paths, levels and other entries.
+    pub(crate) open spec fn leaf_node_insert(self, other: Self, parent: Paddr, idx: int, child: Paddr) -> bool {
+        &&& self.contains_node(parent)
+        &&& parent != self.root
+        &&& 0 <= idx < NR_ENTRIES
+        &&& 1 < self.node(parent).node.level
+        &&& !self.node(parent).entries[idx].is_node()
+        &&& !self.contains_node(child)
+        &&& other.root == self.root
+        &&& other.nodes.dom() == self.nodes.dom().insert(child)
+        &&& other.node(parent).entries[idx].is_node()
+        &&& other.node(parent).entries[idx].child_paddr() == child
+        &&& forall|paddr: Paddr| #[trigger] self.contains_node(paddr) ==> {
+            &&& other.node(paddr).path == self.node(paddr).path
+            &&& other.node(paddr).node.level == self.node(paddr).node.level
+            &&& other.node(paddr).entries.len() == NR_ENTRIES
+            &&& forall|i: int| 0 <= i < NR_ENTRIES && (paddr != parent || i != idx) ==>
+                #[trigger] other.node(paddr).entries[i] == self.node(paddr).entries[i]
+        }
+        &&& forall|i: int| 0 <= i < NR_ENTRIES ==> !#[trigger] other.node(child).entries[i].is_node()
+    }
+
+    /// Every mapping in the recursive view comes from a flat leaf record.
+    pub proof fn lemma_view_leaf_witness(self, from: Paddr, depth: nat, m: Mapping)
+        requires
+            self.subtree_inv_at(from, depth),
+            self.view_rec_at(from, depth).contains(m),
+        ensures
+            exists|node: Paddr, i: int| self.contains_node(node) && 0 <= i < NR_ENTRIES
+                && (#[trigger] self.node(node).entries[i]).is_frame()
+                && self.node(node).entries[i].leaf_mappings().contains(m),
+        decreases depth,
+    {
+        broadcast use Set::lemma_flatten_contains;
+        reveal_with_fuel(FlatPageTableOwner::subtree_inv_at, 2);
+        reveal(FlatPageTableOwner::view_rec_at);
+        reveal(FlatPageTableOwner::view_node_children);
+        let children = self.view_node_children(from, depth);
+        let set = choose|set: Set<Mapping>| children.to_set().contains(set) && set.contains(m);
+        let i = choose|i: int| 0 <= i < children.len() && children[i] == set;
+        let entry = self.node(from).entries[i];
+        if entry.is_node() {
+            self.lemma_view_leaf_witness(entry.child_paddr(), (depth - 1) as nat, m);
+        } else {
+            assert(entry.is_frame());
+            assert(entry.leaf_mappings().contains(m));
+            assert(exists|node: Paddr, j: int| self.contains_node(node) && 0 <= j < NR_ENTRIES
+                && (#[trigger] self.node(node).entries[j]).is_frame()
+                && self.node(node).entries[j].leaf_mappings().contains(m));
+        }
+    }
+
+    /// A leaf-to-node replacement changes exactly that leaf's mappings.
+    /// The caller excludes the old mapping using the new child's VA coverage.
+    #[verifier::rlimit(40)]
+    pub(crate) proof fn lemma_leaf_node_insert_mappings(
+        self, other: Self, parent: Paddr, idx: int, child: Paddr, removed: Mapping,
+    )
+        requires
+            self.inv(), other.inv(),
+            self.leaf_node_insert(other, parent, idx, child),
+            self.node(parent).entries[idx].leaf_mappings() == set![removed],
+            !other.view_rec().contains(removed),
+        ensures
+            other.view_rec() == self.view_rec().remove(removed).union(
+                other.view_rec_at(child, other.node(child).node.level as nat)),
+    {
+        self.lemma_node_inv(self.root);
+        other.lemma_node_inv(other.root);
+        other.lemma_node_inv(child);
+        let added = other.view_rec_at(child, other.node(child).node.level as nat);
+        assert forall|m: Mapping| #[trigger] other.view_rec().contains(m)
+            implies self.view_rec().remove(removed).union(added).contains(m) by {
+            other.lemma_view_leaf_witness(other.root, NR_LEVELS as nat, m);
+            let (node, i) = choose|node: Paddr, i: int| other.contains_node(node) && 0 <= i < NR_ENTRIES
+                && (#[trigger] other.node(node).entries[i]).is_frame()
+                && other.node(node).entries[i].leaf_mappings().contains(m);
+            if node == child {
+                assert(other.reachable_from(child, child, 0)) by {
+                    reveal(FlatPageTableOwner::reachable_from);
+                };
+                other.lemma_reachable_leaf_mapping(child, child, other.node(child).node.level as nat,
+                    0, i, m);
+            } else {
+                assert(node != parent || i != idx);
+                assert(self.contains_node(node));
+                assert(self.node(node).entries[i] == other.node(node).entries[i]);
+                self.lemma_reachable_leaf_mapping(self.root, node, NR_LEVELS as nat,
+                    NR_LEVELS as nat, i, m);
+            }
+        };
+        assert forall|m: Mapping| self.view_rec().remove(removed).union(added).contains(m)
+            implies #[trigger] other.view_rec().contains(m) by {
+            if added.contains(m) {
+                other.lemma_view_leaf_witness(child, other.node(child).node.level as nat, m);
+                let (node, i) = choose|node: Paddr, i: int| other.contains_node(node) && 0 <= i < NR_ENTRIES
+                    && (#[trigger] other.node(node).entries[i]).is_frame()
+                    && other.node(node).entries[i].leaf_mappings().contains(m);
+                other.lemma_reachable_leaf_mapping(other.root, node, NR_LEVELS as nat,
+                    NR_LEVELS as nat, i, m);
+            } else {
+                self.lemma_view_leaf_witness(self.root, NR_LEVELS as nat, m);
+                let (node, i) = choose|node: Paddr, i: int| self.contains_node(node) && 0 <= i < NR_ENTRIES
+                    && (#[trigger] self.node(node).entries[i]).is_frame()
+                    && self.node(node).entries[i].leaf_mappings().contains(m);
+                assert(node != parent || i != idx);
+                assert(other.contains_node(node));
+                assert(other.node(node).entries[i] == self.node(node).entries[i]);
+                other.lemma_reachable_leaf_mapping(other.root, node, NR_LEVELS as nat,
+                    NR_LEVELS as nat, i, m);
+            }
+        };
+    }
+
+    pub(crate) proof fn lemma_huge_leaf_insert_mappings(
+        self, other: Self, parent: Paddr, idx: int, child: Paddr,
+    )
+        requires
+            self.inv(), other.inv(),
+            self.leaf_node_insert(other, parent, idx, child),
+            self.node(parent).entries[idx].is_frame(),
+            forall|i: int| 0 <= i < NR_ENTRIES ==> {
+                let entry = #[trigger] other.node(child).entries[i];
+                &&& entry.is_frame()
+                &&& entry.frame().prop == self.node(parent).entries[idx].frame().prop
+                &&& entry.frame().mapped_pa == self.node(parent).entries[idx].frame().mapped_pa
+                    + i * page_size::<C>(other.node(child).node.level)
+            },
+        ensures
+            other.view_rec() == self.view_rec().remove(self.node(parent).entries[idx].leaf_mappings().choose()).union(
+                Set::<int>::range(0, NR_ENTRIES as int).map(|i: int|
+                    crate::specs::mm::page_table::cursor::owners::CursorView::<C>::split_index(
+                        self.node(parent).entries[idx].leaf_mappings().choose(),
+                        page_size::<C>(other.node(child).node.level), i as usize))),
+    {
+        use crate::specs::mm::page_table::cursor::owners::CursorView;
+        use crate::specs::mm::page_table::cursor::page_size_lemmas::{lemma_page_size_next, lemma_page_size_ge_base};
+        use crate::specs::mm::page_table::owners::{PageTableOwner, lemma_vaddr_of_eq_int};
+        broadcast use Set::lemma_flatten_contains;
+        C::lemma_paging_consts_properties();
+        self.lemma_node_inv(parent);
+        other.lemma_node_inv(parent);
+        other.lemma_node_inv(child);
+        other.lemma_node_inv(other.root);
+        let entry = self.node(parent).entries[idx];
+        let actual = Mapping {
+            va_range: (vaddr_of::<C>(entry.path) as int)..vaddr_of::<C>(entry.path) + page_size::<C>(entry.parent_level),
+            pa_range: entry.frame().mapped_pa..(entry.frame().mapped_pa + page_size::<C>(entry.parent_level)) as Paddr,
+            page_size: page_size::<C>(entry.parent_level), property: entry.frame().prop,
+        };
+        vstd::set::lemma_set_contains_len(entry.leaf_mappings(), actual);
+        vstd::set::lemma_set_choose_len(entry.leaf_mappings());
+        let removed = entry.leaf_mappings().choose();
+        assert(removed == actual);
+        assert(entry.leaf_mappings() == set![removed]);
+        let level = other.node(child).node.level;
+        let size = page_size::<C>(level);
+        lemma_page_size_ge_base::<C>(level);
+        lemma_page_size_next::<C>(level);
+        assert(page_size::<C>(entry.parent_level) > size) by (nonlinear_arith)
+            requires page_size::<C>(entry.parent_level) == size * NR_ENTRIES, size > 0, NR_ENTRIES > 1;
+        reveal(FlatPageTableOwner::view_rec_at);
+        reveal(FlatPageTableOwner::view_node_children);
+        let children = other.view_node_children(child, level as nat);
+        assert(other.node(child).path == entry.path);
+        assert forall|i: int| 0 <= i < NR_ENTRIES implies
+            #[trigger] children[i] == set![CursorView::<C>::split_index(removed, size, i as usize)] by {
+            entry.path.lemma_push_tail_preserves_inv(i);
+            PageTableOwner::<C>::lemma_vaddr_push_tail_eq(entry.path, i);
+            lemma_vaddr_of_eq_int::<C>(entry.path);
+            lemma_vaddr_of_eq_int::<C>(entry.path.push_tail(i));
+            vstd::arithmetic::mul::lemma_mul_is_distributive_add_other_way(size as int, i, 1);
+            let sub = other.node(child).entries[i];
+            assert(sub.path == entry.path.push_tail(i));
+            assert(sub.parent_level == level);
+            let m = Mapping {
+                va_range: (vaddr_of::<C>(sub.path) as int)..vaddr_of::<C>(sub.path) + size,
+                pa_range: sub.frame().mapped_pa..(sub.frame().mapped_pa + size) as Paddr,
+                page_size: size, property: sub.frame().prop,
+            };
+            let split = CursorView::<C>::split_index(removed, size, i as usize);
+            assert(children[i] == set![m]);
+            assert(m.va_range == split.va_range);
+            assert(m.pa_range == split.pa_range);
+            assert(m == split);
+        };
+        let added = Set::<int>::range(0, NR_ENTRIES as int).map(|i: int|
+            CursorView::<C>::split_index(removed, size, i as usize));
+        assert(other.view_rec_at(child, level as nat) == added) by {
+            assert forall|m: Mapping| #[trigger] other.view_rec_at(child, level as nat).contains(m)
+                implies added.contains(m) by {
+                let set = choose|set: Set<Mapping>| children.to_set().contains(set) && set.contains(m);
+                let i = choose|i: int| 0 <= i < children.len() && children[i] == set;
+                assert(Set::<int>::range(0, NR_ENTRIES as int).contains(i));
+            };
+            assert forall|m: Mapping| #[trigger] added.contains(m)
+                implies other.view_rec_at(child, level as nat).contains(m) by {
+                let i = choose|i: int| Set::<int>::range(0, NR_ENTRIES as int).contains(i)
+                    && CursorView::<C>::split_index(removed, size, i as usize) == m;
+                assert(children[i].contains(m));
+                assert(children.to_set().contains(children[i]));
+            };
+        };
+        let first = CursorView::<C>::split_index(removed, size, 0);
+        assert(children[0] == other.node(child).entries[0].leaf_mappings());
+        assert(other.node(child).entries[0].leaf_mappings().contains(first));
+        other.lemma_reachable_leaf_mapping(other.root, child, NR_LEVELS as nat, NR_LEVELS as nat, 0, first);
+        other.lemma_view_rec_at_ranges(other.root, NR_LEVELS as nat);
+        assert(!other.view_rec().contains(removed)) by {
+            if other.view_rec().contains(removed) {
+                assert(removed != first);
+                assert(Mapping::disjoint_vaddrs(removed, first));
+                assert(false);
+            }
+        };
+        self.lemma_leaf_node_insert_mappings(other, parent, idx, child, removed);
+    }
+
+    /// Decreasing paging levels make local edge invariants sufficient for subtree validity.
+    proof fn lemma_subtree_from_locals(self, from: Paddr, depth: nat)
+        requires
+            self.contains_node(from),
+            self.node(from).node.level == depth,
+            forall|paddr: Paddr| #[trigger] self.contains_node(paddr) ==> self.local_node_inv(paddr),
+        ensures self.subtree_inv_at(from, depth),
+        decreases depth,
+    {
+        reveal_with_fuel(FlatPageTableOwner::subtree_inv_at, 2);
+        assert(self.local_node_inv(from));
+        assert forall|i: int| 0 <= i < NR_ENTRIES
+            && (#[trigger] self.node(from).entries[i]).is_node() implies
+            self.subtree_inv_at(self.node(from).entries[i].child_paddr(), (depth - 1) as nat) by {
+            self.lemma_subtree_from_locals(self.node(from).entries[i].child_paddr(), (depth - 1) as nat);
+        };
+    }
+
+    proof fn lemma_insert_preserves_reachable(self, other: Self, from: Paddr, target: Paddr,
+        steps: nat, parent: Paddr, idx: int, child: Paddr)
+        requires self.leaf_node_insert(other, parent, idx, child), self.reachable_from(from, target, steps),
+        ensures other.reachable_from(from, target, steps),
+        decreases steps,
+    {
+        reveal_with_fuel(FlatPageTableOwner::reachable_from, 2);
+        if from != target {
+            let i = choose|i: int| 0 <= i < NR_ENTRIES && {
+                let entry = #[trigger] self.node(from).entries[i];
+                entry.is_node() && self.reachable_from(entry.child_paddr(), target, (steps - 1) as nat)
+            };
+            assert(from != parent || i != idx);
+            assert(other.node(from).entries[i] == self.node(from).entries[i]);
+            self.lemma_insert_preserves_reachable(other, self.node(from).entries[i].child_paddr(),
+                target, (steps - 1) as nat, parent, idx, child);
+        }
+    }
+
+    proof fn lemma_insert_child_reachable(self, other: Self, from: Paddr, depth: nat,
+        steps: nat, parent: Paddr, idx: int, child: Paddr)
+        requires
+            self.leaf_node_insert(other, parent, idx, child),
+            self.subtree_inv_at(from, depth),
+            self.reachable_from(from, parent, steps),
+        ensures other.reachable_from(from, child, depth),
+        decreases steps,
+    {
+        reveal_with_fuel(FlatPageTableOwner::reachable_from, 2);
+        reveal_with_fuel(FlatPageTableOwner::subtree_inv_at, 2);
+        if from == parent {
+            assert(depth > 1);
+            assert(other.reachable_from(child, child, (depth - 1) as nat));
+        } else {
+            let i = choose|i: int| 0 <= i < NR_ENTRIES && {
+                let entry = #[trigger] self.node(from).entries[i];
+                entry.is_node() && self.reachable_from(entry.child_paddr(), parent, (steps - 1) as nat)
+            };
+            assert(from != parent || i != idx);
+            assert(other.node(from).entries[i] == self.node(from).entries[i]);
+            self.lemma_insert_child_reachable(other, self.node(from).entries[i].child_paddr(),
+                (depth - 1) as nat, (steps - 1) as nat, parent, idx, child);
+        }
+    }
+
+    /// Attaching a fresh leaf-only node preserves the global flat ownership graph.
+    pub(crate) proof fn lemma_leaf_node_insert_inv(self, other: Self, parent: Paddr, idx: int, child: Paddr)
+        requires
+            self.inv(),
+            self.leaf_node_insert(other, parent, idx, child),
+            forall|paddr: Paddr| #[trigger] other.contains_node(paddr) ==> other.local_node_inv(paddr),
+            other.raw_node_permissions.dom() == other.nodes.dom().remove(other.root),
+            forall|paddr: Paddr| #[trigger] other.raw_node_permissions.contains_key(paddr) ==> {
+                &&& other.raw_node_permissions[paddr].frac() == 1
+                &&& other.node(paddr).node.permission_matches(other.raw_node_permissions[paddr])
+            },
+        ensures other.inv(),
+    {
+        self.lemma_node_inv(self.root);
+        other.lemma_subtree_from_locals(other.root, NR_LEVELS as nat);
+        self.lemma_insert_child_reachable(other, self.root, NR_LEVELS as nat, NR_LEVELS as nat, parent, idx, child);
+        reveal(FlatPageTableOwner::unique_parent);
+        assert forall|p1: Paddr, p2: Paddr, i: int, j: int|
+            other.contains_node(p1) && other.contains_node(p2) && 0 <= i < NR_ENTRIES && 0 <= j < NR_ENTRIES
+            && (#[trigger] other.node(p1).entries[i]).is_node()
+            && (#[trigger] other.node(p2).entries[j]).is_node()
+            && other.node(p1).entries[i].child_paddr() == other.node(p2).entries[j].child_paddr()
+            implies p1 == p2 && i == j by {
+            assert(p1 != child && p2 != child);
+            assert(self.contains_node(p1) && self.contains_node(p2));
+            if p1 != parent || i != idx {
+                assert(other.node(p1).entries[i] == self.node(p1).entries[i]);
+                assert(self.node(p1).entries[i].is_node());
+                self.lemma_node_inv(p1);
+                assert(self.contains_node(self.node(p1).entries[i].child_paddr()));
+            }
+            if p2 != parent || j != idx {
+                assert(other.node(p2).entries[j] == self.node(p2).entries[j]);
+                assert(self.node(p2).entries[j].is_node());
+                self.lemma_node_inv(p2);
+                assert(self.contains_node(self.node(p2).entries[j].child_paddr()));
+            }
+        };
+        assert forall|paddr: Paddr| #[trigger] other.contains_node(paddr) implies
+            other.reachable_from(other.root, paddr, NR_LEVELS as nat) by {
+            if paddr != child {
+                assert(self.contains_node(paddr));
+                self.lemma_insert_preserves_reachable(other, self.root, paddr, NR_LEVELS as nat, parent, idx, child);
+            }
+        };
+        assert forall|paddr: Paddr, i: int| other.contains_node(paddr) && 0 <= i < NR_ENTRIES
+            && (#[trigger] other.node(paddr).entries[i]).is_node() implies
+            other.node(paddr).entries[i].child_paddr() != other.root by {
+            assert(paddr != child);
+            assert(self.contains_node(paddr));
+            if paddr != parent || i != idx {
+                assert(other.node(paddr).entries[i] == self.node(paddr).entries[i]);
+                assert(self.node(paddr).entries[i].is_node());
+            }
+        };
+    }
+
     /// Leaf updates may change PTEs and frame properties without changing
     /// the address graph, node levels, or paths in the flat store.
     pub open spec fn same_node_edges(self, other: Self) -> bool {
@@ -3626,6 +3981,88 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
         &&& self.nodes_metaregion_sound(regions)
         &&& self.raw_nodes_metaregion_sound(regions)
         &&& self.entries_metaregion_sound(regions)
+    }
+
+    /// Allocating a non-MMIO free slot and adding frame paths preserves all
+    /// metadata relations of the previously owned graph.
+    pub(crate) proof fn lemma_metaregion_fresh_slot_preserved(
+        self, before: MetaRegionOwners, after: MetaRegionOwners, fresh: Paddr,
+    )
+        requires
+            self.inv(), self.metaregion_sound(before), before.inv(), after.inv(),
+            valid_frame_paddr(fresh),
+            before.contains(frame_to_index(fresh)),
+            before.ref_count(frame_to_index(fresh)) == REF_COUNT_UNUSED,
+            !crate::specs::mm::frame::meta_owners::is_mmio_paddr(fresh),
+            forall|i: int| #[trigger] before.slots.contains_key(i) && i != frame_to_index(fresh) ==> {
+                &&& after.slots[i] == before.slots[i]
+                &&& after.slot_owners[i].same_permissions(before.slot_owners[i])
+                &&& after.slot_owners[i].usage == before.slot_owners[i].usage
+                &&& before.slot_owners[i].paths_in_pt.subset_of(after.slot_owners[i].paths_in_pt)
+                &&& before.slot_owners[i].usage is PageTable ==>
+                    after.slot_owners[i].paths_in_pt == before.slot_owners[i].paths_in_pt
+            },
+        ensures self.metaregion_sound(after),
+    {
+        use crate::specs::mm::frame::meta_owners::axiom_mmio_usage_iff_mmio_paddr;
+        broadcast use crate::specs::mm::frame::mapping::lemma_frame_to_index_injective;
+        let changed = frame_to_index(fresh);
+        assert forall|i: int| #[trigger] before.slots.contains_key(i)
+            <==> after.slots.contains_key(i) by {
+            if before.slots.contains_key(i) || after.slots.contains_key(i) {
+                assert(0 <= i < max_meta_slots());
+                assert(before.slot_owners.contains_key(i) && after.slot_owners.contains_key(i));
+            }
+        };
+        assert forall|paddr: Paddr| #[trigger] self.contains_node(paddr) implies {
+            let record = self.node(paddr);
+            let idx = record.node.slot_index;
+            &&& after.ref_count(idx) != REF_COUNT_UNUSED
+            &&& 0 < after.ref_count(idx) <= REF_COUNT_MAX
+            &&& after.slot_owners[idx].slot_vaddr == record.node.slot_vaddr()
+            &&& after.slots[idx].value().wf(after.slot_owners[idx])
+            &&& after.slot_owners[idx].paths_in_pt == set![record.path]
+            &&& record.node.metaregion_sound_node(after)
+        } by {
+            assert(self.node(paddr).node.slot_index != changed);
+            let idx = self.node(paddr).node.slot_index;
+            assert(before.slots.contains_key(idx));
+            assert(after.contains(idx));
+            assert(after.slot_owners[idx].slot_vaddr == index_to_meta(idx));
+        };
+        assert forall|paddr: Paddr| #[trigger] self.raw_node_permissions.contains_key(paddr) implies
+            self.contains_node(paddr) && self.node(paddr).node.metaregion_sound(
+                self.raw_node_permissions[paddr], after) by {
+            assert(self.node(paddr).node.slot_index != changed);
+        };
+        assert forall|paddr: Paddr, i: int| self.contains_node(paddr) && 0 <= i < NR_ENTRIES
+            implies #[trigger] self.node(paddr).entries[i].metaregion_sound(after) by {
+            self.lemma_node_inv(paddr);
+            let entry = self.node(paddr).entries[i];
+            assert(entry.metaregion_sound(before));
+            if entry.is_frame() {
+                let idx = frame_to_index(entry.frame().mapped_pa);
+                axiom_mmio_usage_iff_mmio_paddr(before.slot_owner(fresh));
+                assert(idx != changed);
+                C::lemma_perm_well_formed_with_region_preserved(
+                    entry.frame().mapped_pa, Tracked(entry.frame_permission()), before, after);
+                assert forall|j: usize| #![trigger frame_to_index(
+                    (entry.frame().mapped_pa + j * PAGE_SIZE) as Paddr)]
+                    entry.parent_level > 1 && 0 < j < page_size::<C>(entry.parent_level) / PAGE_SIZE implies {
+                    let sub = frame_to_index((entry.frame().mapped_pa + j * PAGE_SIZE) as Paddr);
+                    &&& after.slots.contains_key(sub)
+                    &&& entry.frame_is_tracked() ==> {
+                        &&& after.ref_count(sub) != REF_COUNT_UNUSED
+                        &&& 0 < after.ref_count(sub) <= REF_COUNT_MAX
+                    }
+                } by {
+                    assert(entry.frame_sub_pages_valid(before));
+                    if entry.frame_is_tracked() {
+                        assert(frame_to_index((entry.frame().mapped_pa + j * PAGE_SIZE) as Paddr) != changed);
+                    }
+                };
+            }
+        };
     }
 
     /// Cloning a data-frame reference changes neither the node resources nor
@@ -4431,7 +4868,11 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             record.node.permission_matches(*loan.permission),
         ensures
             result.root == self.root,
+            *result.root.record == *old(self.root.record),
             result.leases.dom() == self.leases.dom().insert(loan.paddr),
+            result.leases[loan.paddr].paddr == loan.paddr,
+            forall|other: Paddr| self.contains_raw_leased(other) ==>
+                #[trigger] result.leases[other] == self.leases[other],
             forall|other: Paddr| self.contains_leased(other) ==>
                 #[trigger] result.leased_record(other) == self.leased_record(other),
             *result.remainder.nodes == *old(self.remainder.nodes),
@@ -4441,12 +4882,14 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             result.contains_raw_leased(loan.paddr),
             result.leased_record(loan.paddr) == record,
             result.leases[loan.paddr].permission == loan.permission,
+            self.inv() && record.local_inv() ==> result.inv(),
             result.writeback_node_map() == self.writeback_node_map(),
             result.writeback_permission_map() == Map::empty().insert(
                 loan.paddr,
                 *loan.permission,
             ).union_prefer_right(self.writeback_permission_map()),
     {
+        reveal(FlatCursorResources::inv);
         let tracked Self { root, remainder, mut leases } = self;
         let tracked (lease, remainder) = remainder.tracked_insert_lent_node(record, loan);
         leases.tracked_insert(loan.paddr, lease);

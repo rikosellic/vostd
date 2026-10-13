@@ -704,7 +704,15 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             cursor_owner.current_record().node.level == cursor_owner.level,
             cursor_owner.level < NR_LEVELS,
         ensures
+            final_cursor_owner@.resources.inv(),
+            final_cursor_owner@.as_page_table_owner().inv(),
+            final_cursor_owner@.inv(),
+            cursor_owner.metaregion_sound(*final(regions)),
+            final_cursor_owner@.metaregion_sound(*final(regions)),
             (res is Some) == (cursor_owner.current_entry().is_frame() && cursor_owner.level > 1),
+            res is Some && cursor_owner.in_locked_range() ==>
+                final_cursor_owner@.view().mappings == cursor_owner.view().split_if_mapped_huge_spec(
+                    page_size::<C>((cursor_owner.level - 1) as PagingLevel)).mappings,
             final_cursor_owner@.root == cursor_owner.root,
             final_cursor_owner@.level == cursor_owner.level,
             final_cursor_owner@.guard_level == cursor_owner.guard_level,
@@ -719,6 +727,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             res is Some ==> {
                 &&& res is Some
                 &&& final_cursor_owner@.current_entry().is_node()
+                &&& cursor_owner.as_page_table_owner().leaf_node_insert(
+                    final_cursor_owner@.as_page_table_owner(), cursor_owner.current_paddr(),
+                    cursor_owner.current().idx as int, final_cursor_owner@.current_entry().child_paddr())
                 &&& final_cursor_owner@.resources.leased_record(
                     final_cursor_owner@.current_entry().child_paddr(),
                 ).local_inv()
@@ -764,6 +775,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             final(self).idx == old(self).idx,
             final(regions).inv(),
             final(self).node.inner.inner@.ptr.addr() == old(self).node.inner.inner@.ptr.addr(),
+            mut_ref_future(old(self).node) == mut_ref_future(final(self).node),
+            *final(self).node == *old(self).node,
             forall |i: usize| old(guards).lock_held(i) ==> final(guards).lock_held(i),
             forall |i: usize| old(guards).unlocked(i)
                 && (res is None || i != res->0.inner.inner@.ptr.addr())
@@ -789,6 +802,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         let pa = self.pte.paddr();
         let prop = self.pte.prop();
         let ghost huge_entry = cursor_owner.current_entry().leaf_decode_model();
+        let ghost original_owner = cursor_owner;
         proof {
             C::lemma_huge_raw_item_untracked(
                 pa, level, prop, Tracked(huge_entry.frame_permission()),
@@ -845,6 +859,10 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             paddr,
             permission,
         );
+        proof {
+            reveal(crate::specs::mm::page_table::FlatCursorResources::inv);
+            assert(resources.inv());
+        }
 
         // SAFETY: The live node is retained until Child::into_pte below.
         // Its metadata loan remains valid for the returned guard's lifetime.
@@ -861,6 +879,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         proof {
             C::lemma_paging_consts_properties();
             assert(nr_subpage_per_huge_spec::<C>() == NR_ENTRIES);
+            original_owner.as_page_table_owner().lemma_node_inv(root);
+            assert(parent_paddr != resources.root.paddr);
         }
 
         for i in 0..nr_subpage_per_huge::<C>()
@@ -877,6 +897,26 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 huge_entry.frame_permission() is None,
                 crate::specs::mm::frame::meta_owners::is_mmio_paddr(pa),
                 resources.can_insert_raw_node(paddr),
+                resources.inv(),
+                resources.owner_view() == original_owner.as_page_table_owner(),
+                original_owner.inv(),
+                original_owner.level == level,
+                original_owner.current_paddr() == parent_paddr,
+                parent_paddr != resources.root.paddr,
+                regions_before_alloc.inv(),
+                original_owner.metaregion_sound(regions_before_alloc),
+                valid_frame_paddr(paddr),
+                !crate::specs::mm::frame::meta_owners::is_mmio_paddr(paddr),
+                regions_before_alloc.ref_count(frame_to_index(paddr)) == REF_COUNT_UNUSED,
+                forall|key: int| #[trigger] regions_before_alloc.slots.contains_key(key)
+                    && key != frame_to_index(paddr) ==> {
+                    &&& regions.slots[key] == regions_before_alloc.slots[key]
+                    &&& regions.slot_owners[key].same_permissions(regions_before_alloc.slot_owners[key])
+                    &&& regions.slot_owners[key].usage == regions_before_alloc.slot_owners[key].usage
+                    &&& regions_before_alloc.slot_owners[key].paths_in_pt.subset_of(regions.slot_owners[key].paths_in_pt)
+                    &&& regions_before_alloc.slot_owners[key].usage is PageTable ==>
+                        regions.slot_owners[key].paths_in_pt == regions_before_alloc.slot_owners[key].paths_in_pt
+                },
                 new_record.paddr() == paddr,
                 new_record.node.level == level - 1,
                 new_record.node.relate_guard(pt_lock_guard),
@@ -895,6 +935,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 forall|j: int| 0 <= j < i ==> #[trigger] new_record.entries[j].frame().mapped_pa
                     == pa + j * page_size::<C>((level - 1) as PagingLevel),
                 forall|j: int| 0 <= j < i ==> #[trigger] new_record.entries[j].frame_permission() is None,
+                forall|j: int| 0 <= j < i ==> #[trigger] new_record.entries[j].metaregion_sound(*regions),
                 forall|j: int|
                     0 <= j < NR_ENTRIES ==> #[trigger] new_record.entries[j].parent_level == level
                         - 1,
@@ -908,6 +949,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 C::lemma_paging_consts_properties();
                 huge_entry.huge_frame_split_child_at(*regions, i);
             }
+            let ghost regions_before_subpage = *regions;
+            let ghost entries_before_subpage = new_record.entries;
             let small_pa = pa + i * page_size::<C>(level - 1);
             let ghost entry_path = new_record.entries[i as int].path;
 
@@ -988,6 +1031,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
             proof {
                 assert(new_record.node.relate_guard(*entry.node));
+                let ghost written_model = new_owner;
                 let tracked frame = match new_owner.kind {
                     EntryOwnerKind::Frame(frame) => frame,
                     _ => proof_from_false(),
@@ -1001,6 +1045,21 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                     },
                 );
                 assert(new_record.node.relate_guard(*entry.node));
+                assert forall|j: int| 0 <= j <= i implies
+                    #[trigger] new_record.entries[j].metaregion_sound(*regions) by {
+                    let current = new_record.entries[j];
+                    C::lemma_none_perm_well_formed(current.frame().mapped_pa, *regions);
+                    if j < i {
+                        assert(current == entries_before_subpage[j]);
+                        assert(current.metaregion_sound(regions_before_subpage));
+                        C::lemma_perm_well_formed_with_region_preserved(
+                            current.frame().mapped_pa, Tracked(current.frame_permission()),
+                            regions_before_subpage, *regions);
+                    } else {
+                        assert(current.leaf_decode_model() == written_model);
+                        assert(written_model.metaregion_sound(*regions));
+                    }
+                };
             }
         }
 
@@ -1008,6 +1067,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         // after all child PTEs have been initialized. The legacy Child API
         // temporarily carries the same structural node owner, with no second
         // metadata token; the existing loan is adopted by the raw-node lease.
+        let ghost root_record_before_publish = *resources.root.record;
+        let ghost initialized_entries = new_record.entries;
+        let ghost regions_before_publish = *regions;
         let tracked FlatNodeRecord { node, entries, path } = new_record;
         let tracked mut pte_owner = EntryOwner::tracked_new_node(node, None, path);
         self.pte = #[verus_spec(with Tracked(&mut pte_owner))]
@@ -1020,13 +1082,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             // The live Frame kept the permission until Child::into_pte above.
             let tracked new_slot = regions.tracked_borrow_mut_slot_owner(paddr);
             new_slot.paths_in_pt = set![child_path];
-            let tracked parent_record = resources.tracked_borrow_record_mut(parent_paddr);
-            parent_record.tracked_set_entry(
-                self.idx as int,
-                FlatEntryOwner::tracked_new_node(paddr, child_path, level),
-            );
         }
         let tracked mut resources = resources.tracked_insert_lent_node(new_record, loan);
+        let ghost parent_permission = *resources.leases[parent_paddr].permission;
         unsafe {
             let tracked parent_record = resources.tracked_borrow_record_mut(parent_paddr);
             proof {
@@ -1035,9 +1093,17 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 assert(regions.slot_owners.contains_key(parent_record.node.slot_index));
                 assert(regions.slots.contains_key(parent_record.node.slot_index));
                 assert(regions.contains(parent_record.node.slot_index));
+                parent_record.tracked_set_entry(
+                    self.idx as int,
+                    FlatEntryOwner::tracked_new_node(paddr, child_path, level),
+                );
             }
             #[verus_spec(with Tracked(&mut parent_record.node), Tracked(&*regions))]
-            self.node.write_pte(self.idx, self.pte)
+            self.node.write_pte(self.idx, self.pte);
+            proof {
+                assert(parent_record.local_inv());
+                assert(parent_record.node.permission_matches(parent_permission));
+            }
         };
 
         let tracked cursor_owner = FlatCursorOwner {
@@ -1051,6 +1117,160 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             barrier_va,
             popped_too_high,
         };
+        proof {
+            reveal(crate::specs::mm::page_table::FlatCursorResources::inv);
+            assert(*cursor_owner.resources.root.record == root_record_before_publish);
+            assert forall|key: Paddr| #[trigger] cursor_owner.resources.leases.contains_key(key) implies {
+                let lease = cursor_owner.resources.leases[key];
+                &&& lease.paddr == key
+                &&& lease.record.paddr() == key
+                &&& lease.record.local_inv()
+                &&& lease.permission.frac() == 1
+                &&& lease.record.node.permission_matches(*lease.permission)
+            } by {
+                if key != paddr && key != parent_paddr {
+                    assert(original_owner.resources.contains_raw_leased(key));
+                    assert(cursor_owner.resources.leased_record(key)
+                        == original_owner.resources.leased_record(key));
+                    assert(original_owner.resources.inv());
+                }
+            };
+            assert(cursor_owner.resources.inv());
+            assert(original_owner.as_page_table_owner().leaf_node_insert(
+                cursor_owner.as_page_table_owner(), parent_paddr, self.idx as int, paddr));
+            let before = original_owner.as_page_table_owner();
+            let after = cursor_owner.as_page_table_owner();
+            assert forall|key: Paddr| #[trigger] after.contains_node(key) implies after.local_node_inv(key) by {
+                assert(after.node(key).local_inv());
+                if key != paddr {
+                    assert(before.contains_node(key));
+                    before.lemma_node_inv(key);
+                }
+                assert forall|i: int| 0 <= i < NR_ENTRIES
+                    && (#[trigger] after.node(key).entries[i]).is_node() implies {
+                    let entry = after.node(key).entries[i];
+                    &&& after.contains_node(entry.child_paddr())
+                    &&& after.raw_node_permissions.contains_key(entry.child_paddr())
+                    &&& after.node(entry.child_paddr()).path == entry.path
+                    &&& after.node(entry.child_paddr()).node.level + 1 == after.node(key).node.level
+                } by {
+                    if key != parent_paddr || i != self.idx {
+                        assert(key != paddr);
+                        assert(before.node(key).entries[i].is_node());
+                        assert(after.node(key).entries[i] == before.node(key).entries[i]);
+                    }
+                };
+            };
+            assert(after.raw_node_permissions.dom() == after.nodes.dom().remove(after.root));
+            assert forall|key: Paddr| #[trigger] after.raw_node_permissions.contains_key(key) implies {
+                &&& after.raw_node_permissions[key].frac() == 1
+                &&& after.node(key).node.permission_matches(after.raw_node_permissions[key])
+            } by {
+                if cursor_owner.resources.leases.contains_key(key) {
+                    assert(cursor_owner.resources.contains_raw_leased(key));
+                } else {
+                    assert(cursor_owner.resources.remainder.permissions.contains_key(key));
+                }
+            };
+            before.lemma_leaf_node_insert_inv(after, parent_paddr, self.idx as int, paddr);
+            assert(cursor_owner.continuations == original_owner.continuations);
+            assert(cursor_owner.level == original_owner.level);
+            assert forall|key: int| #[trigger] cursor_owner.continuations.contains_key(key)
+                implies cursor_owner.continuation_inv(key) by {
+                assert(original_owner.continuation_inv(key));
+                let cont = cursor_owner.continuations[key];
+                assert(cursor_owner.resources.contains_leased(cont.node));
+                assert(cursor_owner.resources.leased_record(cont.node).path == cont.path);
+                assert(cursor_owner.resources.leased_record(cont.node).node.level == cont.level);
+                assert(cursor_owner.resources.leased_record(cont.node).node.relate_guard(cont.guard));
+                if cont.node != cursor_owner.root {
+                    assert(cursor_owner.resources.contains_raw_leased(cont.node));
+                    assert(**cont.guard.inner.tracked_metadata_perm
+                        == *cursor_owner.resources.leases[cont.node].permission);
+                }
+            };
+            assert forall|key: int| #[trigger] cursor_owner.continuations.contains_key(key)
+                && key < cursor_owner.guard_level - 1 implies {
+                let child = cursor_owner.continuations[key];
+                let parent = cursor_owner.continuations[key + 1];
+                let record = cursor_owner.resources.leased_record(parent.node);
+                &&& child.path == parent.path.push_tail(parent.idx as int)
+                &&& record.entries[parent.idx as int].is_node()
+                &&& record.entries[parent.idx as int].child_paddr() == child.node
+            } by {
+                let parent = cursor_owner.continuations[key + 1];
+                assert(original_owner.continuations.contains_key(key + 1));
+                assert(original_owner.continuation_inv(key + 1));
+                assert(parent.node != parent_paddr);
+                assert(after.node(parent.node).entries == before.node(parent.node).entries);
+            };
+            assert(cursor_owner.inv());
+            before.lemma_metaregion_fresh_slot_preserved(regions_before_alloc, *regions, paddr);
+            crate::specs::mm::page_table::node::owners::lemma_count_present_upto_update(
+                before.node(parent_paddr).node.children_perm.value(), NR_ENTRIES as int,
+                self.idx as int, self.pte);
+            assert(after.node(parent_paddr).node.count_consistent());
+            assert forall|key: Paddr| #[trigger] after.contains_node(key) implies {
+                let record = after.node(key);
+                let idx = record.node.slot_index;
+                &&& regions.ref_count(idx) != REF_COUNT_UNUSED
+                &&& 0 < regions.ref_count(idx) <= crate::mm::frame::meta::REF_COUNT_MAX
+                &&& regions.slot_owners[idx].slot_vaddr == record.node.slot_vaddr()
+                &&& regions.slots[idx].value().wf(regions.slot_owners[idx])
+                &&& regions.slot_owners[idx].paths_in_pt == set![record.path]
+                &&& record.node.metaregion_sound_node(*regions)
+            } by {
+                if key != paddr {
+                    assert(before.contains_node(key));
+                    assert(before.nodes_metaregion_sound(*regions));
+                }
+            };
+            assert forall|key: Paddr| #[trigger] after.raw_node_permissions.contains_key(key) implies
+                after.contains_node(key) && after.node(key).node.metaregion_sound(
+                    after.raw_node_permissions[key], *regions) by {
+                if key != paddr {
+                    assert(before.raw_node_permissions.contains_key(key));
+                    assert(before.raw_nodes_metaregion_sound(*regions));
+                }
+            };
+            assert forall|key: Paddr, i: int| after.contains_node(key) && 0 <= i < NR_ENTRIES
+                implies #[trigger] after.node(key).entries[i].metaregion_sound(*regions) by {
+                if key == paddr {
+                    let current = after.node(key).entries[i];
+                    assert(current == initialized_entries[i]);
+                    assert(current.metaregion_sound(regions_before_publish));
+                    C::lemma_none_perm_well_formed(current.frame().mapped_pa, *regions);
+                    assert(frame_to_index(current.frame().mapped_pa) != frame_to_index(paddr));
+                    C::lemma_perm_well_formed_with_region_preserved(
+                        current.frame().mapped_pa, Tracked(current.frame_permission()),
+                        regions_before_publish, *regions);
+                } else if key != parent_paddr || i != self.idx {
+                    assert(before.contains_node(key));
+                    assert(after.node(key).entries[i] == before.node(key).entries[i]);
+                    assert(before.entries_metaregion_sound(*regions));
+                }
+            };
+        }
+        proof {
+            let before = original_owner.as_page_table_owner();
+            let after = cursor_owner.as_page_table_owner();
+            before.lemma_huge_leaf_insert_mappings(after, parent_paddr, self.idx as int, paddr);
+            if original_owner.in_locked_range() {
+                original_owner.lemma_view_inv();
+                original_owner.lemma_current_frame_present();
+                let entry = original_owner.current_entry();
+                let size = page_size::<C>((original_owner.level - 1) as PagingLevel);
+                crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_next::<C>(
+                    (original_owner.level - 1) as PagingLevel);
+                original_owner.view().lemma_query_mapping();
+                assert(entry.leaf_mappings() == set![original_owner.view().query_mapping()]);
+                vstd::set::lemma_set_choose_len(entry.leaf_mappings());
+                assert(entry.leaf_mappings().choose() == original_owner.view().query_mapping());
+                assert(page_size::<C>(original_owner.level) / size == NR_ENTRIES) by (nonlinear_arith)
+                    requires page_size::<C>(original_owner.level) == size * NR_ENTRIES, size > 0;
+                assert(cursor_owner.view().mappings == original_owner.view().split_if_mapped_huge_spec(size).mappings);
+            }
+        }
         #[verus_spec(with |= Tracked(cursor_owner))]
         Some(pt_lock_guard)
     }

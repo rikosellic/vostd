@@ -985,6 +985,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                     proof_decl! {
                         let tracked next_owner: FlatCursorOwner<'owner, 'rcu, C>;
                     }
+                    let ghost before_split = owner;
+                    let ghost already_split = split_happened;
+                    let ghost guards_before_split = *guards;
                     #[verus_spec(with
                         Tracked(owner), Tracked(regions), Tracked(guards) => Tracked(next_owner)
                     )]
@@ -1002,6 +1005,66 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                         split_happened = true;
                     }
                     self.push_level(split_child);
+                    proof {
+                        use crate::specs::mm::frame::mapping::lemma_meta_to_paddr_biinjective;
+                        let tree = owner.as_page_table_owner();
+                        let old_tree = before_split.as_page_table_owner();
+                        assert forall|key: int| #[trigger] owner.continuations.contains_key(key)
+                            implies guards.lock_held(owner.resources.leased_record(
+                                owner.continuations[key].node).node.slot_vaddr()) by {
+                            if key != owner.level - 1 {
+                                assert(before_split.continuations.contains_key(key));
+                                assert(before_split.continuation_inv(key));
+                            }
+                        };
+                        assert forall|key: Paddr| #[trigger] tree.contains_node(key)
+                            && !owner.is_path_node(key) implies guards.unlocked(tree.node(key).node.slot_vaddr()) by {
+                            assert(key != owner.current_paddr());
+                            assert(old_tree.contains_node(key));
+                            if before_split.is_path_node(key) {
+                                let k = choose|k: int| before_split.continuations.contains_key(k)
+                                    && before_split.continuations[k].node == key;
+                                assert(owner.continuations.contains_key(k));
+                                assert(owner.continuations[k].node == key);
+                                assert(owner.is_path_node(key));
+                            }
+                            assert(!before_split.is_path_node(key));
+                            assert(before_split.children_not_locked(guards_before_split));
+                            old_tree.lemma_node_inv(key);
+                            tree.lemma_node_inv(key);
+                            tree.lemma_node_inv(owner.current_paddr());
+                            lemma_meta_to_paddr_biinjective(old_tree.node(key).node.slot_vaddr());
+                            lemma_meta_to_paddr_biinjective(tree.node(key).node.slot_vaddr());
+                            assert(old_tree.node(key).node.slot_vaddr() == tree.node(key).node.slot_vaddr());
+                            assert(tree.node(key).node.slot_vaddr() != split_child.inner.inner@.ptr.addr());
+                        };
+                        assert(self.invariants_flat(owner, *regions, *guards));
+                        before_split.lemma_view_inv();
+                        before_split.lemma_current_frame_present();
+                        let large = page_size::<C>(before_split.level);
+                        let small = page_size::<C>(owner.level);
+                        lemma_page_size_next::<C>(owner.level);
+                        lemma_page_size_ge_base::<C>(owner.level);
+                        lemma_page_size_divides::<C>(owner.level, before_split.level);
+                        let base = initial_owner@.jump_spec(owner.va);
+                        assert(base.inv());
+                        base.lemma_split_while_huge_preserves_cur_va(large);
+                        if !already_split {
+                            before_split.lemma_current_split_noop();
+                            assert(before_split@ == base.split_while_huge(large));
+                        } else {
+                            assert(before_split@ == base.split_while_huge(large));
+                        }
+                        assert(before_split@.query_mapping().page_size == large);
+                        assert(large / NR_ENTRIES == small) by (nonlinear_arith)
+                            requires large == small * NR_ENTRIES, small > 0, NR_ENTRIES > 0;
+                        assert(large > small) by (nonlinear_arith)
+                            requires large == small * NR_ENTRIES, small > 0, NR_ENTRIES > 1;
+                        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_spec_values();
+                        before_split@.split_while_huge_one_step(small);
+                        base.split_while_huge_compose(large, small);
+                        assert(owner@.mappings == base.split_while_huge(small).mappings);
+                    }
                     continue;
                 },
             }
@@ -2139,11 +2202,20 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             decreases abs(level - self.0.level),
         )]
         while self.0.level != level {
+            proof {
+                C::lemma_paging_consts_properties();
+                owner.lemma_current_entry_inv(*regions);
+            }
             if self.0.level < level {
+                let ghost before_pop = owner;
+                let ghost guards_before_pop = *guards;
                 #[verus_spec(with Tracked(guards))]
                 self.0.pop_level();
                 proof {
                     owner.tracked_pop_level();
+                    before_pop.lemma_pop_level_locks(owner, guards_before_pop, *guards);
+                    owner.lemma_current_split_noop();
+                    assert(self.0.invariants_flat(owner, *regions, *guards));
                 }
                 continue;
             }
