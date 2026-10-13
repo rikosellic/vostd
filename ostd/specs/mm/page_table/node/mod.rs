@@ -1,12 +1,17 @@
 pub mod entry_owners;
+pub mod metadata_permissions;
 pub mod owners;
 
 use vstd::prelude::*;
 use vstd_extra::{cast_ptr::Repr, drop_tracking::*};
 
-use crate::specs::mm::frame::meta_owners::{MetaSlotStorage, StoredPageTablePageMeta};
+use crate::specs::mm::frame::{
+    frame_specs::FrameRawPerms,
+    meta_owners::{MetaSlotStorage, StoredPageTablePageMeta},
+};
 
 use crate::mm::{
+    Paddr,
     frame::Frame,
     page_table::{PageTableConfig, PageTableGuard, PageTablePageMeta},
 };
@@ -15,6 +20,13 @@ pub use entry_owners::*;
 pub use owners::*;
 
 verus! {
+
+/// Distributed counts owned by raw page-table entries, not structural owners
+/// or the metadata-region authority. Live frames keep their counts in `Frame`.
+pub type RawNodeMetadataPerms = Map<Paddr, FrameRawPerms>;
+pub type NodeMetadataPartition<'a> = metadata_permissions::MetadataPermissionPartition<
+    'a, Paddr, FrameRawPerms,
+>;
 
 pub tracked struct Guards {
     /// The set of node addresses that are currently guarded (locked).

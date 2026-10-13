@@ -227,15 +227,6 @@ impl<C: PageTableConfig> Inv for NodeOwner<C> {
 }
 
 impl<C: PageTableConfig> NodeOwner<C> {
-    pub proof fn tracked_borrow_frame_metadata_perm(
-        tracked permission: &FracMetadataPerm,
-    ) -> (tracked res: &MetadataPerm)
-        ensures
-            *res == permission.resource(),
-    {
-        permission.tracked_borrow()
-    }
-
     pub proof fn tracked_borrow_metadata_perm(tracked &self) -> tracked &MetadataPerm
         returns
             self.frame_permission.resource(),
@@ -334,6 +325,8 @@ impl<C: PageTableConfig> NodeOwner<C> {
 impl<'rcu, C: PageTableConfig> NodeOwner<C> {
     pub open spec fn relate_guard(self, guard: PageTableGuard<'rcu, C>) -> bool {
         &&& guard.inner.inner@.wf(self)
+        &&& guard.inner.inv()
+        &&& **guard.inner.tracked_metadata_perm == self.frame_permission
         &&& guard.inner.inner@.external_meta_wf(self.frame_permission.resource(), ())
     }
 }

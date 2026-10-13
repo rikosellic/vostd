@@ -373,9 +373,6 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
         if old_child.is_none() && !new_child.is_none() {
             #[verus_spec(with
-                Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
-                    &parent_owner.frame_permission,
-                )),
                 Ghost(parent_owner.meta_own.nr_children.id())
             )]
             let nr_children = self.node.nr_children_mut();
@@ -386,9 +383,6 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             nr_children.write(Tracked(&mut parent_owner.meta_own.nr_children), _tmp + 1);
         } else if !old_child.is_none() && new_child.is_none() {
             #[verus_spec(with
-                Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
-                    &parent_owner.frame_permission,
-                )),
                 Ghost(parent_owner.meta_own.nr_children.id())
             )]
             let nr_children = self.node.nr_children_mut();
@@ -685,9 +679,6 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             };
 
             #[verus_spec(with
-                Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
-                    &parent_owner.frame_permission,
-                )),
                 Ghost(parent_owner.meta_own.nr_children.id())
             )]
             let nr_children = self.node.nr_children_mut();
@@ -1594,9 +1585,6 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
 
         if old_child.is_none() && !new_child.is_none() {
             #[verus_spec(with
-                Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
-                    &parent_owner.frame_permission,
-                )),
                 Ghost(parent_owner.meta_own.nr_children.id())
             )]
             let nr_children = self.nr_children_mut();
@@ -1607,9 +1595,6 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             nr_children.write(Tracked(&mut parent_owner.meta_own.nr_children), _tmp + 1);
         } else if !old_child.is_none() && new_child.is_none() {
             #[verus_spec(with
-                Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
-                    &parent_owner.frame_permission,
-                )),
                 Ghost(parent_owner.meta_own.nr_children.id())
             )]
             let nr_children = self.nr_children_mut();
@@ -1891,9 +1876,6 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         // immutable).
 
         #[verus_spec(with
-            Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
-                &parent_owner.frame_permission,
-            )),
             Ghost(parent_owner.meta_own.nr_children.id())
         )]
         let nr_children = self.nr_children_mut();
@@ -2015,9 +1997,6 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         // For restoring `count_consistent` after the absent→frame install.
         let ghost cp0 = parent_owner.children_perm.value();
         #[verus_spec(with
-            Tracked(NodeOwner::<C>::tracked_borrow_frame_metadata_perm(
-                &parent_owner.frame_permission,
-            )),
             Ghost(parent_owner.meta_own.nr_children.id())
         )]
         let nr_children = self.nr_children_mut();

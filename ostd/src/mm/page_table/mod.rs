@@ -1032,7 +1032,7 @@ impl PageTable<KernelPtConfig> {
             root_ref.lock(preempt_guard)
         };
         let ghost regions_after_kroot_borrow: MetaRegionOwners = *regions;
-        let mut new_node: PageTableGuard<'rcu, UserPtConfig> = {
+        let mut new_node: PageTableGuard<'_, UserPtConfig> = {
             let new_ref = new_root.borrow();
             #[verus_spec(with Tracked(&new_node_owner), Tracked(guards))]
             new_ref.lock(preempt_guard)
