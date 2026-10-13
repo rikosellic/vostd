@@ -1171,6 +1171,11 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             result.leased_record(paddr) == record,
             result.root.paddr == self.root.paddr,
             result.leases.dom() == self.leases.dom().insert(paddr),
+            *result.root.record == *old(self.root.record),
+            result.leases[paddr].paddr == paddr,
+            forall|other: Paddr| self.leases.contains_key(other) ==>
+                #[trigger] result.leases[other] == self.leases[other],
+            self.inv() && record.local_inv() ==> result.inv(),
             *result.remainder.nodes == *old(self.remainder.nodes),
             *result.remainder.permissions == *old(self.remainder.permissions),
             forall|other: Paddr| self.contains_leased(other) ==>
@@ -1180,6 +1185,7 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             result.writeback_node_map() == self.writeback_node_map(),
             result.writeback_permission_map() == self.writeback_permission_map(),
     {
+        reveal(FlatCursorResources::inv);
         let tracked Self { root, remainder, mut leases } = self;
         let tracked (lease, remainder) = remainder.tracked_insert_and_lease_raw_node(
             paddr,
@@ -1206,8 +1212,15 @@ impl<'a, C: PageTableConfig> FlatCursorResources<'a, C> {
             record.node.permission_matches(permission),
         ensures
             result.contains_leased(paddr),
+            result.contains_raw_leased(paddr),
+            result.leased_record(paddr) == record,
             result.root.paddr == self.root.paddr,
             result.leases.dom() == self.leases.dom().insert(paddr),
+            *result.root.record == *old(self.root.record),
+            result.leases[paddr].paddr == paddr,
+            forall|other: Paddr| self.leases.contains_key(other) ==>
+                #[trigger] result.leases[other] == self.leases[other],
+            self.inv() && record.local_inv() ==> result.inv(),
             *result.remainder.nodes == *old(self.remainder.nodes),
             *result.remainder.permissions == *old(self.remainder.permissions),
             result.node_map() == self.node_map().insert(paddr, record),
@@ -2159,6 +2172,11 @@ impl<'a, 'rcu, C: PageTableConfig> FlatCursorOwner<'a, 'rcu, C> {
             final(self).resources.contains_leased(old(self).current_paddr()),
             final(self).current_record() == *final(record),
             final(self).resources.root.paddr == old(self).resources.root.paddr,
+            final(self).resources.leases.dom() == old(self).resources.leases.dom(),
+            *final(self).resources.remainder.nodes == *old(self).resources.remainder.nodes,
+            *final(self).resources.remainder.permissions == *old(self).resources.remainder.permissions,
+            forall|other: Paddr| old(self).resources.contains_raw_leased(other) ==>
+                #[trigger] final(self).resources.leases[other].paddr == old(self).resources.leases[other].paddr,
             forall|other: Paddr| old(self).resources.contains_raw_leased(other) ==>
                 final(self).resources.contains_raw_leased(other) &&
                 *final(self).resources.leases[other].permission
@@ -3398,7 +3416,7 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
     /// node records retain their paths, levels and other entries.
     pub(crate) open spec fn leaf_node_insert(self, other: Self, parent: Paddr, idx: int, child: Paddr) -> bool {
         &&& self.contains_node(parent)
-        &&& parent != self.root
+        &&& (parent == self.root ==> C::TOP_LEVEL_INDEX_RANGE().start <= idx < C::TOP_LEVEL_INDEX_RANGE().end)
         &&& 0 <= idx < NR_ENTRIES
         &&& 1 < self.node(parent).node.level
         &&& !self.node(parent).entries[idx].is_node()
@@ -3506,6 +3524,43 @@ impl<C: PageTableConfig> FlatPageTableOwner<C> {
                 other.lemma_reachable_leaf_mapping(other.root, node, NR_LEVELS as nat,
                     NR_LEVELS as nat, i, m);
             }
+        };
+    }
+
+    /// Attaching an empty node at an absent slot leaves the mapping view unchanged.
+    pub(crate) proof fn lemma_empty_leaf_insert_mappings(
+        self, other: Self, parent: Paddr, idx: int, child: Paddr,
+    )
+        requires
+            self.inv(), other.inv(), self.leaf_node_insert(other, parent, idx, child),
+            self.node(parent).entries[idx].is_absent(),
+            forall|i: int| 0 <= i < NR_ENTRIES ==> #[trigger] other.node(child).entries[i].is_absent(),
+        ensures other.view_rec() == self.view_rec(),
+    {
+        self.lemma_node_inv(self.root);
+        other.lemma_node_inv(other.root);
+        assert forall|m: Mapping| #[trigger] other.view_rec().contains(m)
+            implies self.view_rec().contains(m) by {
+            other.lemma_view_leaf_witness(other.root, NR_LEVELS as nat, m);
+            let (node, i) = choose|node: Paddr, i: int| other.contains_node(node) && 0 <= i < NR_ENTRIES
+                && (#[trigger] other.node(node).entries[i]).is_frame()
+                && other.node(node).entries[i].leaf_mappings().contains(m);
+            assert(node != child);
+            assert(node != parent || i != idx);
+            assert(self.contains_node(node));
+            assert(self.node(node).entries[i] == other.node(node).entries[i]);
+            self.lemma_reachable_leaf_mapping(self.root, node, NR_LEVELS as nat, NR_LEVELS as nat, i, m);
+        };
+        assert forall|m: Mapping| #[trigger] self.view_rec().contains(m)
+            implies other.view_rec().contains(m) by {
+            self.lemma_view_leaf_witness(self.root, NR_LEVELS as nat, m);
+            let (node, i) = choose|node: Paddr, i: int| self.contains_node(node) && 0 <= i < NR_ENTRIES
+                && (#[trigger] self.node(node).entries[i]).is_frame()
+                && self.node(node).entries[i].leaf_mappings().contains(m);
+            assert(node != parent || i != idx);
+            assert(other.contains_node(node));
+            assert(other.node(node).entries[i] == self.node(node).entries[i]);
+            other.lemma_reachable_leaf_mapping(other.root, node, NR_LEVELS as nat, NR_LEVELS as nat, i, m);
         };
     }
 

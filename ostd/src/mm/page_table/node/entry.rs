@@ -521,8 +521,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     /// Allocates an absent child directly into the cursor's flat owner map.
     ///
     /// The allocated frame is converted to raw form before the returned guard
-    /// is built.  Its metadata permission is parked in the flat map and the
-    /// guard borrows that stable map entry.
+    /// is built. Its metadata permission is parked in a stable lease; the
+    /// parent entry's ghost update accompanies the executable PTE write.
     #[verifier::spinoff_prover]
     #[verus_spec(res =>
         with Tracked(cursor_owner): Tracked<FlatCursorOwner<'owner, 'rcu, C>>,
@@ -541,6 +541,21 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             cursor_owner.current_record().node.relate_guard(*old(self).node),
             cursor_owner.current_record().node.level == cursor_owner.level,
         ensures
+            (res is Some) == (cursor_owner.current_entry().is_absent() && cursor_owner.level > 1),
+            final_cursor_owner@.resources.inv(),
+            cursor_owner.in_locked_range() ==> {
+                &&& final_cursor_owner@.inv()
+                &&& final_cursor_owner@.metaregion_sound(*final(regions))
+                &&& final_cursor_owner@@ == cursor_owner@
+            },
+            final_cursor_owner@.root == cursor_owner.root,
+            final_cursor_owner@.level == cursor_owner.level,
+            final_cursor_owner@.guard_level == cursor_owner.guard_level,
+            final_cursor_owner@.continuations == cursor_owner.continuations,
+            final_cursor_owner@.va == cursor_owner.va,
+            final_cursor_owner@.prefix == cursor_owner.prefix,
+            final_cursor_owner@.barrier_va == cursor_owner.barrier_va,
+            final_cursor_owner@.popped_too_high == cursor_owner.popped_too_high,
             res is None ==> final_cursor_owner@ == cursor_owner,
             res is Some ==> {
                 &&& final_cursor_owner@.current_entry().is_node()
@@ -551,9 +566,29 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                     final_cursor_owner@.current_entry().child_paddr(),
                 ).relate_guard(res->0)
                 &&& final(guards).lock_held(res->0.inner.inner@.ptr.addr())
+                &&& **res->0.inner.tracked_metadata_perm == *final_cursor_owner@.resources.leases[
+                    final_cursor_owner@.current_entry().child_paddr()].permission
+                &&& final_cursor_owner@.resources.leased_record(
+                    final_cursor_owner@.current_entry().child_paddr()).path == cursor_owner.current_entry().path
+                &&& final_cursor_owner@.resources.leased_record(
+                    final_cursor_owner@.current_entry().child_paddr()).node.level + 1 == cursor_owner.level
+                &&& forall|i: int| 0 <= i < NR_ENTRIES ==>
+                    #[trigger] final_cursor_owner@.resources.leased_record(
+                        final_cursor_owner@.current_entry().child_paddr()).entries[i].is_absent()
+                &&& cursor_owner.in_locked_range() ==> cursor_owner.as_page_table_owner().leaf_node_insert(
+                    final_cursor_owner@.as_page_table_owner(), cursor_owner.current_paddr(),
+                    cursor_owner.current().idx as int, final_cursor_owner@.current_entry().child_paddr())
             },
             final(regions).inv(),
             final(self).idx == old(self).idx,
+            mut_ref_future(old(self).node) == mut_ref_future(final(self).node),
+            *final(self).node == *old(self).node,
+            forall|i: int| #![trigger old(regions).ref_count(i)]
+                old(regions).ref_count(i) != REF_COUNT_UNUSED ==>
+                    final(regions).slot_owners[i] == old(regions).slot_owners[i],
+            final(regions).slots.dom() == old(regions).slots.dom(),
+            forall|i: usize| old(guards).unlocked(i)
+                && (res is None || i != res->0.inner.inner@.ptr.addr()) ==> final(guards).unlocked(i),
             forall|i: usize| old(guards).lock_held(i) ==> final(guards).lock_held(i),
     )]
     pub(in crate::mm) fn alloc_if_none<'owner: 'rcu, A: InAtomicMode>(
@@ -577,6 +612,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         let ghost child_path = cursor_owner.current_entry().path;
         let ghost cp0 = cursor_owner.current_record().node.children_perm.value();
         let ghost regions_before_alloc = *regions;
+        let ghost original_owner = cursor_owner;
         proof {
             cursor_owner.current_record().node.nr_children_absent_slot_bound(self.idx);
         }
@@ -591,6 +627,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 => Tracked(new_record)
         )]
         let new_page = PageTableNode::<C>::alloc(level - 1);
+        proof {
+            new_record.lemma_allocated_empty_inv((level - 1) as PagingLevel, child_path);
+        }
         let paddr = new_page.start_paddr();
         proof {
             cursor_owner.lemma_fresh_node_can_insert(paddr, regions_before_alloc);
@@ -604,13 +643,23 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         new_page.into_raw();
         self.pte = C::E::new_pt(raw_paddr);
 
-        let tracked (new_cursor_owner, stable_permission) =
-            cursor_owner.tracked_attach_current_and_lease_child_with_permission(
-            new_record,
-            raw_perms.metadata_perm,
+        let tracked FlatCursorOwner {
+            resources, continuations, root, level: cursor_level, guard_level,
+            va, prefix, barrier_va, popped_too_high,
+        } = cursor_owner;
+        let tracked (resources, stable_permission) = resources.tracked_insert_and_lease_node_with_permission(
+            paddr, new_record, raw_perms.metadata_perm,
         );
-        let tracked mut cursor_owner = new_cursor_owner;
+        let tracked mut cursor_owner = FlatCursorOwner {
+            resources, continuations, root, level: cursor_level, guard_level,
+            va, prefix, barrier_va, popped_too_high,
+        };
         let ghost child_record = cursor_owner.resources.leased_record(paddr);
+        proof {
+            assert(cursor_owner.current_paddr() != paddr);
+            assert(child_record.local_inv());
+            assert(cursor_owner.resources.inv());
+        }
 
         let tracked slot_perm = *regions.slots.tracked_borrow(new_slot_index);
         let pt_ref = unsafe {
@@ -625,12 +674,24 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
         unsafe {
             let tracked parent_record = cursor_owner.tracked_borrow_current_record_mut();
+            let ghost parent_permission = original_owner.resources.permission_map()[original_owner.current_paddr()];
+            proof {
+                parent_record.tracked_set_entry(self.idx as int,
+                    FlatEntryOwner::tracked_new_node(paddr, child_path, level));
+            }
             #[verus_spec(with Tracked(&mut parent_record.node), Tracked(&*regions))]
-            self.node.write_pte(self.idx, self.pte)
+            self.node.write_pte(self.idx, self.pte);
+            proof {
+                assert(parent_record.local_inv());
+                if original_owner.current_paddr() != original_owner.root {
+                    assert(parent_record.node.permission_matches(parent_permission));
+                }
+            }
         };
 
         {
             let tracked parent_record = cursor_owner.tracked_borrow_current_record_mut();
+            let ghost record_before_count = *parent_record;
             let tracked parent_metadata_perm = (
             *self.node.inner.tracked_metadata_perm.borrow()).tracked_borrow();
             #[verus_spec(with
@@ -652,6 +713,12 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                     self.idx as int,
                     self.pte,
                 );
+                assert(parent_record.node.inv());
+                assert(parent_record.local_inv());
+                if original_owner.current_paddr() != original_owner.root {
+                    assert(parent_record.node.permission_matches(
+                        original_owner.resources.permission_map()[original_owner.current_paddr()]));
+                }
             }
         }
 
@@ -663,6 +730,126 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             regions.lemma_contains_valid_frame_paddr(paddr);
             let tracked new_meta_slot = regions.tracked_borrow_mut_slot_owner(paddr);
             new_meta_slot.paths_in_pt = set![child_path];
+        }
+
+        proof {
+            let before = original_owner.as_page_table_owner();
+            let after = cursor_owner.as_page_table_owner();
+            let parent_paddr = original_owner.current_paddr();
+            reveal(crate::specs::mm::page_table::FlatCursorResources::inv);
+            assert(cursor_owner.resources.inv());
+            assert(after.nodes.dom() == before.nodes.dom().insert(paddr));
+            before.lemma_metaregion_fresh_slot_preserved(regions_before_alloc, *regions, paddr);
+            assert forall|key: Paddr| #[trigger] after.contains_node(key) implies {
+                let record = after.node(key);
+                let idx = record.node.slot_index;
+                &&& regions.ref_count(idx) != REF_COUNT_UNUSED
+                &&& 0 < regions.ref_count(idx) <= REF_COUNT_MAX
+                &&& regions.slot_owners[idx].slot_vaddr == record.node.slot_vaddr()
+                &&& regions.slots[idx].value().wf(regions.slot_owners[idx])
+                &&& regions.slot_owners[idx].paths_in_pt == set![record.path]
+                &&& record.node.metaregion_sound_node(*regions)
+            } by {
+                let record = after.node(key);
+                if key != paddr {
+                    assert(before.contains_node(key));
+                    assert(before.nodes_metaregion_sound(*regions));
+                }
+                assert(record.node.count_consistent());
+                assert(record.node.metaregion_sound_node(*regions));
+            };
+            assert forall|key: Paddr| #[trigger] after.raw_node_permissions.contains_key(key) implies
+                after.contains_node(key) && after.node(key).node.metaregion_sound(
+                    after.raw_node_permissions[key], *regions) by {
+                if key != paddr {
+                    assert(before.raw_node_permissions.contains_key(key));
+                    assert(before.raw_nodes_metaregion_sound(*regions));
+                }
+            };
+            assert forall|key: Paddr, i: int| after.contains_node(key) && 0 <= i < NR_ENTRIES
+                implies #[trigger] after.node(key).entries[i].metaregion_sound(*regions) by {
+                if key != paddr && (key != parent_paddr || i != self.idx) {
+                    assert(before.contains_node(key));
+                    assert(after.node(key).entries[i] == before.node(key).entries[i]);
+                    assert(before.entries_metaregion_sound(*regions));
+                }
+            };
+            if original_owner.in_locked_range() {
+                if parent_paddr == original_owner.root {
+                    crate::specs::mm::page_table::lemma_valid_range_start_upper_bits::<C>(
+                        original_owner.va..original_owner.barrier_va.end);
+                }
+                assert forall|key: Paddr| #[trigger] before.contains_node(key) implies
+                    after.node(key).entries.len() == NR_ENTRIES by {
+                    before.lemma_node_inv(key);
+                    assert(after.node(key).local_inv());
+                };
+                assert(before.leaf_node_insert(after, parent_paddr, self.idx as int, paddr));
+                assert forall|key: Paddr| #[trigger] after.contains_node(key) implies after.local_node_inv(key) by {
+                    assert(after.node(key).local_inv());
+                    if key != paddr {
+                        assert(before.contains_node(key));
+                        before.lemma_node_inv(key);
+                    }
+                    assert forall|i: int| 0 <= i < NR_ENTRIES
+                        && (#[trigger] after.node(key).entries[i]).is_node() implies {
+                        let entry = after.node(key).entries[i];
+                        &&& after.contains_node(entry.child_paddr())
+                        &&& after.raw_node_permissions.contains_key(entry.child_paddr())
+                        &&& after.node(entry.child_paddr()).path == entry.path
+                        &&& after.node(entry.child_paddr()).node.level + 1 == after.node(key).node.level
+                    } by {
+                        if key != parent_paddr || i != self.idx {
+                            assert(key != paddr);
+                            assert(before.node(key).entries[i].is_node());
+                            assert(after.node(key).entries[i] == before.node(key).entries[i]);
+                        }
+                    };
+                };
+                assert(after.raw_node_permissions.dom() == after.nodes.dom().remove(after.root));
+                assert forall|key: Paddr| #[trigger] after.raw_node_permissions.contains_key(key) implies {
+                    &&& after.raw_node_permissions[key].frac() == 1
+                    &&& after.node(key).node.permission_matches(after.raw_node_permissions[key])
+                } by {
+                    if cursor_owner.resources.leases.contains_key(key) {
+                        assert(cursor_owner.resources.contains_raw_leased(key));
+                    } else {
+                        assert(cursor_owner.resources.remainder.permissions.contains_key(key));
+                    }
+                };
+                before.lemma_leaf_node_insert_inv(after, parent_paddr, self.idx as int, paddr);
+                assert forall|key: int| #[trigger] cursor_owner.continuations.contains_key(key)
+                    implies cursor_owner.continuation_inv(key) by {
+                    assert(original_owner.continuation_inv(key));
+                    let cont = cursor_owner.continuations[key];
+                    assert(cursor_owner.resources.contains_leased(cont.node));
+                    assert(cursor_owner.resources.leased_record(cont.node).path == cont.path);
+                    assert(cursor_owner.resources.leased_record(cont.node).node.level == cont.level);
+                    assert(cursor_owner.resources.leased_record(cont.node).node.relate_guard(cont.guard));
+                    if cont.node != cursor_owner.root {
+                        assert(cursor_owner.resources.contains_raw_leased(cont.node));
+                        assert(**cont.guard.inner.tracked_metadata_perm
+                            == *cursor_owner.resources.leases[cont.node].permission);
+                    }
+                };
+                assert forall|key: int| #[trigger] cursor_owner.continuations.contains_key(key)
+                    && key < cursor_owner.guard_level - 1 implies {
+                    let child = cursor_owner.continuations[key];
+                    let parent = cursor_owner.continuations[key + 1];
+                    let record = cursor_owner.resources.leased_record(parent.node);
+                    &&& child.path == parent.path.push_tail(parent.idx as int)
+                    &&& record.entries[parent.idx as int].is_node()
+                    &&& record.entries[parent.idx as int].child_paddr() == child.node
+                } by {
+                    let parent = cursor_owner.continuations[key + 1];
+                    assert(original_owner.continuations.contains_key(key + 1));
+                    assert(original_owner.continuation_inv(key + 1));
+                    assert(parent.node != parent_paddr);
+                    assert(after.node(parent.node).entries == before.node(parent.node).entries);
+                };
+                assert(cursor_owner.inv());
+                before.lemma_empty_leaf_insert_mappings(after, parent_paddr, self.idx as int, paddr);
+            }
         }
 
         #[verus_spec(with |= Tracked(cursor_owner))]
