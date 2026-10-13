@@ -640,6 +640,7 @@ impl KVirtArea {
             let ghost old_cursor_model: CursorView<KernelPtConfig> = cursor_owner@;
             let ghost old_cursor_owner_va = cursor_owner.va;
             proof {
+                cursor_owner.lemma_view_inv();
                 assert(cursor_owner@.inv());  // old_cursor_model.inv()
                 let (pa, level, prop_from_item, _perm) = KernelPtConfig::item_into_raw(item);
                 lemma_va_align_page_size_level_1::<PagingConsts>(cursor.0.va);
@@ -930,6 +931,7 @@ impl KVirtArea {
                 let ghost old_va: nat = cursor.0.va as nat;
 
                 proof {
+                    cursor_owner.lemma_view_inv();
                     assert(cursor_owner@.inv());  // old_cursor_model.inv()
                 }
 

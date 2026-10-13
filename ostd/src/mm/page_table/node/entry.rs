@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 //! This module provides accessors to the page table entries in a node.
-use vstd::prelude::*;
+use vstd::{assert_maps_equal, assert_maps_equal_internal, prelude::*};
 use vstd_extra::{ghost_tree::*, ownership::*};
 
 use crate::specs::{
@@ -8,7 +8,7 @@ use crate::specs::{
     mm::{
         frame::{
             frame_specs::FrameRawPerms,
-            mapping::{frame_to_index, group_page_meta, meta_to_index},
+            mapping::{frame_to_index, group_page_meta, max_meta_slots, meta_to_index},
             meta_region_owners::MetaRegionOwners,
         },
         page_table::{INC_LEVELS, PageTableOwner},
@@ -155,6 +155,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             },
         ensures
             res.invariants(owner, *final(regions)),
+            *final(regions) == *old(regions),
             final(regions).slot_owners == old(regions).slot_owners,
             forall|k: int|
                 old(regions).slots.contains_key(k) ==> #[trigger] final(regions).slots.contains_key(
@@ -174,10 +175,21 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         // SAFETY:
         //  - The PTE outlives the reference (since we have `&self`).
         //  - The level matches the current node.
+        let ghost before = *regions;
         let res = unsafe {
             #[verus_spec(with Tracked(regions), Ghost(owner), Tracked(metadata_permission))]
             ChildRef::from_pte(&self.pte, level)
         };
+        proof {
+            assert_maps_equal!(regions.slots, before.slots, key => {
+                if regions.slots.contains_key(key) {
+                    assert(0 <= key < max_meta_slots());
+                    assert(before.slot_owners.contains_key(key));
+                    assert(before.slots.contains_key(key));
+                }
+            });
+            assert(*regions == before);
+        }
 
         res
     }
@@ -692,10 +704,39 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             cursor_owner.current_record().node.level == cursor_owner.level,
             cursor_owner.level < NR_LEVELS,
         ensures
+            (res is Some) == (cursor_owner.current_entry().is_frame() && cursor_owner.level > 1),
+            final_cursor_owner@.root == cursor_owner.root,
+            final_cursor_owner@.level == cursor_owner.level,
+            final_cursor_owner@.guard_level == cursor_owner.guard_level,
+            final_cursor_owner@.va == cursor_owner.va,
+            final_cursor_owner@.prefix == cursor_owner.prefix,
+            final_cursor_owner@.barrier_va == cursor_owner.barrier_va,
+            final_cursor_owner@.popped_too_high == cursor_owner.popped_too_high,
+            final_cursor_owner@.continuations == cursor_owner.continuations,
+            final_cursor_owner@.current_record().entries.len() == cursor_owner.current_record().entries.len(),
+            final_cursor_owner@.current_entry().path == cursor_owner.current_entry().path,
             res is None ==> final_cursor_owner@ == cursor_owner,
             res is Some ==> {
                 &&& res is Some
                 &&& final_cursor_owner@.current_entry().is_node()
+                &&& final_cursor_owner@.resources.leased_record(
+                    final_cursor_owner@.current_entry().child_paddr(),
+                ).local_inv()
+                &&& final_cursor_owner@.resources.leased_record(
+                    final_cursor_owner@.current_entry().child_paddr(),
+                ).path == cursor_owner.current_entry().path
+                &&& final_cursor_owner@.resources.leased_record(
+                    final_cursor_owner@.current_entry().child_paddr(),
+                ).node.level + 1 == cursor_owner.level
+                &&& **res->0.inner.tracked_metadata_perm == *final_cursor_owner@.resources.leases[
+                    final_cursor_owner@.current_entry().child_paddr()].permission
+                &&& final_cursor_owner@.resources.leased_record(
+                    final_cursor_owner@.current_entry().child_paddr(),
+                ).node.metaregion_sound(*final_cursor_owner@.resources.leases[
+                    final_cursor_owner@.current_entry().child_paddr()].permission, *final(regions))
+                &&& final(regions).slot_owners[final_cursor_owner@.resources.leased_record(
+                    final_cursor_owner@.current_entry().child_paddr(),
+                ).node.slot_index].paths_in_pt == set![cursor_owner.current_entry().path]
                 &&& final_cursor_owner@.resources.contains_raw_leased(
                     final_cursor_owner@.current_entry().child_paddr(),
                 )
@@ -711,6 +752,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                     ).entries[j];
                     &&& child.is_frame()
                     &&& child.frame().prop == cursor_owner.current_entry().frame().prop
+                    &&& child.frame().mapped_pa == cursor_owner.current_entry().frame().mapped_pa
+                        + j * page_size::<C>((cursor_owner.level - 1) as PagingLevel)
+                    &&& child.frame_permission() is None
                 }
                 &&& forall |j: int| 0 <= j < NR_ENTRIES ==>
                     #[trigger] final_cursor_owner@.resources.leased_record(
@@ -793,6 +837,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             guard_level,
             va,
             prefix,
+            barrier_va,
             popped_too_high,
         } = cursor_owner;
         let ghost parent_paddr = continuations[cursor_level - 1].node;
@@ -836,14 +881,20 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 new_record.node.level == level - 1,
                 new_record.node.relate_guard(pt_lock_guard),
                 new_record.node.permission_matches(*loan.permission),
+                **pt_lock_guard.inner.tracked_metadata_perm == *loan.permission,
                 new_record.node.count_consistent(),
                 new_record.node.metaregion_sound_node(*regions),
+                new_record.node.metaregion_sound(*loan.permission, *regions),
+                regions.ref_count(frame_to_index(paddr)) == 1,
                 new_record.local_inv(),
                 new_record.path == child_path,
                 new_record.entries.len() == NR_ENTRIES,
                 forall|j: int| i <= j < NR_ENTRIES ==> #[trigger] new_record.entries[j].is_absent(),
                 forall|j: int| 0 <= j < i ==> #[trigger] new_record.entries[j].is_frame(),
                 forall|j: int| 0 <= j < i ==> #[trigger] new_record.entries[j].frame().prop == prop,
+                forall|j: int| 0 <= j < i ==> #[trigger] new_record.entries[j].frame().mapped_pa
+                    == pa + j * page_size::<C>((level - 1) as PagingLevel),
+                forall|j: int| 0 <= j < i ==> #[trigger] new_record.entries[j].frame_permission() is None,
                 forall|j: int|
                     0 <= j < NR_ENTRIES ==> #[trigger] new_record.entries[j].parent_level == level
                         - 1,
@@ -965,6 +1016,10 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         let tracked node = pte_owner.tracked_take_node();
         let tracked new_record = FlatNodeRecord { node, entries, path };
         proof {
+            // Publishing the flat edge also publishes the node's metadata path.
+            // The live Frame kept the permission until Child::into_pte above.
+            let tracked new_slot = regions.tracked_borrow_mut_slot_owner(paddr);
+            new_slot.paths_in_pt = set![child_path];
             let tracked parent_record = resources.tracked_borrow_record_mut(parent_paddr);
             parent_record.tracked_set_entry(
                 self.idx as int,
@@ -993,6 +1048,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             guard_level,
             va,
             prefix,
+            barrier_va,
             popped_too_high,
         };
         #[verus_spec(with |= Tracked(cursor_owner))]

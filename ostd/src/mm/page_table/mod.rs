@@ -488,6 +488,12 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
                     - pow2(Self::C::ADDRESS_WIDTH() as nat)
             },
             Self::LEADING_BITS_spec() < 0x1_0000_usize,
+            // High-half cursors must not reach the final top-level slot:
+            // rounding a VA in that slot up would overflow `Vaddr`.
+            Self::LEADING_BITS_spec() != 0usize ==> Self::LOCKED_END_BOUND_spec()
+                <= usize::MAX as int + 1 - pow2(
+                    pte_index_bit_offset_spec::<Self::C>(Self::C::NR_LEVELS()) as nat,
+                ),
             // FIXME: This property does not hold in general, `ADDRESS_WIDTH` can be wider.
             pow2(
                 (Self::C::ADDRESS_WIDTH() - pte_index_bit_offset_spec::<Self::C>(
@@ -527,6 +533,10 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
                     - pow2(Self::C::ADDRESS_WIDTH() as nat)
             },
             Self::LEADING_BITS_spec() < 0x1_0000_usize,
+            Self::LEADING_BITS_spec() != 0usize ==> Self::LOCKED_END_BOUND_spec()
+                <= usize::MAX as int + 1 - pow2(
+                    pte_index_bit_offset_spec::<Self::C>(Self::C::NR_LEVELS()) as nat,
+                ),
             // FIXME: This property does not hold in general, `ADDRESS_WIDTH` can be wider.
             pow2(
                 (Self::C::ADDRESS_WIDTH() - pte_index_bit_offset_spec::<Self::C>(

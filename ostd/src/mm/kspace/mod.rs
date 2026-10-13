@@ -187,6 +187,10 @@ unsafe impl PageTableConfig for KernelPtConfig {
 
         assert((256 * pow2(39) as int) / (pow2(47) as int) == 1);
         lemma_pow2_adds(16, 48);
+        assert(FRAME_METADATA_BASE_VADDR == 0xffff_e000_0000_0000usize) by (bit_vector);
+        assert(pte_index_bit_offset_spec::<Self::C>(Self::C::NR_LEVELS()) == 39);
+        assert(Self::LOCKED_END_BOUND_spec() == FRAME_METADATA_BASE_VADDR as int);
+        assert(Self::LOCKED_END_BOUND_spec() <= usize::MAX as int + 1 - pow2(39));
     }
 
     fn TOP_LEVEL_INDEX_RANGE() -> (r: Range<usize>) {

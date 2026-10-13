@@ -294,6 +294,8 @@ pub proof fn lemma_valid_range_start_upper_bits<C: PageTableConfig>(r: Range<Vad
         is_valid_range_spec::<C>(r),
     ensures
         vaddr_upper_bits_spec::<C>(r.start) == C::LEADING_BITS_spec(),
+        C::TOP_LEVEL_INDEX_RANGE().start <= pte_index_spec::<C>(r.start, NR_LEVELS as PagingLevel)
+            < C::TOP_LEVEL_INDEX_RANGE().end,
 {
     C::lemma_paging_consts_properties();
     C::lemma_page_table_config_constant_properties();
@@ -310,6 +312,17 @@ pub proof fn lemma_valid_range_start_upper_bits<C: PageTableConfig>(r: Range<Vad
             leading < 65536,
             leading as u128 * 281474976710656u128 <= start as u128,
             (start as u128) < (leading as u128 + 1u128) * 281474976710656u128,
+    ;
+    let first = C::TOP_LEVEL_INDEX_RANGE().start;
+    let limit = C::TOP_LEVEL_INDEX_RANGE().end;
+    assert(first <= ((start >> 39) & 511) < limit) by (bit_vector)
+        requires
+            leading < 65536,
+            first < limit <= 512,
+            leading as u128 * 281474976710656u128 + first as u128 * 549755813888u128
+                <= start as u128,
+            (start as u128) < leading as u128 * 281474976710656u128
+                + limit as u128 * 549755813888u128,
     ;
 }
 

@@ -376,6 +376,8 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
             final(guards).lock_held(owner.slot_vaddr()),
             Self::locks_preserved_except(owner.slot_vaddr(), *old(guards), *final(guards)),
             owner.relate_guard(res),
+            // Original Rust returns PageTableGuard { inner: self }.
+            res.inner == self,
     )]
     pub fn lock<'rcu, A: InAtomicMode>(self, _guard: &'rcu A) -> PageTableGuard<'rcu, C> where
         'a: 'rcu,

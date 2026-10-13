@@ -111,7 +111,7 @@ pub fn lock_range<'owner: 'rcu, 'rcu, C: PageTableConfig, A: InAtomicMode>(
     }
     let ghost pt0 = *pt_own;
     let ghost regions0 = *regions;
-    let tracked mut cursor_own = pt_own.tracked_cursor_owner(va.start, root_guard);
+    let tracked mut cursor_own = pt_own.tracked_cursor_owner(va.start, *va, root_guard);
 
     // Retry if the candidate subtree became stray before we acquired its lock.
     let mut subtree_root = None;
@@ -256,6 +256,11 @@ pub fn unlock_range<C: PageTableConfig, A: InAtomicMode>(cursor: &mut Cursor<'_,
         r is Some ==> {
             &&& final_owner@.va == cursor_own.va
             &&& final_owner@.prefix == cursor_own.prefix
+            // The original traversal descends only while both endpoints
+            // select the same child. This remains an existing trusted boundary.
+            &&& crate::specs::mm::page_table::flat_owners::locked_range_in_node::<C>(
+                *va, final_owner@.level,
+            )
             &&& final_owner@.view_mappings() == cursor_own.view_mappings()
             &&& !final_owner@.popped_too_high
             &&& final_owner@.current().guard == r->0
@@ -319,12 +324,15 @@ fn try_traverse_and_lock_subtree_root<'owner: 'rcu, 'rcu, C: PageTableConfig, A:
 
     let mut cur_pt_addr = pt.root.start_paddr();
 
+    /* Forward iteration represents the original descending levels.
+     * Origin Rust: for cur_level in (1..=C::NR_LEVELS).rev()
+     */
     let end = C::NR_LEVELS();
     for cur_level in 0..end {
-        let start_idx = pte_index::<C>(va.start, end - cur_level + 1);
+        let start_idx = pte_index::<C>(va.start, end - cur_level);
         let level_too_high = {
-            let end_idx = pte_index::<C>(va.end - 1, end - cur_level + 1);
-            (end - cur_level + 1) > 1 && start_idx == end_idx
+            let end_idx = pte_index::<C>(va.end - 1, end - cur_level);
+            (end - cur_level) > 1 && start_idx == end_idx
         };
         if !level_too_high {
             break;
@@ -338,7 +346,7 @@ fn try_traverse_and_lock_subtree_root<'owner: 'rcu, 'rcu, C: PageTableConfig, A:
         let cur_pte = unsafe { load_pte(cur_pt_ptr.add(start_idx), Ordering::Acquire) };
 
         if cur_pte.is_present() {
-            if cur_pte.is_last(end - cur_level + 1) {
+            if cur_pte.is_last(end - cur_level) {
                 break;
             }
             cur_pt_addr = cur_pte.paddr();
@@ -346,7 +354,7 @@ fn try_traverse_and_lock_subtree_root<'owner: 'rcu, 'rcu, C: PageTableConfig, A:
             proof {
                 let ghost next_idx = pte_index::<C>(
                     va.start,
-                    (end - cur_level) as PagingLevel,
+                    (end - cur_level - 1) as PagingLevel,
                 ) as usize;
                 proof_decl! {
                     let tracked mut new_guard: PageTableGuard<'rcu, C>;
@@ -406,7 +414,7 @@ fn try_traverse_and_lock_subtree_root<'owner: 'rcu, 'rcu, C: PageTableConfig, A:
             proof {
                 let ghost next_idx = pte_index::<C>(
                     va.start,
-                    (end - cur_level) as PagingLevel,
+                    (end - cur_level - 1) as PagingLevel,
                 ) as usize;
                 proof_decl! {
                     let tracked mut new_guard: PageTableGuard<'rcu, C>;
@@ -431,7 +439,7 @@ fn try_traverse_and_lock_subtree_root<'owner: 'rcu, 'rcu, C: PageTableConfig, A:
             proof {
                 let ghost next_idx = pte_index::<C>(
                     va.start,
-                    (end - cur_level) as PagingLevel,
+                    (end - cur_level - 1) as PagingLevel,
                 ) as usize;
                 proof_decl! {
                     let tracked mut new_guard: PageTableGuard<'rcu, C>;

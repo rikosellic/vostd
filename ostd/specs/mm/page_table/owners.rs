@@ -1217,7 +1217,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
     /// `rec_vaddr` and using concrete `pow2` values.
     #[verifier::spinoff_prover]
     #[verifier::rlimit(200)]
-    proof fn lemma_vaddr_path_alignment_and_bound(path: TreePath<NR_ENTRIES>)
+    pub(crate) proof fn lemma_vaddr_path_alignment_and_bound(path: TreePath<NR_ENTRIES>)
         requires
             path.inv(),
             path.len() <= INC_LEVELS - 1,

@@ -975,6 +975,9 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
     pub fn unmap<'owner: 'a>(&mut self, len: usize) -> usize {
         let ghost initial_owner = cursor_owner;
         let tracked mut cursor_owner = cursor_owner;
+        proof {
+            cursor_owner.lemma_view_inv();
+        }
         assert(cursor_owner@.inv());
 
         assert_eq!(len % PAGE_SIZE, 0);
