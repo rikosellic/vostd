@@ -877,6 +877,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             old(parent_owner).inv(),
             old(parent_owner).level() == old(owner).value().parent_level,
             old(parent_owner).level() < NR_LEVELS,
+            old(self).node_matching(old(owner).value(), *old(parent_owner), *old(self).node),
             old(parent_owner).metaregion_sound_node(*old(regions)),
             old(owner).value().path.len() == old(owner).level(),
             old(owner).level() + old(parent_owner).level() == INC_LEVELS,
@@ -914,6 +915,10 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 &&& forall |j: int| 0 <= j < NR_ENTRIES ==>
                     (#[trigger] final(owner).children()[j])->0.value().frame().prop
                         == old(owner).value().frame().prop
+                &&& forall |j: int| 0 <= j < NR_ENTRIES ==>
+                    (#[trigger] final(owner).children()[j])->0.value().frame().mapped_pa
+                        == (old(owner).value().frame().mapped_pa
+                            + j * page_size::<PagingConsts>((old(parent_owner).level() - 1) as PagingLevel)) as Paddr
                 &&& final(owner).value().path == old(owner).value().path
                 &&& final(owner).value().metaregion_sound(*final(regions))
                 &&& OwnerSubtree::implies(
@@ -941,8 +946,17 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             final(regions).inv(),
             final(parent_owner).inv(),
             final(parent_owner).level() == old(parent_owner).level(),
+            final(parent_owner).metadata == old(parent_owner).metadata,
+            final(parent_owner).metadata_id == old(parent_owner).metadata_id,
+            final(parent_owner).meta_own == old(parent_owner).meta_own,
+            final(parent_owner).slot_index == old(parent_owner).slot_index,
+            final(parent_owner).metaregion_sound_node(*final(regions)),
             final(self).node.inner.inner@.ptr.addr() == old(self).node.inner.inner@.ptr.addr(),
             *final(self).node == *old(self).node,
+            mut_ref_future(old(self).node) == mut_ref_future(final(self).node),
+            forall|i: int| #![trigger final(regions).slots[i]]
+                old(regions).contains(i) && old(regions).ref_count(i) != REF_COUNT_UNUSED
+                    ==> final(regions).slots[i] == old(regions).slots[i],
             forall |i: usize| old(guards).lock_held(i) ==> final(guards).lock_held(i),
             forall |i: usize| old(guards).unlocked(i)
                 && (res is Some ==> i != final(owner).value().node().slot_vaddr())
@@ -1063,6 +1077,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         }
 
         let ghost regions_before_initialization = *regions;
+        let ghost parent_before_initialization = *parent_owner;
         for i in 0..nr_subpage_per_huge::<C>()
             invariant
                 nr_subpage_per_huge_spec::<C>() == NR_ENTRIES,
@@ -1085,9 +1100,17 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                 // calls (each net-zero on the ledger), discharging the
                 // `into_pte` consume after the loop.
                 parent_owner.inv(),
+                *parent_owner == parent_before_initialization,
+                parent_owner.metadata == old(parent_owner).metadata,
+                parent_owner.metadata_id == old(parent_owner).metadata_id,
+                parent_owner.meta_own == old(parent_owner).meta_own,
+                parent_owner.slot_index == old(parent_owner).slot_index,
+                parent_owner.children_perm.value() == old(parent_owner).children_perm.value(),
+                parent_owner.count_consistent(),
                 regions.contains(parent_owner.slot_index),
                 raw_node_metadata_wf(metadata.permissions(), *regions),
                 *self.node == *old(self).node,
+                mut_ref_future(old(self).node) == mut_ref_future(self.node),
                 new_owner.value().is_node(),
                 new_owner.inv(),
                 new_owner.level() == old(owner).level(),
@@ -1125,6 +1148,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
                         &&& (#[trigger] new_owner.children()[j]) is Some
                         &&& new_owner.children()[j].unwrap().value().is_frame()
                         &&& new_owner.child(j).value().frame().prop == prop
+                        &&& new_owner.child(j).value().frame().mapped_pa
+                            == (pa + j * page_size::<PagingConsts>((level - 1) as PagingLevel)) as Paddr
                         &&& new_owner.child(j).value().frame_permission() is None
                     },
                 forall|j: int| 0 <= j < NR_ENTRIES ==>
@@ -1390,6 +1415,11 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             self.node.write_pte(self.idx, self.pte)
         };
         proof {
+            crate::specs::mm::page_table::node::owners::lemma_count_present_upto_update(
+                old(parent_owner).children_perm.value(), NR_ENTRIES as int,
+                self.idx as int, self.pte,
+            );
+            assert(parent_owner.count_consistent());
             let tracked slot = regions.tracked_borrow_mut_slot_owner(paddr);
             slot.paths_in_pt = set![owner.value().path];
         }
@@ -1664,6 +1694,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         ensures
             final(metadata).remainder is Some,
             res.invariants(*final(owner), *final(regions)),
+            res matches Child::PageTable(node) ==> node.wf_with_region(*final(regions)),
             final(new_owner).inv(),
             final(new_owner).metaregion_sound(*final(regions)),
             final(new_owner).match_pte(

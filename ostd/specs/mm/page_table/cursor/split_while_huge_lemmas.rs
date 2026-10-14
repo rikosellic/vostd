@@ -3,7 +3,10 @@ use vstd_extra::{arithmetic::*, ghost_tree::*, ownership::*};
 
 use crate::specs::{
     arch::{MAX_PADDR, NR_ENTRIES, NR_LEVELS, PAGE_SIZE},
-    mm::page_table::{Mapping, cursor::owners::*, owners::PageTableOwner, vaddr_range_spec},
+    mm::page_table::{
+        Mapping, cursor::owners::*,
+        owners::{PageTableOwner, lemma_vaddr_of_eq_int}, vaddr_range_spec,
+    },
 };
 
 use crate::arch::mm::PagingConsts;
@@ -763,6 +766,132 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         );
         crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_spec_values();
         old_view.split_while_huge_one_step(ps);
+    }
+
+    /// Replacing the current huge frame by its contiguous child frames implements
+    /// one abstract split, without moving the cursor or changing sibling mappings.
+    #[verifier::spinoff_prover]
+    #[verifier::rlimit(60)]
+    pub proof fn split_current_frame_mappings(self, before: Self)
+        requires
+            before.inv(),
+            before.in_locked_range(),
+            before.cur_entry_owner().is_frame(),
+            1 < before.level < NR_LEVELS,
+            self.inv(),
+            self.in_locked_range(),
+            self.va == before.va,
+            self.level == before.level,
+            self.cur_entry_owner().is_node(),
+            self.cur_subtree().value().path == before.cur_subtree().value().path,
+            self.continuations[self.level - 1].path()
+                == before.continuations[before.level - 1].path(),
+            self.continuations[self.level - 1].idx
+                == before.continuations[before.level - 1].idx,
+            forall|i: int| before.level <= i < NR_LEVELS ==>
+                #[trigger] self.continuations[i] == before.continuations[i],
+            forall|j: int| 0 <= j < NR_ENTRIES && j != before.index() ==>
+                #[trigger] self.continuations[self.level - 1].children[j]
+                    == before.continuations[before.level - 1].children[j],
+            forall|j: int| 0 <= j < NR_ENTRIES ==> {
+                &&& #[trigger] self.cur_subtree().has_child(j)
+                &&& self.cur_subtree().child(j).value().is_frame()
+                &&& self.cur_subtree().child(j).value().frame().prop
+                    == before.cur_entry_owner().frame().prop
+                &&& self.cur_subtree().child(j).value().frame().mapped_pa
+                    == (before.cur_entry_owner().frame().mapped_pa
+                        + j * page_size::<PagingConsts>((before.level - 1) as PagingLevel)) as Paddr
+            },
+        ensures
+            self@ == before@.split_if_mapped_huge_spec(
+                page_size::<PagingConsts>((before.level - 1) as PagingLevel),
+            ),
+    {
+        hide(CursorOwner::view_mappings);
+        hide(CursorContinuation::view_mappings);
+        broadcast use {CursorContinuation::group_lemmas, CursorOwner::group_lemmas};
+        before.view_preserves_inv();
+        before.continuations[before.level - 1].lemma_inv_children_rel_unroll(before.index() as int);
+        before.lemma_cur_entry_frame_present();
+        let m = before@.query_mapping();
+        before.query_mapping_from_subtree(m);
+        before.lemma_cur_subtree_inv();
+        self.lemma_cur_subtree_inv();
+        self.continuations[self.level - 1].lemma_pt_inv_children_unroll(self.index() as int);
+        let subtree = self.cur_subtree();
+        let path = subtree.value().path;
+        let size = page_size::<PagingConsts>((before.level - 1) as PagingLevel);
+        assert(m.page_size == page_size::<PagingConsts>(before.level));
+        crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_next::<PagingConsts>(
+            (before.level - 1) as PagingLevel,
+        );
+        crate::arch::mm::lemma_nr_subpage_per_huge_eq_nr_entries();
+        vstd::arithmetic::div_mod::lemma_div_multiples_vanish(size as int, NR_ENTRIES as int);
+        vstd::arithmetic::div_mod::lemma_div_multiples_vanish(NR_ENTRIES as int, size as int);
+        vstd::arithmetic::mul::lemma_mul_is_commutative(size as int, NR_ENTRIES as int);
+        assert(m.page_size == size * NR_ENTRIES);
+        assert(m.page_size / size == NR_ENTRIES);
+        assert(PageTableOwner(before.cur_subtree()).view_rec(path) == set![m]);
+        let pieces = Set::<int>::range(0, NR_ENTRIES as int).map(
+            |j: int| CursorView::<C>::split_index(m, size, j as usize),
+        );
+        assert(PageTableOwner(subtree).view_rec(path) == pieces) by {
+            lemma_vaddr_of_eq_int::<C>(path);
+            assert forall|j: int| 0 <= j < NR_ENTRIES implies
+                PageTableOwner(subtree.child(j)).view_rec(path.push_tail(j))
+                    == set![CursorView::<C>::split_index(m, size, j as usize)] by {
+                assert(subtree.has_child(j));
+                assert(subtree.children()[j] is Some);
+                assert(subtree.child(j).inv());
+                PageTableOwner(subtree).pt_inv_unroll(j);
+                PageTableOwner::<C>::lemma_vaddr_push_tail_eq(path, j);
+                lemma_vaddr_of_eq_int::<C>(path.push_tail(j));
+                vstd::arithmetic::mul::lemma_mul_inequality(j + 1, NR_ENTRIES as int, size as int);
+                assert((j + 1) * size == j * size + size) by (nonlinear_arith);
+                assert(m.pa_range.start + (j + 1) * size <= MAX_PADDR);
+            };
+            assert forall|piece: Mapping|
+                PageTableOwner(subtree).view_rec(path).contains(piece) implies
+                    pieces.contains(piece) by {
+                PageTableOwner(subtree).lemma_view_rec_contains(path);
+                let j = choose|j: int| #![trigger subtree.children()[j]]
+                    0 <= j < NR_ENTRIES && subtree.children()[j] is Some
+                        && PageTableOwner(subtree.child(j)).view_rec(path.push_tail(j)).contains(piece);
+                assert(piece == CursorView::<C>::split_index(m, size, j as usize));
+                assert(Set::<int>::range(0, NR_ENTRIES as int).contains(j));
+            };
+            assert forall|piece: Mapping| pieces.contains(piece) implies
+                PageTableOwner(subtree).view_rec(path).contains(piece) by {
+                let j = choose|j: int| 0 <= j < NR_ENTRIES
+                    && #[trigger] CursorView::<C>::split_index(m, size, j as usize) == piece;
+                PageTableOwner(subtree).lemma_view_rec_contains_intro(path, piece, j);
+            };
+        };
+        let old_cont = before.continuations[before.level - 1];
+        let new_cont = self.continuations[self.level - 1];
+        old_cont.view_mappings_take_child();
+        new_cont.view_mappings_take_child();
+        new_cont.take_child().1.view_mappings_put_child(subtree);
+        new_cont.take_put_child();
+        assert(new_cont.take_child().1.view_mappings() == old_cont.take_child().1.view_mappings()) by {
+            assert(new_cont.take_child().1.children == old_cont.take_child().1.children) by {
+                assert forall|j: int| 0 <= j < NR_ENTRIES implies
+                    new_cont.take_child().1.children[j] == old_cont.take_child().1.children[j] by {
+                    if j != old_cont.idx {
+                        assert(new_cont.children[j] == old_cont.children[j]);
+                    }
+                };
+            };
+            reveal(CursorContinuation::view_mappings);
+        };
+        Self::view_mappings_replace_lowest(before, self, old_cont, new_cont);
+        assert(old_cont.view_mappings().subset_of(before.view_mappings())) by {
+            assert forall|piece: Mapping| old_cont.view_mappings().contains(piece) implies
+                before.view_mappings().contains(piece) by {
+                before.lemma_view_mappings_intro(piece, before.level - 1);
+            };
+        };
+        assert(self@.mappings == before@.mappings - set![m] + pieces);
     }
 }
 

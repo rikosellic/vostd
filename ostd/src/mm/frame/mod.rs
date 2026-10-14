@@ -635,6 +635,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> RCClone for Frame<M> {
     ) -> bool {
         let idx = self.index();
         &&& pre.inc_frame_reference_region_spec(self.start_paddr_spec(), post)
+        &&& pre.ref_count(idx) < REF_COUNT_MAX
+        &&& post.ref_count(idx) <= REF_COUNT_MAX
         &&& post.inv()
         &&& res.tracked_metadata_perm@ is Some
         &&& res.tracked_metadata_perm@->0.frac() == 1

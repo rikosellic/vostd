@@ -15,6 +15,21 @@ pub tracked struct MetadataPermissionPartition<'a, K, P> {
 }
 
 impl<'a, K, P> MetadataPermissionPartition<'a, K, P> {
+    /// Lends a shorter-lived session. Its escaped loans must end before this
+    /// partition can be used again, including to recover an owned token.
+    pub proof fn tracked_scoped_session<'scope>(
+        tracked &'scope mut self,
+    ) -> (tracked session: MetadataPermissionLoans<'scope, K, P>)
+        ensures
+            session.remainder is Some,
+            session.loans == Map::<K, &'scope P>::empty(),
+            session.permissions() == *old(self).permissions,
+            *final(self).permissions == mut_ref_future(session.remainder->0.permissions),
+            mut_ref_future(old(self).permissions) == mut_ref_future(final(self).permissions),
+    {
+        MetadataPermissionLoans::tracked_new(&mut *self.permissions)
+    }
+
     /// Parks an already-transferred token without replacing an existing count.
     pub proof fn tracked_insert(tracked self, key: K, tracked permission: P) -> (tracked result: Self)
         requires

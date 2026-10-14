@@ -119,6 +119,51 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
 
 // ─── Tree predicate lifting (CursorOwner) ──────────────────────────
 impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
+    /// Lift a tree predicate after replacing only the current child.
+    /// Keep the quantified sibling proof outside cursor traversal loops.
+    pub proof fn map_full_tree_after_child_update(
+        self,
+        before: Self,
+        f: spec_fn(EntryOwner<C>, TreePath<NR_ENTRIES>) -> bool,
+        g: spec_fn(EntryOwner<C>, TreePath<NR_ENTRIES>) -> bool,
+    )
+        requires
+            self.inv(),
+            before.inv(),
+            self.level == before.level,
+            before.map_full_tree(f),
+            OwnerSubtree::implies(f, g),
+            forall|i: int| self.level <= i < NR_LEVELS ==>
+                #[trigger] self.continuations[i] == before.continuations[i],
+            self.continuations[self.level - 1].path()
+                == before.continuations[self.level - 1].path(),
+            self.continuations[self.level - 1].idx
+                == before.continuations[self.level - 1].idx,
+            forall|j: int| 0 <= j < NR_ENTRIES
+                && j != self.continuations[self.level - 1].idx ==>
+                #[trigger] self.continuations[self.level - 1].children[j]
+                    == before.continuations[self.level - 1].children[j],
+            self.cur_subtree().subtree_satisfies(
+                self.continuations[self.level - 1].path().push_tail(
+                    self.continuations[self.level - 1].idx as int), g),
+        ensures
+            self.map_full_tree(g),
+    {
+        assert forall|i: int| #![trigger self.continuations[i]]
+            self.level - 1 <= i < NR_LEVELS implies
+                self.continuations[i].map_children(g) by {
+            before.lemma_inv_continuation(i);
+            if i == self.level - 1 {
+                self.lemma_inv_continuation(i);
+                self.continuations[i].map_children_lift_skip_idx(
+                    before.continuations[i], self.continuations[i].idx as int, f, g,
+                );
+            } else {
+                before.continuations[i].map_children_lift(f, g);
+            }
+        };
+    }
+
     /// Initial decomposition retains every raw-node count below the root.
     pub proof fn new_preserves_raw_metadata_coverage(
         subtree: OwnerSubtree<C>,

@@ -198,6 +198,8 @@ proof fn sum_page_sizes_mono(elems: Seq<(Paddr, u8)>, from: int, to1: int, to2: 
 #[verus_spec(res =>
     ensures
         forall|i: int| 0 <= i < res@.len() ==> (#[trigger] res@[i]).0 % PAGE_SIZE == 0,
+        forall|i: int| 0 <= i < res@.len() ==>
+            (#[trigger] res@[i]).0 % page_size::<PagingConsts>(res@[i].1) == 0,
         forall|i: int| 0 <= i < res@.len() ==> 1 <= (#[trigger] res@[i]).1 <= NR_LEVELS,
         forall|i: int|
             0 <= i < res@.len() ==> (#[trigger] res@[i]).1
@@ -837,6 +839,8 @@ impl KVirtArea {
                     &&& regions.ref_count(idx) != REF_COUNT_UNUSED
                 } by {
                     let idx = crate::specs::mm::frame::mapping::frame_to_index(pa);
+                    pre_cursor_regions.lemma_contains_iff_valid_index(idx);
+                    regions.lemma_contains_iff_valid_index(idx);
                     assert(regions.contains(idx));
                 };
             }
@@ -849,6 +853,8 @@ impl KVirtArea {
                     // Level bounds / alignment from `collect_largest_pages` postconditions.
                     forall|i: int|
                         0 <= i < it.seq().len() ==> (#[trigger] it.seq()[i]).0 % PAGE_SIZE == 0,
+                    forall|i: int| 0 <= i < it.seq().len() ==>
+                        (#[trigger] it.seq()[i]).0 % page_size::<PagingConsts>(it.seq()[i].1) == 0,
                     forall|i: int|
                         0 <= i < it.seq().len() ==> 1 <= (#[trigger] it.seq()[i]).1 <= NR_LEVELS,
                     forall|i: int|
@@ -911,10 +917,11 @@ impl KVirtArea {
                     cursor_owner.view_preserves_inv();  // old_cursor_model.inv()
                 }
 
-                // Pre-map: capture the overflow bound `cursor_owner.va + page_size(level) <= usize::MAX`.
-                // Valid because the cursor is `in_locked_range` here (required by `cursor.map`).
+                // The collected pages fit the original range regardless of
+                // the cursor's current guard level.
                 proof {
-                    cursor_owner.lemma_va_plus_page_size_no_overflow(level);
+                    assert(cursor_owner.va + page_size::<PagingConsts>(level)
+                        <= va_range.end <= usize::MAX);
                 }
 
                 // Save ghost copy of regions before map for post-map invariant maintenance.

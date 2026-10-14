@@ -272,10 +272,9 @@ impl<C: PageTableConfig> PageTableNode<C> {
             final(parent_owner).level() == old(parent_owner).level(),
             final(parent_owner).tree_level == old(parent_owner).tree_level,
             final(parent_owner).children_perm.addr() == old(parent_owner).children_perm.addr(),
-            final(parent_owner).children_perm.value() == old(parent_owner).children_perm.value().update(
-                idx as int,
-                C::E::new_pt_spec(meta_to_frame(owner@.value().node().slot_vaddr())),
-            ),
+            // Allocation does not install a PTE in the parent. The caller
+            // performs that update with write_pte after initialization.
+            final(parent_owner).children_perm.value() == old(parent_owner).children_perm.value(),
             final(regions).contains(owner@.value().node().slot_index),
             owner@.value().node().metaregion_sound_node(*final(regions)),
     )]

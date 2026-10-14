@@ -67,6 +67,15 @@ impl MetaRegionOwners {
         &&& self.slots.contains_key(index)
     }
 
+    /// A valid region contains exactly the configured metadata-slot indices.
+    pub proof fn lemma_contains_iff_valid_index(self, index: int)
+        requires
+            self.inv(),
+        ensures
+            self.contains(index) <==> 0 <= index < max_meta_slots(),
+    {
+    }
+
     pub open spec fn insert_slot_owner(self, paddr: Paddr, owner: MetaSlotOwner) -> Self {
         let index = frame_to_index(paddr);
         Self { slot_owners: self.slot_owners.insert(index, owner), ..self }
