@@ -631,6 +631,26 @@ pub proof fn fresh_node_subtree_satisfies<C: PageTableConfig>(
 pub tracked struct PageTableOwner<C: PageTableConfig>(pub OwnerSubtree<C>);
 
 impl<C: PageTableConfig> PageTableOwner<C> {
+    /// Resolves the actual leaf owner, retaining its tracked/untracked identity.
+    #[verifier::opaque]
+    pub open spec fn query_leaf(self, va: Vaddr) -> Option<EntryOwner<C>>
+        decreases INC_LEVELS - self.0.level(),
+        when self.0.inv()
+    {
+        if self.0.value().is_frame() {
+            Some(self.0.value())
+        } else if self.0.value().is_node() && self.0.level() < INC_LEVELS - 1 {
+            let idx = pte_index_spec::<C>(va, self.0.value().node().level());
+            if 0 <= idx < NR_ENTRIES && self.0.has_child(idx as int) {
+                PageTableOwner(self.0.child(idx as int)).query_leaf(va)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
     /// Per-edge constraint between a node-parent and its child at index `i`.
     pub open spec fn pt_edge_at(parent: OwnerSubtree<C>, i: int) -> bool {
         &&& parent.has_child(i)
@@ -760,13 +780,31 @@ impl<C: PageTableConfig> PageTableOwner<C> {
         ensures
             PageTableOwner(owner).pt_inv(),
     {
+        Self::node_with_leaf_children_pt_inv(owner);
+    }
+
+    /// A node with valid edges and non-node children satisfies the page-table invariant.
+    pub proof fn node_with_leaf_children_pt_inv(owner: OwnerSubtree<C>)
+        requires
+            owner.inv(),
+            owner.value().is_node(),
+            forall|i: int| 0 <= i < NR_ENTRIES ==> {
+                &&& #[trigger] owner.has_child(i)
+                &&& Self::pt_edge_at(owner, i)
+                &&& !owner.child(i).value().is_node()
+            },
+            allocated_empty_node_grandchildren_none(owner),
+        ensures
+            PageTableOwner(owner).pt_inv(),
+    {
         reveal(PageTableOwner::pt_inv_at_depth);
         let depth = (INC_LEVELS - owner.level()) as nat;
+        assert(depth > 0);
         // `is_node` + `la_inv` forces `owner.level < INC_LEVELS - 1`, so depth >= 2.
         // Drive `pt_inv_at_depth(depth)` via the `is_node` branch: prove
         // `pt_edge_at` and the recursive `pt_inv_at_depth(depth-1)` for each child.
-        assert forall|i: int| 0 <= i < NR_ENTRIES implies #[trigger] owner.has_child(i)
-            && Self::pt_edge_at(owner, i) && PageTableOwner(owner.child(i)).pt_inv_at_depth(
+        assert forall|i: int| #![trigger owner.has_child(i)] 0 <= i < NR_ENTRIES implies
+            Self::pt_edge_at(owner, i) && PageTableOwner(owner.child(i)).pt_inv_at_depth(
             (depth - 1) as nat,
         ) by {
             let child = owner.child(i);
@@ -1858,7 +1896,7 @@ impl<C: PageTableConfig> PageTableOwner<C> {
     }
 
     /// Entries in a subtree whose structural path is disjoint from `old_entry.path`
-    /// have different physical addresses from `old_entry`.
+    /// do not own `old_entry`'s metadata slot. Raw mappings may still alias it.
     pub proof fn neq_old_from_path_disjoint(
         subtree: OwnerSubtree<C>,
         path_j: TreePath<NR_ENTRIES>,
@@ -1892,7 +1930,8 @@ impl<C: PageTableConfig> PageTableOwner<C> {
             assert(f_sound(subtree.value(), path_j));
             assert(f_path(subtree.value(), path_j));
             let entry = subtree.value();
-            if entry.meta_slot_paddr() is Some && entry.meta_slot_paddr()->0
+            if (entry.is_node() || (entry.is_frame() && entry.frame_is_tracked()))
+                && entry.meta_slot_paddr() is Some && entry.meta_slot_paddr()->0
                 == old_entry.meta_slot_paddr()->0 {
                 let idx = frame_to_index(entry.meta_slot_paddr()->0);
                 let old_idx = frame_to_index(old_entry.meta_slot_paddr()->0);

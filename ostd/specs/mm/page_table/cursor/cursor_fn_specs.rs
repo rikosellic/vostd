@@ -5,7 +5,7 @@ use crate::specs::{
     mm::{
         frame::{
             mapping::frame_to_index,
-            meta_owners::{PageUsage, is_mmio_paddr},
+            meta_owners::PageUsage,
             meta_region_owners::MetaRegionOwners,
         },
         page_table::{cursor::owners::*, is_valid_range_spec, *},
@@ -71,23 +71,23 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
     ///  - the cursor is in range (out-of-range returns `Err` *before* any
     ///    clone — the early `self.va >= barrier_va.end` exit), and
     ///  - a mapping is present at the cursor (`owner@.present()`), and
-    ///  - the resolved leaf frame is tracked (non-MMIO, so cloning it bumps
-    ///    its slot's refcount — MMIO/untracked leaves never bump), and
+    ///  - the resolved leaf owner carries a counted permission, so cloning
+    ///    it bumps its slot's refcount (raw RAM/MMIO mappings never bump), and
     ///  - that slot's refcount is already at `REF_COUNT_MAX`, so the
     ///    `inc_ref_count` in `clone_item` would overflow and abort.
-    /// `owner@.query_mapping().pa_range.start` is exactly the paddr the
-    /// descent lands on (bridged by [`CursorOwner::lemma_cur_entry_frame_present`]).
+    /// `query_leaf` follows the same PTE indices as cursor descent and retains
+    /// the leaf's actual permission instead of inferring tracking from its PA.
     pub open spec fn query_panic_condition(
         self,
         owner: CursorOwner<'rcu, C>,
         regions: MetaRegionOwners,
     ) -> bool {
-        let pa = owner@.query_mapping().pa_range.start;
-        let idx = frame_to_index(pa);
         &&& self.barrier_va.start <= self.va < self.barrier_va.end
-        &&& owner@.present()
-        &&& !is_mmio_paddr(pa)
-        &&& regions.ref_count(idx) >= REF_COUNT_MAX
+        &&& PageTableOwner(owner.cur_subtree()).query_leaf(self.va) matches Some(entry) && {
+            &&& entry.is_frame()
+            &&& entry.frame_is_tracked()
+            &&& regions.ref_count(frame_to_index(entry.frame().mapped_pa)) >= REF_COUNT_MAX
+        }
     }
 
     pub open spec fn query_some_ensures(
@@ -171,7 +171,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         let (pa, level, prop, perm) = C::item_into_raw(item);
         let size = page_size::<PagingConsts>(level);
         let range = pa..(pa + size) as usize;
-        regions.paddr_range_not_mapped(range)
+        perm@ is Some ==> regions.paddr_range_not_mapped(range)
     }
 
     pub open spec fn item_slot_in_regions_except_perm(
@@ -181,18 +181,11 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         let (pa, level, prop, perm) = C::item_into_raw(item);
         let idx = frame_to_index(pa);
         &&& regions.contains(idx)
-        &&& regions.slot_owners[idx].usage !is PageTable
-        &&& regions.ref_count(idx)
-            != REF_COUNT_UNUSED
-        // Tracked items hold a refcount; untracked (MMIO) don't.
-        &&& perm@ is Some ==> regions.ref_count(idx)
-            > 0
-        // A tracked (mapped) item is a SHARED frame, never the UNIQUE sentinel:
-        // `rc <= MAX < REF_COUNT_UNIQUE`. Carries the bound into the mapped
-        // slot's `metaregion_sound`, keeping the UNIQUE-branch `paths_in_pt`
-        // inv clause vacuous.
-        &&& perm@ is Some ==> regions.ref_count(idx)
-            <= REF_COUNT_MAX
+        // Only an owning item constrains allocator usage and refcount.
+        &&& perm@ is Some ==> {
+            &&& regions.slot_owners[idx].usage !is PageTable
+            &&& 0 < regions.ref_count(idx) <= REF_COUNT_MAX
+        }
         // Sub-page slot existence for huge frames (unconditional). Rc parts gated on tracked.
         &&& level > 1 ==> {
             forall|j: usize|
@@ -278,7 +271,9 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             ) implies #[trigger] Self::item_slot_in_regions(item, regions1) by {
             let (pa, level, _prop, perm) = C::item_into_raw(item);
             let idx = frame_to_index(pa);
-            assert(regions0.ref_count(idx) != REF_COUNT_UNUSED);
+            if perm@ is Some {
+                assert(regions0.ref_count(idx) != REF_COUNT_UNUSED);
+            }
             assert(Self::item_slot_in_regions_except_perm(item, regions1)) by {
                 if level > 1 {
                     assert forall|j: usize|
@@ -292,7 +287,11 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                     } by {};
                 }
             };
-            Self::item_slot_in_regions_preserved(item, regions0, regions1);
+            if perm@ is Some {
+                Self::item_slot_in_regions_preserved(item, regions0, regions1);
+            } else {
+                C::lemma_none_perm_well_formed(pa, regions1);
+            }
         };
     }
 

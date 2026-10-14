@@ -15,7 +15,7 @@ use crate::specs::{
     mm::{
         frame::{
             mapping::frame_to_index,
-            meta_owners::{MetaSlotStorage, PageUsage, is_mmio_paddr},
+            meta_owners::{MetaSlotStorage, PageUsage},
             meta_region_owners::MetaRegionOwners,
         },
         page_table::{
@@ -360,24 +360,22 @@ impl KVirtArea {
     ///  - `addr` is outside the area's range (the diverging `assert!` at
     ///    the top), or
     ///  - the kernel-page-table leaf at `addr.align_down(PAGE_SIZE)` is a
-    ///    **tracked** frame (non-MMIO) and *that specific slot* is at
+    ///    **tracked** frame (its owner carries a permission) and that slot is at
     ///    `REF_COUNT_MAX`, so the inner `Cursor::query`'s clone would
-    ///    overflow. The leaf is resolved via `owner.cursor_view_at(addr)`,
-    ///    which exactly matches the inner cursor's `query_panic_condition`
-    ///    slot — bridged through `lock_range`'s new Frame-slot
-    ///    preservation ensures (`slot.usage matches PageUsage::Frame ==>
-    ///    refcount preserved exactly`).
+    ///    overflow. `query_leaf` retains the actual leaf permission; a raw
+    ///    physical mapping does not clone a counted frame, even in RAM.
     pub open spec fn query_panic_condition(
         self,
         owner: KVirtAreaOwner,
         addr: Vaddr,
         regions: MetaRegionOwners,
     ) -> bool {
-        let v = owner.cursor_view_at(addr);
-        let pa = v.query_mapping().pa_range.start;
-        let idx = frame_to_index(pa);
         ||| !(self.range.start <= addr < self.range.end)
-        ||| (v.present() && !is_mmio_paddr(pa) && regions.ref_count(idx) >= REF_COUNT_MAX)
+        ||| owner.pt_owner.query_leaf(addr) matches Some(entry) && {
+            &&& entry.is_frame()
+            &&& entry.frame_is_tracked()
+            &&& regions.ref_count(frame_to_index(entry.frame().mapped_pa)) >= REF_COUNT_MAX
+        }
     }
 
     pub fn start(&self) -> Vaddr
