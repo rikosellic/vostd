@@ -20,7 +20,7 @@ use crate::specs::{
 use crate::arch::mm::PagingConsts;
 use crate::mm::{
     Paddr, PagingConstsTrait, PagingLevel, Vaddr,
-    frame::meta::{META_SLOT_SIZE, MetaSlot, mapping::meta_to_frame},
+    frame::meta::{META_SLOT_SIZE, MetaSlot, REF_COUNT_MAX, mapping::meta_to_frame},
     kspace::{FRAME_METADATA_RANGE, LINEAR_MAPPING_BASE_VADDR, VMALLOC_BASE_VADDR},
     paddr_to_vaddr,
     page_table::{PageTableGuard, *},
@@ -222,7 +222,6 @@ impl<C: PageTableConfig> Inv for NodeOwner<C> {
         &&& meta_to_frame(index_to_meta(self.slot_index)) < VMALLOC_BASE_VADDR
             - LINEAR_MAPPING_BASE_VADDR
         &&& meta_to_frame(index_to_meta(self.slot_index)) < MAX_PADDR
-        &&& meta_to_frame(index_to_meta(self.slot_index)) == self.children_perm.addr()
     }
 }
 
@@ -270,14 +269,15 @@ impl<C: PageTableConfig> NodeOwner<C> {
     pub open spec fn metaregion_sound_node(self, regions: MetaRegionOwners) -> bool {
         let idx = self.slot_index;
         &&& regions.contains(idx)
+        &&& 0 < regions.ref_count(idx) <= REF_COUNT_MAX
         &&& self.frame_permission.id() == regions.slot_owners[idx].metadata_perm.id()
         &&& self.meta_wf(regions)
         &&& self.meta_value().wf(
             self.meta_own,
         )
-        // A page-table node's slot is tracked with `PageTable` usage (set at
-        // allocation via `get_node_from_unused_spec`). This discriminates node
-        // slots from data-frame slots (`Frame`/MMIO) by `usage` alone, so a
+        // A page-table node's slot is tracked with `PageTable` usage (guaranteed
+        // by `PageTableNode::alloc`). This discriminates node slots from
+        // data-frame slots (`Frame`/MMIO) by `usage` alone, so a
         // freshly-allocated node (whose slot was `UNUSED`) can't collide with an
         // existing live node — giving `alloc_if_none`/`split` the parent≠child
         // slot distinctness without a PointsTo-linearity axiom.
@@ -301,7 +301,7 @@ impl<C: PageTableConfig> NodeOwner<C> {
     /// `nr_children < NR_ENTRIES`. Proven (no longer axiomatized) from the
     /// `count_consistent` invariant: `nr_children` counts present PTEs, and an
     /// absent slot means not all `NR_ENTRIES` slots are present.
-    pub proof fn nr_children_absent_slot_bound(self, idx: usize)
+    pub proof fn lemma_nr_children_absent_slot_bound(self, idx: usize)
         requires
             self.inv(),
             self.count_consistent(),
@@ -315,7 +315,7 @@ impl<C: PageTableConfig> NodeOwner<C> {
     }
 
     /// If a slot in `children_perm` holds a present PTE, then `nr_children > 0`.
-    /// Dual of [`Self::nr_children_absent_slot_bound`]; proven from
+    /// Dual of [`Self::lemma_nr_children_absent_slot_bound`]; proven from
     /// `count_consistent`.
     pub proof fn nr_children_present_slot_bound(self, idx: usize)
         requires

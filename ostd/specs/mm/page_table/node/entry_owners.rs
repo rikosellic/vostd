@@ -432,111 +432,6 @@ impl<C: PageTableConfig> EntryOwner<C> {
         }
     }
 
-    /// Helper: sub-page validity is preserved when the only slot that changed is the
-    /// frame's own slot (and slots map and other slot owners are unchanged).
-    pub proof fn frame_sub_pages_valid_preserved_at_own_slot(
-        self,
-        r0: MetaRegionOwners,
-        r1: MetaRegionOwners,
-    )
-        requires
-            self.inv(),
-            r0.inv(),
-            self.is_frame(),
-            self.parent_level <= NR_LEVELS,
-            self.frame_sub_pages_valid(r0),
-            r0.slots == r1.slots,
-            r0.slot_owners.dom() =~= r1.slot_owners.dom(),
-            forall|i: int|
-                #![trigger r1.slot_owners[i]]
-                i != frame_to_index(self.meta_slot_paddr()->0) && r0.slot_owners.contains_key(i)
-                    ==> r0.slot_owners[i] == r1.slot_owners[i],
-        ensures
-            self.frame_sub_pages_valid(r1),
-    {
-        if self.parent_level > 1 {
-            let pa = self.frame().mapped_pa;
-            let nr_pages = page_size::<PagingConsts>(self.parent_level) / PAGE_SIZE;
-            let self_idx = frame_to_index(self.meta_slot_paddr().unwrap());
-            C::lemma_huge_raw_item_untracked(
-                pa,
-                self.parent_level,
-                self.frame().prop,
-                Tracked(self.frame_permission()),
-            );
-            assert(!self.frame_is_tracked());
-            assert forall|j: usize|
-                #![trigger frame_to_index((pa + j * PAGE_SIZE) as usize)]
-                0 < j < nr_pages implies {
-                let sub_idx = frame_to_index((pa + j * PAGE_SIZE) as usize);
-                &&& r1.slots.contains_key(sub_idx)
-                &&& self.frame_is_tracked() ==> {
-                    &&& r1.ref_count(sub_idx) != REF_COUNT_UNUSED
-                    &&& r1.ref_count(sub_idx) > 0
-                    &&& r1.ref_count(sub_idx) <= REF_COUNT_MAX
-                }
-            } by {
-                let sub_idx = frame_to_index((pa + j * PAGE_SIZE) as usize);
-                assert(r0.slots.contains_key(sub_idx));
-                assert(r1.slots.contains_key(sub_idx));
-                // From frame_sub_pages_valid(r0): slot existence is unconditional.
-                // sub_idx != self_idx by arithmetic: pa is PAGE_SIZE-aligned, so
-                // self_idx = pa / PAGE_SIZE, and sub_idx = (pa + j*PAGE_SIZE) / PAGE_SIZE
-                //         = pa/PAGE_SIZE + j = self_idx + j > self_idx (since j >= 1).
-                let pa_plus_int: int = pa + j * PAGE_SIZE;
-                crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_ge_base::<
-                    PagingConsts,
-                >(self.parent_level);
-                crate::specs::mm::page_table::cursor::page_size_lemmas::lemma_page_size_div_mul_eq::<
-                    PagingConsts,
-                >(self.parent_level);
-                vstd::arithmetic::div_mod::lemma_div_multiples_vanish_quotient(
-                    j as int,
-                    pa as int,
-                    PAGE_SIZE as int,
-                );
-                // Slot equality at sub_idx carries usage and rc forward.
-            }
-        }
-    }
-
-    /// Sub-page slot validity for huge frames (fine-grained: all 4KB pages within).
-    ///
-    /// When a frame at this entry has `parent_level > 1`, it is a huge page covering
-    /// `page_size(parent_level)` bytes. Every 4KB sub-page within this range (excluding
-    /// the j = 0 case which coincides with the frame's own slot) must be allocated
-    /// (in the free pool) with `rc != UNUSED`.
-    ///
-    /// The fine-grained form (over `j * PAGE_SIZE` rather than `j * page_size(L-1)`) is
-    /// what enables the recursive split case in `split_if_mapped_huge`: when splitting a
-    /// 1GB frame into 2MB sub-frames, each 2MB sub-frame's own sub-page validity (over
-    /// its 511 4KB sub-sub-pages) follows from the 1GB frame's fine-grained validity over
-    /// the corresponding subrange of indices.
-    pub open spec fn frame_sub_pages_valid(self, regions: MetaRegionOwners) -> bool {
-        self.is_frame() && self.parent_level > 1 ==> {
-            let pa = self.frame().mapped_pa;
-            let nr_pages = page_size::<PagingConsts>(self.parent_level) / PAGE_SIZE;
-            forall|j: usize|
-                #![trigger frame_to_index((pa + j * PAGE_SIZE) as usize)]
-                0 < j < nr_pages ==> {
-                    let sub_idx = frame_to_index((pa + j * PAGE_SIZE) as usize);
-                    // Slot existence is unconditional — the metadata array spans all
-                    // phys memory at boot, so every valid sub-page PA has an allocated slot.
-                    &&& regions.slots.contains_key(
-                        sub_idx,
-                    )
-                    // A tracked huge mapping would own one reference to every
-                    // covered base page. Current configs only permit untracked
-                    // huge mappings, so this implication is normally vacuous.
-                    &&& self.frame_is_tracked() ==> {
-                        &&& regions.ref_count(sub_idx) != REF_COUNT_UNUSED
-                        &&& regions.ref_count(sub_idx) > 0
-                        &&& regions.ref_count(sub_idx) <= REF_COUNT_MAX
-                    }
-                }
-        }
-    }
-
     pub open spec fn metaregion_sound(self, regions: MetaRegionOwners) -> bool {
         if self.is_node() {
             let idx = frame_to_index(self.meta_slot_paddr()->0);
@@ -562,7 +457,6 @@ impl<C: PageTableConfig> EntryOwner<C> {
                 &&& 0 < regions.ref_count(idx) <= REF_COUNT_MAX
             }
             &&& regions.slot_owners[idx].paths_in_pt.contains(self.path)
-            &&& self.frame_sub_pages_valid(regions)
             &&& C::perm_well_formed_with_region(
                 self.frame().mapped_pa,
                 Tracked(self.frame_permission()),
@@ -648,6 +542,49 @@ impl<C: PageTableConfig> EntryOwner<C> {
         }
     }
 
+    /// Updating frame paths preserves metadata access and node ownership paths.
+    pub proof fn lemma_metaregion_sound_frame_paths_changed(
+        self,
+        r0: MetaRegionOwners,
+        r1: MetaRegionOwners,
+    )
+        requires
+            self.inv(),
+            self.metaregion_sound(r0),
+            r0.inv(),
+            r1.inv(),
+            r0.slots == r1.slots,
+            forall|i: int|
+                #![trigger r1.slot_owners[i]]
+                r0.slot_owners.contains_key(i) ==> {
+                    &&& r1.slot_owners[i].same_permissions(r0.slot_owners[i])
+                    &&& r1.slot_owners[i].usage == r0.slot_owners[i].usage
+                    &&& r1.slot_owners[i].slot_vaddr == r0.slot_owners[i].slot_vaddr
+                    &&& r0.slot_owners[i].paths_in_pt.subset_of(r1.slot_owners[i].paths_in_pt)
+                    &&& r0.slot_owners[i].usage is PageTable ==> r1.slot_owners[i].paths_in_pt
+                        == r0.slot_owners[i].paths_in_pt
+                },
+        ensures
+            self.metaregion_sound(r1),
+    {
+        if self.is_frame() {
+            C::lemma_perm_well_formed_with_region_preserved(
+                self.frame().mapped_pa,
+                Tracked(self.frame_permission()),
+                r0,
+                r1,
+            );
+            if self.parent_level > 1 {
+                C::lemma_huge_raw_item_untracked(
+                    self.frame().mapped_pa,
+                    self.parent_level,
+                    self.frame().prop,
+                    Tracked(self.frame_permission()),
+                );
+            }
+        }
+    }
+
     /// Changing only a leaf PTE's page properties preserves its relationship
     /// to the metadata region. The counting permission, physical address and
     /// page-table path remain unchanged.
@@ -671,7 +608,7 @@ impl<C: PageTableConfig> EntryOwner<C> {
 
     /// If `metaregion_sound(r0)` holds and `r1` differs from `r0` only at one slot index
     /// that this entry does not reference, then `metaregion_sound(r1)` also holds.
-    pub proof fn metaregion_sound_one_slot_changed(
+    pub proof fn lemma_metaregion_sound_one_slot_changed(
         self,
         r0: MetaRegionOwners,
         r1: MetaRegionOwners,

@@ -267,7 +267,7 @@ impl<'rcu, C: PageTableConfig> CursorContinuation<'rcu, C> {
         reveal(CursorContinuation::map_children);
     }
 
-    // map_children_lift, map_children_lift_skip_idx, as_subtree_restore
+    // map_children_lift, lemma_map_children_lift_skip_idx, as_subtree_restore
     // have been moved to tree_lemmas.rs.
     pub open spec fn level(self) -> PagingLevel {
         self.entry_own.node().level()
@@ -896,7 +896,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             self.only_current_locked(guards0),
             guards0.lock_held(guard.inner.inner@.ptr.addr()),
             guards1.guards == guards0.guards.remove(guard.inner.inner@.ptr.addr()),
-            // The dropped guard is for the current entry's node (from pop_level).
             self.cur_entry_owner().is_node(),
             guard.inner.inner@.ptr.addr() == self.cur_entry_owner().node().slot_vaddr(),
         ensures
@@ -906,28 +905,10 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         let f = Self::node_unlocked_except(guards0, current_addr);
         let g = Self::node_unlocked(guards1);
 
-        self.map_children_implies(f, g);
+        self.lemma_map_children_implies(f, g);
     }
 
-    /// After a `protect` operation that only modifies `frame.prop` of the current entry,
-    /// `CursorOwner::inv()` and `metaregion_sound` are preserved.
-    ///
-    /// Safety: `protect` changes only `frame.prop` and updates `parent.children_perm` to match.
-    /// `EntryOwner::inv()` is preserved (from protect postcondition).
-    /// `metaregion_sound` is preserved because it doesn't use `frame.prop`.
-    /// `rel_children` holds via `match_pte` (from protect's `wf`/`node_matching` postconditions).
-    ///
-    /// The axiom requires only the semantic properties of the modified entry that are
-    /// checked by `inv` and `metaregion_sound`; the structural identity of other continuations
-    /// is trusted to hold from the tracked restore operations in the caller.
-    // protect_preserves_cursor_inv_metaregion moved to cursor_fn_lemmas.rs.
-    // map_children_implies moved to tree_lemmas.rs.
     pub open spec fn nodes_locked(self, guards: Guards) -> bool {
-        // Only the subtree rooted at `guard_level` and its descendants down to
-        // `level` are actually locked (see `locking.rs`). The ghost
-        // `continuations` chain extends above `guard_level` to the root, but
-        // those ancestor nodes are NOT lock-held, so the upper bound is
-        // `guard_level`, not `NR_LEVELS`.
         forall|i: int|
             #![trigger self.continuations[i]]
             self.level - 1 <= i < self.guard_level ==> { self.continuations[i].node_locked(guards) }

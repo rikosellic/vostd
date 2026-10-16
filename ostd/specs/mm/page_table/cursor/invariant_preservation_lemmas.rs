@@ -128,7 +128,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 e.meta_slot_paddr().unwrap(),
             ) != changed_idx;
 
-        self.map_children_implies(msp, target);
+        self.lemma_map_children_implies(msp, target);
 
         assert forall|i: int|
             #![trigger self.continuations[i]]
@@ -207,7 +207,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 }
             };
         };
-        self.map_children_implies(f_strong, g);
+        self.lemma_map_children_implies(f_strong, g);
 
         reveal(CursorOwner::path_metaregion_sound);
         assert forall|i: int|
@@ -217,7 +217,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             let cont_entry = self.continuations[i].entry_own;
             if cont_entry.meta_slot_paddr() is Some {
                 // Same sub-page bridge as above (continuations branch).
-                cont_entry.metaregion_sound_one_slot_changed(regions0, regions1, changed_idx);
+                cont_entry.lemma_metaregion_sound_one_slot_changed(regions0, regions1, changed_idx);
             }
         };
     }
@@ -379,7 +379,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         // Pointwise: nn(e) && nf(e) ==> r(e).
         // map_full_tree halves -> combined -> r.
         self.and_map_full_tree(nn, nf);
-        self.map_children_implies(
+        self.lemma_map_children_implies(
             |e: EntryOwner<C>, p: TreePath<NR_ENTRIES>| nn(e, p) && nf(e, p),
             r,
         );
@@ -459,7 +459,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 }
             };
         };
-        self.map_children_implies(f_strong, g);
+        self.lemma_map_children_implies(f_strong, g);
 
         reveal(CursorOwner::path_metaregion_sound);
         assert forall|i: int|
@@ -470,11 +470,11 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             if cont_entry.meta_slot_paddr() is Some {
                 let eidx = frame_to_index(cont_entry.meta_slot_paddr().unwrap());
                 if eidx != changed_idx {
-                    cont_entry.metaregion_sound_one_slot_changed(regions0, regions1, changed_idx);
-                } else {
-                    if cont_entry.is_frame() {
-                        cont_entry.frame_sub_pages_valid_preserved_at_own_slot(regions0, regions1);
-                    }
+                    cont_entry.lemma_metaregion_sound_one_slot_changed(
+                        regions0,
+                        regions1,
+                        changed_idx,
+                    );
                 }
             }
         };
@@ -520,7 +520,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     {
         self.no_node_at_idx_from_slot_key(regions0, removed_idx);
 
-        owner_before_replace.cur_subtree_eq_filtered_mappings_path();
+        owner_before_replace.lemma_cur_subtree_eq_filtered_mappings_path();
 
         let ghost sv = vaddr_of::<C>(removed_path) as int;
         let ghost sz = page_size::<PagingConsts>(owner_before_replace.level) as int;
