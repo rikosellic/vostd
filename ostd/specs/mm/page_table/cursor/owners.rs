@@ -1040,9 +1040,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     }
 
     /// Proves `clone_requires` for the item reconstructed from the current frame entry.
-    /// Uses `metaregion_sound` and the config's `lemma_clone_requires_concrete`,
-    /// allowing ref-count saturation when `may_panic()` holds. The proof still
-    /// relies on the existing MMIO-address and frame-trackedness axioms.
     pub proof fn lemma_cur_frame_clone_requires(
         self,
         item: C::Item,
@@ -1069,11 +1066,6 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         ensures
             item.clone_requires(regions),
     {
-        broadcast use crate::specs::mm::frame::meta_owners::axiom_mmio_usage_iff_mmio_paddr;
-
-        let entry = self.cur_entry_owner();
-        let idx = frame_to_index(pa);
-        EntryOwner::<C>::axiom_frame_is_tracked_iff_not_mmio(entry);
         let cont = self.continuations[self.level - 1];
         cont.lemma_map_children_unroll(
             PageTableOwner::<C>::metaregion_sound_pred(regions),
