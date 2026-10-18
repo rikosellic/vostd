@@ -92,12 +92,13 @@ impl MetaSlot {
     pub open spec fn get_from_unused_region_spec(
         paddr: Paddr,
         as_unique: bool,
+        usage: PageUsage,
         pre: MetaRegionOwners,
         post: MetaRegionOwners,
     ) -> bool {
         let idx = frame_to_index(paddr);
         &&& Self::claim_unused_slot_region_spec(paddr, as_unique, pre, post)
-        &&& post.slot_owners[idx].usage is Frame
+        &&& post.slot_owners[idx].usage == usage
         &&& post.slot_owners[idx].paths_in_pt == pre.slot_owners[idx].paths_in_pt
     }
 
@@ -117,7 +118,7 @@ impl MetaSlot {
             Sum::Left(permission) => permission.resource(),
             Sum::Right(permission) => permission,
         };
-        &&& Self::get_from_unused_region_spec(paddr, as_unique, pre, post)
+        &&& Self::get_from_unused_region_spec(paddr, as_unique, metadata_perms.usage(), pre, post)
         &&& as_unique ==> permission is Right
         &&& !as_unique ==> {
             &&& permission is Left

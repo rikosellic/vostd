@@ -249,8 +249,6 @@ impl<C: PageTableConfig> PageTableNode<C> {
 
             old(regions).contains(meta_to_index(owner@.value().node().slot_vaddr())),
 
-            !crate::specs::mm::frame::meta_owners::is_mmio_paddr(
-                meta_to_frame(owner@.value().node().slot_vaddr())),
             final(regions).slot_owners[owner@.value().node().slot_index].paths_in_pt.is_empty(),
             owner@.value().match_pte(C::E::new_pt_spec(meta_to_frame(owner@.value().node().slot_vaddr())), (level + 1) as PagingLevel),
             final(regions).contains(owner@.value().node().slot_index),
