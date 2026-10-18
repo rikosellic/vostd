@@ -170,20 +170,20 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         &&& C::perm_well_formed_with_region(pa, perm, regions)
     }
 
-    pub proof fn item_slot_in_regions_facts(item: C::Item, regions: MetaRegionOwners)
-        requires
-            Self::item_slot_in_regions(item, regions),
+    pub proof fn lemma_item_slot_in_regions_facts(item: C::Item, regions: MetaRegionOwners)
         ensures
-            Self::item_slot_in_regions_except_perm(item, regions),
-            C::perm_well_formed_with_region(
-                C::item_into_raw(item).0,
-                C::item_into_raw(item).3,
-                regions,
-            ),
+            Self::item_slot_in_regions(item, regions) <==> {
+                &&& Self::item_slot_in_regions_except_perm(item, regions)
+                &&& C::perm_well_formed_with_region(
+                    C::item_into_raw(item).0,
+                    C::item_into_raw(item).3,
+                    regions,
+                )
+            },
     {
     }
 
-    pub proof fn item_slot_in_regions_preserved(
+    pub proof fn lemma_item_slot_in_regions_preserved(
         item: C::Item,
         regions0: MetaRegionOwners,
         regions1: MetaRegionOwners,
@@ -219,16 +219,14 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
         requires
             forall|idx: int| regions0.contains(idx) ==> #[trigger] regions1.contains(idx),
             forall|idx: int|
-                regions0.ref_count(idx) != REF_COUNT_UNUSED ==> {
+                regions0.contains(idx) && regions0.ref_count(idx) != REF_COUNT_UNUSED ==> {
                     &&& (#[trigger] regions1.slot_owners[idx]).same_permissions(
                         regions0.slot_owners[idx],
                     )
                     &&& regions1.slot_owners[idx].usage == regions0.slot_owners[idx].usage
                     &&& regions1.slot_owners[idx].slot_vaddr == regions0.slot_owners[idx].slot_vaddr
+                    &&& regions1.slots[idx] == regions0.slots[idx]
                 },
-            forall|idx: int|
-                regions0.contains(idx) && regions0.ref_count(idx) != REF_COUNT_UNUSED
-                    ==> #[trigger] regions1.slots[idx] == regions0.slots[idx],
         ensures
             forall|item: C::Item|
                 #![trigger Self::item_slot_in_regions(item, regions0)]
@@ -244,7 +242,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
             ) implies #[trigger] Self::item_slot_in_regions(item, regions1) by {
             let (pa, _level, _prop, _perm) = C::item_into_raw(item);
             if C::item_into_raw(item).3@ is Some {
-                Self::item_slot_in_regions_preserved(item, regions0, regions1);
+                Self::lemma_item_slot_in_regions_preserved(item, regions0, regions1);
             } else {
                 C::lemma_none_perm_well_formed(pa, regions1);
             }
