@@ -3,7 +3,10 @@ use vstd_extra::{arithmetic::*, ghost_tree::*, ownership::*};
 
 use crate::specs::{
     arch::{MAX_PADDR, NR_ENTRIES, NR_LEVELS, PAGE_SIZE},
-    mm::page_table::{Mapping, cursor::owners::*, owners::PageTableOwner, vaddr_range_spec},
+    mm::page_table::{
+        Mapping, cursor::owners::*, owners::PageTableOwner, page_table_managed_end_spec,
+        page_table_managed_start_spec,
+    },
 };
 
 use crate::arch::mm::PagingConsts;
@@ -205,8 +208,8 @@ impl<C: PageTableConfig> CursorView<C> {
         };
 
         assert forall|m2: Mapping| #[trigger] new_self.mappings.contains(m2) implies {
-            &&& vaddr_range_spec::<C>().start <= m2.va_range.start
-            &&& m2.va_range.end <= vaddr_range_spec::<C>().end + 1
+            &&& page_table_managed_start_spec::<C>() <= m2.va_range.start
+            &&& m2.va_range.end <= page_table_managed_end_spec::<C>()
         } by {
             if v.mappings.contains(m2) && m2 != m {
             } else {
@@ -311,9 +314,12 @@ impl<C: PageTableConfig> CursorView<C> {
         }
         let new_size = m.page_size / NR_ENTRIES;
         self.lemma_query_mapping();
-        assert(set![4096usize, 2097152, 1073741824].contains(new_size)) by {
+        assert(set![4096usize, 2097152, 1073741824].contains(new_size) && m.page_size % new_size
+            == 0) by {
             if m.page_size == 2097152 {
+                assert(2097152usize % (2097152usize / 512usize) == 0) by (compute_only);
             } else {
+                assert(1073741824usize % (1073741824usize / 512usize) == 0) by (compute_only);
             }
         };
         Self::split_if_mapped_huge_spec_preserves_inv(self, new_size);
@@ -480,10 +486,12 @@ impl<C: PageTableConfig> CursorView<C> {
 
         if self.mappings.remove(qm).contains(e) {
         } else {
+            assert(new_mappings.contains(e));
             let k = choose|k: int|
                 0 <= k < count && #[trigger] Self::split_index(qm, new_size, k as usize) == e;
 
             vstd::arithmetic::div_mod::lemma_fundamental_div_mod(ps as int, ns);
+            vstd::arithmetic::div_mod::lemma_div_nonincreasing(ps as int, ns);
 
             vstd::arithmetic::mul::lemma_mul_inequality(k + 1, count, ns);
         }
@@ -659,7 +667,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     pub proof fn query_mapping_from_subtree(self, qm: Mapping)
         requires
             self.inv(),
-            self.in_locked_range(),
+            self.in_barrier_va(),
             self@.inv(),
             self@.present(),
             qm == self@.query_mapping(),
@@ -675,7 +683,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     pub proof fn split_while_huge_node_noop(self)
         requires
             self.inv(),
-            self.in_locked_range(),
+            self.in_barrier_va(),
             self.cur_entry_owner().is_node(),
             self.level > 1,
         ensures
@@ -688,7 +696,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             let path = subtree.value().path;
             let qm = self@.query_mapping();
             self.query_mapping_from_subtree(qm);
-            PageTableOwner(subtree).view_rec_node_page_size_bound(path, qm);
+            PageTableOwner(subtree).lemma_view_rec_node_page_size_bound(path, qm);
         }
     }
 
@@ -697,7 +705,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     pub proof fn split_while_huge_absent_noop(self, size: usize)
         requires
             self.inv(),
-            self.in_locked_range(),
+            self.in_barrier_va(),
             self.cur_entry_owner().is_absent(),
         ensures
             self@.split_while_huge(size) == self@,
@@ -709,7 +717,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     pub proof fn lemma_split_while_huge_at_level_noop(self)
         requires
             self.inv(),
-            self.in_locked_range(),
+            self.in_barrier_va(),
         ensures
             self@.split_while_huge(page_size::<PagingConsts>(self.level as PagingLevel)) == self@,
     {
@@ -720,7 +728,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             let path = subtree.value().path;
             let qm = self@.query_mapping();
             self.query_mapping_from_subtree(qm);
-            PageTableOwner(subtree).view_rec_page_size_bound(path, qm);
+            PageTableOwner(subtree).lemma_view_rec_page_size_bound(path, qm);
         }
     }
 

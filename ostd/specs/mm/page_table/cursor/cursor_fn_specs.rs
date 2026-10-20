@@ -4,14 +4,17 @@ use crate::specs::{
     arch::PAGE_SIZE,
     mm::{
         frame::{mapping::frame_to_index, meta_region_owners::MetaRegionOwners},
-        page_table::{cursor::owners::*, is_valid_range_spec, *},
+        page_table::{
+            cursor::owners::*, is_valid_range_spec,
+            vaddr_range_proofs::lemma_page_table_managed_index_bounds, *,
+        },
     },
     task::InAtomicMode,
 };
 
 use crate::arch::mm::PagingConsts;
 use crate::mm::{
-    PagingConstsTrait, Vaddr,
+    PagingConstsTrait, PagingLevel, Vaddr,
     frame::meta::{REF_COUNT_MAX, REF_COUNT_UNUSED},
     page_table::*,
 };
@@ -19,13 +22,57 @@ use core::ops::Range;
 
 verus! {
 
+impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
+    /// Request addresses lie inside the locked node and satisfy configuration bounds.
+    pub proof fn lemma_barrier_va_bounds(self, va: Vaddr)
+        requires
+            self.inv(),
+            self.barrier_va.start <= va < self.barrier_va.end,
+            va % C::BASE_PAGE_SIZE() == 0,
+        ensures
+            self.locked_range().start <= va < self.locked_range().end,
+            vaddr_leading_part_spec::<C>(va) == page_table_coverage_start_spec::<C>(),
+            C::TOP_LEVEL_INDEX_RANGE().start <= pte_index_spec::<C>(va, C::NR_LEVELS())
+                < C::TOP_LEVEL_INDEX_RANGE().end,
+    {
+        C::lemma_paging_consts_properties();
+        C::axiom_current_paging_consts_hardcoded();
+        C::lemma_page_table_config_constant_properties();
+        self.lemma_locked_range_span();
+        lemma_same_node_vaddr_leading_part_match::<C>(
+            va,
+            self.prefix,
+            self.prefix,
+            self.guard_level,
+        );
+        lemma_page_table_managed_index_bounds::<C>(va);
+    }
+}
+
 // ─── Cursor specs ─────────────────────────────────────────────────────────────
 impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
-    pub open spec fn cursor_new_success_conditions(va: Range<Vaddr>) -> bool {
+    /// Checks the range validity, ordering, and alignment enforced by the executable constructor.
+    pub open spec fn cursor_new_input_valid(va: Range<Vaddr>) -> bool {
         &&& va.start < va.end
         &&& va.start % C::BASE_PAGE_SIZE() == 0
         &&& va.end % C::BASE_PAGE_SIZE() == 0
         &&& is_valid_range_spec::<C>(va)
+    }
+
+    /// Conditions for verified construction, including representable slot successors.
+    pub open spec fn cursor_new_success_conditions(va: Range<Vaddr>) -> bool {
+        let top = C::NR_LEVELS();
+        let end = page_table_coverage_end_spec::<C>();
+        // A request wholly in the last root slot must descend when root leaves are unsupported.
+        let reserve_level = if top > 1 && C::HIGHEST_TRANSLATION_LEVEL() < top && end - page_size::<
+            C,
+        >(top) <= va.start {
+            (top - 1) as PagingLevel
+        } else {
+            top
+        };
+        &&& Self::cursor_new_input_valid(va)
+        &&& va.end + page_size::<C>(reserve_level) <= end
     }
 
     pub open spec fn invariants(
@@ -34,6 +81,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
         regions: MetaRegionOwners,
         guards: Guards,
     ) -> bool {
+        &&& self.va <= self.barrier_va.end
         &&& owner.inv()
         &&& self.inv()
         &&& self.wf(owner)
@@ -132,6 +180,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     pub open spec fn map_panic_conditions(self, item: C::Item) -> bool {
         ||| self.0.va >= self.0.barrier_va.end
         ||| C::item_into_raw(item).1 > C::HIGHEST_TRANSLATION_LEVEL()
+        ||| C::item_into_raw(item).1 > self.0.guard_level
         ||| self.0.va % page_size::<PagingConsts>(C::item_into_raw(item).1) != 0
         ||| self.0.va + page_size::<PagingConsts>(C::item_into_raw(item).1) > self.0.barrier_va.end
     }
@@ -139,7 +188,11 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     // TODO: ideally this should be an `OwnerOf` impl for `C::Item`
     pub open spec fn item_wf(self, item: C::Item, entry_owner: EntryOwner<C>) -> bool {
         let (paddr, level, prop, _perm) = C::item_into_raw(item);
-        &&& C::item_well_formed(item)
+        &&& C::item_well_formed(
+            item,
+        )
+        // Mapping may descend within the locked subtree, but cannot replace its parent PTE.
+        &&& level <= self.0.guard_level
         &&& entry_owner.inv()
         &&& (entry_owner.is_absent() || Child::Frame(paddr, level, prop).wf(entry_owner))
     }

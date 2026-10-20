@@ -239,6 +239,10 @@ impl<'a> VmSpace<'a> {
         proof_decl! {
             let tracked mut out_owner: Option<CursorOwner<'a, UserPtConfig>>;
         }
+        proof {
+            lemma_vaddr_range_spec_user();
+            lemma_page_size_spec_values();
+        }
         match {
             #[verus_spec(with Tracked(owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
             self.pt.cursor(guard, va)
@@ -295,6 +299,10 @@ impl<'a> VmSpace<'a> {
     > {
         proof_decl! {
             let tracked mut out_owner: Option<CursorOwner<'a, UserPtConfig>>;
+        }
+        proof {
+            lemma_vaddr_range_spec_user();
+            lemma_page_size_spec_values();
         }
         match {
             #[verus_spec(with Tracked(owner), Ghost(root_guard), Tracked(regions), Tracked(guards))]
@@ -495,7 +503,7 @@ impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
         ensures
             final(self).0.invariants(*final(owner), *final(regions), *final(guards)),
             !old(self).0.query_panic_condition(*old(owner), *old(regions)),
-            old(owner).in_locked_range() ==> r is Ok,
+            old(owner).in_barrier_va() ==> r is Ok,
             r matches Ok(state) ==>
                 final(self).0.query_some_condition(*final(owner)) ==>
                 final(self).0.query_some_ensures(*final(owner), state),
@@ -550,7 +558,7 @@ impl<'rcu, A: InAtomicMode> Cursor<'rcu, A> {
             res is Some ==> {
                 &&& res->0 == final(self).0.va
                 &&& final(owner).level <= final(owner).guard_level
-                &&& final(owner).in_locked_range()
+                &&& final(owner).in_barrier_va()
             },
     )]
     pub fn find_next(&mut self, len: usize) -> Option<Vaddr> {
@@ -670,7 +678,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
         ensures
             final(self).pt_cursor.0.invariants(*final(owner), *final(regions), *final(guards)),
             !old(self).pt_cursor.0.query_panic_condition(*old(owner), *old(regions)),
-            old(owner).in_locked_range() ==> res is Ok,
+            old(owner).in_barrier_va() ==> res is Ok,
             res matches Ok(state) ==>
                 final(self).pt_cursor.0.query_some_condition(*final(owner)) ==>
                 final(self).pt_cursor.0.query_some_ensures(*final(owner), state),
@@ -720,7 +728,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
             res is Some ==> {
                 &&& res->0 == final(self).pt_cursor.0.va
                 &&& final(owner).level <= final(owner).guard_level
-                &&& final(owner).in_locked_range()
+                &&& final(owner).in_barrier_va()
             },
     )]
     pub fn find_next(&mut self, len: usize) -> Option<Vaddr> {
@@ -958,9 +966,6 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
         let ghost mut removed: Set<Mapping> = Set::empty();
 
         proof {
-            // end_va <= barrier_va.end == locked_range().end. The cursor invariant
-            // bounds locked_range().end by `vaddr_range_spec::<C>().1 + 1`,
-            // and for UserPtConfig that evaluates to 2^47.
             lemma_vaddr_range_spec_user();
             assert((self.pt_cursor.0.va + len) % PAGE_SIZE as int == 0) by (compute);
         }
@@ -988,7 +993,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                 // Per-config VA bound: every removed mapping fits within the
                 // user VA space, sourced from the cursor view prior to removal.
                 forall |m: Mapping| #[trigger] removed.contains(m) ==>
-                    m.va_range.end <= 0x0000_8000_0000_0000_usize,
+                    m.va_range.end <= page_table_managed_end_spec::<UserPtConfig>(),
                 // Nothing in [start_va, end_va) with start < cursor_va remains,
                 // unless it is a sub-mapping of a boundary-straddling entry.
                 forall |m: Mapping| #![auto] adjusted_base.contains(m) && !removed.contains(m)
@@ -1018,7 +1023,6 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                         && m.property == parent.property,
             invariant_except_break
                 self.pt_cursor.0.va <= end_va,
-                self.pt_cursor.0.va < end_va ==> cursor_owner.in_locked_range(),
             ensures
                 self.pt_cursor.0.va >= end_va,
             decreases end_va - self.pt_cursor.0.va
@@ -1212,7 +1216,7 @@ impl<'a, A: InAtomicMode> CursorMut<'a, A> {
                     sv.lemma_split_while_huge_preserves_inv(mm.page_size);
                 }
                 assert forall|m: Mapping| #[trigger] removed.contains(m) implies m.va_range.end
-                    <= 0x0000_8000_0000_0000_usize by {
+                    <= page_table_managed_end_spec::<UserPtConfig>() by {
                     if !old_removed.contains(m) {
                         if is_mapped {
                             assert(m == mm);
@@ -1845,7 +1849,6 @@ unsafe impl PageTableConfig for UserPtConfig {
         lemma_pow2_adds(9, 39);
         PageTableEntry::lemma_layout();
         Self::C::lemma_paging_consts_properties();
-        assert(Self::LEADING_BITS_spec() == 0usize);
     }
 }
 

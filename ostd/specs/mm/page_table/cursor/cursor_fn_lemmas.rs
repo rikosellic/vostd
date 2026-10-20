@@ -72,8 +72,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         requires
             self.inv(),
             old.inv(),
-            self.in_locked_range(),
-            old.in_locked_range(),
+            self.in_barrier_va(),
+            old.in_barrier_va(),
             self.level == old.level,
             self.va == old.va,
             old.cur_entry_owner().is_frame(),
@@ -184,13 +184,14 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     )
         requires
             self.inv(),
-            self.in_locked_range(),
+            self.in_barrier_va(),
             !self.popped_too_high,
             self.metaregion_sound(regions),
             // cursor level and structural fields unchanged
             self.level == other.level,
             self.guard_level == other.guard_level,
             self.va == other.va,
+            self.barrier_va == other.barrier_va,
             self.prefix == other.prefix,
             self.popped_too_high == other.popped_too_high,
             // higher-level continuations unchanged
@@ -278,7 +279,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             // continuation's slot at `idx` (a real, in-range slot). With this +
             // "higher continuations unchanged", the root continuation's
             // isolation clauses are preserved.
-            self.in_locked_range(),
+            self.in_barrier_va(),
             !self.popped_too_high,
             forall|j: int|
                 0 <= j < NR_ENTRIES && j != owner0.continuations[owner0.level - 1].idx ==> (
@@ -286,6 +287,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                     == owner0.continuations[owner0.level - 1].children[j],
             self.level == owner0.level,
             self.va == owner0.va,
+            self.barrier_va == owner0.barrier_va,
             self.guard_level == owner0.guard_level,
             self.prefix == owner0.prefix,
             self.popped_too_high == owner0.popped_too_high,
@@ -304,7 +306,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
                 == owner0.continuations[owner0.level - 1].guard.inner.inner@.ptr.addr(),
             self.continuations[self.level - 1].path() == owner0.continuations[owner0.level
                 - 1].path(),
-            pte_index_spec::<C>(self.cur_va(), (self.level - 1 + 1) as PagingLevel)
+            pte_index_spec::<C>(self.cur_va(), self.level as PagingLevel)
                 == self.continuations[self.level - 1].idx,
             // Domain preserved: same keys as owner0.
             self.continuations.dom() =~= owner0.continuations.dom(),
@@ -315,7 +317,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         C::lemma_paging_consts_properties();
         C::axiom_current_paging_consts_hardcoded();
         lemma_pte_index_bound::<C>(self.cur_va(), self.level);
-        assert(pte_index_spec::<C>(self.va, (self.level - 1 + 1) as PagingLevel)
+        assert(pte_index_spec::<C>(self.va, self.level as PagingLevel)
             == self.continuations[self.level - 1].idx);
         assert(self.continuations[L - 1].level() == self.level);
         assert(self.continuations.contains_key(L - 1));
@@ -329,11 +331,11 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             // (level == NR_LEVELS). For the outside-(borrowed||absent) clause:
             // the map changed only the in-range slot `idx`, so every outside
             // child keeps `owner0`'s value; `idx` is in-range (top index in
-            // [start, end), and `in_locked_range` rules out the sentinel).
-            owner0.lemma_in_locked_range_top_index_lt_top_end();
+            // [start, end), and `in_barrier_va` rules out the sentinel).
+            owner0.lemma_in_barrier_va_top_index_bounds();
             assert(self.continuations[NR_LEVELS - 1].idx == pte_index_spec::<C>(
                 self.va,
-                (NR_LEVELS - 1 + 1) as PagingLevel,
+                NR_LEVELS as PagingLevel,
             ));
             assert(self.continuations[NR_LEVELS - 1].idx == owner0.continuations[owner0.level
                 - 1].idx);
@@ -352,9 +354,9 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
     pub proof fn map_branch_none_no_new_mappings(self, owner0: Self)
         requires
             owner0.inv(),
-            owner0.in_locked_range(),
+            owner0.in_barrier_va(),
             self.inv(),
-            self.in_locked_range(),
+            self.in_barrier_va(),
             self.level == owner0.level,
             self.va == owner0.va,
             forall|i: int|
@@ -397,7 +399,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
 
         assert(cont.view_mappings() == cont0.view_mappings()) by {
             cont0.lemma_inv_children_unroll(idx);
-            PageTableOwner(cont0.children[idx].unwrap()).view_rec_absent_empty(
+            PageTableOwner(cont0.children[idx].unwrap()).lemma_view_rec_absent_empty(
                 cont0.path().push_tail(idx as int),
             );
             assert forall|m: Mapping|
