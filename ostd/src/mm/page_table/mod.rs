@@ -425,26 +425,11 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     ///
     /// NOTE: The postcondition is designed to be minimal, to actually be used in proofs, call `lemma_page_table_config_constant_properties`
     /// instead to get all the properties that are derived from the requirements.
-    ///
-    /// FIXME： General architecture support. Move properties only relevant to paging constants to `PagingConstsTrait`.
     proof fn lemma_page_table_config_constant_requirements()
         ensures
             core::mem::size_of::<Self::E>() == Self::C::PTE_SIZE(),
-            Self::TOP_LEVEL_INDEX_RANGE().start < Self::TOP_LEVEL_INDEX_RANGE().end,
-            Self::TOP_LEVEL_INDEX_RANGE().end <= pow2(
-                (Self::C::ADDRESS_WIDTH() - pte_index_bit_offset_spec::<Self::C>(
-                    Self::C::NR_LEVELS(),
-                )) as nat,
-            ),
-            Self::TOP_LEVEL_INDEX_RANGE().end * pow2(
-                pte_index_bit_offset_spec::<Self::C>(Self::C::NR_LEVELS()) as nat,
-            ) <= usize::MAX,
-            // FIXME: This property does not hold in general, `ADDRESS_WIDTH` can be wider.
-            pow2(
-                (Self::C::ADDRESS_WIDTH() - pte_index_bit_offset_spec::<Self::C>(
-                    Self::C::NR_LEVELS(),
-                )) as nat,
-            ) == NR_ENTRIES,
+            Self::TOP_LEVEL_INDEX_RANGE().start < Self::TOP_LEVEL_INDEX_RANGE().end
+                <= nr_subpage_per_huge::<Self::C>(),
     ;
 
     // The derived properties of the page table config constants.
@@ -454,28 +439,49 @@ pub unsafe trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
         ensures
     // Derived properties.
 
-            Self::TOP_LEVEL_INDEX_RANGE().end <= NR_ENTRIES,
-            // Copied from the postcondition of `lemma_page_table_config_constant_requirements`
-            // so that we only need to call this lemma in proofs.
-            core::mem::size_of::<Self::E>() == Self::C::PTE_SIZE(),
-            Self::TOP_LEVEL_INDEX_RANGE().start < Self::TOP_LEVEL_INDEX_RANGE().end,
             Self::TOP_LEVEL_INDEX_RANGE().end <= pow2(
-                (Self::C::ADDRESS_WIDTH() - pte_index_bit_offset_spec::<Self::C>(
-                    Self::C::NR_LEVELS(),
-                )) as nat,
+                top_level_index_width_spec::<Self::C>() as nat,
             ),
             Self::TOP_LEVEL_INDEX_RANGE().end * pow2(
                 pte_index_bit_offset_spec::<Self::C>(Self::C::NR_LEVELS()) as nat,
             ) <= usize::MAX,
-            // FIXME: This property does not hold in general, `ADDRESS_WIDTH` can be wider.
-            pow2(
-                (Self::C::ADDRESS_WIDTH() - pte_index_bit_offset_spec::<Self::C>(
-                    Self::C::NR_LEVELS(),
-                )) as nat,
-            ) == NR_ENTRIES,
+            // Copied from the postcondition of `lemma_page_table_config_constant_requirements`
+            // so that we only need to call this lemma in proofs.
+            core::mem::size_of::<Self::E>() == Self::C::PTE_SIZE(),
+            Self::TOP_LEVEL_INDEX_RANGE().start < Self::TOP_LEVEL_INDEX_RANGE().end
+                <= nr_subpage_per_huge::<Self::C>(),
     {
+        use vstd::arithmetic::mul::{
+            lemma_mul_inequality,
+            lemma_mul_inequality_converse,
+            lemma_mul_is_commutative,
+        };
+
         Self::C::lemma_paging_consts_properties();
         Self::lemma_page_table_config_constant_requirements();
+        let level = Self::C::NR_LEVELS();
+        let offset = pte_index_bit_offset_spec::<Self::C>(level);
+        let coverage = nr_page_table_coverage_bits_spec::<Self::C>();
+        let width = Self::C::ADDRESS_WIDTH();
+        lemma_page_size_is_pow2_pte_index_bit_offset::<Self::C>(level);
+        lemma_page_size_is_pow2_pte_index_bit_offset::<Self::C>((level + 1) as PagingLevel);
+        lemma_page_size_next::<Self::C>(level);
+        if coverage < width {
+            lemma_pow2_strictly_increases(coverage as nat, width as nat);
+        }
+        lemma_pow2_strictly_increases(width as nat, usize::BITS as nat);
+        lemma_pow2_adds(top_level_index_width_spec::<Self::C>() as nat, offset as nat);
+        let size = page_size::<Self::C>(level) as int;
+        let fanout = nr_subpage_per_huge::<Self::C>() as int;
+        let end = Self::TOP_LEVEL_INDEX_RANGE().end as int;
+        lemma_mul_is_commutative(size, fanout);
+        lemma_mul_inequality(end, fanout, size);
+        lemma_mul_inequality_converse(
+            end,
+            pow2(top_level_index_width_spec::<Self::C>() as nat) as int,
+            size,
+        );
+        lemma2_to64();
     }
 }
 
