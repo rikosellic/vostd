@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 //! Implementation of the locking protocol.
 use vstd::prelude::*;
-use vstd_extra::{array_ptr::*, ghost_tree::*, ownership::*};
+use vstd_extra::{array_ptr::*, ghost_tree::*, ownership::*, sum::Sum};
 
 use crate::specs::{
     mm::{
@@ -457,7 +457,7 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
             let tracked node_owner = cont.entry_own.tracked_borrow_node();
             let tracked slot_perm = *regions.slots.tracked_borrow(node_owner.slot_index);
             let node_ref = unsafe {
-                #[verus_spec(with Tracked(slot_perm), Tracked(node_owner.tracked_borrow_metadata_perm(&*regions)), Tracked(None))]
+                #[verus_spec(with Tracked(slot_perm), Tracked(Sum::Right(node_owner.tracked_borrow_metadata_perm(&*regions))))]
                 PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr)
             };
             #[verus_spec(with Tracked(node_owner), Tracked(guards), Tracked(node_owner.tracked_borrow_metadata_perm(&*regions)))]
@@ -537,7 +537,7 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
         let tracked node_owner = cont.entry_own.tracked_borrow_node();
         let tracked slot_perm = *regions.slots.tracked_borrow(node_owner.slot_index);
         let node_ref = unsafe {
-            #[verus_spec(with Tracked(slot_perm), Tracked(node_owner.tracked_borrow_metadata_perm(&*regions)), Tracked(None))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(Sum::Right(node_owner.tracked_borrow_metadata_perm(&*regions))))]
             PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr)
         };
         #[verus_spec(with Tracked(node_owner), Tracked(guards), Tracked(node_owner.tracked_borrow_metadata_perm(&*regions)))]

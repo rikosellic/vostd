@@ -37,7 +37,7 @@ use vstd::{
     simple_pptr::{self, PPtr},
     std_specs::cmp::PartialEqSpecImpl,
 };
-use vstd_extra::{cast_ptr::*, ownership::*, panic::may_panic};
+use vstd_extra::{cast_ptr::*, ownership::*, panic::may_panic, sum::Sum};
 
 pub mod allocator;
 pub mod linked_list;
@@ -466,7 +466,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         let tracked metadata_perm = self.tracked_metadata_perm.borrow().tracked_borrow();
         // SAFETY: Both the lifetime and the type matches `self`.
         unsafe {
-            #[verus_spec(with Tracked(slot_perm), Tracked(metadata_perm.tracked_borrow()), Tracked(Some(metadata_perm)))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(Sum::Left(metadata_perm)))]
             FrameRef::borrow_paddr(self.start_paddr())
         }
     }
@@ -507,7 +507,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
                 regions.lemma_contains_valid_frame_paddr(self.start_paddr_spec());
             }
             let tracked slot_perm = regions.tracked_borrow_slot(self.start_paddr_spec());
-            #[verus_spec(with Tracked(slot_perm), Tracked(frame_permission.tracked_borrow()), Tracked(Some(frame_permission)))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(Sum::Left(frame_permission)))]
             FrameRef::borrow_paddr(self.start_paddr())
         }
     }

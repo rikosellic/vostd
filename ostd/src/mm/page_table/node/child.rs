@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 //! This module specifies the type of the children of a page table node.
 use vstd::{prelude::*, simple_pptr::PPtr};
-use vstd_extra::{cast_ptr::*, ownership::*};
+use vstd_extra::{cast_ptr::*, ownership::*, sum::Sum};
 
 use crate::specs::{
     arch::*,
@@ -215,7 +215,7 @@ impl<'a, C: PageTableConfig> ChildRef<'a, C> {
             let tracked node_owner = entry_owner.tracked_borrow_node();
             let tracked slot_perm = *regions.slots.tracked_borrow(node_owner.slot_index);
             let node = unsafe {
-                #[verus_spec(with Tracked(slot_perm), Tracked(entry_owner.tracked_borrow_node_permission().tracked_borrow()), Tracked(None))]
+                #[verus_spec(with Tracked(slot_perm), Tracked(Sum::Right(entry_owner.tracked_borrow_node_permission().tracked_borrow())))]
                 PageTableNodeRef::borrow_paddr(paddr)
             };
 

@@ -3,7 +3,7 @@ use vstd::{
     prelude::*,
     simple_pptr::{PPtr, PointsTo},
 };
-use vstd_extra::{cast_ptr::Repr, prelude::*};
+use vstd_extra::{cast_ptr::Repr, prelude::*, sum::Sum};
 
 use crate::specs::{
     arch::valid_frame_paddr,
@@ -55,33 +55,46 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'a, M> {
     /// The caller supplies valid metadata and guarantees the physical node's
     /// lifetime. An ordinary borrow additionally retains its counted permission
     /// for `'a`; a raw node handle does not establish `FrameRef::inv()`.
+    /// Pass `Sum::Left` for a retained counted borrow, or `Sum::Right` for
+    /// temporary metadata access when constructing a raw node handle.
     #[verus_spec(r =>
         with
             Tracked(slot_perm): Tracked<&'static PointsTo<MetaSlot>>,
-            Tracked(metadata_perm): Tracked<&MetadataPerm>,
-            Tracked(borrowed_perm): Tracked<Option<&'a FracMetadataPerm>>,
+            Tracked(permission): Tracked<Sum<&'a FracMetadataPerm, &MetadataPerm>>,
         requires
             valid_frame_paddr(raw),
-            MetaSlot::perms_related(*slot_perm, *metadata_perm),
+            MetaSlot::perms_related(*slot_perm, match permission {
+                Sum::Left(counted) => counted.resource(),
+                Sum::Right(metadata) => *metadata,
+            }),
             slot_perm.pptr().addr() == frame_to_meta(raw),
             slot_perm.is_init(),
-            borrowed_perm matches Some(permission) ==> {
-                &&& permission.frac() == 1
-                &&& permission.resource() == *metadata_perm
-            },
+            permission matches Sum::Left(counted) ==> counted.frac() == 1,
         ensures
             r.inner@.ptr.addr() == frame_to_meta(raw),
             r.inner@.ptr_inv(),
             r.inner@.tracked_slot_perm@ == slot_perm,
             r.inner@.tracked_metadata_perm@ is None,
-            MetaSlot::perms_related(r.inner@.slot_perm(), *metadata_perm),
-            r.tracked_metadata_perm@ == borrowed_perm,
-            borrowed_perm is Some ==> r.inv(),
-            forall|repr_perm: M::ReprPerm|
-                #[trigger] typed_meta_wf::<M>(*slot_perm, *metadata_perm, repr_perm)
-                ==> r.inner@.external_meta_wf(*metadata_perm, repr_perm),
+            permission matches Sum::Left(counted) ==> {
+                &&& r.tracked_metadata_perm@ == Some(counted)
+                &&& r.inv()
+                &&& forall|repr_perm: M::ReprPerm|
+                    #[trigger] typed_meta_wf::<M>(*slot_perm, counted.resource(), repr_perm)
+                    ==> r.inner@.external_meta_wf(counted.resource(), repr_perm)
+            },
+            permission matches Sum::Right(metadata) ==> {
+                &&& r.tracked_metadata_perm@ is None
+                &&& MetaSlot::perms_related(r.inner@.slot_perm(), *metadata)
+                &&& forall|repr_perm: M::ReprPerm|
+                    #[trigger] typed_meta_wf::<M>(*slot_perm, *metadata, repr_perm)
+                    ==> r.inner@.external_meta_wf(*metadata, repr_perm)
+            },
     )]
     pub(in crate::mm) unsafe fn borrow_paddr(raw: Paddr) -> Self {
+        let tracked borrowed_perm = match permission {
+            Sum::Left(counted) => Some(counted),
+            Sum::Right(_) => None,
+        };
         proof_with!{ tracked_slot_perm: Tracked(slot_perm), tracked_metadata_perm: Tracked(None)}
         let frame = Frame::<M> {
             ptr: PPtr::<MetaSlot>::from_addr(frame_to_meta(raw)),
