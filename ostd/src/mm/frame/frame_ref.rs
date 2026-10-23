@@ -3,14 +3,14 @@ use vstd::{
     prelude::*,
     simple_pptr::{PPtr, PointsTo},
 };
-use vstd_extra::{cast_ptr::Repr, prelude::*, sum::Sum};
+use vstd_extra::{cast_ptr::Repr, prelude::*};
 
 use crate::specs::{
     arch::valid_frame_paddr,
     mm::frame::{
         frame_specs::FrameRawPerms,
         mapping::meta_to_index,
-        meta_owners::{FracMetadataPerm, MetaSlotStorage, MetadataPerm, typed_meta_wf},
+        meta_owners::{FracMetadataPerm, MetaSlotStorage, typed_meta_wf},
         meta_region_owners::MetaRegionOwners,
     },
 };
@@ -52,49 +52,36 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'a, M> {
     /// Borrows the [`Frame`] at the physical address as a [`FrameRef`].
     ///
     /// # Safety
-    /// The caller supplies valid metadata and guarantees the physical node's
-    /// lifetime. An ordinary borrow additionally retains its counted permission
-    /// for `'a`; a raw node handle does not establish `FrameRef::inv()`.
-    /// Pass `Sum::Left` for a retained counted borrow, or `Sum::Right` for
-    /// temporary metadata access when constructing a raw node handle.
+    /// The caller must keep the physical node alive for `'a`. A counted
+    /// permission, when supplied, is retained for that lifetime. Without one,
+    /// the result is only a raw handle: it does not establish `FrameRef::inv()`,
+    /// and metadata access requires an external permission.
     #[verus_spec(r =>
         with
             Tracked(slot_perm): Tracked<&'static PointsTo<MetaSlot>>,
-            Tracked(permission): Tracked<Sum<&'a FracMetadataPerm, &MetadataPerm>>,
+            Tracked(permission): Tracked<Option<&'a FracMetadataPerm>>,
         requires
             valid_frame_paddr(raw),
-            MetaSlot::perms_related(*slot_perm, match permission {
-                Sum::Left(counted) => counted.resource(),
-                Sum::Right(metadata) => *metadata,
-            }),
             slot_perm.pptr().addr() == frame_to_meta(raw),
             slot_perm.is_init(),
-            permission matches Sum::Left(counted) ==> counted.frac() == 1,
+            permission matches Some(counted) ==> {
+                &&& counted.frac() == 1
+                &&& MetaSlot::perms_related(*slot_perm, counted.resource())
+            },
         ensures
             r.inner@.ptr.addr() == frame_to_meta(raw),
             r.inner@.ptr_inv(),
             r.inner@.tracked_slot_perm@ == slot_perm,
             r.inner@.tracked_metadata_perm@ is None,
-            permission matches Sum::Left(counted) ==> {
-                &&& r.tracked_metadata_perm@ == Some(counted)
+            r.tracked_metadata_perm@ == permission,
+            permission matches Some(counted) ==> {
                 &&& r.inv()
                 &&& forall|repr_perm: M::ReprPerm|
                     #[trigger] typed_meta_wf::<M>(*slot_perm, counted.resource(), repr_perm)
                     ==> r.inner@.external_meta_wf(counted.resource(), repr_perm)
             },
-            permission matches Sum::Right(metadata) ==> {
-                &&& r.tracked_metadata_perm@ is None
-                &&& MetaSlot::perms_related(r.inner@.slot_perm(), *metadata)
-                &&& forall|repr_perm: M::ReprPerm|
-                    #[trigger] typed_meta_wf::<M>(*slot_perm, *metadata, repr_perm)
-                    ==> r.inner@.external_meta_wf(*metadata, repr_perm)
-            },
     )]
     pub(in crate::mm) unsafe fn borrow_paddr(raw: Paddr) -> Self {
-        let tracked borrowed_perm = match permission {
-            Sum::Left(counted) => Some(counted),
-            Sum::Right(_) => None,
-        };
         proof_with!{ tracked_slot_perm: Tracked(slot_perm), tracked_metadata_perm: Tracked(None)}
         let frame = Frame::<M> {
             ptr: PPtr::<MetaSlot>::from_addr(frame_to_meta(raw)),
@@ -103,7 +90,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'a, M> {
 
         let inner = ManuallyDrop::new(frame);
 
-        proof_with! { tracked_metadata_perm: Tracked(borrowed_perm) }
+        proof_with! { tracked_metadata_perm: Tracked(permission) }
         Self { inner, _marker: PhantomData }
     }
 }

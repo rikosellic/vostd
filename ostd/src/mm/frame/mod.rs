@@ -37,7 +37,7 @@ use vstd::{
     simple_pptr::{self, PPtr},
     std_specs::cmp::PartialEqSpecImpl,
 };
-use vstd_extra::{cast_ptr::*, ownership::*, panic::may_panic, sum::Sum};
+use vstd_extra::{cast_ptr::*, ownership::*, panic::may_panic};
 
 pub mod allocator;
 pub mod linked_list;
@@ -460,7 +460,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         let tracked metadata_perm = self.tracked_metadata_perm.borrow().tracked_borrow();
         // SAFETY: Both the lifetime and the type matches `self`.
         unsafe {
-            #[verus_spec(with Tracked(slot_perm), Tracked(Sum::Left(metadata_perm)))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(Some(metadata_perm)))]
             FrameRef::borrow_paddr(self.start_paddr())
         }
     }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 //! This module provides accessors to the page table entries in a node.
 use vstd::prelude::*;
-use vstd_extra::{ghost_tree::*, ownership::*, sum::Sum};
+use vstd_extra::{ghost_tree::*, ownership::*};
 
 use crate::specs::{
     arch::*,
@@ -614,7 +614,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             let tracked new_node = new_node_owner.tracked_borrow_value().tracked_borrow_node();
             let tracked slot_perm = *regions.slots.tracked_borrow(new_node.slot_index);
             let pt_ref = unsafe {
-                #[verus_spec(with Tracked(slot_perm), Tracked(Sum::Right(new_node_owner.tracked_borrow_value().tracked_borrow_node_permission().tracked_borrow())))]
+                #[verus_spec(with Tracked(slot_perm), Tracked(None))]
                 PageTableNodeRef::borrow_paddr(paddr)
             };
 
@@ -865,7 +865,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         let tracked new_node = new_owner.tracked_borrow_value().tracked_borrow_node();
         let tracked slot_perm = *regions.slots.tracked_borrow(new_node.slot_index);
         let pt_ref = unsafe {
-            #[verus_spec(with Tracked(slot_perm), Tracked(Sum::Right(new_page.tracked_metadata_perm.borrow().tracked_borrow().tracked_borrow())))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(None))]
             PageTableNodeRef::borrow_paddr(paddr)
         };
 
@@ -1721,7 +1721,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         let tracked new_node = new_node_value.tracked_borrow_node();
         let tracked slot_perm = *regions.slots.tracked_borrow(new_node.slot_index);
         let pt_ref = unsafe {
-            #[verus_spec(with Tracked(slot_perm), Tracked(Sum::Right(new_node_owner.tracked_borrow_value().tracked_borrow_node_permission().tracked_borrow())))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(None))]
             PageTableNodeRef::borrow_paddr(paddr)
         };
 
