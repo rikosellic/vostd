@@ -3627,11 +3627,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                     old_child_value.tracked_take_node()
                 };
 
-                #[verus_spec(with
-                    Tracked(pt.tracked_metadata_perm.borrow().tracked_borrow()),
-                    Tracked(regions)
-                )]
-                let borrow_pt = pt.borrow_with_permission();
+                let borrow_pt = pt.borrow();
 
                 let ghost guards0 = *guards;
 

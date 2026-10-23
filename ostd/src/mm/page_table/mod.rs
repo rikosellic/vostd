@@ -952,21 +952,12 @@ impl PageTable<KernelPtConfig> {
             assert(kernel_owner.0.value().metaregion_sound(*regions));
         }
         let mut root_node = {
-            /* The root's counting permission is held by NodeOwner; borrowing
-             * with that external permission preserves the pointer and refcount.
-             * Origin Rust: let root_ref = self.root.borrow();
-             */
-            #[verus_spec(with Tracked(self.root.tracked_metadata_perm.borrow().tracked_borrow()), Tracked(&*regions))]
-            let root_ref = self.root.borrow_with_permission();
+            let root_ref = self.root.borrow();
             #[verus_spec(with Tracked(root_owner), Tracked(guards), Tracked(root_owner.tracked_borrow_metadata_perm(&*regions)))]
             root_ref.lock(preempt_guard)
         };
         let mut new_node: PageTableGuard<'_, UserPtConfig> = {
-            /* The fresh root's permission is held by new_node_owner.
-             * Origin Rust: let new_ref = new_root.borrow();
-             */
-            #[verus_spec(with Tracked(new_root.tracked_metadata_perm.borrow().tracked_borrow()), Tracked(&*regions))]
-            let new_ref = new_root.borrow_with_permission();
+            let new_ref = new_root.borrow();
             #[verus_spec(with Tracked(&new_node_owner), Tracked(guards), Tracked(new_node_owner.tracked_borrow_metadata_perm(&*regions)))]
             new_ref.lock(preempt_guard)
         };
