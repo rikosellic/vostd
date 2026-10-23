@@ -183,22 +183,13 @@ impl<'a, C: PageTableConfig> ChildRef<'a, C> {
     ///   access requires an actual external permission; it does not satisfy
     ///   `FrameRef::inv()` by itself.
     #[verus_spec(res =>
-        with Tracked(regions): Tracked<&mut MetaRegionOwners>,
+        with Tracked(regions): Tracked<&MetaRegionOwners>,
              Tracked(entry_owner): Tracked<&EntryOwner<C>>,
         requires
-            entry_owner.pte_invariants(*pte, *old(regions)),
+            entry_owner.pte_invariants(*pte, *regions),
             level == entry_owner.parent_level,
         ensures
-            res.invariants(*entry_owner, *final(regions)),
-            final(regions).slots == old(regions).slots,
-            final(regions).slot_owners == old(regions).slot_owners,
-            forall|k: int|
-                old(regions).slots.contains_key(k) ==> #[trigger] final(regions).slots.contains_key(
-                    k,
-                ),
-            forall|k: int|
-                old(regions).slots.contains_key(k) ==> old(regions).slots[k]
-                    == #[trigger] final(regions).slots[k],
+            res.invariants(*entry_owner, *regions),
     )]
     pub unsafe fn from_pte(pte: &C::E, level: PagingLevel) -> Self {
         if !pte.is_present() {

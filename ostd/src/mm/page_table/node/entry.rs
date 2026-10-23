@@ -114,22 +114,17 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
     /// Returns if the entry maps to a page table node.
     #[verus_spec(
-        with Tracked(owner): Tracked<EntryOwner<C>>,
-             Tracked(parent_owner): Tracked<&NodeOwner<C>>,
-             Tracked(metadata_perm): Tracked<&MetadataPerm>,
+        with Tracked(metadata_perm): Tracked<&MetadataPerm>,
         requires
-            owner.inv(),
-            *metadata_perm == parent_owner.metadata,
-            self.wf(owner),
-            parent_owner.relate_guard(*self.node),
-            parent_owner.inv(),
-            parent_owner.level() == owner.parent_level,
+            self.node.inner.inner@.external_meta_wf(*metadata_perm, ()),
         returns
-            owner.is_node(),
+            self.pte.is_present() && !self.pte.is_last(
+                typed_meta_value::<PageTablePageMeta<C>>(*metadata_perm, ()).level,
+            ),
     )]
     pub(in crate::mm) fn is_node(&self) -> bool {
         self.pte.is_present() && !self.pte.is_last(
-            #[verus_spec(with Tracked(&*parent_owner), Tracked(Some(metadata_perm)))]
+            #[verus_spec(with Tracked(Some(metadata_perm)))]
             self.node.level(),
         )
     }
@@ -137,27 +132,17 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     /// Gets a reference to the child.
     #[verus_spec(res =>
         with Tracked(owner): Tracked<&EntryOwner<C>>,
-             Tracked(parent_owner): Tracked<&NodeOwner<C>>,
-             Tracked(regions): Tracked<&mut MetaRegionOwners>,
+             Tracked(metadata_perm): Tracked<&MetadataPerm>,
+             Tracked(regions): Tracked<&MetaRegionOwners>,
         requires
-            self.invariants(*owner, *old(regions)),
-            self.node_matching(*owner, *parent_owner, *self.node),
-            parent_owner.metaregion_sound_node(*old(regions)),
+            self.invariants(*owner, *regions),
+            self.node.inner.inner@.external_meta_wf(*metadata_perm, ()),
+            typed_meta_value::<PageTablePageMeta<C>>(*metadata_perm, ()).level == owner.parent_level,
         ensures
-            res.invariants(*owner, *final(regions)),
-            final(regions).slots == old(regions).slots,
-            final(regions).slot_owners == old(regions).slot_owners,
-            forall|k: int|
-                old(regions).slots.contains_key(k) ==> #[trigger] final(regions).slots.contains_key(
-                    k,
-                ),
-            forall|k: int|
-                old(regions).slots.contains_key(k) ==> old(regions).slots[k]
-                    == #[trigger] final(regions).slots[k],
-            final(regions).inv(),
+            res.invariants(*owner, *regions),
     )]
     pub(in crate::mm) fn to_ref(&self) -> ChildRef<'rcu, C> {
-        #[verus_spec(with Tracked(&*parent_owner), Tracked(Some(parent_owner.tracked_borrow_metadata_perm(&*regions))))]
+        #[verus_spec(with Tracked(Some(metadata_perm)))]
         let level = self.node.level();
 
         // SAFETY:
@@ -367,7 +352,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         // SAFETY:
         //  - The PTE is not referenced by other `ChildRef`s (since we have `&mut self`).
         //  - The level matches the current node.
-        #[verus_spec(with Tracked(&*parent_owner), Tracked(Some(parent_owner.tracked_borrow_metadata_perm(&*regions))))]
+        #[verus_spec(with Tracked(Some(parent_owner.tracked_borrow_metadata_perm(&*regions))))]
         let level = self.node.level();
 
         let old_child = unsafe {
@@ -567,7 +552,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         let entry_is_present = self.pte.is_present();
         let ghost cp0 = parent_owner.children_perm.value();
 
-        #[verus_spec(with Tracked(&*parent_owner), Tracked(Some(parent_owner.tracked_borrow_metadata_perm(&*regions))))]
+        #[verus_spec(with Tracked(Some(parent_owner.tracked_borrow_metadata_perm(&*regions))))]
         let level = self.node.level();
 
         if entry_is_present || level <= 1 {
@@ -811,7 +796,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     pub(in crate::mm) fn split_if_mapped_huge<A: InAtomicMode>(&mut self, guard: &'rcu A) -> Option<
         PageTableGuard<'rcu, C>,
     > {
-        #[verus_spec(with Tracked(&*parent_owner), Tracked(Some(parent_owner.tracked_borrow_metadata_perm(&*regions))))]
+        #[verus_spec(with Tracked(Some(parent_owner.tracked_borrow_metadata_perm(&*regions))))]
         let level = self.node.level();
 
         if !(self.pte.is_last(level) && level > 1) {
@@ -1472,7 +1457,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
             self.read_pte(idx)
         };
 
-        #[verus_spec(with Tracked(&*parent_owner), Tracked(Some(parent_owner.tracked_borrow_metadata_perm(&*regions))))]
+        #[verus_spec(with Tracked(Some(parent_owner.tracked_borrow_metadata_perm(&*regions))))]
         let level = self.level();
 
         let old_child = unsafe {
@@ -1666,7 +1651,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         idx: usize,
         guard: &'rcu A,
     ) -> PageTableGuard<'rcu, C> {
-        #[verus_spec(with Tracked(&*parent_owner), Tracked(Some(parent_owner.tracked_borrow_metadata_perm(&*regions))))]
+        #[verus_spec(with Tracked(Some(parent_owner.tracked_borrow_metadata_perm(&*regions))))]
         let level = self.level();
 
         let ghost old_path = owner.value().path;

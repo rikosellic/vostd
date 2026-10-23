@@ -198,25 +198,20 @@ impl<C: PageTableConfig> PageTableNode<C> {
     /// Gets the level of a page table node.
     /// # Verified Properties
     /// ## Preconditions
-    /// - The node must be well-formed, and the caller must provide a permission token for its metadata.
+    /// - The node must have valid typed metadata, using either its own permission or one supplied by the caller.
     /// ## Postconditions
-    /// - Returns the level of the node.
+    /// - Returns the level stored in the node's metadata.
     /// ## Safety
-    /// - We require the caller to provide a permission token to ensure that this function is only called on a valid page table node.
+    /// - The metadata permission ensures that this function is only called on a valid page table node.
     #[verus_spec(
         with
-            Tracked(owner): Tracked<&NodeOwner<C>>,
             Tracked(metadata_perm): Tracked<Option<&MetadataPerm>>,
     )]
     pub(super) fn level(&self) -> PagingLevel
         requires
-            metadata_perm matches Some(permission) ==> {
-                &&& self.external_meta_wf(*permission, ())
-                &&& *permission == owner.metadata
-            },
+            metadata_perm matches Some(permission) ==> self.external_meta_wf(*permission, ()),
             metadata_perm is None ==> {
                 &&& self.inv()
-                &&& owner.permission_matches(self.frac_metadata_perm())
                 &&& typed_meta_wf::<PageTablePageMeta<C>>(
                     self.slot_perm(),
                     self.metadata_perm(),
@@ -224,7 +219,14 @@ impl<C: PageTableConfig> PageTableNode<C> {
                 )
             },
         returns
-            owner.level(),
+            typed_meta_value::<PageTablePageMeta<C>>(
+                if metadata_perm is Some {
+                    *metadata_perm->0
+                } else {
+                    self.metadata_perm()
+                },
+                (),
+            ).level,
     {
         #[verus_spec(with
             Tracked(metadata_perm),
