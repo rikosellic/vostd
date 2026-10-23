@@ -23,15 +23,6 @@ use crate::mm::{
 
 verus! {
 
-#[allow(non_camel_case_types)]
-pub ghost enum MetaSlotStatus {
-    UNUSED,
-    UNIQUE,
-    SHARED,
-    OVERFLOW,
-    UNDER_CONSTRUCTION,
-}
-
 pub ghost enum PageUsage {
     /// Initial purpose before metadata is installed. Reuse is governed by refcount.
     Unused,
