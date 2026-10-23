@@ -56,7 +56,7 @@ pub tracked enum EntryOwnerKind<C: PageTableConfig> {
 pub tracked struct EntryOwner<C: PageTableConfig> {
     pub kind: EntryOwnerKind<C>,
     /// The incoming node PTE owns Some(token). While an owning Frame holds the
-    /// token (including the root Frame), this field is None.
+    /// this field is None.
     pub node_permission: Option<FracMetadataPerm>,
     pub ghost path: TreePath<NR_ENTRIES>,
     pub ghost parent_level: PagingLevel,

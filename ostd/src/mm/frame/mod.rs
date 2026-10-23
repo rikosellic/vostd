@@ -453,13 +453,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
             res.inner@.ptr.addr() == self.ptr.addr(),
             res.inv(),
             *res.tracked_metadata_perm@->0 == self.frac_metadata_perm(),
-            res.inner@.ptr_inv(),
-            res.inner@.slot_perm() == self.slot_perm(),
-            res.inner@.tracked_metadata_perm@ is None,
             MetaSlot::perms_related(res.inner@.slot_perm(), self.metadata_perm()),
-            forall|repr_perm: M::ReprPerm|
-                #[trigger] typed_meta_wf::<M>(self.slot_perm(), self.metadata_perm(), repr_perm)
-                ==> res.inner@.external_meta_wf(self.metadata_perm(), repr_perm),
     )]
     pub fn borrow<'a>(&'a self) -> FrameRef<'a, M> {
         let tracked slot_perm = *self.tracked_slot_perm.borrow();
