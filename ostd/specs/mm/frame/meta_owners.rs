@@ -264,6 +264,8 @@ impl Inv for MetaSlotOwner {
             &&& self.paths_in_pt.is_empty()
         }
         &&& 0 < self.ref_count() <= REF_COUNT_MAX ==> {
+            // Saturating the count exhausts fractions, not the metadata storage.
+            &&& !self.metadata_perm.is_resource_vacant()
             &&& self.metadata_perm.frac() + self.ref_count() == REF_COUNT_MAX
             &&& self.vtable_ptr_perm().is_init()
             &&& self.storage_perm().is_init()

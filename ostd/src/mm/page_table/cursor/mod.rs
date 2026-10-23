@@ -969,7 +969,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                         pt.make_guard_unchecked(rcu_guard)
                     };
 
-                    #[verus_spec(with Tracked(&mut child_node_owner))]
+                    #[verus_spec(with Tracked(&child_node_owner), Tracked(child_node_owner.tracked_borrow_metadata_perm(&*regions)))]
                     let nr_children = pt_guard.nr_children();
 
                     proof {
@@ -3628,7 +3628,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                 };
 
                 #[verus_spec(with
-                    Tracked(&old_node_owner.frame_permission),
+                    Tracked(pt.tracked_metadata_perm.borrow().tracked_borrow()),
                     Tracked(regions)
                 )]
                 let borrow_pt = pt.borrow_with_permission();
@@ -3736,12 +3736,8 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                     C::axiom_current_paging_consts_hardcoded();
                 }
                 let ghost regions_before_clone = *regions;
-                proof_decl! {
-                    let tracked NodeOwner { frame_permission, .. } = old_node_owner;
-                }
-                #[cfg(verus_keep_ghost_body)]
-                {
-                    pt.tracked_metadata_perm = Tracked(Some(frame_permission));
+                proof {
+                    let tracked _ = old_node_owner;
                 }
                 /// Origin Rust: pt: (*pt).clone().into(),
                 let cloned_pt = pt.clone(Tracked(regions));

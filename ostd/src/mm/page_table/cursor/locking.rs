@@ -195,7 +195,7 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
         assert(regions.contains(cont_slot_idx));
     }
     let tracked cont_node_owner = cont.entry_own.tracked_borrow_node();
-    #[verus_spec(with Tracked(cont_node_owner))]
+    #[verus_spec(with Tracked(cont_node_owner), Tracked(Some(cont_node_owner.tracked_borrow_metadata_perm(&*regions))))]
     let guard_level = subtree_root.level();
     proof {
         cursor_own.guard_level = guard_level;
@@ -457,16 +457,17 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
             let tracked node_owner = cont.entry_own.tracked_borrow_node();
             let tracked slot_perm = *regions.slots.tracked_borrow(node_owner.slot_index);
             let node_ref = unsafe {
-                #[verus_spec(with Tracked(slot_perm), Tracked(&node_owner.frame_permission))]
+                #[verus_spec(with Tracked(slot_perm), Tracked(node_owner.tracked_borrow_metadata_perm(&*regions)), Tracked(None))]
                 PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr)
             };
+            #[verus_spec(with Tracked(node_owner), Tracked(guards), Tracked(node_owner.tracked_borrow_metadata_perm(&*regions)))]
             node_ref.lock(guard)
         };
 
         let tracked mut cont = cursor_own.continuations.tracked_remove(cursor_own.level - 1);
         let tracked node_owner = cont.entry_own.tracked_borrow_node();
         #[verus_spec(with
-            Tracked(node_owner.tracked_borrow_metadata_perm()),
+            Tracked(node_owner.tracked_borrow_metadata_perm(&*regions)),
             Tracked(&()),
             Ghost(node_owner.meta_own.stray.id())
         )]
@@ -536,16 +537,17 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig, A: InAtomicMode>
         let tracked node_owner = cont.entry_own.tracked_borrow_node();
         let tracked slot_perm = *regions.slots.tracked_borrow(node_owner.slot_index);
         let node_ref = unsafe {
-            #[verus_spec(with Tracked(slot_perm), Tracked(&node_owner.frame_permission))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(node_owner.tracked_borrow_metadata_perm(&*regions)), Tracked(None))]
             PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr)
         };
+        #[verus_spec(with Tracked(node_owner), Tracked(guards), Tracked(node_owner.tracked_borrow_metadata_perm(&*regions)))]
         node_ref.lock(guard)
     };
 
     let tracked mut cont = cursor_own.continuations.tracked_remove(cursor_own.level - 1);
     let tracked node_owner = cont.entry_own.tracked_borrow_node();
     #[verus_spec(with
-        Tracked(node_owner.tracked_borrow_metadata_perm()),
+        Tracked(node_owner.tracked_borrow_metadata_perm(&*regions)),
         Tracked(&()),
         Ghost(node_owner.meta_own.stray.id())
     )]

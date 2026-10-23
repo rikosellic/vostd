@@ -451,6 +451,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
             self.inv(),
         ensures
             res.inner@.ptr.addr() == self.ptr.addr(),
+            res.inv(),
+            *res.tracked_metadata_perm@->0 == self.frac_metadata_perm(),
             res.inner@.ptr_inv(),
             res.inner@.slot_perm() == self.slot_perm(),
             res.inner@.tracked_metadata_perm@ is None,
@@ -464,7 +466,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         let tracked metadata_perm = self.tracked_metadata_perm.borrow().tracked_borrow();
         // SAFETY: Both the lifetime and the type matches `self`.
         unsafe {
-            #[verus_spec(with Tracked(slot_perm), Tracked(metadata_perm))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(metadata_perm.tracked_borrow()), Tracked(Some(metadata_perm)))]
             FrameRef::borrow_paddr(self.start_paddr())
         }
     }
@@ -474,7 +476,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
     /// PTEs.
     #[verus_spec(res =>
         with
-            Tracked(frame_permission): Tracked<&FracMetadataPerm>,
+            Tracked(frame_permission): Tracked<&'a FracMetadataPerm>,
             Tracked(regions): Tracked<&MetaRegionOwners>,
         requires
             self.ptr_inv(),
@@ -487,6 +489,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
             ),
         ensures
             res.inner@.ptr.addr() == self.ptr.addr(),
+            res.inv(),
+            *res.tracked_metadata_perm@->0 == *frame_permission,
             res.inner@.ptr_inv(),
             res.inner@.tracked_slot_perm@ == regions.slots[self.index()],
             res.inner@.tracked_metadata_perm@ is None,
@@ -503,7 +507,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
                 regions.lemma_contains_valid_frame_paddr(self.start_paddr_spec());
             }
             let tracked slot_perm = regions.tracked_borrow_slot(self.start_paddr_spec());
-            #[verus_spec(with Tracked(slot_perm), Tracked(frame_permission))]
+            #[verus_spec(with Tracked(slot_perm), Tracked(frame_permission.tracked_borrow()), Tracked(Some(frame_permission)))]
             FrameRef::borrow_paddr(self.start_paddr())
         }
     }
