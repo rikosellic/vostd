@@ -961,7 +961,7 @@ impl PageTable<KernelPtConfig> {
             #[verus_spec(with Tracked(root_owner), Tracked(guards))]
             root_ref.lock(preempt_guard)
         };
-        let mut new_node: PageTableGuard<'rcu, UserPtConfig> = {
+        let mut new_node: PageTableGuard<'_, UserPtConfig> = {
             /* The fresh root's permission is held by new_node_owner.
              * Origin Rust: let new_ref = new_root.borrow();
              */

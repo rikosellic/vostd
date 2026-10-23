@@ -459,7 +459,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
                 #[trigger] typed_meta_wf::<M>(self.slot_perm(), self.metadata_perm(), repr_perm)
                 ==> res.inner@.external_meta_wf(self.metadata_perm(), repr_perm),
     )]
-    pub fn borrow<'a>(&self) -> FrameRef<'a, M> {
+    pub fn borrow<'a>(&'a self) -> FrameRef<'a, M> {
         let tracked slot_perm = *self.tracked_slot_perm.borrow();
         let tracked metadata_perm = self.tracked_metadata_perm.borrow().tracked_borrow();
         // SAFETY: Both the lifetime and the type matches `self`.
@@ -495,7 +495,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
                 #[trigger] typed_meta_wf::<M>(self.slot_perm(), frame_permission.resource(), repr_perm)
                 ==> res.inner@.external_meta_wf(frame_permission.resource(), repr_perm),
     )]
-    pub(in crate::mm) fn borrow_with_permission<'a>(&self) -> FrameRef<'a, M> {
+    pub(in crate::mm) fn borrow_with_permission<'a>(&'a self) -> FrameRef<'a, M> {
         unsafe {
             proof {
                 broadcast use group_page_meta;
