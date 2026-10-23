@@ -3732,9 +3732,6 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                     C::axiom_current_paging_consts_hardcoded();
                 }
                 let ghost regions_before_clone = *regions;
-                proof {
-                    let tracked _ = old_node_owner;
-                }
                 /// Origin Rust: pt: (*pt).clone().into(),
                 let cloned_pt = pt.clone(Tracked(regions));
                 proof {
