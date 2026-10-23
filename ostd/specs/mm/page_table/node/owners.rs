@@ -226,21 +226,6 @@ impl<C: PageTableConfig> Inv for NodeOwner<C> {
 }
 
 impl<C: PageTableConfig> NodeOwner<C> {
-    /// Borrows actual metadata storage from the region authority, not its snapshot.
-    pub proof fn tracked_borrow_metadata_perm<'a>(
-        tracked &self,
-        tracked regions: &'a MetaRegionOwners,
-    ) -> (tracked permission: &'a MetadataPerm)
-        requires
-            regions.slot_owners.dom().contains(self.slot_index),
-            !regions.slot_owners[self.slot_index].metadata_perm.is_resource_vacant(),
-            self.metadata == regions.slot_owners[self.slot_index].metadata_perm(),
-        returns
-            self.metadata,
-    {
-        regions.slot_owners.tracked_borrow(self.slot_index).tracked_borrow_metadata_perm()
-    }
-
     /// Relates an actual counted token to this non-owning node identity.
     pub open spec fn permission_matches(self, permission: FracMetadataPerm) -> bool {
         &&& permission.frac() == 1

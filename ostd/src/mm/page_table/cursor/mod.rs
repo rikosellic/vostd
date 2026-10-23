@@ -452,7 +452,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
             let cur_child = {
                 let tracked child_value = child_owner.tracked_borrow_value();
-                #[verus_spec(with Tracked(child_value), Tracked(parent_owner.tracked_borrow_metadata_perm(&*regions)), Tracked(&*regions))]
+                #[verus_spec(with Tracked(child_value), Tracked(regions.tracked_borrow_metadata_perm(parent_owner.slot_index)), Tracked(&*regions))]
                 entry.to_ref()
             };
 
@@ -916,7 +916,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             let ghost regions_before_ref = *regions;
 
             let cur_child = {
-                #[verus_spec(with Tracked(child_owner.tracked_borrow_value()), Tracked(node_owner.tracked_borrow_metadata_perm(&*regions)), Tracked(&*regions))]
+                #[verus_spec(with Tracked(child_owner.tracked_borrow_value()), Tracked(regions.tracked_borrow_metadata_perm(node_owner.slot_index)), Tracked(&*regions))]
                 cur_entry.to_ref()
             };
 
@@ -969,7 +969,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                         pt.make_guard_unchecked(rcu_guard)
                     };
 
-                    #[verus_spec(with Tracked(&child_node_owner), Tracked(child_node_owner.tracked_borrow_metadata_perm(&*regions)))]
+                    #[verus_spec(with Tracked(&child_node_owner), Tracked(regions.tracked_borrow_metadata_perm(child_node_owner.slot_index)))]
                     let nr_children = pt_guard.nr_children();
 
                     proof {
@@ -2366,7 +2366,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                         reveal(<MetaRegionOwners as Inv>::inv);
                     }
                     let tracked child_value = child_owner.tracked_borrow_value();
-                    #[verus_spec(with Tracked(child_value), Tracked(parent_owner.tracked_borrow_metadata_perm(&*regions)),
+                    #[verus_spec(with Tracked(child_value), Tracked(regions.tracked_borrow_metadata_perm(parent_owner.slot_index)),
                         Tracked(&*regions))]
                     cur_entry.to_ref()
                 };
