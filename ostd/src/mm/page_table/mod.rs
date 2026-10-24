@@ -953,12 +953,12 @@ impl PageTable<KernelPtConfig> {
         }
         let mut root_node = {
             let root_ref = self.root.borrow();
-            #[verus_spec(with Tracked(root_owner), Tracked(guards), Tracked(regions.tracked_borrow_metadata_perm(root_owner.slot_index)))]
+            #[verus_spec(with Tracked(guards), Tracked(regions.tracked_borrow_slot_owner(root_ref.inner@.start_paddr_spec()).metadata_perm.tracked_borrow()))]
             root_ref.lock(preempt_guard)
         };
         let mut new_node: PageTableGuard<'_, UserPtConfig> = {
             let new_ref = new_root.borrow();
-            #[verus_spec(with Tracked(&new_node_owner), Tracked(guards), Tracked(regions.tracked_borrow_metadata_perm(new_node_owner.slot_index)))]
+            #[verus_spec(with Tracked(guards), Tracked(regions.tracked_borrow_slot_owner(new_ref.inner@.start_paddr_spec()).metadata_perm.tracked_borrow()))]
             new_ref.lock(preempt_guard)
         };
         let mut i: usize = KernelPtConfig::TOP_LEVEL_INDEX_RANGE().start;
@@ -1026,7 +1026,7 @@ impl PageTable<KernelPtConfig> {
             #[verus_spec(with Tracked(root_owner), Tracked(entry_owner), Tracked(&*regions))]
             let root_entry = root_node.entry(i);
             let ghost pre_to_ref_regions: MetaRegionOwners = *regions;
-            #[verus_spec(with Tracked(entry_owner), Tracked(regions.tracked_borrow_metadata_perm(root_owner.slot_index)), Tracked(&*regions))]
+            #[verus_spec(with Tracked(entry_owner), Tracked(regions.tracked_borrow_slot_owner(root_entry.node.inner.inner@.start_paddr_spec()).metadata_perm.tracked_borrow()), Tracked(&*regions))]
             let child = root_entry.to_ref();
 
             proof {

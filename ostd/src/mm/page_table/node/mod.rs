@@ -363,22 +363,16 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
     /// what happens when it's successful.
     #[verifier::external_body]
     #[verus_spec(res =>
-        with Tracked(owner): Tracked<&NodeOwner<C>>,
-            Tracked(guards): Tracked<&mut Guards>,
+        with Tracked(guards): Tracked<&mut Guards>,
             Tracked(metadata_perm): Tracked<&MetadataPerm>,
         requires
-            self.inner@.invariants(*owner),
-            *metadata_perm == owner.metadata,
-            self.inner@.external_meta_wf(owner.metadata, ()),
-            self.tracked_metadata_perm@ matches Some(permission) ==> {
-                &&& self.inv()
-                &&& owner.permission_matches(*permission)
-            },
-            old(guards).unlocked(owner.slot_vaddr()),
+            self.inner@.external_meta_wf(*metadata_perm, ()),
+            self.tracked_metadata_perm@ is Some ==> self.inv(),
+            old(guards).unlocked(self.inner@.ptr.addr()),
         ensures
-            final(guards).lock_held(owner.slot_vaddr()),
-            Self::locks_preserved_except(owner.slot_vaddr(), *old(guards), *final(guards)),
-            owner.relate_guard(res),
+            final(guards).lock_held(self.inner@.ptr.addr()),
+            Self::locks_preserved_except(self.inner@.ptr.addr(), *old(guards), *final(guards)),
+            res.inner == self,
     )]
     pub fn lock<'rcu, A: InAtomicMode>(self, _guard: &'rcu A) -> PageTableGuard<'rcu, C> where
         'a: 'rcu,
@@ -395,20 +389,15 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
     /// Calling this function when a guard is already created is undefined behavior
     /// unless that guard was already forgotten.
     #[verus_spec(res =>
-        with Tracked(owner): Tracked<&NodeOwner<C>>,
-             Tracked(guards): Tracked<&mut Guards>,
+        with Tracked(guards): Tracked<&mut Guards>,
         requires
-            self.inner@.invariants(*owner),
-            self.inner@.external_meta_wf(owner.metadata, ()),
-            self.tracked_metadata_perm@ matches Some(permission) ==> {
-                &&& self.inv()
-                &&& owner.permission_matches(*permission)
-            },
-            old(guards).unlocked(owner.slot_vaddr()),
+            self.inner@.ptr_inv(),
+            self.tracked_metadata_perm@ is Some ==> self.inv(),
+            old(guards).unlocked(self.inner@.ptr.addr()),
         ensures
-            final(guards).lock_held(owner.slot_vaddr()),
-            Self::locks_preserved_except(owner.slot_vaddr(), *old(guards), *final(guards)),
-            owner.relate_guard(res),
+            final(guards).lock_held(self.inner@.ptr.addr()),
+            Self::locks_preserved_except(self.inner@.ptr.addr(), *old(guards), *final(guards)),
+            res.inner == self,
     )]
     pub unsafe fn make_guard_unchecked<'rcu, A: InAtomicMode>(
         self,
@@ -417,7 +406,7 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
         let guard = PageTableGuard { inner: self };
 
         proof {
-            guards.guards = guards.guards.insert(owner.slot_vaddr());
+            guards.guards = guards.guards.insert(guard.inner.inner@.ptr.addr());
         }
 
         guard
@@ -474,15 +463,14 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     /// ## Safety
     /// - We require the caller to provide a permission token to ensure that this function is only called on a valid page table node.
     #[verus_spec(nr =>
-        with Tracked(owner) : Tracked<&NodeOwner<C>>,
+        with Tracked(nr_children_perm): Tracked<&pcell_maybe_uninit::PointsTo<u16>>,
             Tracked(metadata_perm): Tracked<&MetadataPerm>,
         requires
-            owner.meta_own.nr_children.id() == owner.meta_value().nr_children.id(),
-            self.inner.inner@.invariants(*owner),
-            *metadata_perm == owner.metadata,
-            self.inner.inner@.external_meta_wf(owner.metadata, ()),
+            nr_children_perm.is_init(),
+            nr_children_perm.id() == typed_meta_value::<PageTablePageMeta<C>>(*metadata_perm, ()).nr_children.id(),
+            self.inner.inner@.external_meta_wf(*metadata_perm, ()),
         returns
-            owner.meta_own.nr_children.value(),
+            nr_children_perm.value(),
     )]
     pub fn nr_children(&self) -> u16 {
         #[verus_spec(with
@@ -491,7 +479,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         )]
         let meta = self.meta();
 
-        *meta.nr_children.borrow(Tracked(&owner.meta_own.nr_children))
+        *meta.nr_children.borrow(Tracked(nr_children_perm))
     }
 
     /// Returns if the page table node is detached from its parent.

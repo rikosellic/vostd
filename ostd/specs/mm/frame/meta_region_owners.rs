@@ -7,10 +7,7 @@ use vstd_extra::{cast_ptr::Repr, ownership::*};
 
 use crate::specs::{arch::*, mm::frame::mapping::*};
 
-use super::{
-    meta_owners::{MetaSlotOwner, MetadataPerm},
-    *,
-};
+use super::{meta_owners::MetaSlotOwner, *};
 use crate::mm::{
     Paddr,
     frame::{
@@ -61,17 +58,6 @@ impl Inv for MetaRegionOwners {
 }
 
 impl MetaRegionOwners {
-    /// Borrows a slot's metadata permission from the region authority by slot index.
-    pub proof fn tracked_borrow_metadata_perm(tracked &self, index: int) -> tracked &MetadataPerm
-        requires
-            self.slot_owners.dom().contains(index),
-            !self.slot_owners[index].metadata_perm.is_resource_vacant(),
-        returns
-            self.slot_owners[index].metadata_perm(),
-    {
-        self.slot_owners.tracked_borrow(index).tracked_borrow_metadata_perm()
-    }
-
     /// Returns whether the slot permission and its corresponding owner are both present.
     pub open spec fn contains(self, index: int) -> bool {
         &&& self.slot_owners.contains_key(index)
