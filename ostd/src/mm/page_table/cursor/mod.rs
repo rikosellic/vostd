@@ -2257,6 +2257,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
     #[verifier::spinoff_prover]
     pub fn map_loop(&mut self, level: PagingLevel, rcu_guard: &'rcu A) {
         // Keep quantified continuation and region predicates local to this loop proof.
+        hide(CursorView::split_while_huge);
         hide(CursorContinuation::view_mappings);
         hide(CursorOwner::view_mappings);
         hide(CursorContinuation::inv_children_rel);
