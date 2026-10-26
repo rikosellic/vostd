@@ -260,9 +260,7 @@ impl<C: PageTableConfig> NodeOwner<C> {
         &&& self.metadata_id == regions.slot_owners[idx].metadata_perm.id()
         &&& self.metadata == regions.slot_owners[idx].metadata_perm()
         &&& self.meta_wf(regions)
-        &&& self.meta_value().wf(
-            self.meta_own,
-        )
+        &&& self.meta_value().wf(self.meta_own)
         &&& regions.slot_owners[self.slot_index].usage is PageTable
         &&& self.count_consistent()
     }
