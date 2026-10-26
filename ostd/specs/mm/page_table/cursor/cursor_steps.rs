@@ -283,8 +283,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             // Guard distinctness: the new guard points to a different node than all existing continuations
             forall|i: int|
                 #![trigger self.continuations[i]]
-                self.level - 1 <= i < NR_LEVELS
-                    ==> self.continuations[i].guard.inner.slot_vaddr()
+                self.level - 1 <= i < NR_LEVELS ==> self.continuations[i].guard.inner.slot_vaddr()
                     != guard.inner.slot_vaddr(),
         ensures
             self.push_level_owner(guard).inv(),
@@ -391,8 +390,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
 
         assert forall|i: int|
             #![trigger self.continuations[i]]
-            self.level - 1 <= i
-                < NR_LEVELS implies self.continuations[i].guard.inner.slot_vaddr()
+            self.level - 1 <= i < NR_LEVELS implies self.continuations[i].guard.inner.slot_vaddr()
             != guard.inner.slot_vaddr() by {
             reveal(CursorOwner::path_metaregion_sound);
             let cont_i = self.continuations[i];
