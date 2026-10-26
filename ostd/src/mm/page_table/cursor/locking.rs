@@ -194,7 +194,7 @@ pub fn lock_range<'rcu, C: PageTableConfig, A: InAtomicMode>(
         assert(cont.entry_own.metaregion_sound(*regions));
         assert(regions.contains(cont_slot_idx));
     }
-    #[verus_spec(with Tracked(Some(regions.tracked_borrow_slot_owner(subtree_root.inner.inner@.start_paddr_spec()).metadata_perm.tracked_borrow())))]
+    #[verus_spec(with Tracked(Some(regions.tracked_borrow_slot_owner(subtree_root.inner.start_paddr_spec()).metadata_perm.tracked_borrow())))]
     let guard_level = subtree_root.level();
     proof {
         cursor_own.guard_level = guard_level;

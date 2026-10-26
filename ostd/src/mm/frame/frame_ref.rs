@@ -271,4 +271,10 @@ unsafe impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + 'static> NonNullPtr for Fr
     }
 }
 
+impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'a, M> {
+    pub open spec fn start_paddr_spec(self) -> Paddr {
+        self.inner@.start_paddr_spec()
+    }
+}
+
 } // verus!

@@ -451,7 +451,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
 
             let cur_child = {
                 let tracked child_value = child_owner.tracked_borrow_value();
-                #[verus_spec(with Tracked(child_value), Tracked(regions.tracked_borrow_slot_owner(entry.node.inner.inner@.start_paddr_spec()).metadata_perm.tracked_borrow()), Tracked(&*regions))]
+                #[verus_spec(with Tracked(child_value), Tracked(regions.tracked_borrow_slot_owner(entry.node.inner.start_paddr_spec()).metadata_perm.tracked_borrow()), Tracked(&*regions))]
                 entry.to_ref()
             };
 
@@ -914,7 +914,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             let ghost regions_before_ref = *regions;
 
             let cur_child = {
-                #[verus_spec(with Tracked(child_owner.tracked_borrow_value()), Tracked(regions.tracked_borrow_slot_owner(cur_entry.node.inner.inner@.start_paddr_spec()).metadata_perm.tracked_borrow()), Tracked(&*regions))]
+                #[verus_spec(with Tracked(child_owner.tracked_borrow_value()), Tracked(regions.tracked_borrow_slot_owner(cur_entry.node.inner.start_paddr_spec()).metadata_perm.tracked_borrow()), Tracked(&*regions))]
                 cur_entry.to_ref()
             };
 
@@ -967,7 +967,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                         pt.make_guard_unchecked(rcu_guard)
                     };
 
-                    #[verus_spec(with Tracked(&child_node_owner.meta_own.nr_children), Tracked(regions.tracked_borrow_slot_owner(pt_guard.inner.inner@.start_paddr_spec()).metadata_perm.tracked_borrow()))]
+                    #[verus_spec(with Tracked(&child_node_owner.meta_own.nr_children), Tracked(regions.tracked_borrow_slot_owner(pt_guard.inner.start_paddr_spec()).metadata_perm.tracked_borrow()))]
                     let nr_children = pt_guard.nr_children();
 
                     proof {
@@ -2363,7 +2363,7 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> CursorMut<'rcu, C, A> {
                         reveal(<MetaRegionOwners as Inv>::inv);
                     }
                     let tracked child_value = child_owner.tracked_borrow_value();
-                    #[verus_spec(with Tracked(child_value), Tracked(regions.tracked_borrow_slot_owner(cur_entry.node.inner.inner@.start_paddr_spec()).metadata_perm.tracked_borrow()),
+                    #[verus_spec(with Tracked(child_value), Tracked(regions.tracked_borrow_slot_owner(cur_entry.node.inner.start_paddr_spec()).metadata_perm.tracked_borrow()),
                         Tracked(&*regions))]
                     cur_entry.to_ref()
                 };
