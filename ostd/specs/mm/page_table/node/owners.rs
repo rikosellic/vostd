@@ -263,22 +263,11 @@ impl<C: PageTableConfig> NodeOwner<C> {
         &&& self.meta_value().wf(
             self.meta_own,
         )
-        // A page-table node's slot is tracked with `PageTable` usage (guaranteed
-        // by `PageTableNode::alloc`). This discriminates node slots from
-        // data-frame slots (`Frame`) by `usage` alone, so a
-        // freshly-allocated node (whose slot was `UNUSED`) can't collide with an
-        // existing live node — giving `alloc_if_none`/`split` the parent≠child
-        // slot distinctness without a PointsTo-linearity axiom.
         &&& regions.slot_owners[self.slot_index].usage is PageTable
-        // `nr_children` counts the present PTEs in `children_perm`. A settled-node
-        // invariant (it is momentarily broken mid-`replace`/`alloc_if_none`, between
-        // the PTE write and the counter update, which is why it lives here rather
-        // than in `inv()`). Lets `nr_children_*_slot_bound` be proven, not axiomatized.
         &&& self.count_consistent()
     }
 
     /// `nr_children` equals the number of present PTEs in `children_perm`.
-    /// Held by a settled node (see `metaregion_sound_node`'s use site).
     pub open spec fn count_consistent(self) -> bool {
         self.meta_own.nr_children.value() == count_present(self.children_perm.value())
     }
