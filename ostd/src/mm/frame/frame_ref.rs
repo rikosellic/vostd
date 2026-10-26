@@ -19,8 +19,8 @@ use super::{
     Frame,
     meta::{AnyFrameMeta, MetaSlot},
 };
-use crate::mm::Paddr;
 use crate::mm::frame::meta::mapping::frame_to_meta;
+use crate::mm::{Paddr, Vaddr};
 use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref, ptr::NonNull};
 
 verus! {
@@ -69,7 +69,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'a, M> {
                 &&& MetaSlot::perms_related(*slot_perm, counted.resource())
             },
         ensures
-            r.inner@.slot_vaddr() == frame_to_meta(raw),
+            r.slot_vaddr() == frame_to_meta(raw),
             r.inner@.ptr_inv(),
             r.inner@.tracked_slot_perm@ == slot_perm,
             r.inner@.tracked_metadata_perm@ is None,
@@ -274,6 +274,11 @@ unsafe impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + 'static> NonNullPtr for Fr
 impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'a, M> {
     pub open spec fn start_paddr_spec(self) -> Paddr {
         self.inner@.start_paddr_spec()
+    }
+
+    #[verifier::inline]
+    pub open spec fn slot_vaddr(self) -> Vaddr {
+        self.inner@.slot_vaddr()
     }
 
     pub open spec fn frac_metadata_perm(self) -> FracMetadataPerm {

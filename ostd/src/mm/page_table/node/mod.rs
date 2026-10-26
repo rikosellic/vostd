@@ -368,10 +368,10 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
         requires
             self.inner@.external_meta_wf(*metadata_perm, ()),
             self.tracked_metadata_perm@ is Some ==> self.inv(),
-            old(guards).unlocked(self.inner@.ptr.addr()),
+            old(guards).unlocked(self.slot_vaddr()),
         ensures
-            final(guards).lock_held(self.inner@.ptr.addr()),
-            Self::locks_preserved_except(self.inner@.ptr.addr(), *old(guards), *final(guards)),
+            final(guards).lock_held(self.slot_vaddr()),
+            Self::locks_preserved_except(self.slot_vaddr(), *old(guards), *final(guards)),
             res.inner == self,
     )]
     pub fn lock<'rcu, A: InAtomicMode>(self, _guard: &'rcu A) -> PageTableGuard<'rcu, C> where
@@ -393,10 +393,10 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
         requires
             self.inner@.ptr_inv(),
             self.tracked_metadata_perm@ is Some ==> self.inv(),
-            old(guards).unlocked(self.inner@.ptr.addr()),
+            old(guards).unlocked(self.slot_vaddr()),
         ensures
-            final(guards).lock_held(self.inner@.ptr.addr()),
-            Self::locks_preserved_except(self.inner@.ptr.addr(), *old(guards), *final(guards)),
+            final(guards).lock_held(self.slot_vaddr()),
+            Self::locks_preserved_except(self.slot_vaddr(), *old(guards), *final(guards)),
             res.inner == self,
     )]
     pub unsafe fn make_guard_unchecked<'rcu, A: InAtomicMode>(
@@ -406,7 +406,7 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
         let guard = PageTableGuard { inner: self };
 
         proof {
-            guards.guards = guards.guards.insert(guard.inner.inner@.ptr.addr());
+            guards.guards = guards.guards.insert(guard.inner.slot_vaddr());
         }
 
         guard

@@ -284,8 +284,8 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             forall|i: int|
                 #![trigger self.continuations[i]]
                 self.level - 1 <= i < NR_LEVELS
-                    ==> self.continuations[i].guard.inner.inner@.slot_vaddr()
-                    != guard.inner.inner@.slot_vaddr(),
+                    ==> self.continuations[i].guard.inner.slot_vaddr()
+                    != guard.inner.slot_vaddr(),
         ensures
             self.push_level_owner(guard).inv(),
     {
@@ -368,7 +368,7 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
             // The child node's guard relates to the new guard
             self.cur_entry_owner().node().relate_guard(guard),
             // The new guard must be locked in guards
-            guards.lock_held(guard.inner.inner@.slot_vaddr()),
+            guards.lock_held(guard.inner.slot_vaddr()),
         ensures
             self.push_level_owner(guard).inv(),
             self.push_level_owner(guard).children_not_locked(guards),
@@ -392,12 +392,12 @@ impl<'rcu, C: PageTableConfig> CursorOwner<'rcu, C> {
         assert forall|i: int|
             #![trigger self.continuations[i]]
             self.level - 1 <= i
-                < NR_LEVELS implies self.continuations[i].guard.inner.inner@.slot_vaddr()
-            != guard.inner.inner@.slot_vaddr() by {
+                < NR_LEVELS implies self.continuations[i].guard.inner.slot_vaddr()
+            != guard.inner.slot_vaddr() by {
             reveal(CursorOwner::path_metaregion_sound);
             let cont_i = self.continuations[i];
 
-            if cont_i.guard.inner.inner@.slot_vaddr() == guard.inner.inner@.slot_vaddr() {
+            if cont_i.guard.inner.slot_vaddr() == guard.inner.slot_vaddr() {
                 assert(set![cont_i.path()].contains(cur_entry_path));
 
                 assert(false);

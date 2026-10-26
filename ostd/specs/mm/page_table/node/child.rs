@@ -42,7 +42,7 @@ impl<'a, C: PageTableConfig> OwnerOf for ChildRef<'a, C> {
         match self {
             Self::PageTable(node) => {
                 &&& owner.is_node()
-                &&& node.inner@.slot_vaddr() == owner.node().slot_vaddr()
+                &&& node.slot_vaddr() == owner.node().slot_vaddr()
                 &&& node.inner@.ptr_inv()
                 &&& node.inner@.external_meta_wf(owner.node().metadata, ())
                 &&& node.tracked_metadata_perm@ matches Some(permission) ==> {

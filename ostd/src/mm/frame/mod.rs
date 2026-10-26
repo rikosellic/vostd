@@ -450,7 +450,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         requires
             self.inv(),
         ensures
-            res.inner@.slot_vaddr() == self.slot_vaddr(),
+            res.slot_vaddr() == self.slot_vaddr(),
             res.inv(),
             res.frac_metadata_perm() == self.frac_metadata_perm(),
             MetaSlot::perms_related(res.inner@.slot_perm(), self.metadata_perm()),
