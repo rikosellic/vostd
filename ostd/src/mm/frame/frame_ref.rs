@@ -275,6 +275,10 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'a, M> {
     pub open spec fn start_paddr_spec(self) -> Paddr {
         self.inner@.start_paddr_spec()
     }
+
+    pub open spec fn frac_metadata_perm(self) -> FracMetadataPerm {
+        *self.tracked_metadata_perm@->0
+    }
 }
 
 } // verus!

@@ -452,7 +452,7 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage> + ?Sized> Frame<M> {
         ensures
             res.inner@.ptr.addr() == self.ptr.addr(),
             res.inv(),
-            *res.tracked_metadata_perm@->0 == self.frac_metadata_perm(),
+            res.frac_metadata_perm() == self.frac_metadata_perm(),
             MetaSlot::perms_related(res.inner@.slot_perm(), self.metadata_perm()),
     )]
     pub fn borrow<'a>(&'a self) -> FrameRef<'a, M> {
@@ -597,8 +597,8 @@ impl<M: AnyFrameMeta + Repr<MetaSlotStorage>> RCClone for Frame<M> {
         &&& pre.inc_frame_reference_region_spec(self.start_paddr_spec(), post)
         &&& post.inv()
         &&& res.tracked_metadata_perm@ is Some
-        &&& res.tracked_metadata_perm@->0.frac() == 1
-        &&& res.tracked_metadata_perm@->0.id() == post.slot_owners[idx].metadata_perm.id()
+        &&& res.frac_metadata_perm().frac() == 1
+        &&& res.frac_metadata_perm().id() == post.slot_owners[idx].metadata_perm.id()
         &&& res.tracked_slot_perm@ == post.slots[idx]
         &&& res.ptr == self.ptr
     }

@@ -905,8 +905,8 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotSmall>> CursorMut<'a, M> {
                 &&& final(regions).slots.dom() == old(regions).slots.dom()
                 &&& final(regions).ref_count(idx) == REF_COUNT_UNIQUE
                 &&& final(regions).slot_owners[idx].in_list_perm.value() == 0
-                &&& (res->0).0.tracked_metadata_perm@->0.storage_perm.is_init()
-                &&& (res->0).0.tracked_metadata_perm@->0.vtable_ptr_perm.is_init()
+                &&& (res->0).0.metadata_perm().storage_perm.is_init()
+                &&& (res->0).0.metadata_perm().vtable_ptr_perm.is_init()
                 &&& final(regions).slot_owners[idx].slot_vaddr == index_to_meta(idx)
                 &&& final(regions).slot_owners[idx].paths_in_pt == old(
                     regions,
