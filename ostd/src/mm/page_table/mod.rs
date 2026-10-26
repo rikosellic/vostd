@@ -897,7 +897,7 @@ impl PageTable<KernelPtConfig> {
             old(regions).inv(),
             kernel_owner.0.value().is_node(),
             !Self::create_user_pt_panic_condition(kernel_owner.0.value().node()),
-            self.root.ptr.addr() == kernel_owner.0.value().node().slot_vaddr(),
+            self.root.slot_vaddr() == kernel_owner.0.value().node().slot_vaddr(),
             self.relates_owner(*kernel_owner, *old(regions)),
             kernel_owner.0.value().metaregion_sound(*old(regions)),
             kernel_owner.metaregion_sound(*old(regions)),
@@ -1108,7 +1108,7 @@ impl<C: PageTableConfig> PageTable<C> {
         regions: MetaRegionOwners,
     ) -> bool {
         &&& owner.inv()
-        &&& self.root.ptr.addr() == owner.0.value().node().slot_vaddr()
+        &&& self.root.slot_vaddr() == owner.0.value().node().slot_vaddr()
         &&& self.root.inv()
         &&& owner.0.value().node().permission_matches(self.root.frac_metadata_perm())
         &&& owner.0.value().node_permission is None
@@ -1140,7 +1140,7 @@ impl<C: PageTableConfig> PageTable<C> {
             final(owner)@ is Some,
             final(owner)@->0.inv(),
             (final(owner)@->0).0.value().is_node(),
-            r.root.ptr.addr() == (final(owner)@->0).0.value().node().slot_vaddr(),
+            r.root.slot_vaddr() == (final(owner)@->0).0.value().node().slot_vaddr(),
             (final(owner)@->0).0.value().metaregion_sound(*final(regions)),
             r.relates_owner(final(owner)@->0, *final(regions)),
             final(regions).inv(),

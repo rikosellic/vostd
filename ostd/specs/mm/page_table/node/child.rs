@@ -17,8 +17,8 @@ impl<C: PageTableConfig> OwnerOf for Child<C> {
         match self {
             Self::PageTable(node) => {
                 &&& owner.is_node()
-                &&& node.ptr.addr() == owner.node().slot_vaddr()
-                &&& node.index() == meta_to_index(node.ptr.addr())
+                &&& node.slot_vaddr() == owner.node().slot_vaddr()
+                &&& node.index() == meta_to_index(node.slot_vaddr())
                 &&& node.ptr_inv()
                 &&& node.inv()
                 &&& owner.node_permission is None
@@ -42,7 +42,7 @@ impl<'a, C: PageTableConfig> OwnerOf for ChildRef<'a, C> {
         match self {
             Self::PageTable(node) => {
                 &&& owner.is_node()
-                &&& node.inner@.ptr.addr() == owner.node().slot_vaddr()
+                &&& node.inner@.slot_vaddr() == owner.node().slot_vaddr()
                 &&& node.inner@.ptr_inv()
                 &&& node.inner@.external_meta_wf(owner.node().metadata, ())
                 &&& node.tracked_metadata_perm@ matches Some(permission) ==> {

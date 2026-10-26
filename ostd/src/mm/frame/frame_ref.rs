@@ -69,7 +69,7 @@ impl<'a, M: AnyFrameMeta + Repr<MetaSlotStorage>> FrameRef<'a, M> {
                 &&& MetaSlot::perms_related(*slot_perm, counted.resource())
             },
         ensures
-            r.inner@.ptr.addr() == frame_to_meta(raw),
+            r.inner@.slot_vaddr() == frame_to_meta(raw),
             r.inner@.ptr_inv(),
             r.inner@.tracked_slot_perm@ == slot_perm,
             r.inner@.tracked_metadata_perm@ is None,
