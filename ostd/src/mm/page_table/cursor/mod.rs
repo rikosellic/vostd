@@ -920,6 +920,13 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
             let ghost regions_before_ref = *regions;
 
             let cur_child = {
+                proof {
+                    assert(!regions.slot_owner(
+                        cur_entry.node.inner.start_paddr_spec(),
+                    ).metadata_perm.is_resource_vacant()) by {
+                        reveal(<MetaRegionOwners as Inv>::inv);
+                    };
+                }
                 #[verus_spec(with Tracked(child_owner.tracked_borrow_value()), Tracked(regions.tracked_borrow_slot_owner(cur_entry.node.inner.start_paddr_spec()).metadata_perm.tracked_borrow()), Tracked(&*regions))]
                 cur_entry.to_ref()
             };
@@ -973,6 +980,13 @@ impl<'rcu, C: PageTableConfig, A: InAtomicMode> Cursor<'rcu, C, A> {
                         pt.make_guard_unchecked(rcu_guard)
                     };
 
+                    proof {
+                        assert(!regions.slot_owner(
+                            pt_guard.inner.start_paddr_spec(),
+                        ).metadata_perm.is_resource_vacant()) by {
+                            reveal(<MetaRegionOwners as Inv>::inv);
+                        };
+                    }
                     #[verus_spec(with Tracked(&child_node_owner.meta_own.nr_children), Tracked(regions.tracked_borrow_slot_owner(pt_guard.inner.start_paddr_spec()).metadata_perm.tracked_borrow()))]
                     let nr_children = pt_guard.nr_children();
 
