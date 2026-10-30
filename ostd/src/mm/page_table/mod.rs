@@ -961,15 +961,12 @@ impl PageTable<KernelPtConfig> {
             #[verus_spec(with Tracked(guards), Tracked(regions.tracked_borrow_slot_owner(new_ref.start_paddr_spec()).metadata_perm.tracked_borrow()))]
             new_ref.lock(preempt_guard)
         };
-        let mut i: usize = KernelPtConfig::TOP_LEVEL_INDEX_RANGE().start;
-        while i < KernelPtConfig::TOP_LEVEL_INDEX_RANGE().end
+        for i in KernelPtConfig::TOP_LEVEL_INDEX_RANGE()
             invariant
                 kernel_owner.inv(),
                 kernel_owner.0.value().is_node(),
                 regions.inv(),
                 !Self::create_user_pt_panic_condition(kernel_owner.0.value().node()),
-                i <= KernelPtConfig::TOP_LEVEL_INDEX_RANGE().end,
-                KernelPtConfig::TOP_LEVEL_INDEX_RANGE().start <= i,
                 // Lock postcondition for the kernel root.
                 *root_owner == kernel_owner.0.value().node(),
                 root_owner.relate_guard(root_node),
@@ -979,7 +976,6 @@ impl PageTable<KernelPtConfig> {
                 new_node_owner.inv(),
                 new_node_owner.relate_guard(new_node),
                 regions.contains(new_node_owner.slot_index),
-            decreases KernelPtConfig::TOP_LEVEL_INDEX_RANGE().end - i,
         {
             proof {
                 let kern_node = kernel_owner.0.value().node();
@@ -1052,9 +1048,8 @@ impl PageTable<KernelPtConfig> {
                     *regions,
                 );
             }
-            let pt = match child {
-                ChildRef::PageTable(pt) => pt,
-                _ => vstd::pervasive::unreached(),
+            let ChildRef::PageTable(pt) = child else {
+                panic!("The kernel page table doesn't contain shared nodes");
             };
 
             let pt_addr = pt.start_paddr();
@@ -1067,8 +1062,6 @@ impl PageTable<KernelPtConfig> {
                 #[verus_spec(with Tracked(&mut new_node_owner), Tracked(&*regions))]
                 new_node.write_pte(i, pte)
             };
-
-            i = i + 1;
         }
 
         PageTable::<UserPtConfig> { root: new_root }
